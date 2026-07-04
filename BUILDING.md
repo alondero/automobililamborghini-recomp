@@ -14,12 +14,12 @@ The build has two stages: **(1)** recompile the game code from your ROM into C, 
     own DLLs.
 - A network connection at configure time (CMake fetches `DirectX-Headers` on Windows).
 - **Your own ROM:** `Automobili Lamborghini (USA).z64`, placed in the repository root.
-  Only the USA release is supported.
+  Only the USA release is currently supported.
 
 ## 1. Clone with submodules
 
 ```bash
-git clone --recurse-submodules https://github.com/<you>/automobililamborghini-recomp.git
+git clone --recurse-submodules https://github.com/alondero/automobililamborghini-recomp.git
 cd automobililamborghini-recomp
 # If you already cloned without --recurse-submodules:
 git submodule update --init --recursive
@@ -102,6 +102,6 @@ Run from the repository root so the ROM path resolves:
 ## Notes
 
 - `lib/N64ModernRuntime`'s root CMake deliberately omits RT64; it is pulled in only by
-  this project's `CMakeLists.txt`. This mirrors Zelda64Recomp.
+  this project's `CMakeLists.txt`.
 - `RecompiledFuncs/` is regenerated from your ROM and is never committed. Re-run step 3
   after changing the symbol map or config.

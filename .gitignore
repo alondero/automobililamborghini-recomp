@@ -26,6 +26,21 @@ compile_commands.json
 .DS_Store
 Thumbs.db
 
+# --- Bundled emulator + debug captures (not source; regenerable/large) ------
+# ares reference emulator for live-debug skills (ares-debugger / port-vs-ares-harness)
+tools/emulators/
+# RDRAM / framebuffer / DL dumps captured from ares or the port
+*.bin
+dma_validation/
+
 # --- Logs / scratch --------------------------------------------------------
 *.log
 *.stackdump
+
+# --- Local AI Artefacts ----------------------------------------------------
+.claude/settings.local.json
+CLAUDE.local.md
+nextsessionprompt.md
+
+# --- Game artefacts --------------------------------------------------------
+*.mpk

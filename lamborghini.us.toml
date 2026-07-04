@@ -11,10 +11,10 @@
 # merges are already baked into the syms.toml `size` fields. stubs/ignored carried from
 # tools/n64recomp_race.toml, filtered to names present after the merge.
 #
-# Run (WSL, ABI-matched recompiler from spike #55):
-#   wsl bash -c 'cd /mnt/f/src/automobililamborghini-decomp/recomp && \
-#     build-wsl/lib/N64ModernRuntime/librecomp/N64Recomp/N64Recomp lamborghini.us.toml'
-#   (the N64Recomp CLI is built in-tree on F: via `make -C recomp/build-wsl N64RecompCLI`.)
+# Run (see BUILDING.md step 3):
+#   cmake --build build --target N64RecompCLI
+#   ./build/lib/N64ModernRuntime/librecomp/N64Recomp/N64Recomp lamborghini.us.toml
+
 
 [input]
 entrypoint = 0x80000400
