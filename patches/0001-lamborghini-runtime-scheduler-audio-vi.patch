@@ -1,0 +1,699 @@
+diff --git a/librecomp/src/ultra_translation.cpp b/librecomp/src/ultra_translation.cpp
+index e0d367e..cc52950 100644
+--- a/librecomp/src/ultra_translation.cpp
++++ b/librecomp/src/ultra_translation.cpp
+@@ -119,7 +119,27 @@ extern "C" void osWritebackDCacheAll_recomp(uint8_t * rdram, recomp_context * ct
+ }
+ 
+ extern "C" void osSetIntMask_recomp(uint8_t * rdram, recomp_context * ctx) {
+-    ;
++    // On real libultra, (re-)setting the interrupt mask is a dispatch point: any interrupt pending
++    // during the masked window is serviced, which can wake/switch to a higher-priority thread. The
++    // cooperative ultramodern scheduler otherwise only dispatches inside osRecvMesg/osSendMesg, so a
++    // game-thread busy-wait loop that toggles the int mask (the audio worker's command-dequeue at
++    // state 6) never yields -> starves __scMain -> title state machine frozen at 6. Make osSetIntMask
++    // a cooperative dispatch point for game threads, restoring that semantics. #64.
++    //
++    // MASK-AWARE (W134, #53 -- the hardening tracked in mesgqueue.cpp KNOWN LIMITATION (b)):
++    // real libultra services pending interrupts when the mask is RAISED (re-enabled), never when a
++    // thread LOWERS it (osSetIntMask(OS_IM_NONE)=1 to enter a critical section). Dispatching on the
++    // disable-edge ran other threads inside game critical sections; measured W134: the SFX-player
++    // constructor (func_80076EE4) links its voice handler via alSynAddPlayer and primes the
++    // current-event buffer a few dozen instructions later -- a disable-edge dispatch inside that
++    // window handed the CPU to the audio worker, which dispatched the just-linked handler against
++    // the unprimed (zero) event buffer and SIGSEGV'd in alAudioFrame reading *(player+0x2C)=0.
++    // OS_IM_NONE reaches here as a0 == 1 (the ROM's osSetIntMask(1) critical-section idiom); every
++    // restore passes the saved (enabled) mask != 1, so the audio worker's per-spin restore still
++    // dispatches and the W97 cooperative un-starving is preserved.
++    if (ultramodern::is_game_thread() && (uint32_t)ctx->r4 != 1u) {
++        ultramodern::deliver_external_and_yield(rdram);
++    }
+ }
+ 
+ extern "C" void __osDisableInt_recomp(uint8_t * rdram, recomp_context * ctx) {
+diff --git a/ultramodern/include/ultramodern/ultramodern.hpp b/ultramodern/include/ultramodern/ultramodern.hpp
+index 46aea61..c9ab245 100644
+--- a/ultramodern/include/ultramodern/ultramodern.hpp
++++ b/ultramodern/include/ultramodern/ultramodern.hpp
+@@ -76,6 +76,12 @@ void enqueue_external_message_src(PTR(OSMesgQueue) mq, OSMesg msg, bool jam, Eve
+ void enqueue_external_message(PTR(OSMesgQueue) mq, OSMesg msg, bool jam, bool requeue_if_blocked);
+ void wait_for_external_message(RDRAM_ARG1);
+ void wait_for_external_message_timed(RDRAM_ARG1, u32 millis);
++// Non-blocking: deliver any pending external (interrupt-posted) messages into their queues,
++// then check the running queue for a higher-priority thread to swap to. This is the cooperative
++// equivalent of "re-enabling interrupts services pending dispatch" -- called from osSetIntMask so
++// that game-thread busy-wait loops which toggle the int mask (a common libultra idiom, e.g. the
++// audio worker's command-dequeue) actually yield instead of starving the scheduler. See #64.
++void deliver_external_and_yield(RDRAM_ARG1);
+ 
+ // Thread scheduling.
+ void check_running_queue(RDRAM_ARG1);
+diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
+index 518529d..bdde8e2 100644
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -50,6 +50,17 @@ struct ViState {
+ #define VI_STATE_BLACK 0x20
+ #define VI_STATE_REPEATLINE 0x40
+ 
++// Local patch (lamborghini #58, 0003): retrace-aligned DP completion. On hardware the RDP never
++// finishes inside the retrace that submitted it, so the game's swap -> next task cycle spans two
++// VIs (30fps for this game). An instant native send_dl erases that latency and the game free-runs
++// (~40fps measured). The gfx thread ARMS the completion here instead of signalling it, recording
++// the VI tick at arm time; the VI thread FIRES dp_complete() at the end of the first later tick.
++// Only one gfx task is ever in flight (the osScheduler holds new gfx tasks until DP-done), so a
++// single slot suffices.
++static std::atomic<uint64_t> lambo_vi_ticks{0};
++static std::atomic<uint64_t> lambo_dp_armed_at_tick{0};
++static std::atomic<bool> lambo_dp_pending{false};
++
+ static struct {
+     struct {
+         std::thread thread;
+@@ -174,6 +185,7 @@ extern std::atomic_bool exited;
+ extern moodycamel::LightweightSemaphore graphics_shutdown_ready;
+ 
+ void set_dummy_vi(bool odd);
++void dp_complete(); // local patch 0003: fired from the VI thread's deferred-completion flush
+ 
+ void vi_thread_func() {
+     ultramodern::set_native_thread_name("VI Thread");
+@@ -208,9 +220,18 @@ void vi_thread_func() {
+             //printf("Skipped % " PRId64 " frames in VI interupt thread!\n", new_total_vis - total_vis - 1);
+         }
+         total_vis = new_total_vis;
++        lambo_vi_ticks.fetch_add(1); // local patch 0003: retrace-aligned DP completion
+ 
+         // If the game hasn't started yet, set a dummy VI mode and origin.
+-        if (!ultramodern::is_game_started()) {
++        // Local patch (lamborghini #58): ALSO set the dummy while the game has started but
++        // has not called osViSetMode yet. With a slow renderer init (RT64/Vulkan takes
++        // seconds) the game can start before the first VI tick ever runs, so no pre-start
++        // dummy tick populated ViState::mode and update_vi() would dereference null.
++        // Skipping the tick instead is NOT an option: update_vi()'s odd/even state swap is
++        // what promotes the game's osViSetEvent/osViSwapBuffer writes (made against the
++        // next state) into the current state -- without the swap the VI retrace message
++        // queue never becomes current and the game deadlocks in osRecvMesg.
++        if (!ultramodern::is_game_started() || events_context.vi.get_next_state()->mode == nullptr) {
+             static bool odd = false;
+             set_dummy_vi(odd);
+             odd = !odd;
+@@ -246,6 +267,18 @@ void vi_thread_func() {
+         if (events_callbacks.vi_callback != nullptr) {
+             events_callbacks.vi_callback();
+         }
++
++        // Local patch 0003: fire the deferred DP completion only once a full retrace boundary
++        // has passed since it was armed (tick counter strictly greater), and only after this
++        // tick's context promote (vi_callback above) -- both orderings mirror real RDP latency,
++        // and the strict comparison closes the race where send_dl finishes between this tick's
++        // retrace message and this flush point (which would otherwise complete same-tick and
++        // let the game run 60fps).
++        if (lambo_dp_pending.load(std::memory_order_acquire) &&
++            lambo_vi_ticks.load(std::memory_order_relaxed) > lambo_dp_armed_at_tick.load(std::memory_order_relaxed)) {
++            lambo_dp_pending.store(false, std::memory_order_release);
++            dp_complete();
++        }
+     }
+ }
+ 
+@@ -372,7 +405,12 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
+                 renderer_context->send_dl(&task_action->task);
+                 [[maybe_unused]] auto renderer_end = std::chrono::high_resolution_clock::now();
+ 
+-                dp_complete();
++                // Local patch 0003: arm the retrace-aligned DP completion instead of signalling
++                // it instantly (see lambo_dp_pending above). Order matters: record the arm tick
++                // before publishing the pending flag.
++                lambo_dp_armed_at_tick.store(lambo_vi_ticks.load(std::memory_order_relaxed),
++                                             std::memory_order_relaxed);
++                lambo_dp_pending.store(true, std::memory_order_release);
+                 // TODO hook the parsed event up to the actual parsing point when a callback is added to RT64.
+                 ultramodern::extensions::on_displaylist_parsed(displaylist);
+                 ultramodern::extensions::on_displaylist_completed(displaylist);
+@@ -442,6 +480,13 @@ static const OSViMode dummy_mode = []() {
+ void set_dummy_vi(bool odd) {
+     ViState* next_state = events_context.vi.get_next_state();
+     next_state->mode = &dummy_mode;
++    // Local patch (lamborghini #58): mirror what osViSetMode does with a real mode --
++    // without this, VI_STATUS stays 0 (pixel type "blank") and a renderer that honours
++    // the VI regs (RT64) presents black even with a valid origin. (A TYPE_32 variant was
++    // A/B'd 2026-07-02 against this game's measured 32bpp framebuffers: black either way
++    // in WSLg window captures -- inconclusive; the real fix is a faithful __osViInit so
++    // the game's own mode reaches osViSetMode.)
++    next_state->control = dummy_mode.comRegs.ctrl;
+     // Set up a dummy framebuffer.
+     next_state->framebuffer = 0x80700000;
+     if (odd) {
+diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
+index 9944a02..25702b1 100644
+--- a/ultramodern/src/mesgqueue.cpp
++++ b/ultramodern/src/mesgqueue.cpp
+@@ -1,222 +1,297 @@
+-#include <bitset>
+-#include <thread>
+-
+-#include "blockingconcurrentqueue.h"
+-
+-#include "ultramodern/ultra64.h"
+-#include "ultramodern/ultramodern.hpp"
+-
+-struct QueuedMessage {
+-    PTR(OSMesgQueue) mq;
+-    OSMesg mesg;
+-    bool jam;
+-    bool requeue_if_blocked;
+-};
+-
+-static moodycamel::BlockingConcurrentQueue<QueuedMessage> external_messages {};
+-std::bitset<32> requeue_enabled;
+-
+-void ultramodern::set_message_queue_control(const ultramodern::MessageQueueControl& mqc) {
+-    requeue_enabled.reset();
+-    requeue_enabled.set(static_cast<int>(EventMessageSource::Timer), mqc.requeue_timer);
+-    requeue_enabled.set(static_cast<int>(EventMessageSource::Sp), mqc.requeue_sp);
+-    requeue_enabled.set(static_cast<int>(EventMessageSource::Si), mqc.requeue_si);
+-    requeue_enabled.set(static_cast<int>(EventMessageSource::Ai), mqc.requeue_ai);
+-    requeue_enabled.set(static_cast<int>(EventMessageSource::Vi), mqc.requeue_vi);
+-    requeue_enabled.set(static_cast<int>(EventMessageSource::Pi), mqc.requeue_pi);
+-    requeue_enabled.set(static_cast<int>(EventMessageSource::Dp), mqc.requeue_dp);
+-}
+-
+-void ultramodern::enqueue_external_message_src(PTR(OSMesgQueue) mq, OSMesg msg, bool jam, EventMessageSource src) {
+-    external_messages.enqueue({mq, msg, jam, requeue_enabled[static_cast<int>(src)]});
+-}
+-
+-void ultramodern::enqueue_external_message(PTR(OSMesgQueue) mq, OSMesg msg, bool jam, bool requeue_if_blocked) {
+-    external_messages.enqueue({mq, msg, jam, requeue_if_blocked});
+-}
+-
+-bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block);
+-
+-void dequeue_external_messages(RDRAM_ARG1) {
+-    QueuedMessage to_send;
+-    std::vector<QueuedMessage> requeued_messages{};
+-    while (external_messages.try_dequeue(to_send)) {
+-        if (!do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false) && to_send.requeue_if_blocked) {
+-            requeued_messages.push_back(to_send);
+-        }
+-    }
+-    for (QueuedMessage& cur_mesg : requeued_messages) {
+-        external_messages.enqueue(cur_mesg);
+-    }
+-}
+-
+-void ultramodern::wait_for_external_message(RDRAM_ARG1) {
+-    QueuedMessage to_send;
+-    external_messages.wait_dequeue(to_send);
+-    if (!do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false) && to_send.requeue_if_blocked) {
+-        external_messages.enqueue(to_send);
+-    }
+-}
+-
+-void ultramodern::wait_for_external_message_timed(RDRAM_ARG u32 millis) {
+-    QueuedMessage to_send;
+-    if (external_messages.wait_dequeue_timed(to_send, std::chrono::milliseconds{millis})) {
+-        if (!do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false) && to_send.requeue_if_blocked) {
+-            external_messages.enqueue(to_send);
+-        }
+-    }
+-}
+-
+-extern "C" void osCreateMesgQueue(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg, s32 count) {
+-    OSMesgQueue *mq = TO_PTR(OSMesgQueue, mq_);
+-    mq->blocked_on_recv = NULLPTR;
+-    mq->blocked_on_send = NULLPTR;
+-    mq->msgCount = count;
+-    mq->msg = msg;
+-    mq->validCount = 0;
+-    mq->first = 0;
+-}
+-
+-s32 MQ_GET_COUNT(OSMesgQueue *mq) {
+-    return mq->validCount;
+-}
+-
+-s32 MQ_IS_EMPTY(OSMesgQueue *mq) {
+-    return mq->validCount == 0;
+-}
+-
+-s32 MQ_IS_FULL(OSMesgQueue* mq) {
+-    return MQ_GET_COUNT(mq) >= mq->msgCount;
+-}
+-
+-bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
+-    OSMesgQueue* mq = TO_PTR(OSMesgQueue, mq_);
+-    if (!block) {
+-        // If non-blocking, fail if the queue is full.
+-        if (MQ_IS_FULL(mq)) {
+-            return false;
+-        }
+-    }
+-    else {
+-        // Otherwise, yield this thread until the queue has room.
+-        while (MQ_IS_FULL(mq)) {
+-            debug_printf("[Message Queue] Thread %d is blocked on send\n", TO_PTR(OSThread, ultramodern::this_thread())->id);
+-            ultramodern::thread_queue_insert(PASS_RDRAM GET_MEMBER(OSMesgQueue, mq_, blocked_on_send), ultramodern::this_thread());
+-            ultramodern::run_next_thread_and_wait(PASS_RDRAM1);
+-        }
+-    }
+-    
+-    if (jam) {
+-        // Jams insert at the head of the message queue's buffer.
+-        mq->first = (mq->first + mq->msgCount - 1) % mq->msgCount;
+-        TO_PTR(OSMesg, mq->msg)[mq->first] = msg;
+-        mq->validCount++;
+-    }
+-    else {
+-        // Sends insert at the tail of the message queue's buffer.
+-        s32 last = (mq->first + mq->validCount) % mq->msgCount;
+-        TO_PTR(OSMesg, mq->msg)[last] = msg;
+-        mq->validCount++;
+-    }
+-
+-    // If any threads were blocked on receiving from this message queue, pop the first one and schedule it.
+-    PTR(PTR(OSThread)) blocked_queue = GET_MEMBER(OSMesgQueue, mq_, blocked_on_recv);
+-    if (!ultramodern::thread_queue_empty(PASS_RDRAM blocked_queue)) {
+-        ultramodern::schedule_running_thread(PASS_RDRAM ultramodern::thread_queue_pop(PASS_RDRAM blocked_queue));
+-    }
+-    
+-    return true;
+-}
+-
+-bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
+-    OSMesgQueue* mq = TO_PTR(OSMesgQueue, mq_);
+-    if (!block) {
+-        // If non-blocking, fail if the queue is empty
+-        if (MQ_IS_EMPTY(mq)) {
+-            return false;
+-        }
+-    } else {
+-        // Otherwise, yield this thread in a loop until the queue is no longer full
+-        while (MQ_IS_EMPTY(mq)) {
+-            debug_printf("[Message Queue] Thread %d is blocked on receive\n", TO_PTR(OSThread, ultramodern::this_thread())->id);
+-            ultramodern::thread_queue_insert(PASS_RDRAM GET_MEMBER(OSMesgQueue, mq_, blocked_on_recv), ultramodern::this_thread());
+-            ultramodern::run_next_thread_and_wait(PASS_RDRAM1);
+-        }
+-    }
+-
+-    if (msg_ != NULLPTR) {
+-        *TO_PTR(OSMesg, msg_) = TO_PTR(OSMesg, mq->msg)[mq->first];
+-    }
+-    
+-    mq->first = (mq->first + 1) % mq->msgCount;
+-    mq->validCount--;
+-
+-    // If any threads were blocked on sending to this message queue, pop the first one and schedule it.
+-    PTR(PTR(OSThread)) blocked_queue = GET_MEMBER(OSMesgQueue, mq_, blocked_on_send);
+-    if (!ultramodern::thread_queue_empty(PASS_RDRAM blocked_queue)) {
+-        ultramodern::schedule_running_thread(PASS_RDRAM ultramodern::thread_queue_pop(PASS_RDRAM blocked_queue));
+-    }
+-
+-    return true;
+-}
+-
+-extern "C" s32 osSendMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags) {
+-    OSMesgQueue *mq = TO_PTR(OSMesgQueue, mq_);
+-    bool jam = false;
+-    
+-    // Don't directly send to the message queue if this isn't a game thread to avoid contention.
+-    if (!ultramodern::is_game_thread()) {
+-        ultramodern::enqueue_external_message(mq_, msg, jam, false);
+-        return 0;
+-    }
+-    
+-    // Handle any messages that have been received from an external thread.
+-    dequeue_external_messages(PASS_RDRAM1);
+-
+-    // Try to send the message.
+-    bool sent = do_send(PASS_RDRAM mq_, msg, jam, flags == OS_MESG_BLOCK);
+-    
+-    // Check the queue to see if this thread should swap execution to another.
+-    ultramodern::check_running_queue(PASS_RDRAM1);
+-
+-    return sent ? 0 : -1;
+-}
+-
+-extern "C" s32 osJamMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags) {
+-    OSMesgQueue *mq = TO_PTR(OSMesgQueue, mq_);
+-    bool jam = true;
+-    
+-    // Don't directly send to the message queue if this isn't a game thread to avoid contention.
+-    if (!ultramodern::is_game_thread()) {
+-        ultramodern::enqueue_external_message(mq_, msg, jam, false);
+-        return 0;
+-    }
+-    
+-    // Handle any messages that have been received from an external thread.
+-    dequeue_external_messages(PASS_RDRAM1);
+-
+-    // Try to send the message.
+-    bool sent = do_send(PASS_RDRAM mq_, msg, jam, flags == OS_MESG_BLOCK);
+-    
+-    // Check the queue to see if this thread should swap execution to another.
+-    ultramodern::check_running_queue(PASS_RDRAM1);
+-
+-    return sent ? 0 : -1;
+-}
+-
+-extern "C" s32 osRecvMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, s32 flags) {
+-    OSMesgQueue *mq = TO_PTR(OSMesgQueue, mq_);
+-    
+-    assert(ultramodern::is_game_thread() && "RecvMesg not allowed outside of game threads.");
+-    
+-    // Handle any messages that have been received from an external thread.
+-    dequeue_external_messages(PASS_RDRAM1);
+-
+-    // Try to receive a message.
+-    bool received = do_recv(PASS_RDRAM mq_, msg_, flags == OS_MESG_BLOCK);
+-    
+-    // Check the queue to see if this thread should swap execution to another.
+-    ultramodern::check_running_queue(PASS_RDRAM1);
+-
+-    return received ? 0 : -1;
+-}
++#include <bitset>
++#include <thread>
++#include <atomic>
++#include <cstdio>
++#include <cstdlib>
++
++#include "blockingconcurrentqueue.h"
++
++#include "ultramodern/ultra64.h"
++#include "ultramodern/ultramodern.hpp"
++
++// ---- LAMBO_THREAD_TRACE diagnostic (RETAINED scheduler tool, default-OFF): track per-thread message
++// activity. Records, per OSThread id: successful recv/send counts and the queue ptr it is currently
++// blocked on; lambo_thread_trace_dump() (called from main.cpp's vi_cb) prints a periodic snapshot so we
++// can SEE which thread's recv-count freezes and on which queue. This was the diagnostic that root-caused
++// the state-6 audio-worker monopoly (W97); it is KEPT, not deleted, because it is the reliable
++// cooperative-scheduler probe for the still-open boot frontier (#64 demo-race / state 7->8 -- see #64
++// "Method notes"). Default-off (one cached static-int branch when disabled). RETIRE when #64 closes.
++namespace {
++    bool lambo_ttrace_on() {
++        static int v = -1;
++        if (v < 0) { const char* e = std::getenv("LAMBO_THREAD_TRACE"); v = (e && e[0] && e[0] != '0') ? 1 : 0; }
++        return v;
++    }
++    struct LamboThreadInfo {
++        std::atomic<uint64_t> recv_ok{0};
++        std::atomic<uint64_t> send_ok{0};
++        std::atomic<uint32_t> blocked_recv_q{0};
++        std::atomic<uint32_t> blocked_send_q{0};
++    };
++    LamboThreadInfo g_lambo_tinfo[64];
++    int lambo_cur_tid(uint8_t* rdram) {
++        PTR(OSThread) self = ultramodern::this_thread();
++        if (self == NULLPTR) return 63; // non-game / unknown
++        int id = TO_PTR(OSThread, self)->id;
++        if (id < 0 || id >= 63) return 63;
++        return id;
++    }
++}
++
++extern "C" void lambo_thread_trace_dump(int vi) {
++    if (!lambo_ttrace_on()) return;
++    char buf[1024];
++    int n = std::snprintf(buf, sizeof(buf), "[ttrace] vi=%d", vi);
++    for (int i = 0; i < 64 && n < (int)sizeof(buf) - 64; i++) {
++        LamboThreadInfo& t = g_lambo_tinfo[i];
++        uint64_t r = t.recv_ok.load(), s = t.send_ok.load();
++        uint32_t br = t.blocked_recv_q.load(), bs = t.blocked_send_q.load();
++        if (r || s || br || bs) {
++            n += std::snprintf(buf + n, sizeof(buf) - n, " t%d{r=%llu s=%llu br=%X bs=%X}",
++                               i, (unsigned long long)r, (unsigned long long)s, br, bs);
++        }
++    }
++    std::fprintf(stderr, "%s\n", buf);
++}
++
++struct QueuedMessage {
++    PTR(OSMesgQueue) mq;
++    OSMesg mesg;
++    bool jam;
++    bool requeue_if_blocked;
++};
++
++static moodycamel::BlockingConcurrentQueue<QueuedMessage> external_messages {};
++std::bitset<32> requeue_enabled;
++
++void ultramodern::set_message_queue_control(const ultramodern::MessageQueueControl& mqc) {
++    requeue_enabled.reset();
++    requeue_enabled.set(static_cast<int>(EventMessageSource::Timer), mqc.requeue_timer);
++    requeue_enabled.set(static_cast<int>(EventMessageSource::Sp), mqc.requeue_sp);
++    requeue_enabled.set(static_cast<int>(EventMessageSource::Si), mqc.requeue_si);
++    requeue_enabled.set(static_cast<int>(EventMessageSource::Ai), mqc.requeue_ai);
++    requeue_enabled.set(static_cast<int>(EventMessageSource::Vi), mqc.requeue_vi);
++    requeue_enabled.set(static_cast<int>(EventMessageSource::Pi), mqc.requeue_pi);
++    requeue_enabled.set(static_cast<int>(EventMessageSource::Dp), mqc.requeue_dp);
++}
++
++void ultramodern::enqueue_external_message_src(PTR(OSMesgQueue) mq, OSMesg msg, bool jam, EventMessageSource src) {
++    external_messages.enqueue({mq, msg, jam, requeue_enabled[static_cast<int>(src)]});
++}
++
++void ultramodern::enqueue_external_message(PTR(OSMesgQueue) mq, OSMesg msg, bool jam, bool requeue_if_blocked) {
++    external_messages.enqueue({mq, msg, jam, requeue_if_blocked});
++}
++
++bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block);
++
++void dequeue_external_messages(RDRAM_ARG1) {
++    QueuedMessage to_send;
++    std::vector<QueuedMessage> requeued_messages{};
++    while (external_messages.try_dequeue(to_send)) {
++        if (!do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false) && to_send.requeue_if_blocked) {
++            requeued_messages.push_back(to_send);
++        }
++    }
++    for (QueuedMessage& cur_mesg : requeued_messages) {
++        external_messages.enqueue(cur_mesg);
++    }
++}
++
++void ultramodern::deliver_external_and_yield(RDRAM_ARG1) {
++    // Non-blocking dispatch point for osSetIntMask (see header / #64). Deliver any interrupt-posted
++    // messages (e.g. VI retrace to __scMain) into their queues, then reschedule. Only meaningful on
++    // game threads (matches osRecvMesg/osSendMesg).
++    dequeue_external_messages(PASS_RDRAM1);
++
++    // Honour strict libultra priority: switch to any HIGHER-priority thread that just became
++    // runnable from the delivered messages.
++    //
++    // HISTORY (W97 2026-06-30 -> W135 2026-07-04, #53/#64): between those dates this function also
++    // carried a deliberate STRICT-PRIORITY INVERSION (hand the CPU to the highest-priority READY
++    // thread even when lower-priority, re-queuing self, gated by LAMBO_NO_AUDIO_YIELD): the audio
++    // worker func_8007867C busy-spun on its EMPTY command ring (the event-post func_8007FDCC was
++    // mis-routed to a native osSendMesg that dropped every post, ORCH17), so under strict priority
++    // it monopolised the CPU and starved boot at state 6. W134/W135 fixed the ROOT cause -- the
++    // real event-post, real player constructors, and the real MIDI dispatcher now feed the ring and
++    // the worker takes its blocking path -- which is exactly the "faithful end state" the W97
++    // limitation note predicted would retire this inversion. Measured W135: strict-priority default
++    // walks 0->8 (state 8 @ vi 1138) at a locked 30 fps (swaps 1142/2400 VIs, better than the
++    // inversion build's 791). The inversion and its lever are deleted per the flag-lifecycle rule.
++    ultramodern::check_running_queue(PASS_RDRAM1);
++}
++
++void ultramodern::wait_for_external_message(RDRAM_ARG1) {
++    QueuedMessage to_send;
++    external_messages.wait_dequeue(to_send);
++    if (!do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false) && to_send.requeue_if_blocked) {
++        external_messages.enqueue(to_send);
++    }
++}
++
++void ultramodern::wait_for_external_message_timed(RDRAM_ARG u32 millis) {
++    QueuedMessage to_send;
++    if (external_messages.wait_dequeue_timed(to_send, std::chrono::milliseconds{millis})) {
++        if (!do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false) && to_send.requeue_if_blocked) {
++            external_messages.enqueue(to_send);
++        }
++    }
++}
++
++extern "C" void osCreateMesgQueue(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg, s32 count) {
++    OSMesgQueue *mq = TO_PTR(OSMesgQueue, mq_);
++    mq->blocked_on_recv = NULLPTR;
++    mq->blocked_on_send = NULLPTR;
++    mq->msgCount = count;
++    mq->msg = msg;
++    mq->validCount = 0;
++    mq->first = 0;
++}
++
++s32 MQ_GET_COUNT(OSMesgQueue *mq) {
++    return mq->validCount;
++}
++
++s32 MQ_IS_EMPTY(OSMesgQueue *mq) {
++    return mq->validCount == 0;
++}
++
++s32 MQ_IS_FULL(OSMesgQueue* mq) {
++    return MQ_GET_COUNT(mq) >= mq->msgCount;
++}
++
++bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
++    OSMesgQueue* mq = TO_PTR(OSMesgQueue, mq_);
++    if (!block) {
++        // If non-blocking, fail if the queue is full.
++        if (MQ_IS_FULL(mq)) {
++            return false;
++        }
++    }
++    else {
++        // Otherwise, yield this thread until the queue has room.
++        while (MQ_IS_FULL(mq)) {
++            debug_printf("[Message Queue] Thread %d is blocked on send\n", TO_PTR(OSThread, ultramodern::this_thread())->id);
++            if (lambo_ttrace_on()) g_lambo_tinfo[lambo_cur_tid(rdram)].blocked_send_q.store((uint32_t)mq_);
++            ultramodern::thread_queue_insert(PASS_RDRAM GET_MEMBER(OSMesgQueue, mq_, blocked_on_send), ultramodern::this_thread());
++            ultramodern::run_next_thread_and_wait(PASS_RDRAM1);
++        }
++    }
++    if (lambo_ttrace_on()) { int tid = lambo_cur_tid(rdram); g_lambo_tinfo[tid].blocked_send_q.store(0); g_lambo_tinfo[tid].send_ok.fetch_add(1); }
++    
++    if (jam) {
++        // Jams insert at the head of the message queue's buffer.
++        mq->first = (mq->first + mq->msgCount - 1) % mq->msgCount;
++        TO_PTR(OSMesg, mq->msg)[mq->first] = msg;
++        mq->validCount++;
++    }
++    else {
++        // Sends insert at the tail of the message queue's buffer.
++        s32 last = (mq->first + mq->validCount) % mq->msgCount;
++        TO_PTR(OSMesg, mq->msg)[last] = msg;
++        mq->validCount++;
++    }
++
++    // If any threads were blocked on receiving from this message queue, pop the first one and schedule it.
++    PTR(PTR(OSThread)) blocked_queue = GET_MEMBER(OSMesgQueue, mq_, blocked_on_recv);
++    if (!ultramodern::thread_queue_empty(PASS_RDRAM blocked_queue)) {
++        ultramodern::schedule_running_thread(PASS_RDRAM ultramodern::thread_queue_pop(PASS_RDRAM blocked_queue));
++    }
++    
++    return true;
++}
++
++bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
++    OSMesgQueue* mq = TO_PTR(OSMesgQueue, mq_);
++    if (!block) {
++        // If non-blocking, fail if the queue is empty
++        if (MQ_IS_EMPTY(mq)) {
++            return false;
++        }
++    } else {
++        // Otherwise, yield this thread in a loop until the queue is no longer full
++        while (MQ_IS_EMPTY(mq)) {
++            debug_printf("[Message Queue] Thread %d is blocked on receive\n", TO_PTR(OSThread, ultramodern::this_thread())->id);
++            if (lambo_ttrace_on()) g_lambo_tinfo[lambo_cur_tid(rdram)].blocked_recv_q.store((uint32_t)mq_);
++            ultramodern::thread_queue_insert(PASS_RDRAM GET_MEMBER(OSMesgQueue, mq_, blocked_on_recv), ultramodern::this_thread());
++            ultramodern::run_next_thread_and_wait(PASS_RDRAM1);
++        }
++    }
++    if (lambo_ttrace_on()) { int tid = lambo_cur_tid(rdram); g_lambo_tinfo[tid].blocked_recv_q.store(0); g_lambo_tinfo[tid].recv_ok.fetch_add(1); }
++
++    if (msg_ != NULLPTR) {
++        *TO_PTR(OSMesg, msg_) = TO_PTR(OSMesg, mq->msg)[mq->first];
++    }
++    
++    mq->first = (mq->first + 1) % mq->msgCount;
++    mq->validCount--;
++
++    // If any threads were blocked on sending to this message queue, pop the first one and schedule it.
++    PTR(PTR(OSThread)) blocked_queue = GET_MEMBER(OSMesgQueue, mq_, blocked_on_send);
++    if (!ultramodern::thread_queue_empty(PASS_RDRAM blocked_queue)) {
++        ultramodern::schedule_running_thread(PASS_RDRAM ultramodern::thread_queue_pop(PASS_RDRAM blocked_queue));
++    }
++
++    return true;
++}
++
++extern "C" s32 osSendMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags) {
++    OSMesgQueue *mq = TO_PTR(OSMesgQueue, mq_);
++    bool jam = false;
++    
++    // Don't directly send to the message queue if this isn't a game thread to avoid contention.
++    if (!ultramodern::is_game_thread()) {
++        ultramodern::enqueue_external_message(mq_, msg, jam, false);
++        return 0;
++    }
++    
++    // Handle any messages that have been received from an external thread.
++    dequeue_external_messages(PASS_RDRAM1);
++
++    // Try to send the message.
++    bool sent = do_send(PASS_RDRAM mq_, msg, jam, flags == OS_MESG_BLOCK);
++    
++    // Check the queue to see if this thread should swap execution to another.
++    ultramodern::check_running_queue(PASS_RDRAM1);
++
++    return sent ? 0 : -1;
++}
++
++extern "C" s32 osJamMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags) {
++    OSMesgQueue *mq = TO_PTR(OSMesgQueue, mq_);
++    bool jam = true;
++    
++    // Don't directly send to the message queue if this isn't a game thread to avoid contention.
++    if (!ultramodern::is_game_thread()) {
++        ultramodern::enqueue_external_message(mq_, msg, jam, false);
++        return 0;
++    }
++    
++    // Handle any messages that have been received from an external thread.
++    dequeue_external_messages(PASS_RDRAM1);
++
++    // Try to send the message.
++    bool sent = do_send(PASS_RDRAM mq_, msg, jam, flags == OS_MESG_BLOCK);
++    
++    // Check the queue to see if this thread should swap execution to another.
++    ultramodern::check_running_queue(PASS_RDRAM1);
++
++    return sent ? 0 : -1;
++}
++
++extern "C" s32 osRecvMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, s32 flags) {
++    OSMesgQueue *mq = TO_PTR(OSMesgQueue, mq_);
++    
++    assert(ultramodern::is_game_thread() && "RecvMesg not allowed outside of game threads.");
++    
++    // Handle any messages that have been received from an external thread.
++    dequeue_external_messages(PASS_RDRAM1);
++
++    // Try to receive a message.
++    bool received = do_recv(PASS_RDRAM mq_, msg_, flags == OS_MESG_BLOCK);
++    
++    // Check the queue to see if this thread should swap execution to another.
++    ultramodern::check_running_queue(PASS_RDRAM1);
++
++    return received ? 0 : -1;
++}
+diff --git a/ultramodern/src/threads.cpp b/ultramodern/src/threads.cpp
+index 6e3ed18..b758ce5 100644
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -1,4 +1,5 @@
+ #include <cstdio>
++#include <cstdlib>
+ #include <thread>
+ #include <cassert>
+ #include <string>
+@@ -210,10 +211,17 @@ static void _thread_func(RDRAM_ARG PTR(OSThread) self_, PTR(thread_func_t) entry
+     // Make sure the thread wasn't replaced or destroyed before it was started.
+     if (self->context == thread_context) {
+         debug_printf("[Thread] Thread started: %d\n", self->id);
++        // LAMBO_THREAD_TRACE (THROWAWAY): catch a game thread exiting prematurely (W84 hypothesis
++        // for the state-6 stall). Remove once root-caused. #53.
++        const char* ttrace = std::getenv("LAMBO_THREAD_TRACE");
++        bool tt = ttrace && ttrace[0] && ttrace[0] != '0';
++        if (tt) std::fprintf(stderr, "[ttrace] thread %d entry START\n", self->id);
+         try {
+             // Run the thread's function with the provided argument.
+             run_thread_function(PASS_RDRAM entrypoint, self->sp, arg);
++            if (tt) std::fprintf(stderr, "[ttrace] thread %d entry RETURNED (fell off end)\n", self->id);
+         } catch (ultramodern::thread_terminated& terminated) {
++            if (tt) std::fprintf(stderr, "[ttrace] thread %d TERMINATED (osDestroyThread/exc)\n", self->id);
+         }
+     }
+     else {

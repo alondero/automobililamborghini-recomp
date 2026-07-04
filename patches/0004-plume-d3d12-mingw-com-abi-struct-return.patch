@@ -1,0 +1,38 @@
+diff --git a/plume_d3d12.cpp b/plume_d3d12.cpp
+index 8c239f4..94b00af 100644
+--- a/plume_d3d12.cpp
++++ b/plume_d3d12.cpp
+@@ -799,11 +799,21 @@ namespace plume {
+             return;
+         }
+         
++#if defined(_MSC_VER) || !defined(_WIN32)
+         cpuDescriptorHandle = heap->GetCPUDescriptorHandleForHeapStart();
+ 
+         if (shaderVisible) {
+             gpuDescriptorHandle = heap->GetGPUDescriptorHandleForHeapStart();
+         }
++#else
++        // MinGW/DirectX-Headers: struct-returning COM methods use the ABI-correct
++        // pointer-argument form on non-MSVC compilers.
++        heap->GetCPUDescriptorHandleForHeapStart(&cpuDescriptorHandle);
++
++        if (shaderVisible) {
++            heap->GetGPUDescriptorHandleForHeapStart(&gpuDescriptorHandle);
++        }
++#endif
+ 
+         addFreeBlock(0, heapSize);
+     }
+@@ -2927,7 +2937,11 @@ namespace plume {
+         // When using an UMA architecture without explicit support for GPU Upload heaps,
+         // we instead just make a custom heap with the same properties as Upload heaps.
+         if ((desc.heapType == RenderHeapType::GPU_UPLOAD) && gpuUploadHeapFallback) {
++#if defined(_MSC_VER) || !defined(_WIN32)
+             poolDesc.HeapProperties = device->d3d->GetCustomHeapProperties(0, D3D12_HEAP_TYPE_UPLOAD);
++#else
++            device->d3d->GetCustomHeapProperties(&poolDesc.HeapProperties, 0, D3D12_HEAP_TYPE_UPLOAD);
++#endif
+         }
+         else {
+             poolDesc.HeapProperties.Type = toD3D12(desc.heapType);

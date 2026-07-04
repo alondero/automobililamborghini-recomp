@@ -1,0 +1,31 @@
+# --- Copyrighted game data (NEVER commit) ---------------------------------
+# The original ROM must be supplied by the user. This project ships no assets.
+*.z64
+*.n64
+*.v64
+*.rom
+
+# --- Recompiler output (regenerated from your ROM at build time) -----------
+# `scripts/gen_syms_toml.py` + the N64Recomp CLI produce these from the ROM.
+RecompiledFuncs/
+data_dump.toml
+# RSP audio microcode, RSPRecomp'd from your ROM (BUILDING.md step 3):
+src/aspMain.cpp
+
+# --- CMake build trees -----------------------------------------------------
+build/
+build-*/
+out/
+CMakeUserPresets.json
+compile_commands.json
+
+# --- Editor / OS -----------------------------------------------------------
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Logs / scratch --------------------------------------------------------
+*.log
+*.stackdump

@@ -1,0 +1,29 @@
+diff --git a/src/common/rt64_tmem_hasher.h b/src/common/rt64_tmem_hasher.h
+index 9a332ab..dbe6334 100644
+--- a/src/common/rt64_tmem_hasher.h
++++ b/src/common/rt64_tmem_hasher.h
+@@ -23,7 +23,9 @@ static unsigned bitScanForward64(uint64_t val) {
+         __assume(0);
+     }
+ #endif
+-#elif defined(__GNUC__) && (__GNUC__ >= 4) && defined(__LP64__)
++#elif defined(__GNUC__) && (__GNUC__ >= 4) && (defined(__LP64__) || defined(_WIN64))
++    // _WIN64: MinGW-w64 is LLP64 so __LP64__ is never defined, but __builtin_ctzll
++    // is available and correct there too.
+     return (unsigned)__builtin_ctzll(val);
+ #elif defined(__ICCARM__)
+     return (unsigned)__builtin_ctzll(val);
+diff --git a/src/render/rt64_optimus.cpp b/src/render/rt64_optimus.cpp
+index 348aa52..5d50f74 100644
+--- a/src/render/rt64_optimus.cpp
++++ b/src/render/rt64_optimus.cpp
+@@ -8,7 +8,7 @@
+ 
+ extern "C" {
+     // Exporting this flag indicates to the NVIDIA driver that it should prefer using the high performance device.
+-    _declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
++    __declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001; // __declspec: _declspec is MSVC-only, MinGW needs the standard spelling
+ }
+ 
+ #endif
+\ No newline at end of file

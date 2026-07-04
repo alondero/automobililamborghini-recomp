@@ -1,0 +1,23 @@
+# RSPRecomp config for this game's audio microcode (aspMain, M_AUDTASK type 2) -- #53.
+#
+# Ground truth (W135, 2026-07-04, gdb at get_rsp_microcode_stub + ares pressstart dump):
+#   OSTask: ucode_boot=0x80086a90 (rspboot, 0xd0), ucode=0x80087f90, ucode_data=0x8008fa10
+#           (size 0x800), data_ptr = the per-frame ACMD list (~0x738 bytes at title).
+#   RDRAM 0x80087f90 is static boot-image data: ROM offset = vram - 0x80000400 + 0x1000
+#   = 0x88B90 (verified: 0x1000 ROM bytes == ares RDRAM bytes at that address).
+#   rspboot loads the main ucode at IMEM 0x04001080; the code proper ends at IMEM 0x1E9C
+#   (last instruction `j 0x1118` + delay nop; the rest of the 0x1000 ROM window is DMEM-style
+#   data that misdecodes as writes-to-$zero), so text_size = 0x1E9C - 0x1080 = 0xE1C.
+#
+# Regenerate with:
+#   ./recomp/build-wsl/lib/N64ModernRuntime/librecomp/N64Recomp/RSPRecomp recomp/aspMain.us.toml
+text_offset = 0x88B90
+text_size = 0xE1C
+text_address = 0x04001080
+rom_file_path = "Automobili Lamborghini (USA).z64"
+output_file_path = "src/aspMain.cpp"
+output_function_name = "aspMain"
+# The 16 ACMD handler entry points from the ucode's DMEM dispatch table (halfwords at DMEM 0x10,
+# indexed by `lh $2, 0x10($2)` with $2 = (cmd>>23)&0xFE -- see the jr at IMEM ~0x10f4). Extracted
+# from the ucode data blob at ROM 0x90610 (== RDRAM 0x8008fa10, the OSTask ucode_data).
+extra_indirect_branch_targets = [0x1118, 0x1470, 0x11dc, 0x1b38, 0x1214, 0x187c, 0x1254, 0x12d0, 0x12ec, 0x1328, 0x140c, 0x1294, 0x1e24, 0x138c, 0x170c, 0x144c]
