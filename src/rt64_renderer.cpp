@@ -242,9 +242,9 @@ public:
         if (old_config == new_config) {
             return false;
         }
-        if (new_config.wm_option != old_config.wm_option) {
-            app->setFullScreen(new_config.wm_option == ultramodern::renderer::WindowMode::Fullscreen);
-        }
+        // wm_option (fullscreen) is deliberately NOT handled here: the SDL window is
+        // owned by the main thread (toggle_fullscreen in main.cpp), and RT64's
+        // setFullScreen would fight SDL over the same HWND.
         set_application_user_config(app.get(), new_config);
         app->updateUserConfig(true);
         if (new_config.msaa_option != old_config.msaa_option) {
@@ -275,9 +275,20 @@ public:
         // not the pre-game dummy at 0x80700000 / a blanked STATUS of 0.
         if (count % 30 == 0) {
             const ultramodern::renderer::ViRegs* vr = ultramodern::renderer::get_vi_regs();
+            // Interpolation health (#1 display-rate rendering): viOriginalRate is the game's
+            // detected update rate (30 for this title), targetRate the present pace RT64 aims
+            // for (display Hz when RefreshRate::Display), and interp count/presented the
+            // per-workload synthesized-frame counters -- count ~= targetRate/viOriginalRate
+            // when interpolation is live; 0 means RT64 is presenting game frames raw.
+            const RT64::SharedQueueResources* sq = app->sharedQueueResources.get();
+            const RT64::InterpolatedFrameCounters& fc =
+                sq->interpolatedFrames[sq->interpolatedFramesIndex];
             std::fprintf(stderr,
-                         "[rt64] send_dl count=%d (pipeline sustained) VI_ORIGIN=0x%08x VI_STATUS=0x%04x VI_WIDTH=%u\n",
-                         count, vr->VI_ORIGIN_REG, vr->VI_STATUS_REG, vr->VI_WIDTH_REG);
+                         "[rt64] send_dl count=%d VI_ORIGIN=0x%08x VI_STATUS=0x%04x VI_WIDTH=%u"
+                         " | viRate=%u targetRate=%u swapHz=%u interp count=%u presented=%u\n",
+                         count, vr->VI_ORIGIN_REG, vr->VI_STATUS_REG, vr->VI_WIDTH_REG,
+                         sq->viOriginalRate, sq->targetRate, sq->swapChainRate,
+                         fc.count, fc.presented);
         }
     }
 

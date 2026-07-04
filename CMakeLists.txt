@@ -132,6 +132,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/register_overlays.cpp
         src/stub_renderer.cpp
         src/lambo_audio.cpp    # SDL2 push-audio sink for the AI buffer (audio epic #53, PR 1 of 3)
+        src/lambo_config.cpp   # persistent graphics.json -> ultramodern GraphicsConfig (enhancements #1/#2)
         src/aspMain.cpp        # RSPRecomp'd audio microcode (M_AUDTASK PCM synthesis, #53).
                                # GENERATED: RSPRecomp aspMain.us.toml (see BUILDING.md step 3)
         src/libultra_stubs.c   # no-op symbols for ignored libultra CP0 helpers (e.g. __osSetSR)

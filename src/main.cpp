@@ -37,6 +37,7 @@
 #endif
 #include "lambo_rt64.h"
 #include "lambo_audio.h"   // SDL2 push-audio sink for the AI buffer (audio epic #53)
+#include "lambo_config.h"  // persistent graphics.json -> ultramodern GraphicsConfig (#1/#2)
 // ultramodern's native VI API (events.cpp), used by the promote_vi_context RT64 bridge.
 extern "C" void osViSwapBuffer(uint8_t* rdram, int32_t frameBufPtr);
 extern "C" void osViSetMode(uint8_t* rdram, int32_t mode_);
@@ -306,6 +307,26 @@ static void input_open_controller(int joystick_index);
 static void input_close_controller(SDL_JoystickID which);
 static void rumble_apply();  // rumble-pak sink (#69); defined in the input section below
 
+// The SDL window, kept for main-thread window ops (fullscreen toggle). SDL window
+// state is owned by THIS thread; the renderer only ever sees the raw handle.
+static SDL_Window* g_sdl_window = nullptr;
+
+// F11 / Alt+Enter fullscreen toggle (main thread, called from the SDL event loop).
+// SDL owns the window state; the new mode is also persisted to graphics.json so the
+// next launch starts in the same mode. (The renderer-side setFullScreen path in
+// rt64_renderer.cpp's update_config is intentionally NOT used -- one owner.)
+static void toggle_fullscreen() {
+    if (g_sdl_window == nullptr) return;
+    bool now_fullscreen = (SDL_GetWindowFlags(g_sdl_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == 0;
+    SDL_SetWindowFullscreen(g_sdl_window, now_fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+    ultramodern::renderer::GraphicsConfig cfg = ultramodern::renderer::get_graphics_config();
+    cfg.wm_option = now_fullscreen ? ultramodern::renderer::WindowMode::Fullscreen
+                                   : ultramodern::renderer::WindowMode::Windowed;
+    ultramodern::renderer::set_graphics_config(cfg);
+    lambo::config::save_graphics(cfg);
+    std::fprintf(stderr, "[config] fullscreen %s (F11 / Alt+Enter)\n", now_fullscreen ? "ON" : "OFF");
+}
+
 static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/) {
     // RT64 default presenter (#58): RT64 needs a real window with a Vulkan surface
     // (Linux). Created on the main thread; the SDL event pump runs in update_gfx_stub
@@ -332,16 +353,26 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
 #if defined(__linux__)
         flags |= SDL_WINDOW_VULKAN;
 #endif
+        // Window size + startup fullscreen come from graphics.json (loaded in main()
+        // before recomp::start). Fullscreen is owned by SDL on this (main) thread --
+        // see the F11 handler in update_gfx_stub.
+        const lambo::config::WindowSize win_size = lambo::config::window_size();
+        if (ultramodern::renderer::get_graphics_config().wm_option ==
+            ultramodern::renderer::WindowMode::Fullscreen) {
+            flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+        }
         SDL_Window* window = SDL_CreateWindow("Automobili Lamborghini",
                                               SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                              1280, 960, flags);
+                                              win_size.width, win_size.height, flags);
         if (window == nullptr) {
             std::fprintf(stderr, "[rt64] SDL_CreateWindow failed: %s -- staying headless\n",
                          SDL_GetError());
             return ultramodern::renderer::WindowHandle{};
         }
+        g_sdl_window = window;
 #if defined(__linux__)
-        std::fprintf(stderr, "[rt64] SDL window created (1280x960, Vulkan surface)\n");
+        std::fprintf(stderr, "[rt64] SDL window created (%dx%d, Vulkan surface)\n",
+                     win_size.width, win_size.height);
         return ultramodern::renderer::WindowHandle{window};
 #elif defined(_WIN32)
         // Native Windows (#68): ultramodern's WindowHandle is {HWND, thread_id} and RT64
@@ -355,7 +386,8 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
             SDL_DestroyWindow(window);
             return ultramodern::renderer::WindowHandle{};
         }
-        std::fprintf(stderr, "[rt64] SDL window created (1280x960, Win32 HWND -> D3D12)\n");
+        std::fprintf(stderr, "[rt64] SDL window created (%dx%d, Win32 HWND -> D3D12)\n",
+                     win_size.width, win_size.height);
         return ultramodern::renderer::WindowHandle{wmInfo.info.win.window, GetCurrentThreadId()};
 #else
         std::fprintf(stderr, "[rt64] window handle wiring not implemented on this platform\n");
@@ -378,6 +410,11 @@ static void update_gfx_stub(void* /*gfx_data*/) {
                 (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE)) {
                 std::fprintf(stderr, "[probe] window closed; quitting\n");
                 boot_summary_and_exit();
+            }
+            else if (event.type == SDL_KEYDOWN && !event.key.repeat &&
+                     (event.key.keysym.sym == SDLK_F11 ||
+                      (event.key.keysym.sym == SDLK_RETURN && (event.key.keysym.mod & KMOD_ALT)))) {
+                toggle_fullscreen();
             }
             else if (event.type == SDL_CONTROLLERDEVICEADDED) {
                 input_open_controller(event.cdevice.which);   // which = joystick index (ADDED)
@@ -600,6 +637,11 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "[probe] ROM: %s\n", rom_path);
 
     register_overlays();
+
+    // Load + apply graphics.json BEFORE recomp::start: ultramodern latches the config
+    // and the RT64 context constructor reads it via get_graphics_config(). This is the
+    // whole user-facing options mechanism (edit the file; F11 toggles fullscreen live).
+    lambo::config::load_and_apply_graphics();
 
     std::filesystem::path config_dir = std::filesystem::temp_directory_path() / "lambo_modern_probe";
     std::filesystem::create_directories(config_dir);
