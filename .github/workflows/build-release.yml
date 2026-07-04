@@ -1,0 +1,200 @@
+name: Build & Release
+
+# Manual, on-demand build of Windows + Linux binaries, published to GitHub Releases.
+#
+# The recompilation step (BUILDING.md step 3) needs the actual game ROM to translate
+# into C, and the port also reads the ROM at runtime for assets. The ROM is
+# copyrighted and is never committed to this repo (see .gitignore) — it is supplied
+# to this workflow as a base64-encoded repository secret (LAMBORGHINI_ROM_B64) and
+# decoded onto the runner just long enough to build. It is never uploaded as part of
+# any artifact or release asset: downstream users must supply their own legally
+# dumped copy of "Automobili Lamborghini (USA).z64" to run the released binary.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create (e.g. v0.3.0)"
+        required: true
+      prerelease:
+        description: "Mark the release as a pre-release"
+        type: boolean
+        default: true
+      draft:
+        description: "Create the release as a draft (review before publishing)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+env:
+  ROM_FILENAME: "Automobili Lamborghini (USA).z64"
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build python3 pkg-config \
+            libsdl2-dev libvulkan-dev \
+            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+            libdbus-1-dev
+
+      - name: Decode ROM
+        env:
+          ROM_B64: ${{ secrets.LAMBORGHINI_ROM_B64 }}
+        run: |
+          if [ -z "$ROM_B64" ]; then
+            echo "::error::LAMBORGHINI_ROM_B64 secret is not set — cannot recompile without a ROM."
+            exit 1
+          fi
+          echo "$ROM_B64" | base64 -d > "$ROM_FILENAME"
+
+      - name: Apply runtime patch
+        run: git -C lib/N64ModernRuntime apply "$(pwd)/patches/0001-lamborghini-runtime-scheduler-audio-vi.patch"
+
+      - name: Configure + build recompiler CLIs
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+          cmake --build build --target N64RecompCLI RSPRecomp -j"$(nproc)"
+
+      - name: Recompile game code + audio microcode from ROM
+        run: |
+          ./build/lib/N64ModernRuntime/librecomp/N64Recomp/N64Recomp lamborghini.us.toml
+          ./build/lib/N64ModernRuntime/librecomp/N64Recomp/RSPRecomp aspMain.us.toml
+
+      - name: Build port
+        run: cmake --build build --target lamborghini_modern -j"$(nproc)"
+
+      - name: Remove ROM before packaging
+        if: always()
+        run: rm -f "$ROM_FILENAME"
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp build/lamborghini_modern dist/
+          cd dist && zip -r ../lamborghini-recomp-linux-x64.zip .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lamborghini-recomp-linux-x64
+          path: lamborghini-recomp-linux-x64.zip
+          retention-days: 14
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Enable long paths
+        run: git config --global core.longpaths true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install MinGW-w64 GCC, CMake, Ninja
+        shell: pwsh
+        run: |
+          choco install mingw -y --no-progress
+          choco install ninja -y --no-progress
+          python -m pip install --upgrade pip
+          python -m pip install cmake
+          # Put a MinGW-w64 GCC ahead of any MSYS2 toolchain that might also be on PATH.
+          echo "C:\ProgramData\mingw64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Verify toolchain
+        shell: pwsh
+        run: |
+          gcc --version
+          cmake --version
+          ninja --version
+
+      - name: Decode ROM
+        shell: pwsh
+        env:
+          ROM_B64: ${{ secrets.LAMBORGHINI_ROM_B64 }}
+        run: |
+          if (-not $env:ROM_B64) {
+            Write-Error "LAMBORGHINI_ROM_B64 secret is not set -- cannot recompile without a ROM."
+            exit 1
+          }
+          [IO.File]::WriteAllBytes("$env:ROM_FILENAME", [Convert]::FromBase64String($env:ROM_B64))
+
+      - name: Apply patches
+        shell: pwsh
+        run: |
+          $root = (Get-Location).Path
+          git -C lib/N64ModernRuntime apply "$root/patches/0001-lamborghini-runtime-scheduler-audio-vi.patch"
+          git -C lib/rt64 apply "$root/patches/0005-rt64-mingw-gcc-compat.patch"
+          git -C lib/rt64/src/contrib/plume apply "$root/patches/0004-plume-d3d12-mingw-com-abi-struct-return.patch"
+
+      - name: Configure + build recompiler CLIs
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_C_COMPILER=gcc.exe -DCMAKE_CXX_COMPILER=g++.exe
+          cmake --build build --target N64RecompCLI RSPRecomp -j
+
+      - name: Recompile game code + audio microcode from ROM
+        shell: pwsh
+        run: |
+          & ".\build\lib\N64ModernRuntime\librecomp\N64Recomp\N64Recomp.exe" lamborghini.us.toml
+          & ".\build\lib\N64ModernRuntime\librecomp\N64Recomp\RSPRecomp.exe" aspMain.us.toml
+
+      - name: Build port
+        shell: pwsh
+        run: cmake --build build --target lamborghini_modern -j
+
+      - name: Remove ROM before packaging
+        if: always()
+        shell: pwsh
+        run: Remove-Item -Force -ErrorAction SilentlyContinue "$env:ROM_FILENAME"
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item build\lamborghini_modern.exe dist\
+          Copy-Item build\SDL2.dll, build\dxcompiler.dll, build\dxil.dll dist\ -ErrorAction SilentlyContinue
+          Compress-Archive -Path dist\* -DestinationPath lamborghini-recomp-windows-x64.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lamborghini-recomp-windows-x64
+          path: lamborghini-recomp-windows-x64.zip
+          retention-days: 14
+
+  release:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ inputs.tag }}" \
+            artifacts/lamborghini-recomp-linux-x64/lamborghini-recomp-linux-x64.zip \
+            artifacts/lamborghini-recomp-windows-x64/lamborghini-recomp-windows-x64.zip \
+            --repo "${{ github.repository }}" \
+            --title "${{ inputs.tag }}" \
+            $( [ "${{ inputs.prerelease }}" = "true" ] && echo --prerelease ) \
+            $( [ "${{ inputs.draft }}" = "true" ] && echo --draft ) \
+            --notes "Automated build from commit ${{ github.sha }}. **You must supply your own legally-dumped copy of \`Automobili Lamborghini (USA).z64\` next to the executable — this project ships no game data.** See BUILDING.md."
