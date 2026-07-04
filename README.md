@@ -14,6 +14,27 @@ Only the **North American (USA) release** is currently supported. The build read
 
 This is an in-progress port. It boots, presents the attract/title sequence and menus, and goes in-race. Input, audio, and rendering are wired through RT64. Expect rough edges — see the issue tracker.
 
+## Graphics options
+
+Graphics settings persist in `graphics.json` (in `%LOCALAPPDATA%\LamborghiniRecomp` on
+Windows, `~/.config/LamborghiniRecomp` elsewhere; create a `portable.txt` in the
+directory you launch from to keep everything there instead). Game saves live in the
+same directory. The file is created with
+defaults on first run — edit it and relaunch. The schema and vocabulary match the other
+N64Recomp ports (Zelda 64: Recompiled et al.):
+
+| Key | Values | Default | Meaning |
+| --- | --- | --- | --- |
+| `res_option` | `Original`, `Original2x`, `Auto` | `Auto` | Internal render resolution. `Auto` scales with the window size; `Original`/`Original2x` render at 1×/2× of 240p, each supersampled by the `ds_option` factor. |
+| `ar_option` | `Original`, `Expand`, `Manual` | `Expand` | Aspect ratio. `Expand` widens the 3D view to the window's aspect (true widescreen, not stretch). |
+| `hr_option` | `Original`, `Clamp16x9`, `Full` | `Clamp16x9` | Where edge-pinned HUD elements sit in widescreen (takes effect as HUD elements gain extended-GBI alignment). |
+| `rr_option` | `Original`, `Display`, `Manual` | `Display` | Presented framerate. `Display` renders RT64-interpolated frames at the monitor refresh rate — game logic stays at its native 30Hz. `Manual` uses `rr_manual_value`. |
+| `msaa_option` | `None`, `MSAA2X`, `MSAA4X`, `MSAA8X` | `MSAA2X` | Anti-aliasing. |
+| `hpfb_option` | `Auto`, `On`, `Off` | `Auto` | High-precision framebuffer. |
+| `wm_option` | `Windowed`, `Fullscreen` | `Windowed` | Window mode. **F11** or **Alt+Enter** toggles at runtime (and is remembered). |
+| `window_width` / `window_height` | pixels | `1600`/`900` | Windowed-mode size. |
+| `api_option` | `Auto`, `D3D12`, `Vulkan`, `Metal` | `Auto` | Graphics API. |
+
 ## Building
 
 See **[BUILDING.md](./BUILDING.md)**. In brief: clone with submodules, supply your ROM, run the recompile step, then configure and build with CMake.

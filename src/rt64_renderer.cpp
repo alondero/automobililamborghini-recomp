@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <mutex>
 
 #include "hle/rt64_application.h"
 
@@ -242,9 +243,9 @@ public:
         if (old_config == new_config) {
             return false;
         }
-        if (new_config.wm_option != old_config.wm_option) {
-            app->setFullScreen(new_config.wm_option == ultramodern::renderer::WindowMode::Fullscreen);
-        }
+        // wm_option (fullscreen) is deliberately NOT handled here: the SDL window is
+        // owned by the main thread (toggle_fullscreen in main.cpp), and RT64's
+        // setFullScreen would fight SDL over the same HWND.
         set_application_user_config(app.get(), new_config);
         app->updateUserConfig(true);
         if (new_config.msaa_option != old_config.msaa_option) {
@@ -275,9 +276,35 @@ public:
         // not the pre-game dummy at 0x80700000 / a blanked STATUS of 0.
         if (count % 30 == 0) {
             const ultramodern::renderer::ViRegs* vr = ultramodern::renderer::get_vi_regs();
+            // Interpolation health (#1 display-rate rendering): viOriginalRate is the game's
+            // detected update rate (30 for this title), targetRate the present pace RT64 aims
+            // for (display Hz when RefreshRate::Display), and interp count/presented the
+            // per-workload synthesized-frame counters -- count ~= targetRate/viOriginalRate
+            // when interpolation is live; 0 means RT64 is presenting game frames raw.
+            //
+            // DIAGNOSTICS-GRADE SAMPLING: interpolatedMutex synchronises with the present
+            // queue's counter updates, but RT64's workload thread writes the index/rate
+            // fields WITHOUT any lock (rt64_workload_queue.cpp:1020-1044, :237), so a
+            // fully synchronised read is impossible without patching the submodule. These
+            // are aligned word loads sampled once per second for a log line -- treat a
+            // single odd line as sampling noise, only a sustained pattern as signal.
+            RT64::SharedQueueResources* sq = app->sharedQueueResources.get();
+            uint32_t vi_rate, target_rate, swap_hz, interp_count, interp_presented;
+            {
+                std::lock_guard<std::mutex> lock(sq->interpolatedMutex);
+                const RT64::InterpolatedFrameCounters& fc =
+                    sq->interpolatedFrames[sq->interpolatedFramesIndex];
+                vi_rate = sq->viOriginalRate;
+                target_rate = sq->targetRate;
+                swap_hz = sq->swapChainRate;
+                interp_count = fc.count;
+                interp_presented = fc.presented;
+            }
             std::fprintf(stderr,
-                         "[rt64] send_dl count=%d (pipeline sustained) VI_ORIGIN=0x%08x VI_STATUS=0x%04x VI_WIDTH=%u\n",
-                         count, vr->VI_ORIGIN_REG, vr->VI_STATUS_REG, vr->VI_WIDTH_REG);
+                         "[rt64] send_dl count=%d VI_ORIGIN=0x%08x VI_STATUS=0x%04x VI_WIDTH=%u"
+                         " | viRate=%u targetRate=%u swapHz=%u interp count=%u presented=%u\n",
+                         count, vr->VI_ORIGIN_REG, vr->VI_STATUS_REG, vr->VI_WIDTH_REG,
+                         vi_rate, target_rate, swap_hz, interp_count, interp_presented);
         }
     }
 
