@@ -41,6 +41,7 @@ dma_validation/
 .claude/settings.local.json
 CLAUDE.local.md
 nextsessionprompt.md
+.worktreeinclude
 
 # --- Game artefacts --------------------------------------------------------
 *.mpk
