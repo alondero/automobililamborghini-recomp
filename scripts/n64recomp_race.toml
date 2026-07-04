@@ -1,6 +1,6 @@
 # N64Recomp Configuration for Race Overlay Recompilation
 #
-# Usage: ./tools/N64Recomp/build/N64Recomp tools/n64recomp_race.toml
+# Usage: ./build/lib/N64ModernRuntime/librecomp/N64Recomp/N64Recomp scripts/n64recomp_race.toml
 #
 # Prerequisites:
 # 1. Assemble: mips64-elf-as -march=vr4300 -mabi=32 -I include -o build/race_full_overlay.o asm/race_full_overlay_combined.s
