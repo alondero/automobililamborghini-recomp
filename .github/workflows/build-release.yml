@@ -4,11 +4,13 @@ name: Build & Release
 #
 # The recompilation step (BUILDING.md step 3) needs the actual game ROM to translate
 # into C, and the port also reads the ROM at runtime for assets. The ROM is
-# copyrighted and is never committed to this repo (see .gitignore) — it is supplied
-# to this workflow as a base64-encoded repository secret (LAMBORGHINI_ROM_B64) and
-# decoded onto the runner just long enough to build. It is never uploaded as part of
-# any artifact or release asset: downstream users must supply their own legally
-# dumped copy of "Automobili Lamborghini (USA).z64" to run the released binary.
+# copyrighted and is never committed to this repo (see .gitignore) — GitHub Actions
+# secrets are capped at 48 KB, far too small for a multi-MB ROM, so it can't be stored
+# as a secret directly. Instead it lives in a separate *private* companion repo
+# (ROM_ASSETS_REPO) and is checked out during the build using a fine-grained PAT
+# (ROM_ASSETS_PAT) scoped to read-only access on that one repo. It is never uploaded
+# as part of any artifact or release asset: downstream users must supply their own
+# legally dumped copy of "Automobili Lamborghini (USA).z64" to run the released binary.
 
 on:
   workflow_dispatch:
@@ -49,15 +51,27 @@ jobs:
             libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
             libdbus-1-dev
 
-      - name: Decode ROM
+      - name: Check ROM asset config
         env:
-          ROM_B64: ${{ secrets.LAMBORGHINI_ROM_B64 }}
+          ROM_ASSETS_REPO: ${{ vars.ROM_ASSETS_REPO }}
+          ROM_ASSETS_PAT: ${{ secrets.ROM_ASSETS_PAT }}
         run: |
-          if [ -z "$ROM_B64" ]; then
-            echo "::error::LAMBORGHINI_ROM_B64 secret is not set — cannot recompile without a ROM."
+          if [ -z "$ROM_ASSETS_REPO" ] || [ -z "$ROM_ASSETS_PAT" ]; then
+            echo "::error::vars.ROM_ASSETS_REPO and/or secrets.ROM_ASSETS_PAT are not set — cannot recompile without a ROM."
             exit 1
           fi
-          echo "$ROM_B64" | base64 -d > "$ROM_FILENAME"
+
+      - name: Fetch ROM from private assets repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.ROM_ASSETS_REPO }}
+          token: ${{ secrets.ROM_ASSETS_PAT }}
+          path: rom-assets
+
+      - name: Place ROM
+        run: |
+          cp "rom-assets/$ROM_FILENAME" "./$ROM_FILENAME"
+          rm -rf rom-assets
 
       - name: Apply runtime patch
         run: git -C lib/N64ModernRuntime apply "$(pwd)/patches/0001-lamborghini-runtime-scheduler-audio-vi.patch"
@@ -121,16 +135,29 @@ jobs:
           cmake --version
           ninja --version
 
-      - name: Decode ROM
+      - name: Check ROM asset config
         shell: pwsh
         env:
-          ROM_B64: ${{ secrets.LAMBORGHINI_ROM_B64 }}
+          ROM_ASSETS_REPO: ${{ vars.ROM_ASSETS_REPO }}
+          ROM_ASSETS_PAT: ${{ secrets.ROM_ASSETS_PAT }}
         run: |
-          if (-not $env:ROM_B64) {
-            Write-Error "LAMBORGHINI_ROM_B64 secret is not set -- cannot recompile without a ROM."
+          if (-not $env:ROM_ASSETS_REPO -or -not $env:ROM_ASSETS_PAT) {
+            Write-Error "vars.ROM_ASSETS_REPO and/or secrets.ROM_ASSETS_PAT are not set -- cannot recompile without a ROM."
             exit 1
           }
-          [IO.File]::WriteAllBytes("$env:ROM_FILENAME", [Convert]::FromBase64String($env:ROM_B64))
+
+      - name: Fetch ROM from private assets repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.ROM_ASSETS_REPO }}
+          token: ${{ secrets.ROM_ASSETS_PAT }}
+          path: rom-assets
+
+      - name: Place ROM
+        shell: pwsh
+        run: |
+          Copy-Item "rom-assets\$env:ROM_FILENAME" ".\$env:ROM_FILENAME"
+          Remove-Item -Recurse -Force rom-assets
 
       - name: Apply patches
         shell: pwsh
