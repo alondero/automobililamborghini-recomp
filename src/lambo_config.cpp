@@ -2,7 +2,7 @@
 //
 // Schema and behaviour mirror Zelda64Recomp's src/game/config.cpp graphics.json
 // (same key names, same per-key fall-back-to-default on missing/corrupt values,
-// same "portable.txt beside the exe -> use the working directory" escape hatch),
+// and a "portable.txt in the LAUNCH directory -> keep config there" escape hatch),
 // minus the RmlUi menu: this port's UI is the JSON file itself plus hotkeys.
 #include "lambo_config.h"
 
@@ -25,17 +25,25 @@ constexpr int kDefaultWindowHeight = 900;
 lambo::config::WindowSize g_window_size{kDefaultWindowWidth, kDefaultWindowHeight};
 
 // Read a key into `out`, keeping the existing (default) value when the key is
-// missing or has the wrong type. NLOHMANN_JSON_SERIALIZE_ENUM maps an unknown
-// string to the FIRST enumerator of the mapping, which for every GraphicsConfig
-// enum is a valid conservative option, so no extra validation is needed.
+// missing or invalid. NLOHMANN_JSON_SERIALIZE_ENUM does NOT throw on an
+// unrecognised string -- it silently maps it to the FIRST enumerator, which for
+// several options (res/ar/rr/msaa) is not this port's default. Round-tripping the
+// parsed value back to JSON detects that: a value that doesn't re-serialise to
+// what we read was invalid, so the default is kept (and the user warned).
 template <typename T>
 void from_or_default(const nlohmann::json& j, const char* key, T& out) {
     auto it = j.find(key);
     if (it == j.end()) return;
     try {
-        out = it->get<T>();
+        T parsed = it->get<T>();
+        if (nlohmann::json(parsed) != *it) {
+            std::fprintf(stderr, "[config] %s: invalid value %s -- keeping default\n",
+                         key, it->dump().c_str());
+            return;
+        }
+        out = parsed;
     } catch (const nlohmann::json::exception&) {
-        // keep default
+        std::fprintf(stderr, "[config] %s: wrong type -- keeping default\n", key);
     }
 }
 
@@ -71,8 +79,35 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "developer_mode", c.developer_mode);
     from_or_default(j, "window_width", g_window_size.width);
     from_or_default(j, "window_height", g_window_size.height);
-    if (g_window_size.width < 320 || g_window_size.height < 240) {
+    // Sanity-bound the window size: below the N64 framebuffer is useless, above 8K
+    // is a typo -- either way SDL_CreateWindow would fail and the port would run
+    // permanently headless, so reset to defaults instead.
+    if (g_window_size.width < 320 || g_window_size.width > 7680 ||
+        g_window_size.height < 240 || g_window_size.height > 4320) {
+        std::fprintf(stderr, "[config] window %dx%d out of range -- using %dx%d\n",
+                     g_window_size.width, g_window_size.height,
+                     kDefaultWindowWidth, kDefaultWindowHeight);
         g_window_size = {kDefaultWindowWidth, kDefaultWindowHeight};
+    }
+}
+
+// Read graphics.json into cfg (merging over whatever cfg already holds).
+enum class ReadResult { Missing, Ok, Unparseable };
+
+ReadResult read_graphics_file(const std::filesystem::path& path,
+                              ultramodern::renderer::GraphicsConfig& cfg) {
+    std::ifstream in{path};
+    if (!in.good()) return ReadResult::Missing;
+    try {
+        nlohmann::json j;
+        in >> j;
+        from_json(j, cfg);
+        return ReadResult::Ok;
+    } catch (const nlohmann::json::exception& e) {
+        std::fprintf(stderr, "[config] %s unparseable (%s); using defaults IN MEMORY"
+                     " -- file left untouched, fix or delete it\n",
+                     path.string().c_str(), e.what());
+        return ReadResult::Unparseable;
     }
 }
 
@@ -134,26 +169,31 @@ ultramodern::renderer::GraphicsConfig default_graphics_config() {
 ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
     ultramodern::renderer::GraphicsConfig cfg = default_graphics_config();
     const std::filesystem::path path = graphics_json_path();
-
-    std::ifstream in{path};
-    if (in.good()) {
-        try {
-            nlohmann::json j;
-            in >> j;
-            from_json(j, cfg);
-        } catch (const nlohmann::json::exception& e) {
-            std::fprintf(stderr, "[config] %s unparseable (%s); using defaults\n",
-                         path.string().c_str(), e.what());
-        }
-    }
-    in.close();
+    const ReadResult r = read_graphics_file(path, cfg);
 
     ultramodern::renderer::set_graphics_config(cfg);
     // Write the merged config back so the on-disk file is always complete and
-    // editable (new keys appear with their defaults after an upgrade).
-    save_graphics(cfg);
+    // editable (new keys appear with their defaults after an upgrade) -- but NEVER
+    // overwrite a file that failed to parse: a hand-edit typo must stay recoverable,
+    // not be replaced by defaults.
+    if (r != ReadResult::Unparseable) {
+        save_graphics(cfg);
+    }
     std::fprintf(stderr, "[config] graphics config: %s\n", path.string().c_str());
     return cfg;
+}
+
+void update_saved_window_mode(ultramodern::renderer::WindowMode wm) {
+    // Persist a runtime window-mode change by re-reading the on-disk file and
+    // updating ONLY wm_option -- a user hand-editing other keys while the game runs
+    // must not have those edits clobbered by an F11 press.
+    ultramodern::renderer::GraphicsConfig cfg = default_graphics_config();
+    const std::filesystem::path path = graphics_json_path();
+    if (read_graphics_file(path, cfg) == ReadResult::Unparseable) {
+        return; // don't destroy a recoverable (broken) file just to save a toggle
+    }
+    cfg.wm_option = wm;
+    save_graphics(cfg);
 }
 
 void save_graphics(const ultramodern::renderer::GraphicsConfig& cfg) {
@@ -166,6 +206,11 @@ void save_graphics(const ultramodern::renderer::GraphicsConfig& cfg) {
         return;
     }
     out << to_json(cfg).dump(4) << "\n";
+    out.flush();
+    if (!out.good()) {
+        std::fprintf(stderr, "[config] write to %s FAILED (disk full / permissions?)"
+                     " -- settings may not persist\n", path.string().c_str());
+    }
 }
 
 WindowSize window_size() {

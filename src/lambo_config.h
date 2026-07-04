@@ -29,8 +29,13 @@ ultramodern::renderer::GraphicsConfig default_graphics_config();
 // users always have a complete, editable file on disk. Returns the applied config.
 ultramodern::renderer::GraphicsConfig load_and_apply_graphics();
 
-// Persist the given config (used when a runtime toggle, e.g. fullscreen, changes it).
+// Persist the given config (full overwrite of graphics.json).
 void save_graphics(const ultramodern::renderer::GraphicsConfig& cfg);
+
+// Persist a runtime window-mode change (F11) by re-reading the on-disk file and
+// updating only wm_option, so concurrent hand-edits to other keys survive. A file
+// that fails to parse is left untouched.
+void update_saved_window_mode(ultramodern::renderer::WindowMode wm);
 
 // Requested window size for windowed mode (from graphics.json; defaults 1600x900,
 // chosen 16:9 so AspectRatio::Expand actually widens on first launch).

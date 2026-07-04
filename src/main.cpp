@@ -312,19 +312,26 @@ static void rumble_apply();  // rumble-pak sink (#69); defined in the input sect
 static SDL_Window* g_sdl_window = nullptr;
 
 // F11 / Alt+Enter fullscreen toggle (main thread, called from the SDL event loop).
-// SDL owns the window state; the new mode is also persisted to graphics.json so the
-// next launch starts in the same mode. (The renderer-side setFullScreen path in
-// rt64_renderer.cpp's update_config is intentionally NOT used -- one owner.)
+// SDL owns the window state; the new mode is persisted to graphics.json so the next
+// launch starts in the same mode. Two deliberate omissions:
+//  - rt64_renderer.cpp's update_config setFullScreen path is not used (one owner);
+//  - ultramodern::renderer::set_graphics_config is NOT called here: it would be the
+//    only mid-game config writer, racing the gfx thread's UNLOCKED config copy
+//    (get_graphics_config returns a reference whose guard is released on return --
+//    an upstream ultramodern flaw). Nothing renderer-side consumes wm_option, so the
+//    live config staying at its startup value is harmless.
 static void toggle_fullscreen() {
     if (g_sdl_window == nullptr) return;
-    bool now_fullscreen = (SDL_GetWindowFlags(g_sdl_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == 0;
-    SDL_SetWindowFullscreen(g_sdl_window, now_fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
-    ultramodern::renderer::GraphicsConfig cfg = ultramodern::renderer::get_graphics_config();
-    cfg.wm_option = now_fullscreen ? ultramodern::renderer::WindowMode::Fullscreen
-                                   : ultramodern::renderer::WindowMode::Windowed;
-    ultramodern::renderer::set_graphics_config(cfg);
-    lambo::config::save_graphics(cfg);
-    std::fprintf(stderr, "[config] fullscreen %s (F11 / Alt+Enter)\n", now_fullscreen ? "ON" : "OFF");
+    bool to_fullscreen = (SDL_GetWindowFlags(g_sdl_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == 0;
+    if (SDL_SetWindowFullscreen(g_sdl_window,
+                                to_fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0) != 0) {
+        std::fprintf(stderr, "[config] fullscreen toggle FAILED: %s\n", SDL_GetError());
+        return; // window unchanged -> persist nothing, config and reality stay agreed
+    }
+    lambo::config::update_saved_window_mode(
+        to_fullscreen ? ultramodern::renderer::WindowMode::Fullscreen
+                      : ultramodern::renderer::WindowMode::Windowed);
+    std::fprintf(stderr, "[config] fullscreen %s (F11 / Alt+Enter)\n", to_fullscreen ? "ON" : "OFF");
 }
 
 static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/) {
@@ -643,7 +650,11 @@ int main(int argc, char** argv) {
     // whole user-facing options mechanism (edit the file; F11 toggles fullscreen live).
     lambo::config::load_and_apply_graphics();
 
-    std::filesystem::path config_dir = std::filesystem::temp_directory_path() / "lambo_modern_probe";
+    // librecomp's config path is where game SAVES (EEPROM/SRAM/pak) and mod config
+    // live -- point it at the same persistent per-user directory as graphics.json.
+    // (It was a throwaway temp dir during the headless-probe era, which silently
+    // discarded saves on temp cleanup.)
+    std::filesystem::path config_dir = lambo::config::app_config_dir();
     std::filesystem::create_directories(config_dir);
     recomp::register_config_path(config_dir);
 

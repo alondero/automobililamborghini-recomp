@@ -17,15 +17,16 @@ This is an in-progress port. It boots, presents the attract/title sequence and m
 ## Graphics options
 
 Graphics settings persist in `graphics.json` (in `%LOCALAPPDATA%\LamborghiniRecomp` on
-Windows, `~/.config/LamborghiniRecomp` elsewhere; create a `portable.txt` next to the
-executable to keep it in the working directory instead). The file is created with
+Windows, `~/.config/LamborghiniRecomp` elsewhere; create a `portable.txt` in the
+directory you launch from to keep everything there instead). Game saves live in the
+same directory. The file is created with
 defaults on first run — edit it and relaunch. The schema and vocabulary match the other
 N64Recomp ports (Zelda 64: Recompiled et al.):
 
 | Key | Values | Default | Meaning |
 | --- | --- | --- | --- |
-| `res_option` | `Original`, `Original2x`, `Auto` | `Auto` | Internal render resolution. `Auto` scales with the window size; `Original`/`Original2x` use `ds_option` as a fixed multiplier of 240p. |
-| `ar_option` | `Original`, `Expand` | `Expand` | Aspect ratio. `Expand` widens the 3D view to the window's aspect (true widescreen, not stretch). |
+| `res_option` | `Original`, `Original2x`, `Auto` | `Auto` | Internal render resolution. `Auto` scales with the window size; `Original`/`Original2x` render at 1×/2× of 240p, each supersampled by the `ds_option` factor. |
+| `ar_option` | `Original`, `Expand`, `Manual` | `Expand` | Aspect ratio. `Expand` widens the 3D view to the window's aspect (true widescreen, not stretch). |
 | `hr_option` | `Original`, `Clamp16x9`, `Full` | `Clamp16x9` | Where edge-pinned HUD elements sit in widescreen (takes effect as HUD elements gain extended-GBI alignment). |
 | `rr_option` | `Original`, `Display`, `Manual` | `Display` | Presented framerate. `Display` renders RT64-interpolated frames at the monitor refresh rate — game logic stays at its native 30Hz. `Manual` uses `rr_manual_value`. |
 | `msaa_option` | `None`, `MSAA2X`, `MSAA4X`, `MSAA8X` | `MSAA2X` | Anti-aliasing. |
