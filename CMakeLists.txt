@@ -140,6 +140,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/aspMain.cpp        # RSPRecomp'd audio microcode (M_AUDTASK PCM synthesis, #53).
                                # GENERATED: RSPRecomp aspMain.us.toml (see BUILDING.md step 3)
         src/libultra_stubs.c   # no-op symbols for ignored libultra CP0 helpers (e.g. __osSetSR)
+        src/lambo_hud_widescreen.c  # issue #2: gEXSetRectAlign brackets around the race-HUD dials
     )
     target_compile_options(lamborghini_modern PRIVATE
         -fno-strict-aliasing
@@ -167,6 +168,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     # mirror Zelda64Recomp's include list for the game target.
     set(RT64_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64)
     target_include_directories(lamborghini_modern PRIVATE
+        ${RT64_DIR}/include
         ${RT64_DIR}/src
         ${RT64_DIR}/src/rhi
         ${RT64_DIR}/src/render

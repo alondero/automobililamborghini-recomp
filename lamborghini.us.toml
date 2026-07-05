@@ -329,3 +329,51 @@ ignored = [
 vram = 0x8005FA3C
 func = "func_80060464"
 value = 0x00000000
+
+# Issue #2 — per-element widescreen HUD (gEXSetRectAlign). The 1P race screen of the 2D
+# dispatcher func_80050860 draws three edge-anchored HUD elements back-to-back (verified
+# live 2026-07-05 by probing every 2D helper's (x,y) args during a driven race):
+#   jal 0x8004FF60 -> func_80056318 (runtime 0x80055718): speedometer dial at x=0xDC,
+#                     which internally also draws the digital speed + gear texrects
+#   jal 0x8004FF88 -> func_800583B8 (runtime 0x800577B8): RANK label+value block, x=0x118
+#   jal 0x8004FFA0 -> func_80058464 (runtime 0x80057864): LAP label+values block, x=0x28
+# Each jal is bracketed with a text hook that writes gEXEnable + gEXSetRectAlign
+# (RIGHT/LEFT pin, then ORIGIN_NONE reset) into the game DL through its cursor global
+# 0x800A39CC; natives in src/lambo_hud_widescreen.c. TIME stays centered (no tag needed
+# under RT64 Expand); the minimap is polyline/viewport-drawn, not texrects — pinning it
+# is a separate follow-up (rect-align cannot move it).
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8004FF60
+text = "lambo_ws_pin_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8004FF68
+text = "lambo_ws_pin_reset(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8004FF88
+text = "lambo_ws_pin_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8004FF90
+text = "lambo_ws_pin_reset(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8004FFA0
+text = "lambo_ws_pin_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8004FFA8
+text = "lambo_ws_pin_reset(rdram);"
+
+# The speedo NEEDLE (triangle geometry via a G_MTX chain built inside the dial drawer
+# func_80056318) is handled natively inside the existing dial bracket: pin records the
+# DL cursor and reset patches the needle's LOAD matrix translation (see
+# src/lambo_hud_widescreen.c). No extra hooks needed. func_80054FFC (minimap arrow +
+# car dots) is deliberately NOT bracketed — it must stay with the centered minimap.
