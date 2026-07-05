@@ -45,6 +45,7 @@ __pycache__/
 
 # --- Local AI Artefacts ----------------------------------------------------
 .claude/settings.local.json
+.claude/worktrees/
 CLAUDE.local.md
 nextsessionprompt.md
 .worktreeinclude
