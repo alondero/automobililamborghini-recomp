@@ -45,3 +45,11 @@ nextsessionprompt.md
 
 # --- Game artefacts --------------------------------------------------------
 *.mpk
+# Controller-pak temp write (.mpk.tmp before rename) -- emitted by the
+# si/joybus path; deleted on successful write. Ephemeral.
+*.mpk.tmp
+# Headless renderer dumps (stub_renderer.cpp): one .bmp per smoke-test
+# capture. Useful in /tmp for diagnosing gfx seams, never want it in tree.
+*.bmp
+# Generic scratch
+*.tmp

@@ -133,6 +133,10 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/stub_renderer.cpp
         src/lambo_audio.cpp    # SDL2 push-audio sink for the AI buffer (audio epic #53, PR 1 of 3)
         src/lambo_config.cpp   # persistent graphics.json -> ultramodern GraphicsConfig (enhancements #1/#2)
+        src/lambo_crash.cpp    # native crash backtrace (issue #13 / A14): Win32 EXCEPTION_POINTERS +
+                               # POSIX sigaction handler printing KSEG0/RDRAM offset + a 32-entry
+                               # function-lookup trace ring. No deps beyond libc + DbgHelp (Win) /
+                               # libc backtrace(3) (POSIX).
         src/aspMain.cpp        # RSPRecomp'd audio microcode (M_AUDTASK PCM synthesis, #53).
                                # GENERATED: RSPRecomp aspMain.us.toml (see BUILDING.md step 3)
         src/libultra_stubs.c   # no-op symbols for ignored libultra CP0 helpers (e.g. __osSetSR)
@@ -176,6 +180,11 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     target_link_libraries(lamborghini_modern PRIVATE rt64 ${SDL2_LIBRARIES})
 
     if(WIN32)
+        # Native crash backtrace (#13 / A14): CaptureStackBackTrace lives in
+        # dbghelp.dll. MinGW64 ships the import lib (libdbghelp.a) so an explicit
+        # target_link_libraries entry is enough; we don't ship the DLL — the
+        # system one is fine.
+        target_link_libraries(lamborghini_modern PRIVATE dbghelp)
         # Self-contained exe dir: RT64 dlopen()s dxcompiler/dxil at runtime and SDL2 is
         # a dynamic dep; MinGW's own runtime is linked statically so the exe runs
         # outside an MSYS/MinGW shell.
