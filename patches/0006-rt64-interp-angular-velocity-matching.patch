@@ -1,0 +1,135 @@
+diff --git a/src/hle/rt64_game_frame.cpp b/src/hle/rt64_game_frame.cpp
+index 87392d0..936f488 100644
+--- a/src/hle/rt64_game_frame.cpp
++++ b/src/hle/rt64_game_frame.cpp
+@@ -2,6 +2,12 @@
+ // RT64
+ //
+ 
++#include <chrono>
++#include <cmath>
++#include <cstdio>
++#include <cstdlib>
++#include <unordered_map>
++
+ #include "common/rt64_math.h"
+ 
+ #include "rt64_game_frame.h"
+@@ -236,11 +242,22 @@ namespace RT64 {
+         matchResult.positionDifference = hlslpp::length(curPos - prevPos);
+ 
+         // Compute the dot product difference between the normalized XYZ vectors of the 3x3 matrices.
+-        matchResult.orientationDifference =
++        const float rawOrientationDifference =
+             (1.0f - hlslpp::dot(hlslpp::normalize(curTransform[0].xyz), hlslpp::normalize(prevTransform[0].xyz))) +
+             (1.0f - hlslpp::dot(hlslpp::normalize(curTransform[1].xyz), hlslpp::normalize(prevTransform[1].xyz))) +
+             (1.0f - hlslpp::dot(hlslpp::normalize(curTransform[2].xyz), hlslpp::normalize(prevTransform[2].xyz)));
+ 
++        // Discount the rotation predicted by the tracked angular velocity (a rotation of angle a measures
++        // 2*(1-cos(a)) on this metric for any axis), mirroring the linear velocity prediction above.
++        // Raw comparison makes fast-spinning meshes (car wheels) prefer a phase-aliased sibling over
++        // their own previous transform, locking interpolation into a front/rear wheel swap.
++        float expectedOrientationDifference = 0.0f;
++        if (prevRigidBody != nullptr) {
++            expectedOrientationDifference = 2.0f * (1.0f - std::cos(prevRigidBody->angularVelocity));
++        }
++
++        matchResult.orientationDifference = std::abs(rawOrientationDifference - expectedOrientationDifference);
++
+         // Compute the difference between the screen-space position of both transforms on their respective projections.
+         hlslpp::float4 prevScreenPos = hlslpp::mul(prevTransform[3], prevViewProj);
+         hlslpp::float4 curScreenPos = hlslpp::mul(curTransform[3], curViewProj);
+@@ -606,6 +623,93 @@ namespace RT64 {
+             matchTransform(firstCurWorkload, firstPrevWorkload, firstCurWorkloadMap, firstPrevWorkloadMap, candidate.curIndex, candidate.prevIndex, modifiedBuffers);
+         }
+ 
++        // Diagnostic for transform match failures (RT64_MATCH_DEBUG=1 summary, =2 verbose accepted pairs).
++        static const char *matchDebugEnv = getenv("RT64_MATCH_DEBUG");
++        static const int matchDebugLevel = (matchDebugEnv != nullptr) ? atoi(matchDebugEnv) : 0;
++        if (matchDebugLevel > 0) {
++            static uint32_t matchDebugCall = 0;
++            matchDebugCall++;
++            const uint64_t debugMs = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
++            thread_local std::set<uint32_t> curCheckedSet;
++            curCheckedSet.clear();
++            for (const IndexPair &indices : transformCheckSet) {
++                curCheckedSet.insert(indices.first);
++            }
++
++            // Map transform index -> max triangle count of calls using it, to identify the mesh class.
++            thread_local std::unordered_map<uint32_t, uint32_t> transformTriCount;
++            transformTriCount.clear();
++            for (uint32_t p = 0; p < curScene.projections.size(); p++) {
++                const GameIndices::Projection &projIndices = curScene.projections[p];
++                const Workload &workload = workloadQueue.workloads[projIndices.workloadIndex];
++                const Projection &proj = workload.fbPairs[projIndices.fbPairIndex].projections[projIndices.projectionIndex];
++                for (uint32_t gc = 0; gc < proj.gameCallCount; gc++) {
++                    const GameCall &call = proj.gameCalls[gc];
++                    for (uint32_t m = call.callDesc.minWorldMatrix; m <= call.callDesc.maxWorldMatrix; m++) {
++                        uint32_t &count = transformTriCount[m];
++                        count = std::max(count, call.callDesc.triangleCount);
++                    }
++                }
++            }
++
++            uint32_t unmappedCount = 0;
++            for (uint32_t curIndex : curCheckedSet) {
++                if (!firstCurWorkloadMap.transforms[curIndex].mapped) {
++                    unmappedCount++;
++                    const hlslpp::float4x4 &m = firstCurWorkload.drawData.worldTransforms[curIndex];
++                    const float curDet = hlslpp::determinant(extract3x3(m));
++
++                    // Classify why every candidate pairing of this transform failed.
++                    uint32_t detRejected = 0, prevStolen = 0, totalPairs = 0;
++                    for (const IndexPair &indices : transformCheckSet) {
++                        if (indices.first != curIndex) {
++                            continue;
++                        }
++
++                        totalPairs++;
++                        const hlslpp::float4x4 &prevM = firstPrevWorkload.drawData.worldTransforms[indices.second];
++                        const float prevDet = hlslpp::determinant(extract3x3(prevM));
++                        if ((curDet * prevDet) < 0.0f) {
++                            detRejected++;
++                        }
++                        else if (firstCurWorkloadMap.prevTransformsMapped[indices.second]) {
++                            prevStolen++;
++                        }
++                    }
++
++                    fprintf(stderr, "[match] ms%llu c%u UNMAPPED t%u pos(%.1f %.1f %.1f) det=%.3f tris=%u pairs=%u detRej=%u stolen=%u\n",
++                        (unsigned long long)debugMs, matchDebugCall, curIndex, (float)m[3].x, (float)m[3].y, (float)m[3].z,
++                        curDet, transformTriCount.count(curIndex) ? transformTriCount[curIndex] : 0,
++                        totalPairs, detRejected, prevStolen);
++                }
++            }
++
++            if (unmappedCount > 0) {
++                fprintf(stderr, "[match] ms%llu c%u checked=%u unmapped=%u candidates=%u\n",
++                    (unsigned long long)debugMs, matchDebugCall, uint32_t(curCheckedSet.size()), unmappedCount, uint32_t(matchCandidates.size()));
++            }
++
++            for (uint32_t curIndex : curCheckedSet) {
++                const GameFrameMap::TransformMap &map = firstCurWorkloadMap.transforms[curIndex];
++                if (!map.mapped) {
++                    continue;
++                }
++
++                const hlslpp::float4x4 &curM = firstCurWorkload.drawData.worldTransforms[curIndex];
++                const hlslpp::float4x4 &prevM = firstPrevWorkload.drawData.worldTransforms[map.prevTransformIndex];
++                const float rawPosDelta = hlslpp::length(curM[3].xyz - prevM[3].xyz);
++                const uint32_t tris = transformTriCount.count(curIndex) ? transformTriCount[curIndex] : 0;
++                // Level 1: only anomalies on substantial meshes. Level 2: everything.
++                const bool anomaly = (rawPosDelta > 1.2f) && (tris >= 10);
++                if ((matchDebugLevel > 1) || anomaly) {
++                    fprintf(stderr, "[match] ms%llu c%u t%u<-p%u posDelta=%.2f tris=%u cur(%.1f %.1f %.1f) prev(%.1f %.1f %.1f)\n",
++                        (unsigned long long)debugMs, matchDebugCall, curIndex, map.prevTransformIndex, rawPosDelta, tris,
++                        (float)curM[3].x, (float)curM[3].y, (float)curM[3].z,
++                        (float)prevM[3].x, (float)prevM[3].y, (float)prevM[3].z);
++                }
++            }
++        }
++
+         if (!modifiedBuffers.empty()) {
+             workloadsModified[firstCurProjIndices.workloadIndex].merge(modifiedBuffers);
+         }
