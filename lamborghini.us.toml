@@ -318,3 +318,14 @@ ignored = [
     "func_8007FFF0",
     "func_80079720",
 ]
+
+# Issue #4 — game-side geometry-LOD distance-test, NOT covered by RT64's
+# renderer-level forceBranch (which only touches RSP G_BRANCH_Z/W).
+# NOPs the bc1f +0xDC in func_80060464 that gates the per-car high-poly
+# fall-through; threshold was 100.0 IEEE-754 at 0x42C80000. Identified
+# via tools/scan_lod_patterns.py; verified via tools/probe_lod_patch.py
+# (ROM byte 0x450000dc at rom 0x6063c matches).
+[[patches.instruction]]
+vram = 0x8005FA3C
+func = "func_80060464"
+value = 0x00000000
