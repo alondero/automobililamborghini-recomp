@@ -74,7 +74,9 @@ jobs:
           rm -rf rom-assets
 
       - name: Apply runtime patch
-        run: git -C lib/N64ModernRuntime apply "$(pwd)/patches/0001-lamborghini-runtime-scheduler-audio-vi.patch"
+        run: |
+          git -C lib/N64ModernRuntime apply "$(pwd)/patches/0001-lamborghini-runtime-scheduler-audio-vi.patch"
+          git -C lib/rt64 apply "$(pwd)/patches/0006-rt64-interp-angular-velocity-matching.patch"
 
       - name: Configure + build recompiler CLIs
         run: |
@@ -164,6 +166,7 @@ jobs:
         run: |
           $root = (Get-Location).Path
           git -C lib/N64ModernRuntime apply "$root/patches/0001-lamborghini-runtime-scheduler-audio-vi.patch"
+          git -C lib/rt64 apply "$root/patches/0006-rt64-interp-angular-velocity-matching.patch"
           git -C lib/rt64 apply "$root/patches/0005-rt64-mingw-gcc-compat.patch"
           git -C lib/rt64/src/contrib/plume apply "$root/patches/0004-plume-d3d12-mingw-com-abi-struct-return.patch"
 

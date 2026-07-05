@@ -42,6 +42,9 @@ pacing, and — on Windows — the MinGW/D3D12 COM ABI fixes for RT64/plume).
 # ultramodern / librecomp runtime (all platforms):
 git -C lib/N64ModernRuntime apply ../../patches/0001-lamborghini-runtime-scheduler-audio-vi.patch
 
+# RT64 renderer — all platforms (frame-interpolation transform matching, issue #30):
+git -C lib/rt64 apply "$(pwd)/patches/0006-rt64-interp-angular-velocity-matching.patch"
+
 # RT64 renderer — Windows / MinGW only (absolute paths avoid depth confusion):
 git -C lib/rt64 apply "$(pwd)/patches/0005-rt64-mingw-gcc-compat.patch"
 git -C lib/rt64/src/contrib/plume apply "$(pwd)/patches/0004-plume-d3d12-mingw-com-abi-struct-return.patch"
