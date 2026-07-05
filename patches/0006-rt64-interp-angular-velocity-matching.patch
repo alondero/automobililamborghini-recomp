@@ -1,5 +1,5 @@
 diff --git a/src/hle/rt64_game_frame.cpp b/src/hle/rt64_game_frame.cpp
-index 87392d0..9b59713 100644
+index 87392d0..936f488 100644
 --- a/src/hle/rt64_game_frame.cpp
 +++ b/src/hle/rt64_game_frame.cpp
 @@ -2,6 +2,12 @@
@@ -15,7 +15,7 @@ index 87392d0..9b59713 100644
  #include "common/rt64_math.h"
  
  #include "rt64_game_frame.h"
-@@ -236,11 +242,25 @@ namespace RT64 {
+@@ -236,11 +242,22 @@ namespace RT64 {
          matchResult.positionDifference = hlslpp::length(curPos - prevPos);
  
          // Compute the dot product difference between the normalized XYZ vectors of the 3x3 matrices.
@@ -25,13 +25,10 @@ index 87392d0..9b59713 100644
              (1.0f - hlslpp::dot(hlslpp::normalize(curTransform[1].xyz), hlslpp::normalize(prevTransform[1].xyz))) +
              (1.0f - hlslpp::dot(hlslpp::normalize(curTransform[2].xyz), hlslpp::normalize(prevTransform[2].xyz)));
  
-+        // Discount the rotation predicted by the tracked angular velocity, mirroring the linear velocity
-+        // prediction applied to the position above. A rotation of angle a measures exactly 2*(1-cos(a))
-+        // on the basis-vector metric regardless of its axis, so a transform that keeps rotating at its
-+        // tracked rate scores near zero. Without this, fast-spinning meshes (car wheels) score their own
-+        // previous transform worse than a phase-aliased sibling (the other axle), and the greedy matcher
-+        // locks into a front/rear wheel swap that renders wheels detached from the car under
-+        // frame interpolation.
++        // Discount the rotation predicted by the tracked angular velocity (a rotation of angle a measures
++        // 2*(1-cos(a)) on this metric for any axis), mirroring the linear velocity prediction above.
++        // Raw comparison makes fast-spinning meshes (car wheels) prefer a phase-aliased sibling over
++        // their own previous transform, locking interpolation into a front/rear wheel swap.
 +        float expectedOrientationDifference = 0.0f;
 +        if (prevRigidBody != nullptr) {
 +            expectedOrientationDifference = 2.0f * (1.0f - std::cos(prevRigidBody->angularVelocity));
@@ -42,7 +39,7 @@ index 87392d0..9b59713 100644
          // Compute the difference between the screen-space position of both transforms on their respective projections.
          hlslpp::float4 prevScreenPos = hlslpp::mul(prevTransform[3], prevViewProj);
          hlslpp::float4 curScreenPos = hlslpp::mul(curTransform[3], curViewProj);
-@@ -606,6 +626,93 @@ namespace RT64 {
+@@ -606,6 +623,93 @@ namespace RT64 {
              matchTransform(firstCurWorkload, firstPrevWorkload, firstCurWorkloadMap, firstPrevWorkloadMap, candidate.curIndex, candidate.prevIndex, modifiedBuffers);
          }
  
