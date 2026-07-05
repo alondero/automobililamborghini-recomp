@@ -477,6 +477,37 @@ SPLIT_MERGES = {
     # present-names filter; func_8004FB78 was emitted-real but is only reachable as this function's
     # tail (0 jal callers, 0 data refs). TRACKER #69.
     "func_8004F5F0": (0x5EC, ["func_8004F674", "func_8004FAC8", "func_8004FB78"]),
+    # --- Controller-Pak SAVE path (#35): the osPfs file-operation layer was entirely force-stubbed
+    # because splat carved every function into contiguous fragments whose branches cross the seams
+    # ("branch outside" -> iterate_stubs). The save flow (records screen 30/31 -> confirm) dies in
+    # the FIRST of these: the save gate func_80069E7C (runtime 0x8006927C, emitted real) does
+    # `v0 = func_8007B780(pfs)` -- an empty stub leaves v0 as leftover garbage, so the game takes
+    # the error path and the screen reverts without ever issuing a pak write (the traced read-loop
+    # is the surviving real code re-polling around the dead layer). For every head below: all
+    # branch targets verified internal to the merged span, every absorbed tail has ZERO independent
+    # jal callers (whole-ROM jal scan) and ZERO stored-pointer refs in the recompiled corpus
+    # (direct 0X<lo16> and negative-addiu forms), bodies are pure RDRAM + jal (no COP0/MMIO), and
+    # every jal callee is emitted real (func_80083F70/func_80084EE0 read/write primitives,
+    # func_80083100/func_8008326C/func_80083210/func_80083884/func_80083AE0/func_80083EFC helpers,
+    # SI access pair func_8007F710/func_8007F754). TRACKER #35.
+    "func_8007B780": (0x25C, ["func_8007B824"]),                                    # save-gate callee (jal 0x80069288)
+    "func_8007B9E0": (0x400, ["func_8007BA88", "func_8007BB50", "func_8007BC4C"]),  # file read/write (jal'd by save writer func_80069ED8)
+    "func_8007BFA0": (0x484, ["func_8007C050", "func_8007C330"]),                   # pak-scan callee (jal 0x800697a4)
+    "func_8007C424": (0x264, ["func_8007C568", "func_8007C660", "func_8007C670", "func_8007C680"]),  # jal'd from inside func_8007BFA0's span; 0x264 includes its jr;nop epilogue so func_8007C680 (the bogus symbol straddling the C424/C688 boundary, zero jal callers) is absorbed cleanly
+    # func_8007C688 (runtime 0x8007BA88) is the FAT-chain "get next page" helper jal'd from inside
+    # func_8007C424's walk loop. splat truncated it to 0x8 (just `addiu sp,-0x28; sw a0`) and split
+    # the remainder off as a bogus head func_8007C690 (which starts mid-prologue at `sw a3,0x34(sp)`,
+    # NOT a real function start -- zero jal callers). While func_8007C424 was force-stubbed the call
+    # never fired; un-stubbing it activated a call into the 8-byte truncated body that ran off the end
+    # with no `jr ra`/sp-restore, leaving guest sp at -0x28 -> the caller's next stack read (a counter
+    # out-param) came back NULL -> SIGSEGV in the records-screen pak scan (#35, gdb-confirmed). Real
+    # size = 0x8007BB48 - 0x8007BA88 = 0xC0; absorbs the mislabeled tails func_8007C690 + func_8007C6E0
+    # (both zero independent jal callers, zero data refs). All branches internal, pure RDRAM + jal.
+    "func_8007C688": (0xC0, ["func_8007C690", "func_8007C6E0"]),
+    # func_80069ED8 (runtime 0x800692D8) is the game-side SAVE-RECORDS writer: calls the pak scan
+    # func_80069710 then the file writer func_8007B9E0. Reached by menu-descriptor dispatch (zero
+    # jal callers), so its symbol must stay registered; splat split off its 0x24 epilogue chunk.
+    "func_80069ED8": (0x6C, ["func_80069F20"]),
 }
 
 # Functions ABSENT from the combined-ELF dump that a jal targets, so n64recomp invents a

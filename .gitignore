@@ -36,6 +36,12 @@ dma_validation/
 # --- Logs / scratch --------------------------------------------------------
 *.log
 *.stackdump
+# gdb batch backtrace/logging dumps from native port debugging
+gdb_bt*.txt
+# framebuffer / display-list render captures from the port
+*.bmp
+# Python bytecode cache (scripts/gen_syms_toml.py etc.)
+__pycache__/
 
 # --- Local AI Artefacts ----------------------------------------------------
 .claude/settings.local.json

@@ -205,6 +205,15 @@ static void lambo_pak_save(void) {
     }
 }
 
+// LAMBO_PAK_TRACE=1: per-frame joybus log (issue #35 diagnosis) -- shows exactly what the save
+// flow asks the pak for and how the bridge answered, since call-level tracers proved the game
+// loops on reads without ever reaching a write.
+static int lambo_pak_trace(void) {
+    static int cached = -1;
+    if (cached < 0) { const char* e = getenv("LAMBO_PAK_TRACE"); cached = (e && e[0] == '1') ? 1 : 0; }
+    return cached;
+}
+
 // Rumble sink: defined extern "C" in main.cpp; publishes the motor state to the SDL pad.
 // Weak-ish decoupling: the headless/self-test paths never link a pad, but the symbol always
 // exists (main.cpp is always in the link), so a plain extern is fine.
@@ -298,6 +307,15 @@ static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
                         for (k = 0; k + 1 < rx; k++) MEM_B(k, resp) = 0;
                         if (rx > 0) MEM_B(rx - 1, resp) = (signed char)0xFF;
                     }
+                    if (lambo_pak_trace())
+                        /* gate the addr bytes on tx>=3 (same as the WRITE tracer): a degenerate
+                         * short read frame near the end of the 0x40 buffer passes the pos+2+tx+rx
+                         * guard but has no addr bytes, so reading pos+3/pos+4 would run off the end */
+                        fprintf(stderr, "[paktrc] READ  ch=%d tx=%d rx=%d addr=%04x served=%s crc=%02x\n",
+                                channel, tx, rx,
+                                (unsigned)(tx >= 3 ? (((MEM_BU(pos + 3, buf) << 8) | MEM_BU(pos + 4, buf)) & 0xFFE0u) : 0xFFFFu),
+                                (has_pak && rx == 33) ? "image" : "nopak",
+                                (unsigned)(rx > 0 ? MEM_BU(rx - 1, resp) : 0));
                     break;
                 }
                 case 0x03: { /* pak block write (32-byte payload after the 2 addr bytes) */
@@ -317,9 +335,18 @@ static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
                     } else if (rx > 0 && tx >= 3) {
                         MEM_B(0, resp) = (signed char)(crc ^ 0xFF);             /* no pak */
                     }
+                    if (lambo_pak_trace())
+                        fprintf(stderr, "[paktrc] WRITE ch=%d tx=%d rx=%d addr=%04x data0=%02x served=%s ack=%02x\n",
+                                channel, tx, rx,
+                                (unsigned)(tx >= 3 ? (((MEM_BU(pos + 3, buf) << 8) | MEM_BU(pos + 4, buf)) & 0xFFE0u) : 0xFFFFu),
+                                (unsigned)(tx >= 3 ? MEM_BU(0, data) : 0),
+                                (has_pak && tx >= 3) ? "image" : "nopak",
+                                (unsigned)(rx > 0 ? MEM_BU(0, resp) : 0));
                     break;
                 }
                 default: /* unknown command: no response */
+                    if (lambo_pak_trace())
+                        fprintf(stderr, "[paktrc] UNKN  ch=%d tx=%d rx=%d cmd=%02x (no response)\n", channel, tx, rx, cmd);
                     MEM_B(pos + 1, buf) = (signed char)(rx | 0x80);
                     break;
                 }
