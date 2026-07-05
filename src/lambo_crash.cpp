@@ -372,6 +372,36 @@ LONG WINAPI win32_vectored_handler(EXCEPTION_POINTERS* ep) {
     // Skip debugger-only codes; let gdb handle those.
     if (code == EXCEPTION_BREAKPOINT || code == EXCEPTION_SINGLE_STEP)
         return EXCEPTION_CONTINUE_SEARCH;
+
+    // Whitelist: only treat as a real crash if recompiled code is on the
+    // call chain, OR the fault address is a guest KSEG0/KSEG1 pointer. Windows
+    // DLLs (D3D12, NVIDIA driver, XInput) raise benign structured exceptions
+    // during init/teardown (EXCEPTION_GUARD_PAGE on heap guard pages,
+    // EXCEPTION_INVALID_HANDLE on CloseHandle, etc.) -- blanket _Exit on those
+    // kills the process during boot. CaptureStackBackTrace is VEH-safe.
+    void* native_pcs[64];
+    USHORT n = CaptureStackBackTrace(0, 64, (PVOID*)native_pcs, nullptr);
+    bool has_recomp_pc = false;
+    for (USHORT i = 0; i < n; i++) {
+        if (native_pc_to_vram(native_pcs[i]) != 0) { has_recomp_pc = true; break; }
+    }
+    // ACCESS_VIOLATION: ExceptionInformation[1] is the faulting address.
+    // Treat as a guest KSEG0/KSEG1 pointer iff the low 32 bits match the
+    // segment mask; otherwise it's a native host pointer.
+    uint32_t vram_guess = 0;
+    bool guest_fault = false;
+    if (code == EXCEPTION_ACCESS_VIOLATION &&
+        ep->ExceptionRecord->NumberParameters >= 2) {
+        uint32_t lo = (uint32_t)(uintptr_t)ep->ExceptionRecord->ExceptionInformation[1];
+        uint32_t hi = lo & 0xE0000000u;
+        if (hi == 0x80000000u || hi == 0xA0000000u) {
+            vram_guess = lo;
+            guest_fault = true;
+        }
+    }
+    if (!has_recomp_pc && !guest_fault)
+        return EXCEPTION_CONTINUE_SEARCH;
+
     if (code == EXCEPTION_STACK_OVERFLOW) {
         // STACK_OVERFLOW: a recursive recomp trips the guard page; the
         // dump path's own fprintf would re-fault it. _resetstkoflw bumps
@@ -384,18 +414,6 @@ LONG WINAPI win32_vectored_handler(EXCEPTION_POINTERS* ep) {
             win32_exception_name(code));
         std::_Exit(EXIT_FAILURE);
     }
-    // ACCESS_VIOLATION: ExceptionInformation[1] is the faulting address.
-    // Treat as a guest KSEG0/KSEG1 pointer iff the low 32 bits match the
-    // segment mask; otherwise it's a native host pointer and stays 0.
-    uint32_t vram_guess = 0;
-    if (code == EXCEPTION_ACCESS_VIOLATION &&
-        ep->ExceptionRecord->NumberParameters >= 2) {
-        uint32_t lo = (uint32_t)(uintptr_t)ep->ExceptionRecord->ExceptionInformation[1];
-        uint32_t hi = lo & 0xE0000000u;
-        if (hi == 0x80000000u || hi == 0xA0000000u) vram_guess = lo;
-    }
-    void* native_pcs[64];
-    USHORT n = CaptureStackBackTrace(0, 64, (PVOID*)native_pcs, nullptr);
     final_dump_and_die(win32_exception_name(code), vram_guess,
                        (const void* const*)native_pcs, n, "Win32 CaptureStackBackTrace");
     return EXCEPTION_CONTINUE_SEARCH;  // unreachable; final_dump_and_die is [[noreturn]]
