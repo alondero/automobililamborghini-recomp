@@ -38,6 +38,7 @@
 #include "lambo_rt64.h"
 #include "lambo_audio.h"   // SDL2 push-audio sink for the AI buffer (audio epic #53)
 #include "lambo_config.h"  // persistent graphics.json -> ultramodern GraphicsConfig (#1/#2)
+#include "lambo_crash.h"   // native crash backtrace (#13 / A14) — installed in main()
 // ultramodern's native VI API (events.cpp), used by the promote_vi_context RT64 bridge.
 extern "C" void osViSwapBuffer(uint8_t* rdram, int32_t frameBufPtr);
 extern "C" void osViSetMode(uint8_t* rdram, int32_t mode_);
@@ -73,6 +74,13 @@ static int quit_after_vis() {
     if (const char* e = std::getenv("LAMBO_MODERN_MAX_VIS")) {
         int v = std::atoi(e);
         if (v > 0) return v;
+    }
+    // LAMBO_CRASH_TEST (#13 / A14): when a deliberate crash is queued, we
+    // MUST outlast the 2 s sleep + crash so the dump actually fires. The
+    // bug otherwise is that boot_summary_and_exit() _Exits the process
+    // before the test thread's sleep_for elapses, swallowing the test.
+    if (std::getenv("LAMBO_CRASH_TEST")) {
+        return std::numeric_limits<int>::max();
     }
     return lambo_rt64::enabled() ? std::numeric_limits<int>::max() : 120;
 }
@@ -644,6 +652,29 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "[probe] ROM: %s\n", rom_path);
 
     register_overlays();
+
+    // Native crash backtrace (issue #13 / A14): install AFTER register_overlays
+    // so the section table is already wired into the native-ptr -> vram map.
+    // Safe to call without the symbol file present — the dump degrades to raw
+    // N64 PC + native backtrace, which is still useful in the field.
+    lambo::crash::install();
+
+    // Smoke-test the handler (off by default; set LAMBO_CRASH_TEST=1 to fire):
+    // deliberately segfaults a couple of seconds in, so CI / dev can verify
+    // the dump format without waiting for a real bug. Records two entries in
+    // the trace ring first so the dump shows them.
+    if (const char* ct = std::getenv("LAMBO_CRASH_TEST")) {
+        std::fprintf(stderr, "[probe] LAMBO_CRASH_TEST=%s; injecting deliberate crash in 2s\n", ct);
+        std::thread([](const char* reason){
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            // Use real function-entry vrams so the dump resolves cleanly.
+            // BootMain is 0x80000450, func_800028D0 is the per-frame dispatcher
+            // at 0x80001CD0, the menu driver is func_800030F8 at 0x800024F8.
+            lambo::crash::record_recent(0x80001CD0u, 0x800024F8u);  // entered func_800028D0, ret into menu driver
+            lambo::crash::record_recent(0x80000450u, 0);            // BootMain (entrypoint)
+            lambo::crash::crash_dump_and_die(reason);
+        }, ct).detach();
+    }
 
     // Load + apply graphics.json BEFORE recomp::start: ultramodern latches the config
     // and the RT64 context constructor reads it via get_graphics_config(). This is the
