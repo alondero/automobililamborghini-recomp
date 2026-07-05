@@ -129,11 +129,18 @@ static void lambo_pak_format(void) {
         img[base + 0x1C] = (uint8_t)(checksum >> 8); img[base + 0x1D] = (uint8_t)checksum;
         img[base + 0x1E] = (uint8_t)(inverted >> 8); img[base + 0x1F] = (uint8_t)inverted;
     }
+    /* TOC checksum (#31 follow-up): an 8-bit sum of ONLY the low byte of each inode word for
+     * slots 5..127 (BLOCK_EMPTY markers), NOT a sum over the whole 256-byte sector -- verified
+     * against libdragon's __get_toc_checksum (src/joybus/mempak.c), the reference SDK-compatible
+     * Controller Pak filesystem implementation. Getting this wrong makes the game's own
+     * osPfsInitPak-equivalent (func_8007A8A0) classify a freshly-formatted pak as
+     * PFS_ERR_INVALID (return code 4) -- ID area valid, TOC "corrupted" -- which is exactly the
+     * unrepairable "repair controller pak?" loop this was causing. */
     for (page = 1; page <= 2; page++) {
-        uint8_t ck = 0;
-        for (slot = 5; slot < 128; slot++) img[0x100 * page + slot * 2 + 0x01] = 0x03;
-        for (i = 2; i < 0x100; i++) ck = (uint8_t)(ck + img[0x100 * 1 + i]);
-        img[0x100 * page + 0x01] = ck;
+        uint32_t sum = 0;
+        for (slot = 0; slot < 128; slot++) img[0x100 * page + slot * 2 + 0x01] = 0x03;
+        for (i = 5; i < 128; i++) sum += img[0x100 * page + i * 2 + 0x01];
+        img[0x100 * page + 0x01] = (uint8_t)(sum & 0xFFu);
     }
 }
 
