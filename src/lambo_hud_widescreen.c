@@ -13,6 +13,8 @@
 // color image and travel is clamped by hr_option (default Clamp16x9); with a 4:3 output
 // the math degenerates to the original coordinates, so no config gating is needed.
 
+#include <stdlib.h>
+
 #include "recomp.h"
 #include "rt64_extended_gbi.h"
 
@@ -76,22 +78,25 @@ void lambo_ws_pin_right(uint8_t* rdram) {
     pin(rdram, G_EX_ORIGIN_RIGHT, -SCREEN_WIDTH_QP);
 }
 
-// The speedo NEEDLE is triangle geometry: func_80056318 (the dial drawer, inside the
-// RIGHT rect bracket) builds one G_MTX LOAD|MODELVIEW + rotation-MUL chain for the
-// needle quads. Rect-align moves only texrects, and RT64 renders this geometry on the
-// stretched-wide path (screen x = game x * wideWidth/320), so the needle is moved in
-// GAME space instead: each bracket records the DL cursor and the reset walks the
-// commands emitted in between, adding a translation to any LOAD matrix found (only the
-// dial bracket contains one). The minimap overlay func_80054FFC also builds matrices
-// but is deliberately not bracketed — its arrow/dots must stay with the centered map.
+// HUD geometry (needle, minimap arrow) renders through the game's 2D ortho section,
+// which RT64 places on the 4:3-centered path (screenScale.x = 320/wideWidth when the
+// draw's scissor∩viewport does not cover the widened framebuffer, see
+// rt64_framebuffer_renderer.cpp:1493) — rect-align moves only texrects, so geometry
+// that must track a pinned rect element is moved in GAME space instead: each bracket
+// records the DL cursor and the reset walks the commands emitted in between, adding a
+// translation to any LOAD matrix found. Both the needle and the minimap arrow build
+// their matrices at 10 units per game pixel (the ortho convention of func_80075278),
+// and a pinned rect travels (wideWidth - height*4/3)/2 screen px = 160/3 game px at
+// the shipped 16:9 Clamp16x9 defaults, so the magnitude is ~533 units either way.
 //
-// Shift in the needle's model units, calibrated live against the RIGHT-pinned dial at
-// 16:9 (paused-race measurement 2026-07-05: pivot trans.x=1000 units; +300 units moved
-// the needle +98px at 1600-wide output; 530 centers it on the dial hub). Only valid
-// for the shipped Expand + Clamp16x9 defaults — gated above for anything else.
+// Needle: calibrated live against the RIGHT-pinned dial at 16:9 (2026-07-05: 530
+// centers it on the dial hub — matching the analytic 533 to measurement precision).
+// Only valid for the shipped Expand + Clamp16x9 defaults — gated above for anything
+// else.
 #define LAMBO_WS_NEEDLE_DX 530.0f
+#define LAMBO_WS_MINIMAP_ARROW_DX (-1600.0f / 3.0f) /* -53.33 game px * 10 units/px */
 
-static void lambo_ws_patch_needle_mtx(uint8_t* rdram, gpr start, gpr end) {
+static void patch_load_mtx_dx(uint8_t* rdram, gpr start, gpr end, float dx_units) {
     if (!lambo_ws_hud_widescreen_active()) {
         return;
     }
@@ -103,7 +108,7 @@ static void lambo_ws_patch_needle_mtx(uint8_t* rdram, gpr start, gpr end) {
             int32_t ip = (int16_t)MEM_H(24, mtx); /* translate.x = element 12 */
             uint32_t fp = (uint16_t)MEM_HU(24 + 0x20, mtx);
             int32_t fixed = (int32_t)(((uint32_t)ip << 16) | fp);
-            fixed += (int32_t)(LAMBO_WS_NEEDLE_DX * 65536.0f);
+            fixed += (int32_t)(dx_units * 65536.0f);
             MEM_H(24, mtx) = (int16_t)(fixed >> 16);
             MEM_HU(24 + 0x20, mtx) = (uint16_t)(fixed & 0xFFFF);
         }
@@ -111,10 +116,59 @@ static void lambo_ws_patch_needle_mtx(uint8_t* rdram, gpr start, gpr end) {
 }
 
 void lambo_ws_pin_reset(uint8_t* rdram) {
-    lambo_ws_patch_needle_mtx(rdram, lambo_ws_bracket_start,
-                              MEM_W(0, (gpr)(int32_t)LAMBO_DL_CURSOR));
+    patch_load_mtx_dx(rdram, lambo_ws_bracket_start,
+                      MEM_W(0, (gpr)(int32_t)LAMBO_DL_CURSOR), LAMBO_WS_NEEDLE_DX);
     emit_cmd(rdram,
              PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_POPSCISSOR_V1, 24, 0),
              0);
     emit_rect_align(rdram, G_EX_ORIGIN_NONE, 0);
+}
+
+// Minimap composite (issue #41): the 1P dispatcher's jal to the overlay func_80054FFC
+// (car dots + P1 label texrects, player arrow = two quads via pool LOAD matrices) is
+// bracketed LEFT; the reset shifts the arrow matrices in game space to match. The
+// track OUTLINE is separate: 3D geometry drawn by the per-frame builder func_8004384C
+// through the race PERSPECTIVE projection (center-anchored under RT64 Expand's FOV
+// widening), placed by a camera-space translate(-2.05, -2.4, 0) built at 0x80043C88 —
+// a hook there rewrites the x argument in flight. Camera units -> screen px depends
+// on that projection; -1.09 verified live 2026-07-05 (1600x900 Expand+Clamp16x9,
+// arcade race: dots and P1 sit on the outline). Env LAMBO_WS_MINIMAP_OUTLINE_DX
+// (float, camera units, negative = further left) overrides for recalibration.
+#define LAMBO_WS_MINIMAP_OUTLINE_DX -1.09f
+
+// The frame builder also runs in modes whose dots are not pinned yet (#42: 2P split;
+// demo race has no HUD). Key the outline shift off the 1P bracket actually running:
+// the builder draws before the dispatcher each frame, so it sees the previous frame's
+// flag (one unshifted frame on race entry, decays within 3 frames after exit).
+static int lambo_ws_minimap_1p_frames;
+
+void lambo_ws_minimap_pin(uint8_t* rdram) {
+    lambo_ws_minimap_1p_frames = 3;
+    lambo_ws_pin_left(rdram);
+}
+
+void lambo_ws_minimap_reset(uint8_t* rdram) {
+    patch_load_mtx_dx(rdram, lambo_ws_bracket_start,
+                      MEM_W(0, (gpr)(int32_t)LAMBO_DL_CURSOR),
+                      LAMBO_WS_MINIMAP_ARROW_DX);
+    emit_cmd(rdram,
+             PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_POPSCISSOR_V1, 24, 0),
+             0);
+    emit_rect_align(rdram, G_EX_ORIGIN_NONE, 0);
+}
+
+uint32_t lambo_ws_minimap_outline_x(uint32_t x_bits) {
+    if (!lambo_ws_hud_widescreen_active() || lambo_ws_minimap_1p_frames <= 0) {
+        return x_bits;
+    }
+    lambo_ws_minimap_1p_frames--;
+    float dx = LAMBO_WS_MINIMAP_OUTLINE_DX;
+    const char* env = getenv("LAMBO_WS_MINIMAP_OUTLINE_DX");
+    if (env != NULL) {
+        dx = (float)atof(env);
+    }
+    union { uint32_t u; float f; } x;
+    x.u = x_bits;
+    x.f += dx;
+    return x.u;
 }

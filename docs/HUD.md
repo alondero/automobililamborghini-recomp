@@ -28,8 +28,8 @@ name space); runtime vram = splat − 0xC00.
 | LAP label+values block | `func_80058464` (0x80057864) | `0x8004FFA0`, (vals, x=0x28, y=0x13); draws label at x+2, values at x−0x10/x/x+0x10 | left |
 | TIME label+value | `func_8004CCB4` pair at `0x800503E8`/`0x80050414` (x=0xA0) | centered — needs no pinning |
 | Speedo NEEDLE | geometry built INSIDE `func_80056318`: one `G_MTX LOAD\|MODELVIEW` (word0 `0x01020040`) + rotation MULs + static DL; pivot trans ≈ (1000, −690) model units | right (via matrix nudge, see below) |
-| Minimap track outline | polyline geometry, drawn elsewhere in the frame (2D ortho section starting ~`DL 0x8011EFD8`), untagged | centered (unpinned) |
-| Minimap car dots + P1 label + player arrow | `func_80054FFC` (0x800543FC), jal `0x80050588`; a2/a3 = cos/sin of CAR HEADING (arrow rotation); dots are 2×2 texrects, arrow is 2 quads via matrices | centered (unpinned, must stay with map) |
+| Minimap track outline | 3D geometry via the RACE PERSPECTIVE projection, emitted by the frame-builder tail (splat `func_8004384C` flow): camera-space `translate(-2.05, -2.4, 0)` built by the `func_80075278` jal at `0x80043C88`, then static-Mtx/tilt MULs, then polyline emitter `func_80045BDC` (runtime 0x80044FDC). The menu track maps use a different routine — `func_80044E2C` (runtime 0x8004422C, x·5−800 ortho translate), 14 call sites, all menus. | left (issue #41: hook rewrites the translate x by −1.09 camera units, verified live; env `LAMBO_WS_MINIMAP_OUTLINE_DX` overrides) |
+| Minimap car dots + P1 label + player arrow | `func_80054FFC` (0x800543FC), jal `0x80050588`; a2/a3 = cos/sin of CAR HEADING (arrow rotation); dots are 2×2 texrects, arrow is 2 quads via pool `G_MTX LOAD`s whose translate is `((x−158)·10, (119−y)·10)` — exactly 10 units per game px | left (issue #41: LEFT bracket for the rects, −533-unit matrix shift for the arrow) |
 | Top translucent bar | static DL `0x80167170` (one 296×6 texrect, teal prim color) via projection MTX at `0x800A2C40` | centered |
 | Lens flare | alpha-0x0F/0x1E texrects drawn LAST in the frame | centered — game clips to 4:3, see follow-up |
 
@@ -76,15 +76,23 @@ Rules:
   geometry in that frame — the minimap visibly squeezes toward center.
 - `gEXSetViewportAlign` with a non-NONE origin puts geometry on a squeezed
   screen-scale path (not a pure translation) — unusable for matching a rect-pinned
-  element. Untagged full-width-viewport geometry renders on the STRETCHED path:
-  screen_x = game_x × wideWidth/320.
+  element. Untagged geometry renders WIDE (stretched viewport, projection used as-is)
+  only when its scissor∩viewport covers the full fbPair width AND origin is NONE
+  (`useWideViewport`, rt64_framebuffer_renderer.cpp:1493); otherwise RT64 squeezes it
+  back to the 4:3 center (`screenScale.x = 320/wideWidth`). The 2D ortho HUD section
+  (needle, minimap arrow) is on the SQUEEZED path — same 4:3-centered placement as
+  untagged rects. The 3D world (and the in-race minimap outline drawn through the race
+  perspective projection) is on the wide path, but Expand widens perspective FOV, so
+  fixed camera-space objects stay center-anchored at the 4:3 pixel scale.
 - Geometry elements that must track a rect-pinned element are therefore moved in
   GAME space (edit their modelview translation in RDRAM after the game builds it,
-  before the task is submitted). See the needle nudge in `lambo_hud_widescreen.c`:
-  walk the emitted DL between bracket cursors for `w0 == 0x01020040`, patch matrix
-  element [3][0] (int at byte 24, fraction at 0x44). Calibration (16:9, Clamp16x9):
-  needle units ≈ 0.065 game-px through the stretched path; +530 units lands the pivot
-  on the RIGHT-pinned dial hub. Gated by `lambo_ws_hud_widescreen_active()`.
+  before the task is submitted). See `lambo_hud_widescreen.c`: walk the emitted DL
+  between bracket cursors for `w0 == 0x01020040`, patch matrix element [3][0] (int at
+  byte 24, fraction at 0x44). On the squeezed 2D path the required travel at 16:9
+  Clamp16x9 is (wideW − H·4/3)/2 screen px = 160/3 game px; the 2D matrices use 10
+  units per game px, so |Δ| ≈ 533 units (the needle's live-calibrated +530 matches
+  this analytic value — the old "≈0.065 game-px/unit" note was a misreading of a rough
+  screenshot measurement). Gated by `lambo_ws_hud_widescreen_active()`.
 
 ## Debug technique that finally worked
 
