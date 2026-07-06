@@ -457,8 +457,13 @@ void posix_signal_handler(int sig, siginfo_t* info, void* /*ucontext*/) {
 
 void install_posix() {
     // Alt-stack so SIGSEGV from stack-overflow delivers the handler frame
-    // off the just-overflowed stack. SIGSTKSZ is process-bound and small.
-    static char alt_stack_buf[SIGSTKSZ];
+    // off the just-overflowed stack. SIGSTKSZ is process-bound on glibc
+    // but defined as a non-constant runtime expression in modern glibc,
+    // so we use a hardcoded 64 KiB here (matches glibc's x86_64 default
+    // and is comfortably larger than what the backtrace+fprintf path
+    // needs).
+    constexpr std::size_t kAltStackSize = 64 * 1024;
+    static char alt_stack_buf[kAltStackSize];
     static stack_t alt_stack{};
     alt_stack.ss_sp    = alt_stack_buf;
     alt_stack.ss_size  = sizeof(alt_stack_buf);
