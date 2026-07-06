@@ -146,6 +146,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
                                # libc backtrace(3) (POSIX).
         src/libultra_stubs.c   # no-op symbols for ignored libultra CP0 helpers (e.g. __osSetSR)
         src/lambo_hud_widescreen.c  # issue #2: gEXSetRectAlign brackets around the race-HUD dials
+        src/lambo_warp.c       # issue #12: developer warp menu (F1-F6 / LAMBO_WARP race-track warp)
     )
     if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/aspMain.cpp)
         list(APPEND LAMBO_SOURCES src/aspMain.cpp)

@@ -490,6 +490,9 @@ static SDL_GameController* g_pad = nullptr;          // first opened controller 
 static std::atomic<int> g_rumble_on{0};              // game-thread write, main-thread read
 extern "C" void lambo_pak_set_rumble(int on) { g_rumble_on.store(on ? 1 : 0, std::memory_order_relaxed); }
 
+// Developer warp menu (#12, src/lambo_warp.c): main thread publishes, game thread warps.
+extern "C" void lambo_warp_request(int circuit0);
+
 // Apply the published rumble state to the physical pad. Called once per main-thread pump.
 // N64 rumble is bang-bang (motor fully on or off), so map to SDL full strength. We refresh the
 // effect every pump with a short expiry (150 ms > one 30 fps frame) so a sustained motor-on
@@ -579,6 +582,16 @@ static void input_sample() {
         if (ks[SDL_SCANCODE_DOWN]  || ks[SDL_SCANCODE_S]) ky -= N64_STICK_MAX;
         if (sx == 0 && kx != 0) sx = kx;               // pad stick wins if deflected
         if (sy == 0 && ky != 0) sy = ky;
+
+        // Developer warp menu (#12): F1..F6 warp straight to that circuit as a
+        // 1-player single race. Edge-detected here (main thread); consumed by
+        // lambo_warp_tick on the game thread (src/lambo_warp.c).
+        static Uint8 warp_prev[6] = {};
+        for (int i = 0; i < 6; i++) {
+            Uint8 down = ks[SDL_SCANCODE_F1 + i];
+            if (down && !warp_prev[i]) lambo_warp_request(i);
+            warp_prev[i] = down;
+        }
     }
 
     uint32_t snap = (uint16_t)b
