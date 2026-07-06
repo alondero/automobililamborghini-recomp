@@ -508,6 +508,33 @@ SPLIT_MERGES = {
     # func_80069710 then the file writer func_8007B9E0. Reached by menu-descriptor dispatch (zero
     # jal callers), so its symbol must stay registered; splat split off its 0x24 epilogue chunk.
     "func_80069ED8": (0x6C, ["func_80069F20"]),
+    # Issue #32: func_8006CEC8 (runtime 0x8006C2C8) is the MENU 3D-OVERLAY EMITTER -- reads the DL
+    # cursor D_800A39CC and appends SETPRIMCOLOR + 4x MTX + gSPDisplayList(model) + POPMTX per
+    # element; at the car-select screen these draw the red cursor-highlight ring around the active
+    # button (model DL 0x8013C658 x4, asset verified loaded at the identical address in the port),
+    # all present in an ares DL walk of the same screen and absent from the port's. splat capped it at 0x7A4
+    # (ending mid-body at 0x8006CA6C, severing the last jal + epilogue into the bogus 0x54-byte tail
+    # func_8006D66C which starts on live-register math, not a prologue) -> "branch outside" ->
+    # force-stubbed -> empty body -> no cursor/arrows on every pre-race menu screen. Real extent
+    # runtime 0x8006C2C8..0x8006CAC0 = 0x7F8, epilogue `lw $ra,0x2C; addiu $sp,+0x58; jr $ra`
+    # matching the -0x58 prologue; all branch targets internal (whole-span scan); zero COP0/MMIO;
+    # sole jal callee runtime 0x80070E10 (func_80071A10) emitted real with 21 existing call sites;
+    # absorbed tail has ZERO independent jal callers and ZERO data refs (whole-ROM scan). Both
+    # callers (runtime 0x8006CC58/0x8006CE38, inside func_8006D6C0/func_8006D8A4) emitted real.
+    "func_8006CEC8": (0x7F8, ["func_8006D66C"]),
+    # Issue #32 (part 2): func_8004AFD8 (runtime 0x8004A3D8) draws the menu's L/R SELECTION-ARROW
+    # texrects (the `<<||`/`||>>` pairs flanking the car-select SELECT row at fb x=75/213 y=170,
+    # present in an ares DL walk, absent from the port's) -- a leaf 2D-element blitter taking
+    # sign-extended halfword args and appending SETTILE-CI4/SETTILESIZE/TEXRECT runs at the DL
+    # cursor D_800A39CC. splat capped it at 0x498 (ending mid-emission at 0x8004A870 with no
+    # epilogue) and carved the remainder as a bogus "func_8004B470" head that starts on live
+    # registers mid-store; four branches from the head land in that carving -> "branch outside" ->
+    # race-stubbed -> empty body -> no arrows. Real extent 0x8004A3D8..0x8004B470 = 0x1098,
+    # epilogue `jr $ra; addiu $sp,+0x130` matching the -0x130 prologue; ALL branch targets internal
+    # (whole-span scan); a LEAF (zero jal), zero COP0/MMIO; the absorbed carving has ZERO jal
+    # callers and ZERO data refs (whole-ROM scan). Sole caller runtime 0x80041B50 (func_80042270,
+    # real).
+    "func_8004AFD8": (0x1098, ["func_8004B470"]),
 }
 
 # Functions ABSENT from the combined-ELF dump that a jal targets, so n64recomp invents a
@@ -618,7 +645,80 @@ NATIVE_OVERRIDES = [
 # are real game logic the demo-race needs, verified pure-RDRAM (no COP0/MMIO/jal), and self-
 # contained (clean `jr $ra`, no branch-outside -> no n64recomp "branching outside" error).
 # Removing the name lets n64recomp emit its real body instead of an empty stub.
+# Hand-authored [[patches.instruction]] / [[patches.hook]] blocks appended verbatim to the
+# generated lamborghini.us.toml (issues #2/#4 landed them by editing the toml directly; the
+# generator must carry them or a regen silently drops the widescreen HUD + LOD patches).
+PATCH_BLOCKS = """
+# Issue #4 â€” game-side geometry-LOD distance-test, NOT covered by RT64's
+# renderer-level forceBranch (which only touches RSP G_BRANCH_Z/W).
+# NOPs the bc1f +0xDC in func_80060464 that gates the per-car high-poly
+# fall-through; threshold was 100.0 IEEE-754 at 0x42C80000. Identified
+# via tools/scan_lod_patterns.py; verified via tools/probe_lod_patch.py
+# (ROM byte 0x450000dc at rom 0x6063c matches).
+[[patches.instruction]]
+vram = 0x8005FA3C
+func = "func_80060464"
+value = 0x00000000
+
+# Issue #2 â€” per-element widescreen HUD (gEXSetRectAlign). The 1P race screen of the 2D
+# dispatcher func_80050860 draws three edge-anchored HUD elements back-to-back (verified
+# live 2026-07-05 by probing every 2D helper's (x,y) args during a driven race):
+#   jal 0x8004FF60 -> func_80056318 (runtime 0x80055718): speedometer dial at x=0xDC,
+#                     which internally also draws the digital speed + gear texrects
+#   jal 0x8004FF88 -> func_800583B8 (runtime 0x800577B8): RANK label+value block, x=0x118
+#   jal 0x8004FFA0 -> func_80058464 (runtime 0x80057864): LAP label+values block, x=0x28
+# Each jal is bracketed with a text hook that writes gEXEnable + gEXSetRectAlign
+# (RIGHT/LEFT pin, then ORIGIN_NONE reset) into the game DL through its cursor global
+# 0x800A39CC; natives in src/lambo_hud_widescreen.c. TIME stays centered (no tag needed
+# under RT64 Expand); the minimap is polyline/viewport-drawn, not texrects â€” pinning it
+# is a separate follow-up (rect-align cannot move it).
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8004FF60
+text = "lambo_ws_pin_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8004FF68
+text = "lambo_ws_pin_reset(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8004FF88
+text = "lambo_ws_pin_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8004FF90
+text = "lambo_ws_pin_reset(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8004FFA0
+text = "lambo_ws_pin_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8004FFA8
+text = "lambo_ws_pin_reset(rdram);"
+
+# The speedo NEEDLE (triangle geometry via a G_MTX chain built inside the dial drawer
+# func_80056318) is handled natively inside the existing dial bracket: pin records the
+# DL cursor and reset patches the needle's LOAD matrix translation (see
+# src/lambo_hud_widescreen.c). No extra hooks needed. func_80054FFC (minimap arrow +
+# car dots) is deliberately NOT bracketed â€” it must stay with the centered minimap.
+"""
+
 UNSTUB = [
+    # func_8006CEC8 (runtime 0x8006C2C8) = menu 3D-overlay emitter (cursor + selection arrows);
+    # race-`stubs` only because splat truncated it (see its SPLIT_MERGES entry). Merged to 0x7F8;
+    # emit the real body. Also removed from force_stub.txt in the same change (force_stub.txt
+    # precedence would silently re-stub it, the W136 trap). TRACKER #32.
+    "func_8006CEC8",
+    # func_8004AFD8 (runtime 0x8004A3D8) = menu L/R selection-arrow texrect drawer; race-`stubs`
+    # only because splat truncated it (see its SPLIT_MERGES entry). Merged to 0x1098; emit the
+    # real body. TRACKER #32.
+    "func_8004AFD8",
     # func_80011F70 (runtime 0x80011370) is the demo-race actor-system HEADER writer: it sets the
     # control fields just below the actor pointer table (D_800B69A8/AC/AE) that the actor-table
     # populator func_80038D6C READS (8 refs in its asm) to drive its populate loop. While stubbed
@@ -1361,7 +1461,7 @@ rom_file_path = "Automobili Lamborghini (USA).z64"
 [patches]
 stubs = {toml_array(race_stubs)}
 ignored = {toml_array(race_ignored)}
-'''
+{PATCH_BLOCKS}'''
     CONFIG.write_text(cfg)
 
     print(f"dump funcs:        {n_dump}")

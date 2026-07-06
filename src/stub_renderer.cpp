@@ -277,6 +277,106 @@ static void dump_summary(const uint8_t* rdram, const OSTask* t) {
                      i, st.tex_addr[i], fmt_name(st.tex_fmt[i]), siz_name(st.tex_siz[i]));
 }
 
+// Menu-DL census (issue #32): per-frame counts of G_SPRITE2D / TEXRECT / total commands.
+// The G_SPRITE2D count exists because issue #32 was filed blaming RT64's empty sprite2DBase
+// handler; this census measured ZERO Sprite2D commands on every menu screen (and none built
+// anywhere in the ROM), falsifying that hypothesis -- the real cause was two truncated,
+// force-stubbed menu draw emitters (gen_syms_toml.py SPLIT_MERGES func_8006CEC8/func_8004AFD8).
+// Same walk discipline as walk() above: follows G_DL, tracks gsSPSegment.
+struct SpriteScan {
+    uint32_t count = 0;      // G_SPRITE2D commands seen this frame
+    uint32_t texrects = 0;   // sanity: proves the scan reaches the 2D overlay
+    uint32_t cmds = 0;
+    int      printed = 0;    // dump budget
+    bool     verbose = false;
+};
+
+static void sprite_scan(const uint8_t* rdram, uint32_t start_addr, uint32_t seg[16],
+                        SpriteScan& sc, int depth) {
+    if (depth > 12) return;
+    uint32_t off;
+    if (!resolve(start_addr, seg, &off)) return;
+    for (uint32_t i = 0; i < 200000; ++i) {
+        if (off + 8 > 0x00800000) return;
+        uint32_t w0 = *(const uint32_t*)(rdram + off);
+        uint32_t w1 = *(const uint32_t*)(rdram + off + 4);
+        uint8_t  op = (w0 >> 24) & 0xFF;
+        ++sc.cmds;
+        if (op == G_TEXRECT) {
+            ++sc.texrects;
+        }
+        if (op == G_MOVEWORD && (w0 & 0xFF) == G_MW_SEGMENT) {
+            uint32_t segnum = (((w0 >> 8) & 0xFFFF) >> 2) & 0xF;
+            seg[segnum] = w1;
+        } else if (op == G_DL) {
+            if (((w0 >> 16) & 0xFF) != 0) { if (!resolve(w1, seg, &off)) return; continue; }
+            sprite_scan(rdram, w1, seg, sc, depth + 1);
+        } else if (op == G_ENDDL) {
+            return;
+        } else if (op == G_SPRITE2D) {
+            ++sc.count;
+            if (sc.verbose && sc.printed < 8) {
+                ++sc.printed;
+                uint32_t n0w0 = 0, n0w1 = 0, n1w0 = 0, n1w1 = 0;
+                if (off + 24 <= 0x00800000) {
+                    n0w0 = *(const uint32_t*)(rdram + off + 8);
+                    n0w1 = *(const uint32_t*)(rdram + off + 12);
+                    n1w0 = *(const uint32_t*)(rdram + off + 16);
+                    n1w1 = *(const uint32_t*)(rdram + off + 20);
+                }
+                std::fprintf(stderr,
+                    "[menudl]   #%u @off=0x%06X  base=%08X %08X  next=%08X %08X | %08X %08X\n",
+                    sc.count, off, w0, w1, n0w0, n0w1, n1w0, n1w1);
+                uint32_t soff;
+                if (resolve(w1, seg, &soff) && soff + 24 <= 0x00800000) {
+                    const uint8_t* s = rdram + soff;
+                    auto rd32 = [&](int o) { return *(const uint32_t*)(s + o); };
+                    auto rd16 = [&](int o) { return (int16_t)((s[o] << 8) | s[o + 1]); };
+                    // uSprite_t (gbi.h): big-endian in RDRAM but the host buffer is
+                    // word-swapped little-endian, so 32-bit fields read directly and
+                    // 16/8-bit fields need the XOR-style addressing used by MEM_H/MEM_B.
+                    auto rd16x = [&](int o) { int a = o ^ 2; return (int16_t)((s[a + 1] << 8) | s[a]); };
+                    auto rd8x  = [&](int o) { return s[o ^ 3]; };
+                    (void)rd16;
+                    std::fprintf(stderr,
+                        "[menudl]     uSprite@%08X img=%08X tlut=%08X stride=%d w=%d h=%d "
+                        "fmt=%u siz=%u offS=%d offT=%d\n",
+                        w1, rd32(0), rd32(4), rd16x(8), rd16x(10), rd16x(12),
+                        rd8x(14), rd8x(15), rd16x(16), rd16x(18));
+                }
+            }
+        }
+        off += 8;
+    }
+}
+
+// One-shot full-DL dump (issue #32): walk the frame's DL like sprite_scan but append every
+// resolved command (depth, rdram offset, w0, w1) as text to `f`. Ground truth for diffing
+// the port's menu command stream against an ares capture of the same screen.
+static void dump_walk(const uint8_t* rdram, uint32_t start_addr, uint32_t seg[16],
+                      std::FILE* f, int depth) {
+    if (depth > 12) return;
+    uint32_t off;
+    if (!resolve(start_addr, seg, &off)) return;
+    for (uint32_t i = 0; i < 200000; ++i) {
+        if (off + 8 > 0x00800000) return;
+        uint32_t w0 = *(const uint32_t*)(rdram + off);
+        uint32_t w1 = *(const uint32_t*)(rdram + off + 4);
+        uint8_t  op = (w0 >> 24) & 0xFF;
+        std::fprintf(f, "%d 0x%06X %08X %08X %s\n", depth, off, w0, w1, opname(op));
+        if (op == G_MOVEWORD && (w0 & 0xFF) == G_MW_SEGMENT) {
+            uint32_t segnum = (((w0 >> 8) & 0xFFFF) >> 2) & 0xF;
+            seg[segnum] = w1;
+        } else if (op == G_DL) {
+            if (((w0 >> 16) & 0xFF) != 0) { if (!resolve(w1, seg, &off)) return; continue; }
+            dump_walk(rdram, w1, seg, f, depth + 1);
+        } else if (op == G_ENDDL) {
+            return;
+        }
+        off += 8;
+    }
+}
+
 } // namespace dlinspect
 
 // ---------------------------------------------------------------------------
@@ -1256,6 +1356,57 @@ public:
                                  state, target, count);
                     dlinspect::dump_summary(g_lambo_rdram, t);
                     s_done = true;
+                }
+            }
+        }
+        // Menu-DL trace (issue #32, LAMBO_MENU_DL_TRACE=1): per-frame command census keyed by
+        // the menu screen id, logged on every (screen, count) change -- the port-vs-ares DL
+        // convergence tool that found the missing cursor/arrow emitters. Default: env unset.
+        static const bool s_sprite_trace = (std::getenv("LAMBO_MENU_DL_TRACE") != nullptr);
+        if (s_sprite_trace && t && g_lambo_rdram) {
+            uint32_t seg[16] = {0};
+            dlinspect::SpriteScan sc;
+            uint32_t dl_addr = (uint32_t)(int32_t)t->t.data_ptr;
+            dlinspect::sprite_scan(g_lambo_rdram, dl_addr, seg, sc, 0);
+            uint32_t mw = *(const uint32_t*)(g_lambo_rdram + (0x80098560 - 0x80000000u));
+            int scr = (int)(int16_t)(mw & 0xFFFF);          // D_80098562 = low half (BE addr 2)
+            static int s_scr = -9999; static uint32_t s_count = 0xFFFFFFFF;
+            static uint32_t s_cmds = 0;
+            if (scr != s_scr || sc.count != s_count || sc.cmds != s_cmds) {
+                s_cmds = sc.cmds;
+                std::fprintf(stderr, "[menudl] send_dl #%d screen=%d sprite2d_count=%u cmds=%u texrects=%u (was scr=%d n=%u)\n",
+                             count, scr, sc.count, sc.cmds, sc.texrects, s_scr, s_count);
+                if (sc.count > 0) {   // re-walk verbosely to dump the sequences
+                    uint32_t seg2[16] = {0};
+                    dlinspect::SpriteScan sv; sv.verbose = true;
+                    dlinspect::sprite_scan(g_lambo_rdram, dl_addr, seg2, sv, 0);
+                }
+                s_scr = scr; s_count = sc.count;
+            }
+            // LAMBO_MENU_DL_DUMP=<screen>: once, on the target menu screen (after the
+            // transition frames settle), dump the walked DL to dl_screen<N>.txt and the full
+            // RDRAM to rdram_screen<N>.bin (both cwd) for offline port-vs-ares diffing.
+            static const char* s_dump_env = std::getenv("LAMBO_MENU_DL_DUMP");
+            static bool s_dumped = false;
+            static int s_settle = 0;   // skip the screen's transition frames before dumping
+            if (s_dump_env && !s_dumped && scr == std::atoi(s_dump_env) && ++s_settle >= 40) {
+                char path[128];
+                std::snprintf(path, sizeof(path), "dl_screen%d.txt", scr);
+                if (std::FILE* f = std::fopen(path, "w")) {
+                    std::fprintf(f, "# port DL dump screen=%d send_dl=%d dl_addr=0x%08X\n",
+                                 scr, count, dl_addr);
+                    uint32_t seg3[16] = {0};
+                    dlinspect::dump_walk(g_lambo_rdram, dl_addr, seg3, f, 0);
+                    std::fclose(f);
+                    std::fprintf(stderr, "[menudl] dumped DL @0x%08X to %s\n", dl_addr, path);
+                    char rpath[128];
+                    std::snprintf(rpath, sizeof(rpath), "rdram_screen%d.bin", scr);
+                    if (std::FILE* rf = std::fopen(rpath, "wb")) {
+                        std::fwrite(g_lambo_rdram, 1, 0x800000, rf);
+                        std::fclose(rf);
+                        std::fprintf(stderr, "[menudl] dumped RDRAM to %s\n", rpath);
+                    }
+                    s_dumped = true;
                 }
             }
         }
