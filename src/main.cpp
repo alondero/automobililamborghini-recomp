@@ -476,6 +476,7 @@ static int8_t   g_held_sx = 0, g_held_sy = 0;       // LAMBO_MODERN_INPUT stick 
 // menu; a pulse presses/releases every PERIOD VIs for DUTY VIs, walking a whole menu chain).
 static uint16_t g_pulse_buttons = 0;
 static int      g_pulse_period = 0, g_pulse_duty = 0, g_pulse_start = 0;
+static int      g_pulse_count = 0;   // optional 5th field: stop after N pulses (0 = unlimited)
 static std::atomic<uint32_t> g_input_snapshot{0};   // main-thread sampled, game-thread read
 static SDL_GameController* g_pad = nullptr;          // first opened controller (port 0)
 
@@ -612,7 +613,8 @@ static bool input_get_input(int controller_num, uint16_t* buttons, float* x, flo
     uint16_t b  = (uint16_t)(snap & 0xFFFF) | g_held_buttons;   // env mask always OR'd (harness knob)
     if (g_pulse_period > 0) {                                   // scripted pulse (harness knob)
         int vi = g_vis.load(std::memory_order_relaxed);
-        if (vi >= g_pulse_start && ((vi - g_pulse_start) % g_pulse_period) < g_pulse_duty)
+        if (vi >= g_pulse_start && ((vi - g_pulse_start) % g_pulse_period) < g_pulse_duty
+            && (g_pulse_count == 0 || (vi - g_pulse_start) / g_pulse_period < g_pulse_count))
             b |= g_pulse_buttons;
     }
     int8_t   sx = (int8_t)((snap >> 16) & 0xFF);
@@ -742,15 +744,17 @@ int main(int argc, char** argv) {
         }
     }
     if (const char* pu = std::getenv("LAMBO_INPUT_PULSE")) {
-        // BTNHEX:PERIOD:DUTY[:STARTVI], VI units. e.g. 1000:150:4:300 taps START for 4 VIs
+        // BTNHEX:PERIOD:DUTY[:STARTVI[:COUNT]], VI units. e.g. 1000:150:4:300 taps START for 4 VIs
         // every 150 VIs starting at VI 300 -- enough edges to walk the whole menu chain headless.
+        // COUNT stops after N taps (0/absent = unlimited) so a walk can PARK on a target screen.
         char* end = nullptr;
         g_pulse_buttons = (uint16_t)std::strtoul(pu, &end, 16);
         if (end && *end == ':') g_pulse_period = (int)std::strtol(end + 1, &end, 10);
         if (end && *end == ':') g_pulse_duty   = (int)std::strtol(end + 1, &end, 10);
-        if (end && *end == ':') g_pulse_start  = (int)std::strtol(end + 1, nullptr, 10);
-        std::fprintf(stderr, "[probe] input pulse: btn=%04x period=%d duty=%d start=%d\n",
-                     g_pulse_buttons, g_pulse_period, g_pulse_duty, g_pulse_start);
+        if (end && *end == ':') g_pulse_start  = (int)std::strtol(end + 1, &end, 10);
+        if (end && *end == ':') g_pulse_count  = (int)std::strtol(end + 1, nullptr, 10);
+        std::fprintf(stderr, "[probe] input pulse: btn=%04x period=%d duty=%d start=%d count=%d\n",
+                     g_pulse_buttons, g_pulse_period, g_pulse_duty, g_pulse_start, g_pulse_count);
     }
     cfg.input_callbacks.poll_input = input_poll_stub;
     cfg.input_callbacks.get_input = input_get_input;
