@@ -73,12 +73,22 @@ jobs:
           cp "rom-assets/$ROM_FILENAME" "./$ROM_FILENAME"
           rm -rf rom-assets
 
+      - name: Reset submodules before patching
+        # Defensive: a previous run that patched partially would otherwise
+        # leave 0005 failing with "patch failed: ... rt64_optimus.cpp:8".
+        run: |
+          git -C lib/N64ModernRuntime checkout -- .
+          git -C lib/rt64 checkout -- .
+          git -C lib/rt64/src/contrib/plume checkout -- .
+
       - name: Apply runtime patch
         run: |
           git -C lib/N64ModernRuntime apply "$(pwd)/patches/0001-lamborghini-runtime-scheduler-audio-vi.patch"
           git -C lib/rt64 apply "$(pwd)/patches/0006-rt64-interp-angular-velocity-matching.patch"
 
       - name: Configure + build recompiler CLIs
+        # First configure runs before N64Recomp/RSPRecomp generate sources;
+        # the second configure below (after recompile) wires those in.
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
@@ -88,6 +98,11 @@ jobs:
         run: |
           ./build/lib/N64ModernRuntime/librecomp/N64Recomp/N64Recomp lamborghini.us.toml
           ./build/lib/N64ModernRuntime/librecomp/N64Recomp/RSPRecomp aspMain.us.toml
+
+      - name: Re-configure CMake to pick up generated sources
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
 
       - name: Build port
         run: cmake --build build --target lamborghini_modern -j"$(nproc)"
@@ -161,6 +176,18 @@ jobs:
           Copy-Item "rom-assets\$env:ROM_FILENAME" ".\$env:ROM_FILENAME"
           Remove-Item -Recurse -Force rom-assets
 
+      - name: Reset submodules before patching
+        shell: pwsh
+        # Defensive: a previous run that patched partially would otherwise
+        # leave 0005 failing with "patch failed: ... rt64_optimus.cpp:8".
+        # autocrlf=false also neutralises CRLF the Windows runner's git
+        # might inject.
+        run: |
+          git config --global core.autocrlf false
+          git -C lib/N64ModernRuntime checkout -- .
+          git -C lib/rt64 checkout -- .
+          git -C lib/rt64/src/contrib/plume checkout -- .
+
       - name: Apply patches
         shell: pwsh
         run: |
@@ -172,6 +199,8 @@ jobs:
 
       - name: Configure + build recompiler CLIs
         shell: pwsh
+        # First configure runs before N64Recomp/RSPRecomp generate sources;
+        # the second configure below (after recompile) wires those in.
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_C_COMPILER=gcc.exe -DCMAKE_CXX_COMPILER=g++.exe
@@ -182,6 +211,12 @@ jobs:
         run: |
           & ".\build\lib\N64ModernRuntime\librecomp\N64Recomp\N64Recomp.exe" lamborghini.us.toml
           & ".\build\lib\N64ModernRuntime\librecomp\N64Recomp\RSPRecomp.exe" aspMain.us.toml
+
+      - name: Re-configure CMake to pick up generated sources
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_C_COMPILER=gcc.exe -DCMAKE_CXX_COMPILER=g++.exe
 
       - name: Build port
         shell: pwsh

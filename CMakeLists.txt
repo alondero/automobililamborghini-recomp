@@ -105,29 +105,36 @@ add_subdirectory(${N64MR})
 # (resolved relative to each TU in RecompiledFuncs/), and lookup.cpp is picked
 # up by the *.cpp glob. recomp_overlays.inl is an include (NOT a TU) and is
 # intentionally excluded by the *.c/*.cpp globs.
-add_library(RecompiledFuncs STATIC)
-
+#
+# Skipped when empty so the first configure (which builds the recompiler
+# tools) succeeds before N64Recomp populates this directory.
 file(GLOB FUNC_C_SOURCES   CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs/*.c)
 file(GLOB FUNC_CXX_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs/*.cpp)
-target_sources(RecompiledFuncs PRIVATE ${FUNC_C_SOURCES} ${FUNC_CXX_SOURCES})
+if(FUNC_C_SOURCES OR FUNC_CXX_SOURCES)
+    add_library(RecompiledFuncs STATIC)
+    target_sources(RecompiledFuncs PRIVATE ${FUNC_C_SOURCES} ${FUNC_CXX_SOURCES})
 
-target_compile_options(RecompiledFuncs PRIVATE
-    -fno-strict-aliasing
-    -ggdb
-    -Wno-unused-variable
-    # implicit-function-declaration is a C-only diagnostic; lookup.cpp is C++.
-    $<$<COMPILE_LANGUAGE:C>:-Wno-implicit-function-declaration>
-)
+    target_compile_options(RecompiledFuncs PRIVATE
+        -fno-strict-aliasing
+        -ggdb
+        -Wno-unused-variable
+        # implicit-function-declaration is a C-only diagnostic; lookup.cpp is C++.
+        $<$<COMPILE_LANGUAGE:C>:-Wno-implicit-function-declaration>
+    )
 
-target_include_directories(RecompiledFuncs PRIVATE
-    ${N64MR}/ultramodern/include
-    ${N64MR}/librecomp/include
-    ${N64MR}/N64Recomp/include
-)
+    target_include_directories(RecompiledFuncs PRIVATE
+        ${N64MR}/ultramodern/include
+        ${N64MR}/librecomp/include
+        ${N64MR}/N64Recomp/include
+    )
+endif()
 
 # --- Headless harness (#57): added once src/ exists ---------------------------
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
-    add_executable(lamborghini_modern
+    # src/aspMain.cpp is RSPRecomp output (see BUILDING.md step 3); appended
+    # only when present so the first configure (which builds the recompilers)
+    # can succeed before RSPRecomp runs.
+    set(LAMBO_SOURCES
         src/main.cpp
         src/register_overlays.cpp
         src/stub_renderer.cpp
@@ -137,11 +144,14 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
                                # POSIX sigaction handler printing KSEG0/RDRAM offset + a 32-entry
                                # function-lookup trace ring. No deps beyond libc + DbgHelp (Win) /
                                # libc backtrace(3) (POSIX).
-        src/aspMain.cpp        # RSPRecomp'd audio microcode (M_AUDTASK PCM synthesis, #53).
-                               # GENERATED: RSPRecomp aspMain.us.toml (see BUILDING.md step 3)
         src/libultra_stubs.c   # no-op symbols for ignored libultra CP0 helpers (e.g. __osSetSR)
         src/lambo_hud_widescreen.c  # issue #2: gEXSetRectAlign brackets around the race-HUD dials
     )
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/aspMain.cpp)
+        list(APPEND LAMBO_SOURCES src/aspMain.cpp)
+    endif()
+
+    add_executable(lamborghini_modern ${LAMBO_SOURCES})
     target_compile_options(lamborghini_modern PRIVATE
         -fno-strict-aliasing
         -fms-extensions
@@ -157,10 +167,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         ${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs
     )
     target_link_libraries(lamborghini_modern PRIVATE
-        RecompiledFuncs
         librecomp
         ultramodern
     )
+    if(TARGET RecompiledFuncs)
+        target_link_libraries(lamborghini_modern PRIVATE RecompiledFuncs)
+    endif()
 
     # RT64 renderer (#58: default presenter; see the RT64 block above).
     target_sources(lamborghini_modern PRIVATE src/rt64_renderer.cpp)
