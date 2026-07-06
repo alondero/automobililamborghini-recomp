@@ -35,6 +35,20 @@ N64Recomp ports (Zelda 64: Recompiled et al.):
 | `window_width` / `window_height` | pixels | `1600`/`900` | Windowed-mode size. |
 | `api_option` | `Auto`, `D3D12`, `Vulkan`, `Metal` | `Auto` | Graphics API. |
 
+## Developer warp (race-track warp)
+
+For development it is useful to jump straight into a race without driving the menus
+(the same pattern as the debug warp menus in other N64Recomp ports):
+
+- **F1–F6** at any time after boot warps to that circuit as a 1-player single race
+  (3 laps, first car).
+- **`LAMBO_WARP=circuit[:laps[:car[:players]]]`** (environment variable, circuit `1`–`6`)
+  performs the warp automatically at boot — handy for headless/scripted runs.
+
+The warp performs the same stores the game's own menu makes when you confirm RACE
+(selection cursors + audio quiesce + game-state 7), so the race it starts is a normal
+single race. Each warp is logged to stderr as `[warp] CIRCUIT N: ...`.
+
 ## Building
 
 See **[BUILDING.md](./BUILDING.md)**. In brief: clone with submodules, supply your ROM, run the recompile step, then configure and build with CMake.

@@ -649,7 +649,7 @@ NATIVE_OVERRIDES = [
 # generated lamborghini.us.toml (issues #2/#4 landed them by editing the toml directly; the
 # generator must carry them or a regen silently drops the widescreen HUD + LOD patches).
 PATCH_BLOCKS = """
-# Issue #4 â€” game-side geometry-LOD distance-test, NOT covered by RT64's
+# Issue #4 — game-side geometry-LOD distance-test, NOT covered by RT64's
 # renderer-level forceBranch (which only touches RSP G_BRANCH_Z/W).
 # NOPs the bc1f +0xDC in func_80060464 that gates the per-car high-poly
 # fall-through; threshold was 100.0 IEEE-754 at 0x42C80000. Identified
@@ -660,7 +660,7 @@ vram = 0x8005FA3C
 func = "func_80060464"
 value = 0x00000000
 
-# Issue #2 â€” per-element widescreen HUD (gEXSetRectAlign). The 1P race screen of the 2D
+# Issue #2 — per-element widescreen HUD (gEXSetRectAlign). The 1P race screen of the 2D
 # dispatcher func_80050860 draws three edge-anchored HUD elements back-to-back (verified
 # live 2026-07-05 by probing every 2D helper's (x,y) args during a driven race):
 #   jal 0x8004FF60 -> func_80056318 (runtime 0x80055718): speedometer dial at x=0xDC,
@@ -670,7 +670,7 @@ value = 0x00000000
 # Each jal is bracketed with a text hook that writes gEXEnable + gEXSetRectAlign
 # (RIGHT/LEFT pin, then ORIGIN_NONE reset) into the game DL through its cursor global
 # 0x800A39CC; natives in src/lambo_hud_widescreen.c. TIME stays centered (no tag needed
-# under RT64 Expand); the minimap is polyline/viewport-drawn, not texrects â€” pinning it
+# under RT64 Expand); the minimap is polyline/viewport-drawn, not texrects — pinning it
 # is a separate follow-up (rect-align cannot move it).
 [[patches.hook]]
 func = "func_80050860"
@@ -705,8 +705,44 @@ text = "lambo_ws_pin_reset(rdram);"
 # The speedo NEEDLE (triangle geometry via a G_MTX chain built inside the dial drawer
 # func_80056318) is handled natively inside the existing dial bracket: pin records the
 # DL cursor and reset patches the needle's LOAD matrix translation (see
-# src/lambo_hud_widescreen.c). No extra hooks needed. func_80054FFC (minimap arrow +
-# car dots) is deliberately NOT bracketed â€” it must stay with the centered minimap.
+# src/lambo_hud_widescreen.c). No extra hooks needed.
+
+# Issue #41 — pin the 1P minimap composite to the left edge. Three pieces:
+#   dots + P1 label: texrects from the overlay func_80054FFC (jal 0x80050588 in the 1P
+#     race section) — LEFT rect-align bracket, same mechanism as LAP/RANK above;
+#   player arrow: two quads via pool G_MTX LOADs built inside the same overlay call —
+#     the bracket reset shifts their translation in game space (same walker as the
+#     needle, different delta);
+#   track outline: 3D geometry drawn by the frame builder func_8004384C through the
+#     race perspective projection; its placement translate(-2.05, -2.4, 0) is built by
+#     the jal at 0x80043C88 — hook rewrites the x argument ($a1 float bits) in flight,
+#     gated to frames where the 1P bracket ran (see lambo_ws_minimap_outline_x).
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050588
+text = "lambo_ws_minimap_pin(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050590
+text = "lambo_ws_minimap_reset(rdram);"
+
+[[patches.hook]]
+func = "func_8004384C"
+before_vram = 0x80043C88
+text = "extern unsigned int lambo_ws_minimap_outline_x(unsigned int); ctx->r5 = S32(lambo_ws_minimap_outline_x((uint32_t)ctx->r5));"
+
+# Issue #12 — developer warp menu. Per-frame warp tick at the entry of the TOP-LEVEL
+# state dispatcher func_800028D0 (runtime 0x80001CD0, argument-free, jump-table over
+# states 1..0x10, runs every frame in every state; func_800030F8 was tried first but
+# only runs in states 7/8 — too late for menu/attract warps). Consumes an F1-F6 /
+# LAMBO_WARP request and performs the menu's own race-launch stores (cursor cluster +
+# audio quiesce + state 7) before the dispatcher reads the state word; native in
+# src/lambo_warp.c.
+[[patches.hook]]
+func = "func_800028D0"
+before_vram = 0x80001CD0
+text = "extern void lambo_warp_tick(uint8_t*, recomp_context*); lambo_warp_tick(rdram, ctx);"
 """
 
 UNSTUB = [
@@ -1462,7 +1498,7 @@ rom_file_path = "Automobili Lamborghini (USA).z64"
 stubs = {toml_array(race_stubs)}
 ignored = {toml_array(race_ignored)}
 {PATCH_BLOCKS}'''
-    CONFIG.write_text(cfg)
+    CONFIG.write_text(cfg, encoding="utf-8")
 
     print(f"dump funcs:        {n_dump}")
     print(f"size overrides hit: {n_over} / {len(overrides)}")
