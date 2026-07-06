@@ -82,9 +82,13 @@ jobs:
           git -C lib/rt64/src/contrib/plume checkout -- .
 
       - name: Apply runtime patch
+        # --ignore-whitespace: submodule files on the Windows runner are
+        # checked out as CRLF (actions/checkout@v4's submodule init uses
+        # the runner's git default, not the local submodule's autocrlf),
+        # and git apply rejects context-line mismatches by default.
         run: |
-          git -C lib/N64ModernRuntime apply "$(pwd)/patches/0001-lamborghini-runtime-scheduler-audio-vi.patch"
-          git -C lib/rt64 apply "$(pwd)/patches/0006-rt64-interp-angular-velocity-matching.patch"
+          git -C lib/N64ModernRuntime apply --ignore-whitespace "$(pwd)/patches/0001-lamborghini-runtime-scheduler-audio-vi.patch"
+          git -C lib/rt64 apply --ignore-whitespace "$(pwd)/patches/0006-rt64-interp-angular-velocity-matching.patch"
 
       - name: Configure + build recompiler CLIs
         # First configure runs before N64Recomp/RSPRecomp generate sources;
@@ -190,12 +194,16 @@ jobs:
 
       - name: Apply patches
         shell: pwsh
+        # --ignore-whitespace: submodule files on the Windows runner are
+        # checked out as CRLF (actions/checkout@v4's submodule init uses
+        # the runner's git default, not the local submodule's autocrlf),
+        # and git apply rejects context-line mismatches by default.
         run: |
           $root = (Get-Location).Path
-          git -C lib/N64ModernRuntime apply "$root/patches/0001-lamborghini-runtime-scheduler-audio-vi.patch"
-          git -C lib/rt64 apply "$root/patches/0006-rt64-interp-angular-velocity-matching.patch"
-          git -C lib/rt64 apply "$root/patches/0005-rt64-mingw-gcc-compat.patch"
-          git -C lib/rt64/src/contrib/plume apply "$root/patches/0004-plume-d3d12-mingw-com-abi-struct-return.patch"
+          git -C lib/N64ModernRuntime apply --ignore-whitespace "$root/patches/0001-lamborghini-runtime-scheduler-audio-vi.patch"
+          git -C lib/rt64 apply --ignore-whitespace "$root/patches/0006-rt64-interp-angular-velocity-matching.patch"
+          git -C lib/rt64 apply --ignore-whitespace "$root/patches/0005-rt64-mingw-gcc-compat.patch"
+          git -C lib/rt64/src/contrib/plume apply --ignore-whitespace "$root/patches/0004-plume-d3d12-mingw-com-abi-struct-return.patch"
 
       - name: Configure + build recompiler CLIs
         shell: pwsh

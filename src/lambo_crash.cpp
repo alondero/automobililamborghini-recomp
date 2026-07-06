@@ -1,5 +1,12 @@
 // Issue #13 / A14. See lambo_crash.h.
 
+// _GNU_SOURCE: makes glibc expose SIGSTKSZ as a compile-time constant
+// (without it, the POSIX install_posix alt-stack array is rejected with
+// "storage size isn't constant"). Must precede any system header.
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include "lambo_crash.h"
 
 #include <algorithm>
@@ -299,6 +306,8 @@ uint32_t native_pc_to_vram(const void* pc) {
 // ----- Crash handlers + dump plumbing -----
 namespace {
 
+#if defined(_WIN32)
+// Only Win32 calls this (POSIX uses signal names directly).
 const char* win32_exception_name(DWORD code) {
     switch (code) {
         case EXCEPTION_ACCESS_VIOLATION:  return "EXCEPTION_ACCESS_VIOLATION";
@@ -319,6 +328,7 @@ const char* win32_exception_name(DWORD code) {
         default:                              return "EXCEPTION_UNKNOWN";
     }
 }
+#endif
 
 void print_native_backtrace(FILE* fp, const void* const* pcs, int n, const char* kind) {
     std::fprintf(fp, "  native backtrace (%s, %d frames):\n", kind, n);
