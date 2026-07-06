@@ -9,6 +9,7 @@
 
 #define HLSL_CPU
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -41,6 +42,24 @@ uint32_t DPC_PIPEBUSY_REG = 0;
 uint32_t DPC_TMEM_REG = 0;
 
 void dummy_check_interrupts() {}
+
+// Live swapchain handle for the background/skybox aspect-ratio fix (issue #3): the
+// course frame-builder (func_8004384C) issues its own frustum matrix for the
+// background layer with a HARDCODED 4/3 literal (0x3FAAAAAB) baked at the call site,
+// so under RT64 Expand the skybox panels stay sized for 4:3 and don't reach the wide
+// edges. lambo_ws_get_output_aspect_bits() below lets a patches.hook override that
+// literal with the live output aspect each frame, mirroring the HUD widescreen gate
+// (lambo_ws_hud_widescreen_active in lambo_config.cpp) but reading the actual ratio
+// instead of a bool, since a symmetric frustum only needs a wider tangent, not a
+// separate translate (unlike the 2D HUD's rect-align + matrix-nudge scheme).
+//
+// Written on the gfx thread (RT64Context ctor/dtor), read every frame on the CPU/
+// game-logic thread inside lambo_ws_get_output_aspect_bits() below -- unlike
+// get_resolution_scale() elsewhere in this file, which is only ever called from the
+// gfx thread itself. atomic (not a plain pointer) so the CPU thread can't observe a
+// torn or stale value; the dtor nulls it before `app` is torn down so a load racing
+// shutdown sees either the fully-live pointer or nullptr, never a dangling one.
+std::atomic<RT64::Application*> g_lambo_active_app{nullptr};
 
 RT64::UserConfiguration::AspectRatio to_rt64(ultramodern::renderer::AspectRatio option) {
     switch (option) {
@@ -232,9 +251,14 @@ public:
         }
 
         std::fprintf(stderr, "[rt64] RT64 renderer initialised (api=%d)\n", (int)chosen_api);
+        g_lambo_active_app = app.get();
     }
 
-    ~RT64Context() override = default;
+    ~RT64Context() override {
+        if (g_lambo_active_app == app.get()) {
+            g_lambo_active_app = nullptr;
+        }
+    }
 
     bool valid() override { return static_cast<bool>(app); }
 
@@ -343,6 +367,35 @@ private:
 };
 
 } // anonymous namespace
+
+// Native for the issue #3 patches.hook (lamborghini.us.toml, func_8004384C): returns
+// the live output aspect ratio as raw float bits, clamped to never go BELOW 4/3 so a
+// narrower-than-4:3 window (or ar_option != Expand) degenerates to the original
+// constant rather than squeezing the skybox. Called from recompiled game code on the
+// game-logic thread, which races the gfx/render thread's swapchain resize handling;
+// take the same configurationMutex RT64::SharedQueueResources::setSwapChainSize()
+// locks when writing width+height together, so this never observes a torn pair.
+extern "C" uint32_t lambo_ws_get_output_aspect_bits(void) {
+    float aspect = 4.0f / 3.0f;
+    const auto& cfg = ultramodern::renderer::get_graphics_config();
+    RT64::Application* active_app = g_lambo_active_app.load(std::memory_order_acquire);
+    if (cfg.ar_option == ultramodern::renderer::AspectRatio::Expand &&
+        active_app != nullptr && active_app->sharedQueueResources) {
+        auto& shared = *active_app->sharedQueueResources;
+        std::scoped_lock<std::mutex> configuration_lock(shared.configurationMutex);
+        uint32_t w = shared.swapChainWidth;
+        uint32_t h = shared.swapChainHeight;
+        if (w > 0 && h > 0) {
+            float live = float(w) / float(h);
+            if (live > aspect) {
+                aspect = live;
+            }
+        }
+    }
+    uint32_t bits;
+    std::memcpy(&bits, &aspect, sizeof(bits));
+    return bits;
+}
 
 namespace lambo_rt64 {
 

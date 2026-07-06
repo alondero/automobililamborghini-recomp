@@ -732,6 +732,24 @@ func = "func_8004384C"
 before_vram = 0x80043C88
 text = "extern unsigned int lambo_ws_minimap_outline_x(unsigned int); ctx->r5 = S32(lambo_ws_minimap_outline_x((uint32_t)ctx->r5));"
 
+# Issue #3 — per-frame Mtx rebuild for the widescreen skybox. func_8004384C (the
+# per-frame 3D DL builder) opens the frame by calling func_80075500 (a hand-rolled
+# guPerspective-equivalent: fovy/aspect/near/far -> frustum -> Mtx) to build the
+# BACKGROUND/skybox layer's own projection, distinct from the main race camera. The
+# call site hardcodes the aspect argument ($a3) to the hex float literal 0x3FAAAAAB
+# (= 4/3, verified by decoding the IEEE-754 bits) via `lui $a3,0x3FAA` / `ori
+# $a3,$a3,0xAAAB` at 0x80042CE0/E4, so the frustum's tangent — and therefore the
+# skybox panels' screen coverage — stays sized for 4:3 no matter the RT64 output
+# width, leaving gaps at the wide edges under ar_option Expand. Hooked right after
+# the literal is fully assembled (0x80042CE8, not a branch-delay slot) and before it
+# is consumed by the jal at 0x80042CFC: overwrite $a3 with the live output aspect
+# (lambo_ws_get_output_aspect_bits, rt64_renderer.cpp) so the frustum widens with the
+# window — the fix degenerates to the original constant at 4:3 or ar_option Original.
+[[patches.hook]]
+func = "func_8004384C"
+before_vram = 0x80042CE8
+text = "extern unsigned int lambo_ws_get_output_aspect_bits(void); ctx->r7 = (int32_t)lambo_ws_get_output_aspect_bits();"
+
 # Issue #12 — developer warp menu. Per-frame warp tick at the entry of the TOP-LEVEL
 # state dispatcher func_800028D0 (runtime 0x80001CD0, argument-free, jump-table over
 # states 1..0x10, runs every frame in every state; func_800030F8 was tried first but
