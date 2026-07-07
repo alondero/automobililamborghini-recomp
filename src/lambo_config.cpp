@@ -24,6 +24,11 @@ constexpr int kDefaultWindowHeight = 900;
 
 lambo::config::WindowSize g_window_size{kDefaultWindowWidth, kDefaultWindowHeight};
 
+// RT64 texture-replacement paths (issue #9), persisted as extra graphics.json string
+// keys alongside the GraphicsConfig fields (like the window size). Empty = feature off.
+std::string g_texture_pack;
+std::string g_texture_dump;
+
 // Read a key into `out`, keeping the existing (default) value when the key is
 // missing or invalid. NLOHMANN_JSON_SERIALIZE_ENUM does NOT throw on an
 // unrecognised string -- it silently maps it to the FIRST enumerator, which for
@@ -62,6 +67,8 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"developer_mode", c.developer_mode},
         {"window_width", g_window_size.width},
         {"window_height", g_window_size.height},
+        {"texture_pack", g_texture_pack},
+        {"texture_dump", g_texture_dump},
     };
 }
 
@@ -79,6 +86,8 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "developer_mode", c.developer_mode);
     from_or_default(j, "window_width", g_window_size.width);
     from_or_default(j, "window_height", g_window_size.height);
+    from_or_default(j, "texture_pack", g_texture_pack);
+    from_or_default(j, "texture_dump", g_texture_dump);
     // Sanity-bound the window size: below the N64 framebuffer is useless, above 8K
     // is a typo -- either way SDL_CreateWindow would fail and the port would run
     // permanently headless, so reset to defaults instead.
@@ -229,6 +238,23 @@ void save_graphics(const ultramodern::renderer::GraphicsConfig& cfg) {
 
 WindowSize window_size() {
     return g_window_size;
+}
+
+// Env var wins over the JSON key so a headless capture run can point at a scratch
+// directory without editing (and re-saving) the user's graphics.json.
+static std::string path_from_env_or(const char* env, const std::string& fallback) {
+    if (const char* v = std::getenv(env)) {
+        return v;
+    }
+    return fallback;
+}
+
+std::string texture_pack_path() {
+    return path_from_env_or("LAMBO_TEXTURE_PACK", g_texture_pack);
+}
+
+std::string texture_dump_dir() {
+    return path_from_env_or("LAMBO_TEXTURE_DUMP", g_texture_dump);
 }
 
 } // namespace config
