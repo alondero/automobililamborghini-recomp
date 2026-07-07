@@ -81,39 +81,15 @@ jobs:
           git -C lib/rt64 checkout -- .
           git -C lib/rt64/src/contrib/plume checkout -- .
 
-      - name: Apply runtime patches
-        # 0001 then 0007: both patch ultramodern (disjoint hunks; verified to apply
-        # sequentially on the pinned commit). 0007 adds the save-state thread-context
-        # registry + ultramodern_relink_thread_contexts (issue #22, all platforms).
-        # --ignore-whitespace: submodule files on the Windows runner are
-        # checked out as CRLF (actions/checkout@v4's submodule init uses
-        # the runner's git default, not the local submodule's autocrlf),
-        # and git apply rejects context-line mismatches by default.
-        run: |
-          git -C lib/N64ModernRuntime apply --ignore-whitespace "$(pwd)/patches/0001-lamborghini-runtime-scheduler-audio-vi.patch"
-          git -C lib/N64ModernRuntime apply --ignore-whitespace "$(pwd)/patches/0007-ultramodern-savestate-thread-context-relink.patch"
-          git -C lib/rt64 apply --ignore-whitespace "$(pwd)/patches/0006-rt64-interp-angular-velocity-matching.patch"
-
-      - name: Configure + build recompiler CLIs
-        # First configure runs before N64Recomp/RSPRecomp generate sources;
-        # the second configure below (after recompile) wires those in.
-        run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
-          cmake --build build --target N64RecompCLI RSPRecomp -j"$(nproc)"
-
-      - name: Recompile game code + audio microcode from ROM
-        run: |
-          ./build/lib/N64ModernRuntime/librecomp/N64Recomp/N64Recomp lamborghini.us.toml
-          ./build/lib/N64ModernRuntime/librecomp/N64Recomp/RSPRecomp aspMain.us.toml
-
-      - name: Re-configure CMake to pick up generated sources
-        run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
-
-      - name: Build port
-        run: cmake --build build --target lamborghini_modern -j"$(nproc)"
+      - name: Build via shared script
+        # Delegate to build.sh — the single source of truth for the build
+        # sequence (submodule reset, patch apply, configure x2, build tools,
+        # recompile, link). CI doesn't reimplement any of this inline; if
+        # the local script drifts, this job breaks on the next push, so the
+        # hookify rule (patch→build drift) catches it.
+        env:
+          ROM_FILENAME: ${{ env.ROM_FILENAME }}
+        run: bash build.sh
 
       - name: Remove ROM before packaging
         if: always()
@@ -196,47 +172,18 @@ jobs:
           git -C lib/rt64 checkout -- .
           git -C lib/rt64/src/contrib/plume checkout -- .
 
-      - name: Apply patches
+      - name: Build via shared script
         shell: pwsh
-        # 0001 then 0007: both patch ultramodern (disjoint hunks; verified to apply
-        # sequentially on the pinned commit). 0007 adds the save-state thread-context
-        # registry + ultramodern_relink_thread_contexts (issue #22, all platforms).
-        # --ignore-whitespace: submodule files on the Windows runner are
-        # checked out as CRLF (actions/checkout@v4's submodule init uses
-        # the runner's git default, not the local submodule's autocrlf),
-        # and git apply rejects context-line mismatches by default.
-        run: |
-          $root = (Get-Location).Path
-          git -C lib/N64ModernRuntime apply --ignore-whitespace "$root/patches/0001-lamborghini-runtime-scheduler-audio-vi.patch"
-          git -C lib/N64ModernRuntime apply --ignore-whitespace "$root/patches/0007-ultramodern-savestate-thread-context-relink.patch"
-          git -C lib/rt64 apply --ignore-whitespace "$root/patches/0006-rt64-interp-angular-velocity-matching.patch"
-          git -C lib/rt64 apply --ignore-whitespace "$root/patches/0005-rt64-mingw-gcc-compat.patch"
-          git -C lib/rt64/src/contrib/plume apply --ignore-whitespace "$root/patches/0004-plume-d3d12-mingw-com-abi-struct-return.patch"
-
-      - name: Configure + build recompiler CLIs
-        shell: pwsh
-        # First configure runs before N64Recomp/RSPRecomp generate sources;
-        # the second configure below (after recompile) wires those in.
-        run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_C_COMPILER=gcc.exe -DCMAKE_CXX_COMPILER=g++.exe
-          cmake --build build --target N64RecompCLI RSPRecomp -j
-
-      - name: Recompile game code + audio microcode from ROM
-        shell: pwsh
-        run: |
-          & ".\build\lib\N64ModernRuntime\librecomp\N64Recomp\N64Recomp.exe" lamborghini.us.toml
-          & ".\build\lib\N64ModernRuntime\librecomp\N64Recomp\RSPRecomp.exe" aspMain.us.toml
-
-      - name: Re-configure CMake to pick up generated sources
-        shell: pwsh
-        run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_C_COMPILER=gcc.exe -DCMAKE_CXX_COMPILER=g++.exe
-
-      - name: Build port
-        shell: pwsh
-        run: cmake --build build --target lamborghini_modern -j
+        # Delegate to build.ps1 — the single source of truth for the build
+        # sequence (submodule reset, patch apply, configure x2, build tools,
+        # recompile, link). CI doesn't reimplement any of this inline; if the
+        # local script drifts, this job breaks on the next push, so the
+        # hookify rule (patch→build drift) catches it.
+        # -RomPath forwards the workflow's $env:ROM_FILENAME so a future ROM
+        # rename stays single-sourced in the workflow's env block.
+        env:
+          ROM_FILENAME: ${{ env.ROM_FILENAME }}
+        run: ./build.ps1 -RomPath "$env:ROM_FILENAME"
 
       - name: Remove ROM before packaging
         if: always()
