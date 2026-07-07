@@ -4,11 +4,12 @@
 RT64's "Start dumping textures" (or this port's `texture_dump` config / LAMBO_TEXTURE_DUMP
 env) writes, per unique texture, a set of files named by the 64-bit texture hash:
 
-    <hash>.v5.tmem              raw 4 KB TMEM snapshot (the sampled texel data)
+    <hash>.v5.tmem              raw 4 KB TMEM snapshot -- this tool decodes texels from here
     <hash>.v5.tile.json         { tile:{fmt,siz,line,tmem,palette,...}, width, height, tlut }
-    <hash>.v5.rice.rdram        linear RDRAM slice the tile loaded from (alt decode source)
+    <hash>.v5.rice.rdram        linear RDRAM slice the tile loaded from (not used by this tool;
+                                a block source can't be un-interleaved without replaying DXT)
     <hash>.v5.rice.json         { tile, type, texture:{address,fmt,siz,width} }
-    <hash>.v5.rice.palette.rdram  TLUT bytes (CI textures only)
+    <hash>.v5.rice.palette.rdram  raw TLUT bytes, CI textures only -- the palette source
 
 Neither RT64 nor its texture_hasher/texture_packer tools turn these into an image, so you
 cannot *see* a texture to decide whether it is the hard-to-read text you want to replace.
@@ -113,49 +114,28 @@ def tmem_byte(tmem, addr, swizzle, row_odd):
 #
 # RT64 keeps RDRAM byte-swapped within each 32-bit word: the logical byte at N64
 # address A physically lives at RDRAM[A ^ 3] (see loadWord() in rt64_rdp.cpp,
-# `RDRAM[(textureAddress + i) ^ 3]`). The .rice* dumps are a *raw* copy of that
-# physical RDRAM, so reading a logical byte back needs the same `^ 3` -- but the
-# swap is anchored to the true RDRAM address the slice started at, not to the
-# slice's own offset 0, in case that address is not 4-aligned. This is what the
-# palette read below uses; texels come from the (logical-order) .tmem snapshot.
+# `RDRAM[(textureAddress + i) ^ 3]`). The .rice.palette.rdram dump is a *raw* copy
+# of that physical RDRAM, so reading a logical byte back needs the same `^ 3`.
+# A TLUT is DMA-loaded, so its slice always starts 8-aligned -- the swap therefore
+# reduces to a plain `logical_off ^ 3` with no per-slice address anchor. (Texels
+# come from the logical-order .tmem snapshot, which needs no such swap.)
 
-def rdram_byte(buf, rdram_start, logical_off, swap=True):
-    """Read one logical byte at `logical_off` from a raw RDRAM slice that began at
-    absolute address `rdram_start`. With swap, undoes RT64's 32-bit-word byteswap."""
-    if swap:
-        file_off = ((rdram_start + logical_off) ^ 0x3) - rdram_start
-    else:
-        file_off = logical_off
+def rdram_byte(buf, logical_off, swap=True):
+    """Read one logical byte at `logical_off` from a raw, 8-aligned RDRAM slice.
+    With swap, undoes RT64's 32-bit-word byteswap (`^ 3`)."""
+    file_off = (logical_off ^ 0x3) if swap else logical_off
     if 0 <= file_off < len(buf):
         return buf[file_off]
     return 0
 
 
-def rice_rdram_start(info_path):
-    """Absolute RDRAM address the .rice(.palette).rdram slice began at, mirroring
-    RT64's dumpTexture(). Only its low 2 bits matter (the word-swap anchor), but
-    computing it in full keeps unaligned block sources honest. Missing/short info
-    -> 0, i.e. assume a 4-aligned slice."""
-    try:
-        meta = json.loads(info_path.read_text())
-    except (OSError, ValueError):
-        return 0
-    tile, tex = meta.get("tile", {}), meta.get("texture", {})
-    siz = tex.get("siz", 0)
-    uls, ult = tile.get("uls", 0), tile.get("ult", 0)
-    common_offset = ((uls >> 2) << siz) >> 1
-    common_bpr = (tex.get("width", 0) << siz) >> 1
-    row = ult if meta.get("type") == "Block" else (ult >> 2)
-    return tex.get("address", 0) + common_offset + common_bpr * row
-
-
-def read_palette_rdram(pal_bytes, count, swap=True, rdram_start=0):
+def read_palette_rdram(pal_bytes, count, swap=True):
     """TLUT entries are big-endian uint16 in logical N64 memory. The dump is raw
     physical RDRAM, so read each byte through RT64's 32-bit-word swap."""
     entries = []
     for i in range(count):
-        hi = rdram_byte(pal_bytes, rdram_start, i * 2, swap)
-        lo = rdram_byte(pal_bytes, rdram_start, i * 2 + 1, swap)
+        hi = rdram_byte(pal_bytes, i * 2, swap)
+        lo = rdram_byte(pal_bytes, i * 2 + 1, swap)
         entries.append((hi << 8) | lo)
     return entries
 
@@ -189,7 +169,8 @@ def decode_from_tmem(tmem, tile, width, height, tlut_kind, palette, swizzle):
                 if fmt == FMT_CI:
                     row += bytes(pal_rgba(b))
                 elif fmt == FMT_IA:
-                    i = (b >> 4) & 0xF; al = b & 0xF
+                    i = (b >> 4) & 0xF
+                    al = b & 0xF
                     row += bytes((i_expand(i, 4),) * 3 + (i_expand(al, 4),))
                 else:  # I8
                     row += bytes((b, b, b, b))
@@ -200,7 +181,8 @@ def decode_from_tmem(tmem, tile, width, height, tlut_kind, palette, swizzle):
                 if fmt == FMT_CI:
                     row += bytes(pal_rgba(pal_base | nib))
                 elif fmt == FMT_IA:
-                    i = (nib >> 1) & 0x7; al = nib & 0x1
+                    i = (nib >> 1) & 0x7
+                    al = nib & 0x1
                     row += bytes((i_expand(i, 3),) * 3 + (255 if al else 0,))
                 else:  # I4
                     v = i_expand(nib, 4)
@@ -267,10 +249,8 @@ def main():
                 # byteswap (issue #50: without it every index maps to a garbled
                 # RGBA5551 value, which reads as "sheared and miscoloured").
                 pal_data = pal_path.read_bytes()
-                pal_start = rice_rdram_start(args.dump_dir / (base + ".rice.palette.json"))
                 count = min(256, len(pal_data) // 2)
-                palette = read_palette_rdram(pal_data, count,
-                                             not args.pal_no_swap, pal_start)
+                palette = read_palette_rdram(pal_data, count, not args.pal_no_swap)
 
         if width <= 0 or height <= 0 or width > 1024 or height > 1024:
             print(f"skip {hexhash}: implausible {width}x{height}", file=sys.stderr)
