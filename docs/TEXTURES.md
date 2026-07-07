@@ -73,11 +73,16 @@ python tools/decode_dump.py /path/to/dump          # writes <dump>/png/*.png + i
 Open `index.html` (a contact sheet) to eyeball the whole dump. **Decode fidelity:**
 - **RGBA16 / RGBA32 / IA / I** — accurate. The "automobili Lamborghini" wordmark tiles
   decoded pixel-clean.
-- **CI4 / CI8** (palettized — *the format most fonts use*) — good enough to **identify** a
-  texture, but 4-bit textures loaded via `LOAD_BLOCK` are sheared/off-colour because the
-  block DXT interleave isn't emulated yet (`--no-swizzle` / `--pal-byteswap` are calibration
-  knobs; neither fully fixes it). Follow-up work. For a **pixel-perfect** view of one
-  texture, use RT64's live F1 inspector (below), which shows it GPU-decoded.
+- **CI4 / CI8** (palettized — *the format most fonts use*) — accurate as of issue #50.
+  They used to come out "sheared and miscoloured", but the cause was the **TLUT byte order**,
+  not the texel decode: `.rice.palette.rdram` is raw RDRAM, which RT64 stores byte-swapped
+  within each 32-bit word (logical byte `A` at physical `A^3`). Reading the 16-bit palette
+  entries without that swap mapped every index to a garbled RGBA5551 value, and because the
+  noise still carried the image's index structure it *looked* like a diagonal shear. The tool
+  now reads the palette through the `^3` swap by default (`--pal-no-swap` is a calibration
+  knob). Texels still decode from `.tmem`, which was already correct. Verified end-to-end: the
+  `aec01187` 512×8 font atlas reads as legible characters and the sky/cloud CI4 tiles show
+  clean blue/gold. RT64's live F1 inspector still gives a GPU-decoded cross-check.
 
 ### 3. Identify the text
 
