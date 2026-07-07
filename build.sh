@@ -11,13 +11,14 @@
 #   2. ROM check — the USA ROM is required to translate game code (it's also
 #      git-ignored; CI fetches it from a private assets repo, locally you
 #      place it next to this script).
-#   3. Submodule init (recursive; --c core.longpaths=true not needed on Linux).
-#   4. Defensive submodule reset before patching (CI's "Reset submodules
-#      before patching" — half-applied patches from a prior run would break
-#      the next apply with "patch failed: ... file:N").
-#   5. Apply Lamborghini patches (Linux: 0001, 0006 only — no MinGW/D3D12
-#      fixes needed; no plume patch). With --ignore-whitespace as a
-#      belt-and-suspenders guard for any CRLF drift.
+#   3. Submodule init (recursive; core.longpaths isn't needed on Linux).
+#   4. Defensive submodule reset before patching (half-applied patches from a
+#      prior run would otherwise break the next apply with "patch failed: ...").
+#   5. Apply Lamborghini patches (Linux: 0001, 0007, 0006 — no MinGW/D3D12
+#      fixes needed; no plume patch). 0007 adds the save-state thread-context
+#      registry; without it, src/lambo_savestate.c fails to link with
+#      "undefined reference to ultramodern_relink_thread_contexts".
+#      --ignore-whitespace is a belt-and-suspenders guard for any CRLF drift.
 #   6. First CMake configure — the initial one runs before N64Recomp/
 #      RSPRecomp generate sources. The CMakeLists uses if(EXISTS) on the
 #      ROM-derived files so the first configure can succeed without them.
@@ -74,7 +75,11 @@ NPROC="$(nproc)"
 log "[tools] cmake=$(command -v cmake)  gcc=$(command -v gcc)  g++=$(command -v g++)  ninja=$(command -v ninja)  nproc=$NPROC"
 
 # --- 3. ROM check -----------------------------------------------------------
-ROM="Automobili Lamborghini (USA).z64"
+# Default to the standard filename; CI overrides via the same ROM_FILENAME
+# env var the workflow already defines (workflow env block, .github/workflows/
+# build-release.yml). Reading the env var directly (rather than a CLI flag)
+# matches the workflow's convention so a future rename stays single-sourced.
+ROM="${ROM_FILENAME:-Automobili Lamborghini (USA).z64}"
 if [ ! -f "$ROM" ]; then
     die "missing ROM: $ROM
 Place your legally-dumped USA ROM at the repo root and re-run."
@@ -91,10 +96,17 @@ git -C lib/N64ModernRuntime checkout -- .
 git -C lib/rt64 checkout -- .
 git -C lib/rt64/src/contrib/plume checkout -- . 2>/dev/null || true
 
-# --- 6. Apply Lamborghini patches (Linux: 0001, 0006 only) ------------------
+# --- 6. Apply Lamborghini patches (Linux: 0001, 0007, 0006) ----------------
+# Mirrors CI's Linux job exactly (workflow lines 93-95). 0001 then 0007 both
+# patch N64ModernRuntime with disjoint hunks (verified to apply sequentially
+# on the pinned commit). 0007 adds the save-state thread-context registry +
+# `ultramodern_relink_thread_contexts` (issue #22, all platforms). Without it,
+# src/lambo_savestate.c fails to link with "undefined reference to
+# `ultramodern_relink_thread_contexts`".
 log "[2/5] Applying Lamborghini submodule patches..."
 PATCHES=(
     "lib/N64ModernRuntime:0001-lamborghini-runtime-scheduler-audio-vi.patch"
+    "lib/N64ModernRuntime:0007-ultramodern-savestate-thread-context-relink.patch"
     "lib/rt64:0006-rt64-interp-angular-velocity-matching.patch"
 )
 for entry in "${PATCHES[@]}"; do
