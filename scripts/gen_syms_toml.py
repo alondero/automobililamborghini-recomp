@@ -861,6 +861,15 @@ text = "extern unsigned int lambo_ws_get_output_aspect_bits(void); ctx->r7 = (in
 func = "func_800028D0"
 before_vram = 0x80001CD0
 text = "extern void lambo_warp_tick(uint8_t*, recomp_context*); lambo_warp_tick(rdram, ctx);"
+
+# Issue #22 — developer save-state. Same top-level dispatcher (runs every frame in every
+# state), one instruction past the warp hook: N64Recomp rejects two hooks on the exact same
+# vram, and 0x80001CD4 is still the frame-boundary entry. Snapshots/restores rdram[0..8MiB)
+# on an F5/F9 or LAMBO_STATE_LOAD request; native in src/lambo_savestate.c.
+[[patches.hook]]
+func = "func_800028D0"
+before_vram = 0x80001CD4
+text = "extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_savestate_tick(rdram, ctx);"
 """
 
 UNSTUB = [

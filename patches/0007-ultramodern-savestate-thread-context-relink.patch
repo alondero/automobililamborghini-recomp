@@ -1,0 +1,75 @@
+diff --git a/ultramodern/src/threads.cpp b/ultramodern/src/threads.cpp
+index b758ce5..72d7e62 100644
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -3,6 +3,8 @@
+ #include <thread>
+ #include <cassert>
+ #include <string>
++#include <mutex>
++#include <unordered_map>
+ 
+ #include "ultramodern/ultra64.h"
+ #include "ultramodern/ultramodern.hpp"
+@@ -10,6 +12,37 @@
+ 
+ #include "ultramodern/threads.hpp"
+ 
++// Save-state support (Lamborghini issue #22): OSThread.context is the one NATIVE pointer
++// stored in guest RDRAM (a UltraThreadContext* -- see ultra64.h). A wholesale RDRAM restore
++// from another process clobbers it with a dangling address, so we keep a native registry of
++// every live thread's (guest OSThread address -> context) and expose a relink pass that
++// rewrites the context fields back after such a restore. Guarded because osCreateThread runs
++// on whichever game thread is spawning, while the relink runs on the game thread doing the
++// load. All access uses ultramodern's own TO_PTR/OSThread, so it stays byte-order correct.
++static std::mutex g_thread_ctx_registry_mutex;
++static std::unordered_map<int32_t, UltraThreadContext*> g_thread_ctx_registry;
++
++static void register_thread_context(PTR(OSThread) t_, UltraThreadContext* ctx) {
++    std::lock_guard<std::mutex> lock(g_thread_ctx_registry_mutex);
++    g_thread_ctx_registry[(int32_t)t_] = ctx;
++}
++static void unregister_thread_context(PTR(OSThread) t_) {
++    std::lock_guard<std::mutex> lock(g_thread_ctx_registry_mutex);
++    g_thread_ctx_registry.erase((int32_t)t_);
++}
++
++// Called by the save-state loader (src/lambo_savestate.c) AFTER it memcpys a snapshot over
++// RDRAM, to repair the native context pointers the copy overwrote. Only meaningful when the
++// loading process already recreated the same thread set (warp-first workflow); threads it has
++// no live context for are simply left as-is.
++extern "C" void ultramodern_relink_thread_contexts(uint8_t* rdram) {
++    std::lock_guard<std::mutex> lock(g_thread_ctx_registry_mutex);
++    for (const auto& entry : g_thread_ctx_registry) {
++        PTR(OSThread) t_ = (PTR(OSThread))entry.first;
++        TO_PTR(OSThread, t_)->context = entry.second;
++    }
++}
++
+ // Native APIs only used to set thread names for easier debugging
+ #ifdef _WIN32
+ #include <Windows.h>
+@@ -232,6 +265,7 @@ static void _thread_func(RDRAM_ARG PTR(OSThread) self_, PTR(thread_func_t) entry
+     // so mark this thread as destroyed and run the next queued thread.
+     if (self->context == thread_context) {
+         self->context = nullptr;
++        unregister_thread_context(self_);   // save-state (#22): drop its context from the registry
+         run_next_thread(PASS_RDRAM1);
+     }
+ 
+@@ -271,6 +305,7 @@ extern "C" void osCreateThread(RDRAM_ARG PTR(OSThread) t_, OSId id, PTR(thread_f
+     // Pass the context as an argument to the thread function to ensure that it can't get cleared before the thread captures its value.
+     UltraThreadContext* context = new UltraThreadContext{};
+     t->context = context;
++    register_thread_context(t_, context);   // save-state (#22): track native context by guest addr
+     context->host_thread = std::thread{_thread_func, PASS_RDRAM t_, entrypoint, arg, t->context};
+ 
+     // Wait until the thread is initialized to indicate that it's ready to be started.
+@@ -309,6 +344,7 @@ extern "C" void osDestroyThread(RDRAM_ARG PTR(OSThread) t_) {
+     if (cur_context != nullptr) {
+         // Mark the target thread as destroyed and resume it. When it starts it'll check this and terminate itself instead of resuming.
+         t->context = nullptr;
++        unregister_thread_context(t_);   // save-state (#22): drop its context from the registry
+         cur_context->running.signal();
+     }
+ }

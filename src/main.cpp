@@ -493,6 +493,11 @@ extern "C" void lambo_pak_set_rumble(int on) { g_rumble_on.store(on ? 1 : 0, std
 // Developer warp menu (#12, src/lambo_warp.c): main thread publishes, game thread warps.
 extern "C" void lambo_warp_request(int circuit0);
 
+// Developer save-state (#22, src/lambo_savestate.c): F7 snapshots guest RAM, F8 restores it.
+// Main thread flips the request bit; the game thread does the copy at the next frame boundary.
+extern "C" void lambo_savestate_request_save(void);
+extern "C" void lambo_savestate_request_load(void);
+
 // Apply the published rumble state to the physical pad. Called once per main-thread pump.
 // N64 rumble is bang-bang (motor fully on or off), so map to SDL full strength. We refresh the
 // effect every pump with a short expiry (150 ms > one 30 fps frame) so a sustained motor-on
@@ -592,6 +597,16 @@ static void input_sample() {
             if (down && !warp_prev[i]) lambo_warp_request(i);
             warp_prev[i] = down;
         }
+
+        // Developer save-state (#22): F7 saves the current guest RAM to the state slot,
+        // F8 restores it. (F1-F6 are the warp keys above and F11 is fullscreen, so save-state
+        // uses the free F7/F8 pair.) Edge-detected here (main thread); the copy runs on the
+        // game thread at the next frame boundary (src/lambo_savestate.c).
+        static Uint8 f7_prev = 0, f8_prev = 0;
+        Uint8 f7 = ks[SDL_SCANCODE_F7], f8 = ks[SDL_SCANCODE_F8];
+        if (f7 && !f7_prev) lambo_savestate_request_save();
+        if (f8 && !f8_prev) lambo_savestate_request_load();
+        f7_prev = f7; f8_prev = f8;
     }
 
     uint32_t snap = (uint16_t)b

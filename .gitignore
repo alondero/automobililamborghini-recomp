@@ -53,6 +53,10 @@ nextsessionprompt.md
 # --- Game artefacts --------------------------------------------------------
 *.mpk
 *.pak
+# Developer save-state snapshots (src/lambo_savestate.c, issue #22): an 8 MiB
+# RDRAM dump per saved spot. Local debug artefacts, regenerable, never in tree.
+*.lstate
+*.lstate.tmp
 # Controller-pak temp write (.mpk.tmp before rename) -- emitted by the
 # si/joybus path; deleted on successful write. Ephemeral.
 *.mpk.tmp
