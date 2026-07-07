@@ -400,6 +400,106 @@ func = "func_8004384C"
 before_vram = 0x80043C88
 text = "extern unsigned int lambo_ws_minimap_outline_x(unsigned int); ctx->r5 = S32(lambo_ws_minimap_outline_x((uint32_t)ctx->r5));"
 
+# Issue #42 — widescreen HUD for 2P split screen. func_80050860 keys on the player
+# count at 0x800CE6A4 ($s0): ==2 branches to the top/bottom section (L_80050BEC).
+# Verified live (probe printf + LAMBO_WARP=circuit:laps:car:2): in 2P only the top-half
+# (y=0x10) and bottom-half (y=0x80) sections run; the 1P-style sections D/E never fire.
+# Each half reuses the 1P RANK (x=0x10E right) / LAP (x=0x28 left) helpers and anchors.
+#   top:    RANK jal 0x80050CE8, LAP jal 0x80050D00
+#   bottom: RANK jal 0x80050F2C, LAP jal 0x80050F44
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050CE8
+text = "lambo_ws_pin_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050CF0
+text = "lambo_ws_pin_reset(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050D00
+text = "lambo_ws_pin_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050D08
+text = "lambo_ws_pin_reset(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050F2C
+text = "lambo_ws_pin_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050F34
+text = "lambo_ws_pin_reset(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050F44
+text = "lambo_ws_pin_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050F4C
+text = "lambo_ws_pin_reset(rdram);"
+
+# The per-half speed/position readout is drawn by the alternate-dial orchestrator
+# func_800717E0 (a0 = player index; not called in a 1P race) on the RIGHT (x=0xDC).
+# Bracket each per-half DIALORCH call RIGHT so the readout tracks the widescreen edge.
+#   top half (a0=0):    DIALORCH jal 0x80050E0C
+#   bottom half (a0=1): DIALORCH jal 0x80051050
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050E0C
+text = "lambo_ws_pin_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050E14
+text = "lambo_ws_pin_reset(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051050
+text = "lambo_ws_pin_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051058
+text = "lambo_ws_pin_reset(rdram);"
+
+# Issue #42 — widescreen HUD for TIME TRIAL (race mode 0; halfword 0x800CE6B4 == 0).
+# In the 1P section the mode-0 branch (L_8004FFB0, beq at 0x8004FF70) skips RANK/LAP and
+# draws its own texrect top HUD: PREVIOUS (left), LAPTIME (centre), RECORD + BEST LAP
+# (right). Shared speedo (0x8004FF60) + minimap (0x80050588) are already pinned; only
+# this top row floats. One rect-align bracket per side (all glyphs/table draws — reset's
+# matrix walker finds no G_MTX LOAD).
+#   left  (PREVIOUS):        draws 0x8004FFF8 .. 0x800501D8
+#   right (RECORD/BEST LAP): draws 0x800501F4 .. 0x80050274
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8004FFF8
+text = "lambo_ws_pin_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x800501E0
+text = "lambo_ws_pin_reset(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x800501F4
+text = "lambo_ws_pin_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8005027C
+text = "lambo_ws_pin_reset(rdram);"
+
 # Issue #3 — per-frame Mtx rebuild for the widescreen skybox. func_8004384C (the
 # per-frame 3D DL builder) opens the frame by calling func_80075500 (a hand-rolled
 # guPerspective-equivalent: fovy/aspect/near/far -> frustum -> Mtx) to build the

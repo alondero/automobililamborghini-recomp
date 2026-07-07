@@ -129,9 +129,14 @@ void lambo_warp_tick(uint8_t* rdram, recomp_context* ctx) {
     if (laps < 1) laps = 1;
     if (laps > 30) laps = 30;                        // menu lap range tops out at 30
 
+    // 0x800CE6B4 selects the race mode the state-7 finalizer builds: 2 = single race
+    // (LAP/RANK HUD), 0 = time trial (PREVIOUS/RECORD/BEST-LAP HUD, no rank). Overridable
+    // for testing the non-arcade HUD variants (issue #42); defaults to single race.
+    int mode = MODE_SINGLE_RACE;
+    { const char* m = getenv("LAMBO_WARP_MODE"); if (m != NULL) mode = atoi(m); }
     MEM_H(0, (gpr)(int32_t)WARP_PLAYERS)    = (int16_t)players;
     MEM_H(0, (gpr)(int32_t)WARP_TRACK_FLAG) = 1;
-    MEM_H(0, (gpr)(int32_t)WARP_MODE)       = MODE_SINGLE_RACE;
+    MEM_H(0, (gpr)(int32_t)WARP_MODE)       = (int16_t)mode;
     MEM_H(0, (gpr)(int32_t)WARP_COUNTER)    = 0;
     MEM_H(0, (gpr)(int32_t)WARP_TRACK_CUR)  = (int16_t)circuit0;
     MEM_H(0, (gpr)(int32_t)WARP_LAPS_CUR)   = (int16_t)laps;
