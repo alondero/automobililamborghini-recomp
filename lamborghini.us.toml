@@ -538,3 +538,22 @@ text = "extern void lambo_warp_tick(uint8_t*, recomp_context*); lambo_warp_tick(
 func = "func_800028D0"
 before_vram = 0x80001CD4
 text = "extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_savestate_tick(rdram, ctx);"
+
+# Issue #40 — widescreen lens flare. The sun flare emitter func_80036854 draws a chain of
+# 10 translucent "ghost" texrects. Under ar_option Expand RT64 squishes each small untagged
+# texrect into the central 4:3 band (invRatioScale = 1/aspectRatioScale) and collapses its
+# scissor the same way, so the flare is cropped instead of tracking the FOV-widened sun.
+# Bracket the ghost loop with gEXSetRectAspect(STRETCH) -> invRatioScale = 1.0, which keeps
+# the offset-from-centre in game pixels (matching the widened 3D sun) and widens the scissor
+# to the full frame. 0x800361BC is just before the loop (after the flare's setup commands);
+# 0x80036A60 is just past the loop back-edge (0x80036A58). Natives in
+# src/lambo_flare_widescreen.c; no-op at 4:3. See docs/HUD.md.
+[[patches.hook]]
+func = "func_80036854"
+before_vram = 0x800361BC
+text = "lambo_flare_ws_aspect_stretch(rdram);"
+
+[[patches.hook]]
+func = "func_80036854"
+before_vram = 0x80036A60
+text = "lambo_flare_ws_aspect_reset(rdram);"
