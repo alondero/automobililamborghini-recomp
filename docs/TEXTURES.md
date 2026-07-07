@@ -98,9 +98,65 @@ different atlas. Expect to find and replace each.
   dump filename prefix.
 - **PNG** loads directly and is fine for iteration. **DDS** (BC7 + mipmaps, e.g. via Texconv
   / Compressonator's *CPU* encoder) is what you ship — never ship PNG.
-- Keep `shift: half` for modern-tool exports.
+- **Shift depends on how you authored the pixels.** A modern-tool export that bakes a
+  half-texel origin offset wants `shift: half`. But an *upscale* of the decoded dump
+  (`tools/upscale_font.py`, an integer-scaled copy of the N64 texel grid) is grid-aligned
+  and wants **`shift: none`** — `half` over-shifts it by half a source texel, which in-game
+  reads as each glyph doubling into its neighbour's cell (verified on the 512×8 HUD font:
+  `shift: half` renders "ONE PLAYER" as "ONE PLAYER:"). So `make_pack.py --shift none` for
+  the upscale pipeline; `--shift half` (the default) for offset exports.
 - Coverage gotcha restated: a CI font re-hashes when its palette changes (highlighted vs.
-  normal menu item), so the same glyphs can need replacing under several hashes.
+  normal menu item), so the same glyphs can need replacing under several hashes. The main
+  text font ships as **three** 512×8 CI4 hashes — `2cc2b764…`/`aec01187…` (white) and
+  `7c1ef5cc…` (gold menu-highlight) — one typeface, three palettes.
+
+### Upscaling the decoded font (algorithmic, letterform-preserving)
+
+`tools/upscale_font.py` turns a decoded `<hash>.png` into an N×-larger replacement that
+de-blocks the staircase edges while keeping the original 1997 letterforms (it does not
+re-draw from a modern font). It bleeds the glyph colour into the transparent region before
+resampling, then upscales colour and alpha independently so a palettized font's undefined
+transparent RGB can't fringe the glyph edges. `--edge crisp` keeps edges tight on very short
+(≤8px) glyphs; `--edge soft` is the faithful default.
+
+```bash
+python tools/upscale_font.py <dump>/png/<hash>.png <pack>/<hash>.png --scale 8 --edge crisp
+python tools/make_pack.py <pack> --shift none      # grid-aligned upscale -> shift none
+```
+
+### Re-rendering the font for *readable* text (issue #52, experimental pack)
+
+Upscaling only smooths the 8px source; it can't add detail, so the text stays soft. To make
+text genuinely **legible at native/4K output**, `tools/render_font.py` re-draws each glyph
+from a real vector font at high resolution (HD packs work because RT64 remaps the game's UVs
+onto a higher-res replacement — `lib/rt64/src/render/rt64_texture_cache.cpp`).
+
+The hard part is that the three small-font atlases are packed **differently** and need
+different handling — the tool embeds a per-atlas profile keyed by hash:
+
+- **White** (`aec01187`, `2cc2b764`) — proportionally packed, glyphs at irregular positions,
+  and **italic** in the original → pass a bold *italic/oblique* face via `--ttf-italic`.
+- **Gold** (`7c1ef5cc`) — cleanly separated on a regular pitch, **upright** → `--ttf`.
+
+Key rules (all learned the hard way): render every glyph at a **uniform cap-height + stroke and
+position it — never stretch to fill the box** (stretching fattens `I`, thins `M`); paint onto a
+**transparent base** (any upscaled base leaves original-glyph slivers between glyphs); bottom-
+align punctuation; pack with **`--shift none`**. A naive fixed-8px-cell mapping or upright
+glyphs in the italic atlas **jumbles** the text.
+
+```bash
+for h in aec011878342c59d 2cc2b76457edc973 7c1ef5cc1ab579eb; do
+  python tools/render_font.py <dump>/png/$h.png <pack>/$h.png \
+      --ttf <Bold.ttf> --ttf-italic <BoldOblique.ttf>
+done
+python tools/make_pack.py <pack> --shift none
+```
+
+Use an **open-licensed** bold face (e.g. Liberation Sans Bold / Bold-Italic, or DejaVu Sans
+Bold / Bold-Oblique) so the shipped pack embeds no proprietary font. **This is an opt-in,
+experimental pack — texture packs are never on by default** (`texture_pack` is empty unless the
+user sets it / `LAMBO_TEXTURE_PACK`). Not yet covered: the larger blue-chrome HUD/menu font
+(LAP/TIME/RANK, PAUSED, the name grid) — a separate atlas still to be located.
 
 ### 5. Build the manifest + pack
 
