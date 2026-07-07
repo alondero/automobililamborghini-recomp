@@ -29,11 +29,16 @@ EXTENDED = {'up', 'down', 'left', 'right'}
 
 
 def find_window():
+    # Match SDL2's window class ('SDL_app'), NOT a title substring: an editor or
+    # browser with the repo ("...lamborghini-recomp...") open in a tab would
+    # otherwise match first and steal the screenshot/key events.
     hwnds = []
     def cb(h, l):
-        buf = ctypes.create_unicode_buffer(256)
-        user32.GetWindowTextW(h, buf, 256)
-        if 'amborghini' in buf.value and user32.IsWindowVisible(h):
+        cls = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(h, cls, 256)
+        if cls.value == 'SDL_app' and user32.IsWindowVisible(h):
+            buf = ctypes.create_unicode_buffer(256)
+            user32.GetWindowTextW(h, buf, 256)
             hwnds.append((h, buf.value))
         return True
     user32.EnumWindows(ctypes.WINFUNCTYPE(ctypes.c_bool, wt.HWND, wt.LPARAM)(cb), 0)

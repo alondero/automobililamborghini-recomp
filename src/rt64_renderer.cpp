@@ -17,12 +17,15 @@
 #include <mutex>
 
 #include "hle/rt64_application.h"
+#include "hle/rt64_state.h"
+#include "render/rt64_texture_cache.h"
 
 #include "ultramodern/ultramodern.hpp"
 #include "ultramodern/config.hpp"
 #include "ultramodern/renderer_context.hpp"
 
 #include "lambo_rt64.h"
+#include "lambo_config.h"
 
 namespace {
 
@@ -251,7 +254,32 @@ public:
         }
 
         std::fprintf(stderr, "[rt64] RT64 renderer initialised (api=%d)\n", (int)chosen_api);
+
+        // Publish the app pointer for the skybox aspect-ratio override
+        // (lambo_ws_get_output_aspect_bits reads this on the game-logic thread),
+        // then wire texture replacement. Order matters: register first so the
+        // dtor's reverse-order unpublish still fires while `app` is alive.
         g_lambo_active_app = app.get();
+
+        // Texture replacement wiring (issue #9). RT64 already owns the whole
+        // dump/hash/replace machinery; the port just points it at directories. Both
+        // are opt-in (empty path = off) and independent of developerMode, so an
+        // end-user pack loads without the F1 developer overlay.
+        const std::string dump_dir = lambo::config::texture_dump_dir();
+        if (!dump_dir.empty()) {
+            // Setting this non-empty makes TextureManager::dumpTexture write every
+            // uploaded texture (raw TMEM + RDRAM + tile JSON) to the directory.
+            app->state->dumpingTexturesDirectory = std::filesystem::path(dump_dir);
+            std::fprintf(stderr, "[rt64] texture dump enabled -> %s\n", dump_dir.c_str());
+        }
+
+        const std::string pack = lambo::config::texture_pack_path();
+        if (!pack.empty()) {
+            const bool ok = app->textureCache->loadReplacementDirectory(
+                RT64::ReplacementDirectory(std::filesystem::path(pack)));
+            std::fprintf(stderr, "[rt64] texture pack %s: %s\n",
+                         ok ? "loaded" : "FAILED to load", pack.c_str());
+        }
     }
 
     ~RT64Context() override {
