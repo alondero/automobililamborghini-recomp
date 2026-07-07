@@ -4,11 +4,12 @@
 RT64's "Start dumping textures" (or this port's `texture_dump` config / LAMBO_TEXTURE_DUMP
 env) writes, per unique texture, a set of files named by the 64-bit texture hash:
 
-    <hash>.v5.tmem              raw 4 KB TMEM snapshot (the sampled texel data)
+    <hash>.v5.tmem              raw 4 KB TMEM snapshot -- this tool decodes texels from here
     <hash>.v5.tile.json         { tile:{fmt,siz,line,tmem,palette,...}, width, height, tlut }
-    <hash>.v5.rice.rdram        linear RDRAM slice the tile loaded from (alt decode source)
+    <hash>.v5.rice.rdram        linear RDRAM slice the tile loaded from (not used by this tool;
+                                a block source can't be un-interleaved without replaying DXT)
     <hash>.v5.rice.json         { tile, type, texture:{address,fmt,siz,width} }
-    <hash>.v5.rice.palette.rdram  TLUT bytes (CI textures only)
+    <hash>.v5.rice.palette.rdram  raw TLUT bytes, CI textures only -- the palette source
 
 Neither RT64 nor its texture_hasher/texture_packer tools turn these into an image, so you
 cannot *see* a texture to decide whether it is the hard-to-read text you want to replace.
@@ -21,9 +22,17 @@ fine. Byte-order/swizzle flags exist because the port hands RT64 its RDRAM in a
 mupen/N64Recomp convention; calibrate once against an in-game screenshot, then leave the
 working flags as the defaults.
 
+CI4/CI8 (palettized) textures used to come out "sheared and miscoloured" (issue #50).
+The root cause was the TLUT byte order, not the texel decode: the .rice.palette.rdram
+dump is a *raw* copy of RT64's RDRAM, which stores every 32-bit word byte-swapped
+(logical byte A lives at physical A^3, see loadWord() in rt64_rdp.cpp). Reading the
+16-bit TLUT entries without that swap maps each palette index to a garbled RGBA5551
+value; because the noise still carries the image's index structure it reads as a
+diagonal "shear". Applying the ^3 swap when reading the palette fixes both symptoms.
+
 Usage:
-    python tools/decode_dump.py <dump_dir> [--out <png_dir>] [--source tmem|rdram]
-                                           [--no-swizzle] [--rdram-byteswap]
+    python tools/decode_dump.py <dump_dir> [--out <png_dir>]
+                                           [--no-swizzle] [--pal-no-swap]
                                            [--filter <hex-substr>]
 
 Self-contained: standard library only (zlib for PNG deflate).
@@ -101,17 +110,33 @@ def tmem_byte(tmem, addr, swizzle, row_odd):
     return 0
 
 
-def read_palette(pal_bytes, count, byteswap):
-    """TLUT entries are 16-bit. Returns list of raw uint16 values."""
+# --- linear RDRAM addressing (for the .rice.palette.rdram TLUT slice) -----------
+#
+# RT64 keeps RDRAM byte-swapped within each 32-bit word: the logical byte at N64
+# address A physically lives at RDRAM[A ^ 3] (see loadWord() in rt64_rdp.cpp,
+# `RDRAM[(textureAddress + i) ^ 3]`). The .rice.palette.rdram dump is a *raw* copy
+# of that physical RDRAM, so reading a logical byte back needs the same `^ 3`.
+# A TLUT is DMA-loaded, so its slice always starts 8-aligned -- the swap therefore
+# reduces to a plain `logical_off ^ 3` with no per-slice address anchor. (Texels
+# come from the logical-order .tmem snapshot, which needs no such swap.)
+
+def rdram_byte(buf, logical_off, swap=True):
+    """Read one logical byte at `logical_off` from a raw, 8-aligned RDRAM slice.
+    With swap, undoes RT64's 32-bit-word byteswap (`^ 3`)."""
+    file_off = (logical_off ^ 0x3) if swap else logical_off
+    if 0 <= file_off < len(buf):
+        return buf[file_off]
+    return 0
+
+
+def read_palette_rdram(pal_bytes, count, swap=True):
+    """TLUT entries are big-endian uint16 in logical N64 memory. The dump is raw
+    physical RDRAM, so read each byte through RT64's 32-bit-word swap."""
     entries = []
     for i in range(count):
-        off = i * 2
-        if byteswap:
-            off ^= 0x2
-        if off + 1 < len(pal_bytes):
-            entries.append((pal_bytes[off] << 8) | pal_bytes[off + 1])
-        else:
-            entries.append(0)
+        hi = rdram_byte(pal_bytes, i * 2, swap)
+        lo = rdram_byte(pal_bytes, i * 2 + 1, swap)
+        entries.append((hi << 8) | lo)
     return entries
 
 
@@ -144,7 +169,8 @@ def decode_from_tmem(tmem, tile, width, height, tlut_kind, palette, swizzle):
                 if fmt == FMT_CI:
                     row += bytes(pal_rgba(b))
                 elif fmt == FMT_IA:
-                    i = (b >> 4) & 0xF; al = b & 0xF
+                    i = (b >> 4) & 0xF
+                    al = b & 0xF
                     row += bytes((i_expand(i, 4),) * 3 + (i_expand(al, 4),))
                 else:  # I8
                     row += bytes((b, b, b, b))
@@ -155,7 +181,8 @@ def decode_from_tmem(tmem, tile, width, height, tlut_kind, palette, swizzle):
                 if fmt == FMT_CI:
                     row += bytes(pal_rgba(pal_base | nib))
                 elif fmt == FMT_IA:
-                    i = (nib >> 1) & 0x7; al = nib & 0x1
+                    i = (nib >> 1) & 0x7
+                    al = nib & 0x1
                     row += bytes((i_expand(i, 3),) * 3 + (255 if al else 0,))
                 else:  # I4
                     v = i_expand(nib, 4)
@@ -175,12 +202,12 @@ def main():
     ap = argparse.ArgumentParser(description="Decode an RT64 texture dump to PNGs.")
     ap.add_argument("dump_dir", type=Path)
     ap.add_argument("--out", type=Path, default=None, help="output dir (default <dump>/png)")
-    ap.add_argument("--source", choices=["tmem"], default="tmem",
-                    help="decode source (tmem only for now)")
     ap.add_argument("--no-swizzle", action="store_true",
                     help="disable the odd-row TMEM word swap (calibration knob)")
-    ap.add_argument("--pal-byteswap", action="store_true",
-                    help="byteswap palette uint16 reads (calibration knob)")
+    ap.add_argument("--pal-no-swap", action="store_true",
+                    help="read the TLUT without RT64's 32-bit-word byteswap "
+                         "(calibration knob; the swapped read is correct for this port "
+                         "and is the default -- issue #50)")
     ap.add_argument("--filter", default=None, help="only decode hashes containing this hex substring")
     args = ap.parse_args()
 
@@ -216,11 +243,14 @@ def main():
             if pal_path.exists():
                 # Read up to a full 256-entry TLUT: CI4 indexes it as
                 # (tile.palette << 4) | nib, which reaches past the low 16 when a
-                # non-zero palette bank is selected. read_palette zero-fills a
-                # short file, so over-requesting is safe.
+                # non-zero palette bank is selected. read_palette_rdram zero-fills
+                # a short file, so over-requesting is safe. The .rice.palette.rdram
+                # is raw physical RDRAM, so the entries need RT64's 32-bit-word
+                # byteswap (issue #50: without it every index maps to a garbled
+                # RGBA5551 value, which reads as "sheared and miscoloured").
                 pal_data = pal_path.read_bytes()
                 count = min(256, len(pal_data) // 2)
-                palette = read_palette(pal_data, count, args.pal_byteswap)
+                palette = read_palette_rdram(pal_data, count, not args.pal_no_swap)
 
         if width <= 0 or height <= 0 or width > 1024 or height > 1024:
             print(f"skip {hexhash}: implausible {width}x{height}", file=sys.stderr)
