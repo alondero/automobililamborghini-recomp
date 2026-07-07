@@ -112,14 +112,21 @@ PATCHES=(
 for entry in "${PATCHES[@]}"; do
     sub="${entry%%:*}"
     patch="${entry#*:}"
+    # Patch paths MUST be absolute — `git -C "$sub"` changes CWD into the
+    # submodule, so a relative path would resolve to `$sub/patches/$patch`
+    # (not the repo root's patches/). CI's original inline step used
+    # `$(pwd)/patches/...` for the same reason. Without this, apply --check
+    # fails with "can't open patch" and the script dies with a misleading
+    # "does not apply cleanly" error.
+    patch_abs="$SCRIPT_DIR/patches/$patch"
     # Idempotency check: distinguish three states.
     #   (a) --check 0                                         -> not yet applied
     #   (b) --check !=0 && --reverse --check 0               -> already applied
     #   (c) --check !=0 && --reverse --check !=0             -> context drift
-    if git -C "$sub" apply --ignore-whitespace --check "patches/$patch" >/dev/null 2>&1; then
-        git -C "$sub" apply --ignore-whitespace "patches/$patch"
+    if git -C "$sub" apply --ignore-whitespace --check "$patch_abs" >/dev/null 2>&1; then
+        git -C "$sub" apply --ignore-whitespace "$patch_abs"
         echo "  applied  $sub <- $patch"
-    elif git -C "$sub" apply --ignore-whitespace --reverse --check "patches/$patch" >/dev/null 2>&1; then
+    elif git -C "$sub" apply --ignore-whitespace --reverse --check "$patch_abs" >/dev/null 2>&1; then
         echo "  skipped  $sub <- $patch (already applied)"
     else
         die "patch $patch does not apply cleanly to $sub and is not already applied — likely submodule drift (upstream context changed). Re-pull the submodule or refresh the patch."
