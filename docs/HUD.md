@@ -57,7 +57,7 @@ players field boots straight into any of these). The **race mode** at `0x800CE6B
 |---|---|---|---|
 | 1P arcade | `players=1`, `0x800CE6B4=2` | stretched wide | done (#2/#41) |
 | 1P time trial | `players=1`, `0x800CE6B4=0` (`LAMBO_WARP_MODE=0`) | stretched wide | done (#42): PREVIOUS left, RECORD/BEST-LAP right; LAPTIME centred; speedo+minimap shared with 1P (already pinned) |
-| 2P split | `players=2` | stretched wide (top/bottom, full width) | done (#42): per half RANK right, LAP left, speed/dial right |
+| 2P split | `players=2` | stretched wide (top/bottom, full width) | partial (#42): per half RANK right, LAP left, speed **readout** right. The alt-dial **gauge geometry** is not yet pinned (rect-align can't move it) — follow-up #56 |
 | 3P/4P | `players=3`/`4` | **pillarboxed 4:3** (dark side bars) | none needed — quad viewports don't cover the framebuffer width, so RT64 keeps them 4:3; the HUD is correct inside each 4:3 quadrant |
 
 Before/after (widescreen output, edge-pinning off vs on):
@@ -72,9 +72,12 @@ Details verified live:
   The per-half speed/place readout is drawn by the **alternate-dial orchestrator**
   `func_800717E0` (a0 = player index; not in a 1P race) on the RIGHT (x=0xDC) — the
   whole DIALORCH call is bracketed `pin_right` (top `0x80050E0C`, bottom `0x80051050`).
-  Split-screen uses only the orchestrator's right branch, so a single right bracket
-  works (no left dial to detach). The section-C tail branches to `L_800517A0`, so the
-  1P-style sections at `0x800512xx`/`0x800515xx` never run in 2P.
+  This pins the texrect **numbers**, but `func_800717E0` also builds a **gauge as
+  geometry** (via `func_80075278`, the modelview-translate builder behind the 1P
+  needle); `gEXSetRectAlign` can't move geometry, so the gauge graphic stays centred.
+  Pinning it needs a per-half game-space matrix shift like the 1P needle — deferred to
+  **#56**. The section-C tail branches to `L_800517A0`, so the 1P-style sections at
+  `0x800512xx`/`0x800515xx` never run in 2P.
 - **Time trial** (mode-0 branch `L_8004FFB0`, `beq` at `0x8004FF70` skips RANK/LAP):
   its top row is all texrects (`func_8004D468` glyph / `func_8005464C` table draw), so
   one rect-align bracket per side covers a whole multi-glyph cluster — left cluster
