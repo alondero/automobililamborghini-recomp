@@ -42,8 +42,48 @@ Traps discovered the hard way:
 - `func_80058C48(a0=1..5, 160, 112)` correlates with gear but is a centered element
   (draws in menus/other screens too) — not the needle.
 - 2P split is TOP/BOTTOM: sections at `0x80050CE8`/`0x80050D00` (y=0x10) and
-  `0x80050F2C`/`0x80050F44` (y=0x80) etc. RANK x=0x10E, LAP x=0x28 per half —
-  same left/right anchors as 1P, so the same pinning pattern applies (unhooked so far).
+  `0x80050F2C`/`0x80050F44` (y=0x80). RANK x=0x10E, LAP x=0x28 per half —
+  same left/right anchors as 1P (issue #42: now hooked, see below).
+
+## Mode dispatch & per-mode HUD (issue #42, verified live 2026-07-06)
+
+`func_80050860` keys on the **player count** at `0x800CE6A4` (`$s0`): `==1` → 1P
+section, `==2` → 2P top/bottom (`L_80050BEC`), `==3`/`==4` → quad-split (`L_800517A8`).
+Verified by probe printf + `LAMBO_WARP=circuit:laps:car:<players>` (the dev warp's
+players field boots straight into any of these). The **race mode** at `0x800CE6B4`
+(`==0` time trial, `==2` single race) sub-branches *within* the 1P section.
+
+| Mode | Reach | RT64 output | HUD pinning |
+|---|---|---|---|
+| 1P arcade | `players=1`, `0x800CE6B4=2` | stretched wide | done (#2/#41) |
+| 1P time trial | `players=1`, `0x800CE6B4=0` (`LAMBO_WARP_MODE=0`) | stretched wide | done (#42): PREVIOUS left, RECORD/BEST-LAP right; LAPTIME centred; speedo+minimap shared with 1P (already pinned) |
+| 2P split | `players=2` | stretched wide (top/bottom, full width) | done (#42): per half RANK right, LAP left, speed/dial right |
+| 3P/4P | `players=3`/`4` | **pillarboxed 4:3** (dark side bars) | none needed — quad viewports don't cover the framebuffer width, so RT64 keeps them 4:3; the HUD is correct inside each 4:3 quadrant |
+
+Before/after (widescreen output, edge-pinning off vs on):
+
+![2P split before/after](images/hud-2p-split-before-after.png)
+![Time trial before/after](images/hud-time-trial-before-after.png)
+
+Details verified live:
+- **2P split** (`L_80050BEC`): each half reuses the 1P RANK (`func_800583B8`, x=0x10E)
+  / LAP (`func_80058464`, x=0x28) helpers, so the same `pin_right`/`pin_left` brackets
+  apply per call site (top `0x80050CE8`/`0x80050D00`, bottom `0x80050F2C`/`0x80050F44`).
+  The per-half speed/place readout is drawn by the **alternate-dial orchestrator**
+  `func_800717E0` (a0 = player index; not in a 1P race) on the RIGHT (x=0xDC) — the
+  whole DIALORCH call is bracketed `pin_right` (top `0x80050E0C`, bottom `0x80051050`).
+  Split-screen uses only the orchestrator's right branch, so a single right bracket
+  works (no left dial to detach). The section-C tail branches to `L_800517A0`, so the
+  1P-style sections at `0x800512xx`/`0x800515xx` never run in 2P.
+- **Time trial** (mode-0 branch `L_8004FFB0`, `beq` at `0x8004FF70` skips RANK/LAP):
+  its top row is all texrects (`func_8004D468` glyph / `func_8005464C` table draw), so
+  one rect-align bracket per side covers a whole multi-glyph cluster — left cluster
+  PREVIOUS (draws `0x8004FFF8`..`0x800501D8`), right cluster RECORD+BEST-LAP (draws
+  `0x800501F4`..`0x80050274`). The reset's matrix walker finds no `G_MTX LOAD` here.
+- **2P minimap** is intentionally left unpinned: its track outline is 3D geometry drawn
+  per-viewport by the frame builder and is center-anchored under Expand. Pinning only
+  the 2D dots (rect-align) would detach them from the outline. A correct fix needs a
+  matching per-viewport outline shift (a #41-scale follow-up); left coherent for now.
 
 ## Injection mechanism (no MIPS patch pipeline needed)
 
