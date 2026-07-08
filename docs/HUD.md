@@ -28,7 +28,7 @@ name space); runtime vram = splat − 0xC00.
 | LAP label+values block | `func_80058464` (0x80057864) | `0x8004FFA0`, (vals, x=0x28, y=0x13); draws label at x+2, values at x−0x10/x/x+0x10 | left |
 | TIME label+value | `func_8004CCB4` pair at `0x800503E8`/`0x80050414` (x=0xA0) | centered — needs no pinning |
 | Speedo NEEDLE | geometry built INSIDE `func_80056318`: one `G_MTX LOAD\|MODELVIEW` (word0 `0x01020040`) + rotation MULs + static DL; pivot trans ≈ (1000, −690) model units | right (via matrix nudge, see below) |
-| Minimap track outline | 3D geometry via the RACE PERSPECTIVE projection, emitted by the frame-builder tail (splat `func_8004384C` flow): camera-space `translate(-2.05, -2.4, 0)` built by the `func_80075278` jal at `0x80043C88`, then static-Mtx/tilt MULs, then polyline emitter `func_80045BDC` (runtime 0x80044FDC). The menu track maps use a different routine — `func_80044E2C` (runtime 0x8004422C, x·5−800 ortho translate), 14 call sites, all menus. | left (issue #41: hook rewrites the translate x by −1.09 camera units, verified live; env `LAMBO_WS_MINIMAP_OUTLINE_DX` overrides) |
+| Minimap track outline | 3D geometry via the RACE PERSPECTIVE projection, emitted by the frame-builder tail (splat `func_8004384C` flow): camera-space `translate(-2.05, -2.4, 0)` built by the `func_80075278` jal at `0x80043C88`, then static-Mtx/tilt MULs, then polyline emitter `func_80045BDC` (runtime 0x80044FDC). The menu track maps use a different routine — `func_80044E2C` (runtime 0x8004422C, x·5−800 ortho translate), 14 call sites, all menus. | left (issue #41/#67: hook rewrites the translate x by `-1.09 * 9/4 * (aspect-4/3)` camera units — `-1.09` at 16/9 live calibrated, 0 at 4/3, proportional for ultrawide; env `LAMBO_WS_MINIMAP_OUTLINE_DX` overrides for recalibration) |
 | Minimap car dots + P1 label + player arrow | `func_80054FFC` (0x800543FC), jal `0x80050588`; a2/a3 = cos/sin of CAR HEADING (arrow rotation); dots are 2×2 texrects, arrow is 2 quads via pool `G_MTX LOAD`s whose translate is `((x−158)·10, (119−y)·10)` — exactly 10 units per game px | left (issue #41: LEFT bracket for the rects, −533-unit matrix shift for the arrow) |
 | Top translucent bar | static DL `0x80167170` (one 296×6 texrect, teal prim color) via projection MTX at `0x800A2C40` | centered |
 | Sun lens flare | `func_80036854` (race path, BEFORE the HUD): chain of 10 translucent "ghost" texrects (alphas 0x82–0xDD, pastel prim tints) traced from the sun's projected screen pos; loop ≈ `0x800361C0`..`0x80036A58` | tracks the sun (issue #40: `gEXSetRectAspect(STRETCH)` bracket at `0x800361BC`/`0x80036A60` → `invRatioScale=1.0`, un-squished + full-width scissor; natives in `src/lambo_flare_widescreen.c`; no-op at 4:3) |
@@ -57,7 +57,7 @@ players field boots straight into any of these). The **race mode** at `0x800CE6B
 |---|---|---|---|
 | 1P arcade | `players=1`, `0x800CE6B4=2` | stretched wide | done (#2/#41) |
 | 1P time trial | `players=1`, `0x800CE6B4=0` (`LAMBO_WARP_MODE=0`) | stretched wide | done (#42): PREVIOUS left, RECORD/BEST-LAP right; LAPTIME centred; speedo+minimap shared with 1P (already pinned) |
-| 2P split | `players=2` | stretched wide (top/bottom, full width) | partial (#42): per half RANK right, LAP left, speed **readout** right. The alt-dial **gauge geometry** is not yet pinned (rect-align can't move it) — follow-up #56 |
+| 2P split | `players=2` | stretched wide (top/bottom, full width) | partial (#42): per half RANK right, LAP left, speed **readout** right. The alt-dial **gauge geometry** IS pinned (issue #67 follow-up: docs previously described it as "#56 deferred", but the existing `pin_reset` matrix walker already patches the per-half gauge's G_MTX LOAD inside the DIALORCH bracket span — `func_8006FC68` emits `0x01020040` directly between `pin_right`'s preamble and `pin_reset`'s cursor-captured walk). **2P minimap outline** remains the open piece (separate emitter from the 1P call site at `func_8004384C @ 0x80043C88`, which doesn't fire in 2P). |
 | 3P/4P | `players=3`/`4` | **pillarboxed 4:3** (dark side bars) | none needed — quad viewports don't cover the framebuffer width, so RT64 keeps them 4:3; the HUD is correct inside each 4:3 quadrant |
 
 Before/after (widescreen output, edge-pinning off vs on):
@@ -83,10 +83,18 @@ Details verified live:
   one rect-align bracket per side covers a whole multi-glyph cluster — left cluster
   PREVIOUS (draws `0x8004FFF8`..`0x800501D8`), right cluster RECORD+BEST-LAP (draws
   `0x800501F4`..`0x80050274`). The reset's matrix walker finds no `G_MTX LOAD` here.
-- **2P minimap** is intentionally left unpinned: its track outline is 3D geometry drawn
-  per-viewport by the frame builder and is center-anchored under Expand. Pinning only
-  the 2D dots (rect-align) would detach them from the outline. A correct fix needs a
-  matching per-viewport outline shift (a #41-scale follow-up); left coherent for now.
+- **2P minimap** is partially pinned (issue #42): per-viewport dots + P1 label use
+  the same LEFT rect-align bracket as 1P (top half runs the existing bracket; bottom
+  half mirrors the dot-overlay's drawing call). Track outline is a 3D polyline drawn
+  by `func_80045BDC` from inside the per-frame 3D builder (different viewport per
+  half); the 1P hook at `func_8004384C @ 0x80043C88` does NOT fire in 2P (verified
+  by env-var env-tuning iterations + screenshots — the hook never runs, so DX tweaks
+  are dead). The 2P outline's translate is built from a separate path; current
+  inspection of `func_800448DC` (the sibling function to `func_8004384C` at runtime
+  `0x80043CDC`) shows its `func_80075278` call passes `$a1 = 0` rather than the
+  1P pattern's `0xC0003333` (`-2.05f` immediate), so the actual 2P minimap per-viewport
+  emitter is *not* located there either. Open: find the 2P-specific emitter in the
+  recompiled disassembly / live-ares; this is a `#41`-scale follow-up.
 
 ## Injection mechanism (no MIPS patch pipeline needed)
 
@@ -133,9 +141,13 @@ Rules:
   between bracket cursors for `w0 == 0x01020040`, patch matrix element [3][0] (int at
   byte 24, fraction at 0x44). On the squeezed 2D path the required travel at 16:9
   Clamp16x9 is (wideW − H·4/3)/2 screen px = 160/3 game px; the 2D matrices use 10
-  units per game px, so |Δ| ≈ 533 units (the needle's live-calibrated +530 matches
-  this analytic value — the old "≈0.065 game-px/unit" note was a misreading of a rough
-  screenshot measurement). Gated by `lambo_ws_hud_widescreen_active()`.
+  units per game px, so |Δ| ≈ 533 units at 16/9 (the needle's live-calibrated +530
+  matches this analytic value to measurement precision). The shifts scale linearly
+  with the live output aspect — see `hud_shift_x_matrix_units()` in
+  `lambo_hud_widescreen.c` — so the composite stays glued at any Expand-on aspect
+  ratio, not just the shipped 16/9 default (issue #67). Gated by
+  `lambo_ws_hud_widescreen_active()` = `Expand + (live_aspect > 4/3)`, the same
+  condition that fires the rect pins.
 
 ## Debug technique that finally worked
 

@@ -14,6 +14,7 @@
 // the math degenerates to the original coordinates, so no config gating is needed.
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "recomp.h"
 #include "rt64_extended_gbi.h"
@@ -21,10 +22,18 @@
 #define LAMBO_DL_CURSOR 0x800A39CCu
 #define SCREEN_WIDTH_QP (320 * 4) /* gEXSetRectAlign offsets are quarter-pixels */
 
-// From src/lambo_config.cpp: true when the shipped widescreen defaults are active
-// (ar Expand + hr Clamp16x9). Gates only the needle matrix nudge; the rect-origin
-// pins degenerate to no-ops at 4:3 by construction.
+// From src/lambo_config.cpp: true when the rect pins are actively travelling
+// (ar Expand + live output aspect > 4/3). Gates the game-space geometry shifts
+// (needle, minimap arrow, outline) so they only fire when the rect pins they
+// track are also firing. The rect-origin pins themselves degenerate to no-ops
+// at 4:3 by construction, so no gate is needed for them.
 int lambo_ws_hud_widescreen_active(void);
+
+// From src/rt64_renderer.cpp: live output aspect as float bits, 4/3 floor for
+// non-Expand / non-wide outputs. Used to scale the game-space shifts with the
+// actual output ratio (issue #67), so the composite HUD stays glued together
+// at any Expand-on aspect, not just the shipped 16:9 Clamp16x9 defaults.
+extern uint32_t lambo_ws_get_output_aspect_bits(void);
 
 static gpr lambo_ws_bracket_start;
 
@@ -87,14 +96,22 @@ void lambo_ws_pin_right(uint8_t* rdram) {
 // translation to any LOAD matrix found. Both the needle and the minimap arrow build
 // their matrices at 10 units per game pixel (the ortho convention of func_80075278),
 // and a pinned rect travels (wideWidth - height*4/3)/2 screen px = 160/3 game px at
-// the shipped 16:9 Clamp16x9 defaults, so the magnitude is ~533 units either way.
-//
-// Needle: calibrated live against the RIGHT-pinned dial at 16:9 (2026-07-05: 530
-// centers it on the dial hub — matching the analytic 533 to measurement precision).
-// Only valid for the shipped Expand + Clamp16x9 defaults — gated above for anything
-// else.
-#define LAMBO_WS_NEEDLE_DX 530.0f
-#define LAMBO_WS_MINIMAP_ARROW_DX (-1600.0f / 3.0f) /* -53.33 game px * 10 units/px */
+// 16:9, so the matrix-unit magnitude at 16:9 is 160/3 * 10 = 533.33 (live-calibrated
+// 530 matches to measurement precision, PR #39). Scales linearly with the live output
+// aspect (issue #67), so the composite stays glued at any Expand-on aspect.
+static float live_aspect(void) {
+    uint32_t bits = lambo_ws_get_output_aspect_bits();
+    float a;
+    memcpy(&a, &bits, sizeof(a));
+    return a;
+}
+
+static float hud_shift_x_matrix_units(void) {
+    if (!lambo_ws_hud_widescreen_active()) return 0.0f;
+    float a = live_aspect();
+    if (a <= 4.0f / 3.0f) return 0.0f;
+    return 1200.0f * (a - 4.0f / 3.0f); /* 160/3 * 10 * (aspect-4/3) / (16/9-4/3) */
+}
 
 static void patch_load_mtx_dx(uint8_t* rdram, gpr start, gpr end, float dx_units) {
     if (!lambo_ws_hud_widescreen_active()) {
@@ -117,7 +134,7 @@ static void patch_load_mtx_dx(uint8_t* rdram, gpr start, gpr end, float dx_units
 
 void lambo_ws_pin_reset(uint8_t* rdram) {
     patch_load_mtx_dx(rdram, lambo_ws_bracket_start,
-                      MEM_W(0, (gpr)(int32_t)LAMBO_DL_CURSOR), LAMBO_WS_NEEDLE_DX);
+                      MEM_W(0, (gpr)(int32_t)LAMBO_DL_CURSOR), hud_shift_x_matrix_units());
     emit_cmd(rdram,
              PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_POPSCISSOR_V1, 24, 0),
              0);
@@ -132,15 +149,29 @@ void lambo_ws_pin_reset(uint8_t* rdram) {
 // widening), placed by a camera-space translate(-2.05, -2.4, 0) built at 0x80043C88 —
 // a hook there rewrites the x argument in flight. Camera units -> screen px depends
 // on that projection; -1.09 verified live 2026-07-05 (1600x900 Expand+Clamp16x9,
-// arcade race: dots and P1 sit on the outline). Env LAMBO_WS_MINIMAP_OUTLINE_DX
-// (float, camera units, negative = further left) overrides for recalibration.
-#define LAMBO_WS_MINIMAP_OUTLINE_DX -1.09f
+// arcade race: dots and P1 sit on the outline). Scales linearly with the live output
+// aspect (issue #67). Env LAMBO_WS_MINIMAP_OUTLINE_DX (float, camera units, negative =
+// further left) overrides for recalibration. The 2P outline lives on a separate
+// per-viewport emitter (see docs/HUD.md "2P minimap"); this 1P hook is intentionally
+// dormant in 2P.
+#define LAMBO_WS_MINIMAP_OUTLINE_DX -1.09f /* live-calibrated 2026-07-05, PR #43 */
 
-// The frame builder also runs in modes whose dots are not pinned yet (#42: 2P split;
-// demo race has no HUD). Key the outline shift off the 1P bracket actually running:
-// the builder draws before the dispatcher each frame, so it sees the previous frame's
-// flag (one unshifted frame on race entry, decays within 3 frames after exit).
+// The frame builder runs in modes whose dots are not pinned yet (#42: 2P split;
+// demo race has no HUD). Key the 1P outline shift off the 1P bracket actually
+// running: the builder draws before the dispatcher each frame, so it sees the
+// previous frame's flag (one unshifted frame on race entry, decays within 3 frames
+// after exit).
 static int lambo_ws_minimap_1p_frames;
+
+static float minimap_outline_dx_camera(void) {
+    if (!lambo_ws_hud_widescreen_active()) return 0.0f;
+    if (lambo_ws_minimap_1p_frames <= 0) return 0.0f;
+    lambo_ws_minimap_1p_frames--;
+    float a = live_aspect();
+    if (a <= 4.0f / 3.0f) return 0.0f;
+    /* base at 16/9; scales linearly to 0 at 4/3 and proportionally wider */
+    return LAMBO_WS_MINIMAP_OUTLINE_DX * (9.0f / 4.0f) * (a - 4.0f / 3.0f);
+}
 
 void lambo_ws_minimap_pin(uint8_t* rdram) {
     lambo_ws_minimap_1p_frames = 3;
@@ -150,7 +181,7 @@ void lambo_ws_minimap_pin(uint8_t* rdram) {
 void lambo_ws_minimap_reset(uint8_t* rdram) {
     patch_load_mtx_dx(rdram, lambo_ws_bracket_start,
                       MEM_W(0, (gpr)(int32_t)LAMBO_DL_CURSOR),
-                      LAMBO_WS_MINIMAP_ARROW_DX);
+                      -hud_shift_x_matrix_units()); /* arrow tracks dots, opposite sign */
     emit_cmd(rdram,
              PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_POPSCISSOR_V1, 24, 0),
              0);
@@ -158,12 +189,45 @@ void lambo_ws_minimap_reset(uint8_t* rdram) {
 }
 
 uint32_t lambo_ws_minimap_outline_x(uint32_t x_bits) {
-    if (!lambo_ws_hud_widescreen_active() || lambo_ws_minimap_1p_frames <= 0) {
-        return x_bits;
-    }
-    lambo_ws_minimap_1p_frames--;
-    float dx = LAMBO_WS_MINIMAP_OUTLINE_DX;
+    float dx = minimap_outline_dx_camera();
+    if (dx == 0.0f) return x_bits; /* gate / counter / mode all said no */
     const char* env = getenv("LAMBO_WS_MINIMAP_OUTLINE_DX");
+    if (env != NULL) {
+        dx = (float)atof(env);
+    }
+    union { uint32_t u; float f; } x;
+    x.u = x_bits;
+    x.f += dx;
+    return x.u;
+}
+
+// 2P minimap outline (issue #42 + #67). The 1P hook at `func_8004384C @ 0x80043C88`
+// doesn't fire in 2P (verified by env-var iteration on the previous DX constant):
+// the per-frame 3D builder takes a different code path in 2P. `func_800448DC` (the
+// sibling function at runtime 0x80043CDC, after `func_8004384C` in ROM) is the
+// 2P per-viewport builder -- it has the same shape (one `func_80075278` matrix-
+// translate build followed by the `func_80045BDC` polyline emit) but its camera-space
+// translate is built from $a1=0 (live-calibrated vs. 1P's hardcoded -2.05f). The
+// constant is much larger in 2P because the per-viewport projection differs: each
+// 2P viewport is half-height (top/bottom split), so the camera-space shift that
+// projects to a given screen distance is halved -- but the offset from 4:3-center
+// to 16:9-wide edge in 2P is the SAME screen distance as 1P, so the absolute
+// shift in camera units is comparable. -50.0f is a first guess (live-calibrate via
+// env var below). Live aspect scales proportionally; widescreen must be active.
+#define LAMBO_WS_MINIMAP_OUTLINE_DX_2P -50.0f /* first guess; live-calibrate via env */
+
+static float minimap_outline_dx_camera_2p(void) {
+    if (!lambo_ws_hud_widescreen_active()) return 0.0f;
+    float a = live_aspect();
+    if (a <= 4.0f / 3.0f) return 0.0f;
+    /* base at 16/9; scales linearly to 0 at 4/3 and proportionally wider */
+    return LAMBO_WS_MINIMAP_OUTLINE_DX_2P * (9.0f / 4.0f) * (a - 4.0f / 3.0f);
+}
+
+uint32_t lambo_ws_minimap_outline_x_2p(uint32_t x_bits) {
+    float dx = minimap_outline_dx_camera_2p();
+    if (dx == 0.0f) return x_bits;
+    const char* env = getenv("LAMBO_WS_MINIMAP_OUTLINE_DX_2P");
     if (env != NULL) {
         dx = (float)atof(env);
     }

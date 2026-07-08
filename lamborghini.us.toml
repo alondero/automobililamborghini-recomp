@@ -518,6 +518,25 @@ func = "func_8004384C"
 before_vram = 0x80042CE8
 text = "extern unsigned int lambo_ws_get_output_aspect_bits(void); ctx->r7 = (int32_t)lambo_ws_get_output_aspect_bits();"
 
+# Issue #42/#67 — pin the 2P minimap outline to the wide-pinned dot positions.
+# The 1P hook above (func_8004384C @ 0x80043C88) does NOT fire in 2P — the per-frame
+# builder takes a different code path (verified by env-var iteration: the DX shifts
+# had no visible effect in 2P screenshots, the hook is dormant). The 2P per-viewport
+# minimap is built by `func_800448DC` (the sibling function immediately after
+# func_8004384C in ROM, runtime 0x80043CDC): same shape (a func_80075278 matrix-
+# translate build followed by a func_80045BDC polyline emit) but its camera-space
+# translate starts from $a1=0 instead of -2.05f. Hook at func_800448DC 0x80043F4C
+# rewrites $a1 in flight, gated to `lambo_ws_hud_widescreen_active()` (Expand +
+# live aspect > 4/3, same gate as 1P) so the fix degenerates to 4:3 / ar Original.
+# Constant LAMBO_WS_MINIMAP_OUTLINE_DX_2P=-50.0f is a first guess based on the per-
+# viewport projection differing from 1P (top/bottom halves the height). Recalibrate
+# via env `LAMBO_WS_MINIMAP_OUTLINE_DX_2P` (float, camera units, negative = further
+# left). natives in src/lambo_hud_widescreen.c.
+[[patches.hook]]
+func = "func_800448DC"
+before_vram = 0x80043F4C
+text = "extern unsigned int lambo_ws_minimap_outline_x_2p(unsigned int); ctx->r5 = S32(lambo_ws_minimap_outline_x_2p((uint32_t)ctx->r5));"
+
 # Issue #12 — developer warp menu. Per-frame warp tick at the entry of the TOP-LEVEL
 # state dispatcher func_800028D0 (runtime 0x80001CD0, argument-free, jump-table over
 # states 1..0x10, runs every frame in every state; func_800030F8 was tried first but

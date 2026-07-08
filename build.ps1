@@ -162,18 +162,18 @@ try {
         # Without distinguishing (b) from (c), drift silently masquerades as
         # 'already applied' and produces a confusing compile error much later.
         #
-        # NB: use `git.exe` (not `git`) + `--quiet` to bypass any PowerShell
-        # module wrapper (e.g. posh-git) that intercepts stderr. patch 0001
-        # emits ~300 "trailing whitespace" lines that git considers non-fatal
-        # but a wrapper may promote to terminating errors under
+        # NB: use `git.exe` (not `git`) + `2>&1 | Out-Null` to bypass any
+        # PowerShell module wrapper (e.g. posh-git) that intercepts stderr.
+        # patch 0001 emits ~300 "trailing whitespace" lines that git considers
+        # non-fatal but a wrapper may promote to terminating errors under
         # $ErrorActionPreference='Stop'.
-        & git.exe -C $p.Sub apply --quiet --ignore-whitespace --check $PatchAbs
+        & git.exe -C $p.Sub apply --ignore-whitespace --check $PatchAbs 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
-            & git.exe -C $p.Sub apply --quiet --ignore-whitespace $PatchAbs
+            & git.exe -C $p.Sub apply --ignore-whitespace $PatchAbs 2>&1 | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "patch failed: $($p.Sub) <- $($p.Patch)" }
             Write-Host "  applied  $($p.Sub) <- $($p.Patch)" -ForegroundColor Green
         } else {
-            & git.exe -C $p.Sub apply --quiet --ignore-whitespace --reverse --check $PatchAbs
+            & git.exe -C $p.Sub apply --ignore-whitespace --reverse --check $PatchAbs 2>&1 | Out-Null
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "  skipped  $($p.Sub) <- $($p.Patch) (already applied)" -ForegroundColor DarkGray
             } else {

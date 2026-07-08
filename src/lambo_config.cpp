@@ -8,6 +8,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 
 #include "json/json.hpp"
@@ -175,14 +176,26 @@ ultramodern::renderer::GraphicsConfig default_graphics_config() {
     return cfg;
 }
 
-// Widescreen-HUD gate for src/lambo_hud_widescreen.c (issue #2): the rect pins use
-// RT64 origins and degenerate to a no-op at 4:3 on their own, but the needle's
-// game-space matrix nudge does not — it is calibrated for the shipped defaults
-// (Expand + Clamp16x9 on a >=16:9 output) and must be disabled for other configs.
-static int s_ws_hud_active = 0;
+// Widescreen-HUD gate for src/lambo_hud_widescreen.c (issue #2/#67): the rect pins
+// (gEXSetRectAlign) are bound to RT64's widened image and travel with the actual
+// output aspect, so they fire whenever the renderer is in Expand AND the output
+// aspect exceeds 4/3. The game-space geometry shifts (needle, minimap arrow,
+// outline) must be gated on the same condition, otherwise geometry stays anchored
+// at 4:3 while rects travel, leaving the composite HUD detached. Previously this
+// was approximated as "Expand + hr_option == Clamp16x9", which dropped the shifts
+// on any other hr_option even though the rect pins were still firing — issue #67.
+static int s_ws_hud_expand = 0;
+
+extern "C" uint32_t lambo_ws_get_output_aspect_bits(void);
 
 extern "C" int lambo_ws_hud_widescreen_active(void) {
-    return s_ws_hud_active;
+    if (!s_ws_hud_expand) {
+        return 0;
+    }
+    float aspect;
+    uint32_t bits = lambo_ws_get_output_aspect_bits();
+    std::memcpy(&aspect, &bits, sizeof(aspect));
+    return aspect > 4.0f / 3.0f;
 }
 
 ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
@@ -190,9 +203,7 @@ ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
     const std::filesystem::path path = graphics_json_path();
     const ReadResult r = read_graphics_file(path, cfg);
 
-    s_ws_hud_active =
-        cfg.ar_option == ultramodern::renderer::AspectRatio::Expand &&
-        cfg.hr_option == ultramodern::renderer::HUDRatioMode::Clamp16x9;
+    s_ws_hud_expand = (cfg.ar_option == ultramodern::renderer::AspectRatio::Expand) ? 1 : 0;
 
     ultramodern::renderer::set_graphics_config(cfg);
     // Write the merged config back so the on-disk file is always complete and
