@@ -197,3 +197,10 @@ uint32_t lambo_ws_minimap_outline_x(uint32_t x_bits) {
     x.f += dx;
     return x.u;
 }
+
+// 2P split minimap (issue #56): the whole composite (dots + arrow + track outline) is
+// 2D here, so one LEFT bracket per half pins it -- no 3D outline shift like 1P (see
+// docs/HUD.md). Distinct from lambo_ws_minimap_pin only to skip the 1P outline frame-gate.
+void lambo_ws_minimap_pin_2p(uint8_t* rdram) {
+    lambo_ws_pin_left(rdram);
+}
