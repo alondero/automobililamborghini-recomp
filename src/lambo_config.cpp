@@ -175,24 +175,17 @@ ultramodern::renderer::GraphicsConfig default_graphics_config() {
     return cfg;
 }
 
-// Widescreen-HUD gate for src/lambo_hud_widescreen.c (issue #2): the rect pins use
-// RT64 origins and degenerate to a no-op at 4:3 on their own, but the needle's
-// game-space matrix nudge does not — it is calibrated for the shipped defaults
-// (Expand + Clamp16x9 on a >=16:9 output) and must be disabled for other configs.
-static int s_ws_hud_active = 0;
-
-extern "C" int lambo_ws_hud_widescreen_active(void) {
-    return s_ws_hud_active;
-}
+// (issue #67) The widescreen-HUD geometry shifts no longer need a config-time gate:
+// src/lambo_hud_widescreen.c derives them from lambo_ws_get_hud_rect_aspect_bits(), which
+// is 0-travel (4/3) for any config where the rect pins don't move (non-Expand, 4:3 output,
+// or hr_option Original) AND tracks runtime window resizes and the hr_option clamp -- none
+// of which a load-time bool could capture. The old lambo_ws_hud_widescreen_active()
+// (Expand + Clamp16x9) has been removed.
 
 ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
     ultramodern::renderer::GraphicsConfig cfg = default_graphics_config();
     const std::filesystem::path path = graphics_json_path();
     const ReadResult r = read_graphics_file(path, cfg);
-
-    s_ws_hud_active =
-        cfg.ar_option == ultramodern::renderer::AspectRatio::Expand &&
-        cfg.hr_option == ultramodern::renderer::HUDRatioMode::Clamp16x9;
 
     ultramodern::renderer::set_graphics_config(cfg);
     // Write the merged config back so the on-disk file is always complete and

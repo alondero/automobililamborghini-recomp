@@ -26,6 +26,7 @@
 
 #include "lambo_rt64.h"
 #include "lambo_config.h"
+#include "lambo_hud_widescreen.h"
 
 namespace {
 
@@ -51,10 +52,11 @@ void dummy_check_interrupts() {}
 // background layer with a HARDCODED 4/3 literal (0x3FAAAAAB) baked at the call site,
 // so under RT64 Expand the skybox panels stay sized for 4:3 and don't reach the wide
 // edges. lambo_ws_get_output_aspect_bits() below lets a patches.hook override that
-// literal with the live output aspect each frame, mirroring the HUD widescreen gate
-// (lambo_ws_hud_widescreen_active in lambo_config.cpp) but reading the actual ratio
-// instead of a bool, since a symmetric frustum only needs a wider tangent, not a
-// separate translate (unlike the 2D HUD's rect-align + matrix-nudge scheme).
+// literal with the live output aspect each frame. This is the RAW output aspect: a
+// symmetric skybox frustum always fills the real screen, so it just needs a wider tangent.
+// The 2D HUD geometry shifts (issue #67) do NOT use this -- they honour hr_option's rect
+// clamp via lambo_ws_get_hud_rect_aspect_bits() below, since a rect-aligned element and a
+// full-screen frustum widen by different amounts under Clamp16x9.
 //
 // Written on the gfx thread (RT64Context ctor/dtor), read every frame on the CPU/
 // game-logic thread inside lambo_ws_get_output_aspect_bits() below -- unlike
@@ -417,6 +419,53 @@ extern "C" uint32_t lambo_ws_get_output_aspect_bits(void) {
             float live = float(w) / float(h);
             if (live > aspect) {
                 aspect = live;
+            }
+        }
+    }
+    uint32_t bits;
+    std::memcpy(&bits, &aspect, sizeof(bits));
+    return bits;
+}
+
+// (issue #67) Effective aspect the extended-GBI HUD rect pins travel to, as raw float
+// bits. DISTINCT from lambo_ws_get_output_aspect_bits() above: that is the skybox's raw
+// output aspect (#3, a symmetric frustum that always fills the real screen), whereas the
+// gEXSetRectAlign HUD pins honour hr_option -- Full reaches the real edges, Clamp16x9
+// stops at 16:9, Original doesn't move -- so the game-space HUD geometry shifts
+// (src/lambo_hud_widescreen.c) key off THIS. Keying them off the raw output aspect would
+// over-translate the geometry past the rects at any non-Full ultrawide output (e.g. the
+// shipped Clamp16x9 default on a 21:9 monitor). Mirrors set_application_user_config()'s
+// hr_option map plus the extAspectPercentage math in rt64_workload_queue.cpp:159-183.
+// Same thread-safety contract and 4/3 floor as the skybox helper above.
+extern "C" uint32_t lambo_ws_get_hud_rect_aspect_bits(void) {
+    const float source = 4.0f / 3.0f;
+    float aspect = source;
+    const auto& cfg = ultramodern::renderer::get_graphics_config();
+    RT64::Application* active_app = g_lambo_active_app.load(std::memory_order_acquire);
+    if (cfg.ar_option == ultramodern::renderer::AspectRatio::Expand &&
+        active_app != nullptr && active_app->sharedQueueResources) {
+        auto& shared = *active_app->sharedQueueResources;
+        std::scoped_lock<std::mutex> configuration_lock(shared.configurationMutex);
+        uint32_t w = shared.swapChainWidth;
+        uint32_t h = shared.swapChainHeight;
+        if (w > 0 && h > 0) {
+            float display = float(w) / float(h);
+            if (display > source) {
+                float ext_percentage;
+                switch (cfg.hr_option) {
+                    case ultramodern::renderer::HUDRatioMode::Full:
+                        ext_percentage = 1.0f;
+                        break;
+                    case ultramodern::renderer::HUDRatioMode::Clamp16x9:
+                        ext_percentage = lambo_ws_hud_clamp_ext_percentage(
+                            display, source, 16.0f / 9.0f);
+                        break;
+                    case ultramodern::renderer::HUDRatioMode::Original:
+                    default:
+                        ext_percentage = 0.0f;
+                        break;
+                }
+                aspect = lambo_ws_hud_effective_rect_aspect(display, source, ext_percentage);
             }
         }
     }
