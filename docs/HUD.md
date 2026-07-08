@@ -135,7 +135,21 @@ Rules:
   Clamp16x9 is (wideW − H·4/3)/2 screen px = 160/3 game px; the 2D matrices use 10
   units per game px, so |Δ| ≈ 533 units (the needle's live-calibrated +530 matches
   this analytic value — the old "≈0.065 game-px/unit" note was a misreading of a rough
-  screenshot measurement). Gated by `lambo_ws_hud_widescreen_active()`.
+  screenshot measurement). That 533/-533/-1.09 is the **16:9** magnitude; issue #67
+  scales each by `lambo_ws_hud_shift_scale_for_aspect()` (0 at 4:3, 1 at 16:9, larger
+  for wider outputs) so the geometry tracks the rect pins at any Expand output aspect and
+  any `hr_option`, not only the shipped `Clamp16x9` defaults. **The scale keys off the
+  aspect the rects EFFECTIVELY pin to** (`lambo_ws_get_hud_rect_aspect_bits()`), NOT the
+  raw output aspect — because RT64's rect pins honour `hr_option` via `extAspectPercentage`
+  (`rt64_workload_queue.cpp:159-183`): `Full` reaches the real edges, `Clamp16x9` stops at
+  16:9 (so at 21:9 the rects travel only ~44% of the way), `Original` doesn't move at all.
+  Keying off the raw output aspect (the skybox's, #3) would over-translate the geometry
+  past the clamped rects on a non-`Full` ultrawide. The effective aspect is 4/3 (0-travel)
+  for any non-Expand config or `Original`, so no separate config gate is needed. See the
+  `lambo_ws_hud_*` inline helpers in `src/lambo_hud_widescreen.h` (host-unit-tested in
+  `tests/test_hud_shift_scale.c`).
+
+  ![Widescreen HUD geometry before/after (21:9)](images/hud-67-geometry-before-after.png)
 
 ## Debug technique that finally worked
 

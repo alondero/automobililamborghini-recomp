@@ -66,3 +66,7 @@ nextsessionprompt.md
 *.bmp
 # Generic scratch
 *.tmp
+# Session scratch (screenshots, driven-capture configs)
+verify_*/
+# Host-compiled unit-test binaries
+tests/*.exe

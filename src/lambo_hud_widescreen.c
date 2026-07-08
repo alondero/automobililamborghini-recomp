@@ -17,14 +17,29 @@
 
 #include "recomp.h"
 #include "rt64_extended_gbi.h"
+#include "lambo_hud_widescreen.h"
 
 #define LAMBO_DL_CURSOR 0x800A39CCu
 #define SCREEN_WIDTH_QP (320 * 4) /* gEXSetRectAlign offsets are quarter-pixels */
 
-// From src/lambo_config.cpp: true when the shipped widescreen defaults are active
-// (ar Expand + hr Clamp16x9). Gates only the needle matrix nudge; the rect-origin
-// pins degenerate to no-ops at 4:3 by construction.
-int lambo_ws_hud_widescreen_active(void);
+// Effective aspect the HUD rect pins travel to (raw float bits, floored to >= 4/3) from
+// rt64_renderer.cpp. Honours hr_option (Full = real edges, Clamp16x9 = stops at 16:9,
+// Original = no travel) and returns 4/3 for any non-Expand config, so the shift scale
+// below is 0 (a no-op) whenever the rects themselves don't move -- no separate config
+// gate needed. NOT the raw output aspect (that is the skybox's, #3): keying off that would
+// over-translate the geometry past the clamped rects at non-Full ultrawide outputs.
+extern uint32_t lambo_ws_get_hud_rect_aspect_bits(void);
+
+// How far the rect pins travel at the LIVE effective HUD aspect, normalized so 16:9 == 1
+// (issue #67; see lambo_hud_widescreen.h). Each geometry element's measured-16:9 shift is
+// multiplied by this, so needle/arrow/outline track the rect pins at ANY Expand aspect and
+// hr_option. 0 when the rects don't travel (4:3 / non-Expand / Original) degenerates the
+// shifts to no-ops.
+static float lambo_ws_get_hud_shift_scale(void) {
+    union { uint32_t u; float f; } a;
+    a.u = lambo_ws_get_hud_rect_aspect_bits();
+    return lambo_ws_hud_shift_scale_for_aspect(a.f);
+}
 
 static gpr lambo_ws_bracket_start;
 
@@ -89,17 +104,20 @@ void lambo_ws_pin_right(uint8_t* rdram) {
 // and a pinned rect travels (wideWidth - height*4/3)/2 screen px = 160/3 game px at
 // the shipped 16:9 Clamp16x9 defaults, so the magnitude is ~533 units either way.
 //
+// These are the 16:9 magnitudes; lambo_ws_get_hud_shift_scale() scales them for other
+// output aspects (issue #67), so at 16:9 they reproduce the #39/#43-shipped placement
+// exactly and at wider/narrower Expand aspects they track the rect pins.
 // Needle: calibrated live against the RIGHT-pinned dial at 16:9 (2026-07-05: 530
 // centers it on the dial hub — matching the analytic 533 to measurement precision).
-// Only valid for the shipped Expand + Clamp16x9 defaults — gated above for anything
-// else.
 #define LAMBO_WS_NEEDLE_DX 530.0f
 #define LAMBO_WS_MINIMAP_ARROW_DX (-1600.0f / 3.0f) /* -53.33 game px * 10 units/px */
 
 static void patch_load_mtx_dx(uint8_t* rdram, gpr start, gpr end, float dx_units) {
-    if (!lambo_ws_hud_widescreen_active()) {
-        return;
+    float scale = lambo_ws_get_hud_shift_scale();
+    if (scale <= 0.0f) {
+        return; /* 4:3 / non-Expand output: the rect pins don't travel either */
     }
+    dx_units *= scale;
     for (gpr p = start; p + 8 <= end; p += 8) {
         uint32_t w0 = (uint32_t)MEM_W(0, p);
         if (w0 == 0x01020040u) { /* G_MTX LOAD|MODELVIEW, len 0x40 */
@@ -132,8 +150,10 @@ void lambo_ws_pin_reset(uint8_t* rdram) {
 // widening), placed by a camera-space translate(-2.05, -2.4, 0) built at 0x80043C88 —
 // a hook there rewrites the x argument in flight. Camera units -> screen px depends
 // on that projection; -1.09 verified live 2026-07-05 (1600x900 Expand+Clamp16x9,
-// arcade race: dots and P1 sit on the outline). Env LAMBO_WS_MINIMAP_OUTLINE_DX
-// (float, camera units, negative = further left) overrides for recalibration.
+// arcade race: dots and P1 sit on the outline) — the 16:9 magnitude, scaled by
+// lambo_ws_get_hud_shift_scale() for other aspects (issue #67). Env
+// LAMBO_WS_MINIMAP_OUTLINE_DX (float, camera units, negative = further left) sets the
+// 16:9 base for recalibration; it is scaled the same way.
 #define LAMBO_WS_MINIMAP_OUTLINE_DX -1.09f
 
 // The frame builder also runs in modes whose dots are not pinned yet (#42: 2P split;
@@ -158,8 +178,12 @@ void lambo_ws_minimap_reset(uint8_t* rdram) {
 }
 
 uint32_t lambo_ws_minimap_outline_x(uint32_t x_bits) {
-    if (!lambo_ws_hud_widescreen_active() || lambo_ws_minimap_1p_frames <= 0) {
+    if (lambo_ws_minimap_1p_frames <= 0) {
         return x_bits;
+    }
+    float scale = lambo_ws_get_hud_shift_scale();
+    if (scale <= 0.0f) {
+        return x_bits; /* 4:3 / non-Expand output: leave the outline where the game drew it */
     }
     lambo_ws_minimap_1p_frames--;
     float dx = LAMBO_WS_MINIMAP_OUTLINE_DX;
@@ -167,6 +191,7 @@ uint32_t lambo_ws_minimap_outline_x(uint32_t x_bits) {
     if (env != NULL) {
         dx = (float)atof(env);
     }
+    dx *= scale;
     union { uint32_t u; float f; } x;
     x.u = x_bits;
     x.f += dx;
