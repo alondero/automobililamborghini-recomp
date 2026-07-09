@@ -860,23 +860,12 @@ func = "func_80050860"
 before_vram = 0x8005027C
 text = "lambo_ws_pin_reset(rdram);"
 
-# Issue #3 — per-frame Mtx rebuild for the widescreen skybox. func_8004384C (the
-# per-frame 3D DL builder) opens the frame by calling func_80075500 (a hand-rolled
-# guPerspective-equivalent: fovy/aspect/near/far -> frustum -> Mtx) to build the
-# BACKGROUND/skybox layer's own projection, distinct from the main race camera. The
-# call site hardcodes the aspect argument ($a3) to the hex float literal 0x3FAAAAAB
-# (= 4/3, verified by decoding the IEEE-754 bits) via `lui $a3,0x3FAA` / `ori
-# $a3,$a3,0xAAAB` at 0x80042CE0/E4, so the frustum's tangent — and therefore the
-# skybox panels' screen coverage — stays sized for 4:3 no matter the RT64 output
-# width, leaving gaps at the wide edges under ar_option Expand. Hooked right after
-# the literal is fully assembled (0x80042CE8, not a branch-delay slot) and before it
-# is consumed by the jal at 0x80042CFC: overwrite $a3 with the live output aspect
-# (lambo_ws_get_output_aspect_bits, rt64_renderer.cpp) so the frustum widens with the
-# window — the fix degenerates to the original constant at 4:3 or ar_option Original.
-[[patches.hook]]
-func = "func_8004384C"
-before_vram = 0x80042CE8
-text = "extern unsigned int lambo_ws_get_output_aspect_bits(void); ctx->r7 = (int32_t)lambo_ws_get_output_aspect_bits();"
+# Issue #3 — widescreen skybox is handled in the renderer (RT64), NOT here. The earlier
+# ROM-side hook that widened func_8004384C's frustum aspect was removed: it only runs when
+# the game's frame loop runs, so it left the sky wrong whenever that loop is frozen (e.g.
+# paused), and it double-widened at-infinity backgrounds on top of RT64's own aspect adjust.
+# The renderer now stretches any zero-view-translation (parallax-free) perspective backdrop
+# to fill the frame every presented frame. See patches/0008-rt64-skybox-stretch-parallaxless-backdrop.patch.
 
 # Issue #12 — developer warp menu. Per-frame warp tick at the entry of the TOP-LEVEL
 # state dispatcher func_800028D0 (runtime 0x80001CD0, argument-free, jump-table over

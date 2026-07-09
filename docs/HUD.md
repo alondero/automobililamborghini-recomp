@@ -192,7 +192,7 @@ Rules:
   raw output aspect — because RT64's rect pins honour `hr_option` via `extAspectPercentage`
   (`rt64_workload_queue.cpp:159-183`): `Full` reaches the real edges, `Clamp16x9` stops at
   16:9 (so at 21:9 the rects travel only ~44% of the way), `Original` doesn't move at all.
-  Keying off the raw output aspect (the skybox's, #3) would over-translate the geometry
+  Keying off the raw output aspect would over-translate the geometry
   past the clamped rects on a non-`Full` ultrawide. The effective aspect is 4/3 (0-travel)
   for any non-Expand config or `Original`, so no separate config gate is needed. See the
   `lambo_ws_hud_*` inline helpers in `src/lambo_hud_widescreen.h` (host-unit-tested in
