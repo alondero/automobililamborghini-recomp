@@ -80,9 +80,30 @@ try {
     # Order matters: Python's CMake must beat MSYS2's; MinGW bin must beat any
     # cc shim that may sit ahead of gcc on this box. Anything already on PATH
     # is preserved as the suffix.
-    $PythonScripts = 'C:\Users\alond\AppData\Local\Programs\Python\Python313\Scripts'
+    #
+    # The Python-Scripts prefix is needed because MSYS2's cmake 3.25.1 is
+    # buggy on this box (warns "Ignoring extra path from command line: .exe"
+    # and emits Unix paths that Ninja on Windows can't resolve). The fix is
+    # to put Python's bundled cmake ahead of MSYS2's. Either:
+    #   - set $env:LAMBO_PYTHON_SCRIPTS=<path-to-Python's-Scripts-dir>, OR
+    #   - put Python's Scripts dir on PATH yourself, OR
+    #   - rely on the auto-discovery below, which finds a Python-for-Windows
+    #     install under $env:LOCALAPPDATA\Programs\Python\Python*\Scripts.
+    $PythonScripts = $env:LAMBO_PYTHON_SCRIPTS
+    if (-not $PythonScripts -and $env:LOCALAPPDATA) {
+        $pyRoot = Join-Path $env:LOCALAPPDATA 'Programs\Python'
+        if (Test-Path $pyRoot) {
+            # Highest Python version's Scripts dir that contains cmake.exe.
+            $candidate = Get-ChildItem -Path $pyRoot -Directory -Filter 'Python*' -ErrorAction SilentlyContinue |
+                Sort-Object Name -Descending |
+                ForEach-Object { Join-Path $_.FullName 'Scripts' } |
+                Where-Object { Test-Path (Join-Path $_ 'cmake.exe') } |
+                Select-Object -First 1
+            if ($candidate) { $PythonScripts = $candidate }
+        }
+    }
     $MinGW         = 'C:\ProgramData\mingw64\mingw64\bin'
-    $NewPrefix     = @($PythonScripts, $MinGW) | Where-Object { Test-Path $_ }
+    $NewPrefix     = @($PythonScripts, $MinGW) | Where-Object { $_ -and (Test-Path $_) }
     if ($NewPrefix.Count -gt 0) {
         $env:PATH = ($NewPrefix -join ';') + ';' + $env:PATH
         Write-Host ("[path] + {0}" -f ($NewPrefix -join '; ')) -ForegroundColor DarkGray
@@ -93,7 +114,7 @@ try {
     $gcc   = (Get-Command gcc.exe   -ErrorAction SilentlyContinue).Source
     $gxx   = (Get-Command g++.exe   -ErrorAction SilentlyContinue).Source
     $ninja = (Get-Command ninja.exe -ErrorAction SilentlyContinue).Source
-    if (-not $cmake) { throw 'cmake.exe not on PATH. Install CMake or extend $PythonScripts.' }
+    if (-not $cmake) { throw 'cmake.exe not on PATH. Set $env:LAMBO_PYTHON_SCRIPTS to Python''s Scripts dir, add it to PATH manually, or install CMake.' }
     if (-not $gcc)   { throw 'gcc.exe not on PATH. Add MinGW to $env:PATH (see comment in script).' }
     if (-not $gxx)   { throw 'g++.exe not on PATH. Add MinGW to $env:PATH.' }
     if (-not $ninja) { throw 'ninja not on PATH. Install it (pip install ninja) and put on PATH.' }
