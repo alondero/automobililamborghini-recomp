@@ -472,6 +472,34 @@ func = "func_80050860"
 before_vram = 0x80051058
 text = "lambo_ws_pin_reset(rdram);"
 
+# Issue #56 — pin the 2P split minimap. The game does not edge-pin the 2P minimap, so
+# the whole composite floats inboard of the widened edge. Unlike 1P, the 2P minimap is
+# drawn ENTIRELY as 2D by the overlay func_80054FFC (dots + P1 + player arrow + the
+# track OUTLINE) — verified live: the outline moves with the LEFT rect-align bracket, and
+# the 1P 3D outline builder (func_8004384C @ 0x80043F4C) never fires in 2P. So one LEFT
+# bracket per viewport pins the whole composite together, no 3D camera translate needed.
+# The overlay runs once per half (top jal 0x80050DB4, bottom jal 0x80050FF8); reset walks
+# the arrow's LOAD matrix (reuses lambo_ws_minimap_reset, same as 1P).
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050DB4
+text = "extern void lambo_ws_minimap_pin_2p(unsigned char*); lambo_ws_minimap_pin_2p(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050DBC
+text = "lambo_ws_minimap_reset(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050FF8
+text = "extern void lambo_ws_minimap_pin_2p(unsigned char*); lambo_ws_minimap_pin_2p(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051000
+text = "lambo_ws_minimap_reset(rdram);"
+
 # Issue #42 — widescreen HUD for TIME TRIAL (race mode 0; halfword 0x800CE6B4 == 0).
 # In the 1P section the mode-0 branch (L_8004FFB0, beq at 0x8004FF70) skips RANK/LAP and
 # draws its own texrect top HUD: PREVIOUS (left), LAPTIME (centre), RECORD + BEST LAP
