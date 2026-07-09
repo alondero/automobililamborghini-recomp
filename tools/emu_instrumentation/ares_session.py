@@ -157,9 +157,12 @@ def _cli():
     p.add_argument("--rom", default=str(DEFAULT_ROM))
     p.add_argument("--port", type=int, default=9150)
     p.add_argument("--boot-wait", type=float, default=2.0)
+    p.add_argument("--ares-exe", default=None,
+                   help="Path to ares executable (default: built-in ares-v147)")
     args = p.parse_args()
     print(f"Launching ares on port {args.port}...")
-    with ares_session(rom=Path(args.rom), port=args.port, boot_wait=args.boot_wait) as c:
+    with ares_session(rom=Path(args.rom), port=args.port, boot_wait=args.boot_wait,
+                      ares_exe=Path(args.ares_exe) if args.ares_exe else ARES_EXE) as c:
         print(f"Connected. VI_CURRENT=0x{c.read32(0xA4400010):08X}")
         print("Ctrl-C to stop ares.")
         try:

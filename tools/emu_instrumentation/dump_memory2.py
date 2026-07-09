@@ -8,6 +8,7 @@ import os
 import time
 import socket
 import subprocess
+import argparse
 
 sys.path.insert(0, os.path.dirname(__file__))
 from ares_debug_client import AresDebugClient
@@ -42,23 +43,33 @@ def wait_for_port(port, timeout=15.0):
     return False
 
 def main():
+    parser = argparse.ArgumentParser(description="Capture memory from ares once the game is running")
+    parser.add_argument("--ares-exe", default=None,
+                        help="Path to ares executable (default: built-in ares-v147)")
+    parser.add_argument("--rom", default=ROM,
+                        help="Path to ROM file (default: <repo>/Automobili Lamborghini (USA).z64)")
+    args = parser.parse_args()
+
+    ares_exe = args.ares_exe or ARES_EXE
+    rom     = args.rom
+
     if not wait_for_port(9150, timeout=2.0):
         print("Launching ares...")
-        if not os.path.exists(ARES_EXE):
-            print(f"ERROR: ares not found at {ARES_EXE}")
+        if not os.path.exists(ares_exe):
+            print(f"ERROR: ares not found at {ares_exe}")
             return
-        if not os.path.exists(ROM):
-            print(f"ERROR: ROM not found at {ROM}")
+        if not os.path.exists(rom):
+            print(f"ERROR: ROM not found at {rom}")
             return
         subprocess.Popen([
-            ARES_EXE,
+            ares_exe,
             '--kiosk', '--no-file-prompt',
             '--setting', 'DebugServer/Enabled=true',
             '--setting', 'DebugServer/Port=9150',
             '--setting', 'DebugServer/UseIPv4=true',
             '--setting', 'Boot/AwaitGDBClient=false',
-            ROM
-        ], cwd=ARES_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            rom
+        ], cwd=os.path.dirname(ares_exe), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print("Waiting for ares to start...")
         if not wait_for_port(9150, timeout=15.0):
             print("ERROR: ares failed to start")
