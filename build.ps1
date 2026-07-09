@@ -151,6 +151,7 @@ try {
         @{ Sub = 'lib/N64ModernRuntime';       Patch = 'patches/0007-ultramodern-savestate-thread-context-relink.patch' },
         @{ Sub = 'lib/rt64';                   Patch = 'patches/0006-rt64-interp-angular-velocity-matching.patch' },
         @{ Sub = 'lib/rt64';                   Patch = 'patches/0005-rt64-mingw-gcc-compat.patch' },
+        @{ Sub = 'lib/rt64';                   Patch = 'patches/0008-rt64-widescreen-split-subviewport.patch' },
         @{ Sub = 'lib/rt64/src/contrib/plume'; Patch = 'patches/0004-plume-d3d12-mingw-com-abi-struct-return.patch' }
     )
     foreach ($p in $patches) {

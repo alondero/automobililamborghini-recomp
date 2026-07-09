@@ -108,6 +108,7 @@ PATCHES=(
     "lib/N64ModernRuntime:0001-lamborghini-runtime-scheduler-audio-vi.patch"
     "lib/N64ModernRuntime:0007-ultramodern-savestate-thread-context-relink.patch"
     "lib/rt64:0006-rt64-interp-angular-velocity-matching.patch"
+    "lib/rt64:0008-rt64-widescreen-split-subviewport.patch"
 )
 for entry in "${PATCHES[@]}"; do
     sub="${entry%%:*}"
