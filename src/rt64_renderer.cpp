@@ -28,6 +28,8 @@
 #include "lambo_config.h"
 #include "lambo_hud_widescreen.h"
 
+extern "C" void lambo_fog_match_1p(uint8_t* rdram, uint32_t dl_addr);  // src/lambo_fog_widescreen.cpp (#83)
+
 namespace {
 
 // RT64 wants RSP DMEM/IMEM and MI/DPC register storage; the pivot HLEs all of that,
@@ -317,6 +319,7 @@ public:
                          (uint32_t)task->t.data_ptr);
         }
         app->state->rsp->reset();
+        lambo_fog_match_1p(app->core.RDRAM, (uint32_t)task->t.data_ptr & 0x3FFFFFF);  // #83: widen 3P/4P fog
         app->interpreter->loadUCodeGBI(task->t.ucode & 0x3FFFFFF, task->t.ucode_data & 0x3FFFFFF, true);
         app->processDisplayLists(app->core.RDRAM, task->t.data_ptr & 0x3FFFFFF, 0, true);
         // Same sustained-pipeline heartbeat as the headless context, so RT64 runs are
