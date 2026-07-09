@@ -28,7 +28,7 @@
 #include "lambo_config.h"
 #include "lambo_hud_widescreen.h"
 
-extern "C" void lambo_fog_match_1p(uint8_t* rdram, uint32_t dl_addr);  // src/lambo_fog_widescreen.cpp (#83)
+extern "C" void lambo_fog_match_1p(uint8_t* rdram, uint32_t dl_addr);  // src/lambo_fog_widescreen.cpp
 
 namespace {
 
@@ -319,7 +319,10 @@ public:
                          (uint32_t)task->t.data_ptr);
         }
         app->state->rsp->reset();
-        lambo_fog_match_1p(app->core.RDRAM, (uint32_t)task->t.data_ptr & 0x3FFFFFF);  // #83: widen 3P/4P fog
+        // Match the swrender's KSEG0 call-site convention (stub_renderer.cpp send_dl)
+        // so resolve()'s hi>=0x80 branch handles both call sites; the seg[0]={0} default
+        // would silently mis-resolve in RT64 if the root DL ever set segment 0.
+        lambo_fog_match_1p(app->core.RDRAM, (uint32_t)task->t.data_ptr | 0x80000000u);
         app->interpreter->loadUCodeGBI(task->t.ucode & 0x3FFFFFF, task->t.ucode_data & 0x3FFFFFF, true);
         app->processDisplayLists(app->core.RDRAM, task->t.data_ptr & 0x3FFFFFF, 0, true);
         // Same sustained-pipeline heartbeat as the headless context, so RT64 runs are

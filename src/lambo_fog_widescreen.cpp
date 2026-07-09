@@ -1,14 +1,6 @@
-// 3P/4P fog widening (#83). Split-screen races program a dense, near-black fog
-// (fm=6400, colour ~4,4,16) that pulls the horizon in far shorter than 1P's open
-// dusk vista (fm=25600, colour 57,48,55) -- a performance mask for the four
-// quadrant viewports. Measurement (issue #83) showed the underlying draw distance
-// is largely intact, so widening the fog to the 1P window/colour reveals it.
-//
-// This is an ENHANCEMENT, not a faithful translation: it rewrites the game-built
-// display list in RDRAM before the renderer consumes it. It runs on the shared DL
-// (both RT64 and the headless swrender read the same RDRAM), only when the live
-// player count is >= 3, and only when the "widescreen_fog_match" graphics.json key
-// is enabled (default on; LAMBO_FOG_MATCH_1P=1/0 overrides). 1P/2P are untouched.
+// #83: widen 3P/4P split-screen fog to the 1P window/colour. Enhancement — rewrites
+// the game-built display list in RDRAM at the top of every send_dl (both renderers
+// read the same RDRAM). Self-gates on live player count 0x800CE6A4 >= 3.
 
 #include <cstdint>
 #include <cstdlib>
@@ -17,7 +9,6 @@
 
 namespace {
 
-// F3DEX opcodes / moveword indices (mirror src/stub_renderer.cpp's walker).
 constexpr uint8_t G_MOVEWORD    = 0xBC;
 constexpr uint8_t G_DL          = 0x06;
 constexpr uint8_t G_ENDDL       = 0xB8;

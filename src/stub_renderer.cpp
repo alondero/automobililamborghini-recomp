@@ -1342,7 +1342,7 @@ public:
         static int count = 0;
         ++count;
         if (t && g_lambo_rdram) {
-            lambo_fog_match_1p(g_lambo_rdram, (uint32_t)(int32_t)t->t.data_ptr);  // #83: widen 3P/4P fog
+            lambo_fog_match_1p(g_lambo_rdram, (uint32_t)(int32_t)t->t.data_ptr);
         }
         if (count == 1) {
             std::fprintf(stderr, "[gfx] first OSTask submitted to renderer (send_dl); task type=%u\n",
