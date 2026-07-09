@@ -21,6 +21,7 @@
 // Set by create_render_context so the game-specific VI retrace hook (vi_cb in main.cpp)
 // can reach RDRAM. ultramodern's events thread owns the only rdram pointer otherwise.
 uint8_t* g_lambo_rdram = nullptr;
+extern "C" void lambo_fog_match_1p(uint8_t* rdram, uint32_t dl_addr);  // src/lambo_fog_widescreen.cpp (#83)
 
 namespace headless {
 
@@ -927,7 +928,12 @@ static bool raster_screen_tri(RState& s, const ScreenV& a, const ScreenV& b, con
     // CLR_FOG (bits 31-30 of othermode_lo == 3, e.g. the CB023038 fog-add mode). For those,
     // mix the combiner output toward fog_color by the per-pixel fog coefficient (shade.a,
     // which xform_vertex folded z-derived fog into). Non-fog surfaces are untouched.
-    bool fog_surface = ((s.othermode_lo >> 30) & 3) == 3;
+    // Measurement knob (#83): LAMBO_SWRENDER_NO_FOG=1 skips the fog blend so the capture
+    // shows the raw geometry BEHIND the fog. Answers "is the 3P/4P far-clip actually short,
+    // or is the near-black fog the only thing hiding the distance?" -- the swrender uses the
+    // ROM's own projection, so culled-away far geometry stays absent even with fog off.
+    static const bool s_no_fog = []{ const char* e = std::getenv("LAMBO_SWRENDER_NO_FOG"); return e && e[0] == '1'; }();
+    bool fog_surface = !s_no_fog && ((s.othermode_lo >> 30) & 3) == 3;
     RGBA fogc = {s.fog_r / 255.0f, s.fog_g / 255.0f, s.fog_b / 255.0f, 1.0f};
     // Translucency (W109): a surface alpha-blends against the framebuffer iff its blender
     // cycle-2 reads CLR_MEM weighted by (1-A) -- M2==CLR_MEM(1) && B2==1MA(0). This is the
@@ -1335,6 +1341,9 @@ public:
     void send_dl(const OSTask* t) override {
         static int count = 0;
         ++count;
+        if (t && g_lambo_rdram) {
+            lambo_fog_match_1p(g_lambo_rdram, (uint32_t)(int32_t)t->t.data_ptr);
+        }
         if (count == 1) {
             std::fprintf(stderr, "[gfx] first OSTask submitted to renderer (send_dl); task type=%u\n",
                          t ? (unsigned)t->t.type : 0u);

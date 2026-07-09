@@ -53,6 +53,11 @@ WindowSize window_size();
 std::string texture_pack_path();
 std::string texture_dump_dir();
 
+// Widen the dense 3P/4P split-screen fog to the 1P window/colour (issue #83).
+// graphics.json key "widescreen_fog_match" (default true), overridable by
+// LAMBO_FOG_MATCH_1P=1/0. The rewrite still self-gates on player count >= 3.
+bool widescreen_fog_match();
+
 } // namespace config
 } // namespace lambo
 
