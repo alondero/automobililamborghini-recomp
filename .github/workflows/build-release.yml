@@ -97,6 +97,7 @@ jobs:
 
       - name: Package
         run: |
+          set -euo pipefail
           mkdir -p dist
           cp build/lamborghini_modern dist/
           # Crash-handler symbol table: probed next to the exe at runtime so
@@ -196,12 +197,24 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item build\lamborghini_modern.exe dist\
-          Copy-Item build\SDL2.dll, build\dxcompiler.dll, build\dxil.dll dist\ -ErrorAction SilentlyContinue
-          # Crash-handler symbol table: probed next to the exe at runtime so
-          # field crash dumps show function names, not raw N64 PCs (issue #80).
-          Copy-Item lamborghini.syms.toml dist\
+          # RT64 dlopen()s dxcompiler/dxil at D3D12 init and SDL2 is a dynamic dep, so a
+          # missing DLL crashes on the user's machine at startup, not here. Fail the build
+          # loudly if any required file is absent instead of shipping a broken zip -- the
+          # old `-ErrorAction SilentlyContinue` hid exactly that. lamborghini.syms.toml is
+          # shipped so field crash reports resolve guest PCs to function names (the crash
+          # handler looks for it next to the exe).
+          $payload = @(
+            'build\lamborghini_modern.exe',
+            'build\SDL2.dll',
+            'build\dxcompiler.dll',
+            'build\dxil.dll',
+            'lamborghini.syms.toml'
+          )
+          $missing = $payload | Where-Object { -not (Test-Path $_) }
+          if ($missing) { throw "Packaging aborted -- required files missing: $($missing -join ', ')" }
+          Copy-Item $payload dist\
           Compress-Archive -Path dist\* -DestinationPath lamborghini-recomp-windows-x64.zip
 
       - name: Upload artifact
