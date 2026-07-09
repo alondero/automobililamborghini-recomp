@@ -342,7 +342,26 @@ void print_native_backtrace(FILE* fp, const void* const* pcs, int n, const char*
             if (si) std::snprintf(vbuf, sizeof(vbuf), "  --> n64 %s+0x%X", si->name, offb);
             else    std::snprintf(vbuf, sizeof(vbuf), "  --> n64 0x%08X", vram);
         }
-        std::fprintf(fp, "    [%2d] native=%p%s\n", i, pc, vbuf);
+        char mbuf[112] = "";
+#if defined(LAMBO_CRASH_WIN32)
+        // Module name per frame: distinguishes "our exe" from ntdll/driver
+        // DLL frames, which is what makes a field dump attributable (#80).
+        HMODULE mod = nullptr;
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               (LPCSTR)pc, &mod) && mod != nullptr) {
+            char path[MAX_PATH];
+            DWORD len = GetModuleFileNameA(mod, path, MAX_PATH);
+            if (len > 0) {
+                const char* base = path;
+                for (const char* q = path; *q != '\0'; q++)
+                    if (*q == '\\' || *q == '/') base = q + 1;
+                std::snprintf(mbuf, sizeof(mbuf), "  %s+0x%llX", base,
+                              (unsigned long long)((uintptr_t)pc - (uintptr_t)mod));
+            }
+        }
+#endif
+        std::fprintf(fp, "    [%2d] native=%p%s%s\n", i, pc, mbuf, vbuf);
     }
 }
 
@@ -379,16 +398,32 @@ void final_dump_and_die(const char* reason, uint32_t vram_guess,
 
 LONG WINAPI win32_vectored_handler(EXCEPTION_POINTERS* ep) {
     DWORD code = ep->ExceptionRecord->ExceptionCode;
-    // Skip debugger-only codes; let gdb handle those.
-    if (code == EXCEPTION_BREAKPOINT || code == EXCEPTION_SINGLE_STEP)
-        return EXCEPTION_CONTINUE_SEARCH;
+    // Positive fatal list ONLY (issue #80). A VEH sees every exception
+    // FIRST-CHANCE, before any catch/__except runs, so anything a later
+    // handler would swallow is normal control flow here: C++ throws (MinGW
+    // 0x20474343 "GCC ", MSVC 0xE06D7363 -- ultramodern ends guest threads
+    // by throwing thread_terminated THROUGH recompiled frames, so recomp-PC
+    // gating alone cannot save those), thread naming 0x406D1388,
+    // DBG_PRINTEXCEPTION_C, guard-page/invalid-handle probes from driver
+    // DLLs, debugger breakpoints. Act only on codes that are unrecoverable
+    // CPU faults; pass everything else down the chain.
+    switch (code) {
+        case EXCEPTION_ACCESS_VIOLATION:
+        case EXCEPTION_ILLEGAL_INSTRUCTION:
+        case EXCEPTION_PRIV_INSTRUCTION:
+        case EXCEPTION_INT_DIVIDE_BY_ZERO:
+        case EXCEPTION_STACK_OVERFLOW:
+        case EXCEPTION_IN_PAGE_ERROR:
+            break;
+        default:
+            return EXCEPTION_CONTINUE_SEARCH;
+    }
 
-    // Whitelist: only treat as a real crash if recompiled code is on the
-    // call chain, OR the fault address is a guest KSEG0/KSEG1 pointer. Windows
-    // DLLs (D3D12, NVIDIA driver, XInput) raise benign structured exceptions
-    // during init/teardown (EXCEPTION_GUARD_PAGE on heap guard pages,
-    // EXCEPTION_INVALID_HANDLE on CloseHandle, etc.) -- blanket _Exit on those
-    // kills the process during boot. CaptureStackBackTrace is VEH-safe.
+    // Even for fatal codes: only treat as a real crash if recompiled code is
+    // on the call chain, OR the fault address is a guest KSEG0/KSEG1 pointer.
+    // Windows DLLs (D3D12, NVIDIA driver, XInput) can raise-and-handle even
+    // AVs internally during init/teardown -- blanket _Exit on those kills the
+    // process during boot. CaptureStackBackTrace is VEH-safe.
     void* native_pcs[64];
     USHORT n = CaptureStackBackTrace(0, 64, (PVOID*)native_pcs, nullptr);
     bool has_recomp_pc = false;
@@ -419,12 +454,18 @@ LONG WINAPI win32_vectored_handler(EXCEPTION_POINTERS* ep) {
         _resetstkoflw();
         std::fprintf(stderr,
             "\n========================= NATIVE CRASH =========================\n"
-            "Reason: %s\n"
+            "Reason: EXCEPTION_STACK_OVERFLOW (code 0x%08lX at %p)\n"
             "(dump truncated: stack overflow -- no native backtrace recoverable)\n",
-            win32_exception_name(code));
+            (unsigned long)code, ep->ExceptionRecord->ExceptionAddress);
         std::_Exit(EXIT_FAILURE);
     }
-    final_dump_and_die(win32_exception_name(code), vram_guess,
+    // Raw code + faulting address in the banner: a field report with only a
+    // symbolic name ("EXCEPTION_UNKNOWN") is undiagnosable (issue #80).
+    char reason[128];
+    std::snprintf(reason, sizeof(reason), "%s (code 0x%08lX at %p)",
+                  win32_exception_name(code), (unsigned long)code,
+                  ep->ExceptionRecord->ExceptionAddress);
+    final_dump_and_die(reason, vram_guess,
                        (const void* const*)native_pcs, n, "Win32 CaptureStackBackTrace");
     return EXCEPTION_CONTINUE_SEARCH;  // unreachable; final_dump_and_die is [[noreturn]]
 }
