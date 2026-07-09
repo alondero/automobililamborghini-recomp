@@ -1,0 +1,43 @@
+diff --git a/src/render/rt64_projection_processor.cpp b/src/render/rt64_projection_processor.cpp
+index e842dcc..4efac76 100644
+--- a/src/render/rt64_projection_processor.cpp
++++ b/src/render/rt64_projection_processor.cpp
+@@ -4,6 +4,8 @@
+ 
+ #include "rt64_projection_processor.h"
+ 
++#include <cmath>
++
+ #include "common/rt64_math.h"
+ #include "hle/rt64_workload_queue.h"
+ 
+@@ -98,6 +100,29 @@ namespace RT64 {
+                 }
+             }
+  
++            // Skybox / at-infinity backdrop stretch (Automobili Lamborghini issue #3 follow-up):
++            // a perspective scene rendered from a camera with zero view-space translation is a
++            // rotation-only backdrop with no parallax (the game's sky billboard). Hor+-widening
++            // its FOV (the default aspect adjust below) shrinks a FINITE backdrop away from the
++            // screen edges, exposing gaps at wide aspects. A no-parallax backdrop must instead
++            // STRETCH to fill: keep the source-aspect FOV so its NDC-space extent maps to the
++            // full (wide) viewport. Detected by a rotation-only view whose translation is
++            // within a small epsilon of zero, so real 3D scenes (which carry a camera position
++            // far from the origin -- the race camera and even menu cameras) are unaffected. The
++            // sky's view translation is measured as exactly zero; the epsilon is slack for
++            // float noise, kept well below any real scene's camera offset. This runs in the
++            // render thread every presented frame, so it also covers the paused state where the
++            // game's own per-frame frustum builder (func_8004384C) is frozen.
++            if (adjustAspectRatio && (proj.type == Projection::Type::Perspective)) {
++                const interop::float4x4 &vT = drawData.viewTransforms[proj.transformsIndex];
++                const float translationEpsilon = 0.5f;
++                if ((fabsf((float)vT[3][0]) < translationEpsilon) &&
++                    (fabsf((float)vT[3][1]) < translationEpsilon) &&
++                    (fabsf((float)vT[3][2]) < translationEpsilon)) {
++                    adjustAspectRatio = false;
++                }
++            }
++
+             float projRatioScale = adjustAspectRatio ? (1.0f / p.aspectRatioScale) : 1.0f;
+             interop::float4x4 &viewMatrix = drawData.modViewTransforms[proj.transformsIndex];
+             interop::float4x4 &projMatrix = drawData.modProjTransforms[proj.transformsIndex];

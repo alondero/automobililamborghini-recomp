@@ -47,19 +47,14 @@ uint32_t DPC_TMEM_REG = 0;
 
 void dummy_check_interrupts() {}
 
-// Live swapchain handle for the background/skybox aspect-ratio fix (issue #3): the
-// course frame-builder (func_8004384C) issues its own frustum matrix for the
-// background layer with a HARDCODED 4/3 literal (0x3FAAAAAB) baked at the call site,
-// so under RT64 Expand the skybox panels stay sized for 4:3 and don't reach the wide
-// edges. lambo_ws_get_output_aspect_bits() below lets a patches.hook override that
-// literal with the live output aspect each frame. This is the RAW output aspect: a
-// symmetric skybox frustum always fills the real screen, so it just needs a wider tangent.
-// The 2D HUD geometry shifts (issue #67) do NOT use this -- they honour hr_option's rect
-// clamp via lambo_ws_get_hud_rect_aspect_bits() below, since a rect-aligned element and a
-// full-screen frustum widen by different amounts under Clamp16x9.
+// Live swapchain handle for the widescreen HUD rect-aspect helper (issue #67): the
+// game-space 2D HUD geometry shifts key off the effective rect-pin aspect, which depends
+// on the live output size and hr_option -- see lambo_ws_get_hud_rect_aspect_bits() below.
+// (The issue #3 skybox no longer uses this: it is handled entirely in the renderer by
+// stretching parallax-free perspective backdrops -- patches/0008-rt64-skybox-stretch-parallaxless-backdrop.patch.)
 //
 // Written on the gfx thread (RT64Context ctor/dtor), read every frame on the CPU/
-// game-logic thread inside lambo_ws_get_output_aspect_bits() below -- unlike
+// game-logic thread inside lambo_ws_get_hud_rect_aspect_bits() below -- unlike
 // get_resolution_scale() elsewhere in this file, which is only ever called from the
 // gfx thread itself. atomic (not a plain pointer) so the CPU thread can't observe a
 // torn or stale value; the dtor nulls it before `app` is torn down so a load racing
@@ -257,8 +252,8 @@ public:
 
         std::fprintf(stderr, "[rt64] RT64 renderer initialised (api=%d)\n", (int)chosen_api);
 
-        // Publish the app pointer for the skybox aspect-ratio override
-        // (lambo_ws_get_output_aspect_bits reads this on the game-logic thread),
+        // Publish the app pointer for the widescreen HUD rect-aspect helper
+        // (lambo_ws_get_hud_rect_aspect_bits reads this on the game-logic thread),
         // then wire texture replacement. Order matters: register first so the
         // dtor's reverse-order unpublish still fires while `app` is alive.
         g_lambo_active_app = app.get();
@@ -398,39 +393,8 @@ private:
 
 } // anonymous namespace
 
-// Native for the issue #3 patches.hook (lamborghini.us.toml, func_8004384C): returns
-// the live output aspect ratio as raw float bits, clamped to never go BELOW 4/3 so a
-// narrower-than-4:3 window (or ar_option != Expand) degenerates to the original
-// constant rather than squeezing the skybox. Called from recompiled game code on the
-// game-logic thread, which races the gfx/render thread's swapchain resize handling;
-// take the same configurationMutex RT64::SharedQueueResources::setSwapChainSize()
-// locks when writing width+height together, so this never observes a torn pair.
-extern "C" uint32_t lambo_ws_get_output_aspect_bits(void) {
-    float aspect = 4.0f / 3.0f;
-    const auto& cfg = ultramodern::renderer::get_graphics_config();
-    RT64::Application* active_app = g_lambo_active_app.load(std::memory_order_acquire);
-    if (cfg.ar_option == ultramodern::renderer::AspectRatio::Expand &&
-        active_app != nullptr && active_app->sharedQueueResources) {
-        auto& shared = *active_app->sharedQueueResources;
-        std::scoped_lock<std::mutex> configuration_lock(shared.configurationMutex);
-        uint32_t w = shared.swapChainWidth;
-        uint32_t h = shared.swapChainHeight;
-        if (w > 0 && h > 0) {
-            float live = float(w) / float(h);
-            if (live > aspect) {
-                aspect = live;
-            }
-        }
-    }
-    uint32_t bits;
-    std::memcpy(&bits, &aspect, sizeof(bits));
-    return bits;
-}
-
 // (issue #67) Effective aspect the extended-GBI HUD rect pins travel to, as raw float
-// bits. DISTINCT from lambo_ws_get_output_aspect_bits() above: that is the skybox's raw
-// output aspect (#3, a symmetric frustum that always fills the real screen), whereas the
-// gEXSetRectAlign HUD pins honour hr_option -- Full reaches the real edges, Clamp16x9
+// bits. The gEXSetRectAlign HUD pins honour hr_option -- Full reaches the real edges, Clamp16x9
 // stops at 16:9, Original doesn't move -- so the game-space HUD geometry shifts
 // (src/lambo_hud_widescreen.c) key off THIS. Keying them off the raw output aspect would
 // over-translate the geometry past the rects at any non-Full ultrawide output (e.g. the
