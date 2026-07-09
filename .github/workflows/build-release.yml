@@ -99,6 +99,9 @@ jobs:
         run: |
           mkdir -p dist
           cp build/lamborghini_modern dist/
+          # Crash-handler symbol table: probed next to the exe at runtime so
+          # field crash dumps show function names, not raw N64 PCs (issue #80).
+          cp lamborghini.syms.toml dist/
           cd dist && zip -r ../lamborghini-recomp-linux-x64.zip .
 
       - name: Upload artifact
@@ -196,6 +199,9 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item build\lamborghini_modern.exe dist\
           Copy-Item build\SDL2.dll, build\dxcompiler.dll, build\dxil.dll dist\ -ErrorAction SilentlyContinue
+          # Crash-handler symbol table: probed next to the exe at runtime so
+          # field crash dumps show function names, not raw N64 PCs (issue #80).
+          Copy-Item lamborghini.syms.toml dist\
           Compress-Archive -Path dist\* -DestinationPath lamborghini-recomp-windows-x64.zip
 
       - name: Upload artifact
