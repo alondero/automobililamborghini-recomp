@@ -204,3 +204,40 @@ uint32_t lambo_ws_minimap_outline_x(uint32_t x_bits) {
 void lambo_ws_minimap_pin_2p(uint8_t* rdram) {
     lambo_ws_pin_left(rdram);
 }
+
+// 3P/4P split-screen widescreen (issue #42 follow-up). Unlike the rect-align pins above
+// (which move 2D texrects), this tags the 3D quadrant VIEWPORTS: each player's view is a
+// half-width quadrant that RT64 would otherwise squeeze to the 4:3 centre (pillarbox).
+// G_EX_ORIGIN_WIDE (patches/0008) makes RT64 render a tagged viewport wide -- filling its
+// output quarter with a Hor+-widened FOV -- so the bracket wraps the race renderer's
+// quadrant-scene DL call. Self-gated on the player count so 1P (full screen) and 2P
+// (top/bottom, already full width) emit nothing.
+#define LAMBO_PLAYERS_ADDR 0x800CE6A4u
+
+static int lambo_ws_is_quad_split(uint8_t* rdram) {
+    return (int16_t)MEM_H(0, (gpr)(int32_t)LAMBO_PLAYERS_ADDR) >= 3;
+}
+
+static void emit_viewport_align(uint8_t* rdram, uint32_t origin) {
+    emit_cmd(rdram,
+             PARAM(RT64_HOOK_OPCODE, 8, 24) | PARAM(RT64_HOOK_MAGIC_NUMBER, 24, 0),
+             PARAM(RT64_HOOK_OP_ENABLE, 4, 28) | PARAM(RT64_EXTENDED_OPCODE, 8, 0));
+    emit_cmd(rdram,
+             PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_SETVIEWPORTALIGN_V1, 24, 0),
+             PARAM(origin, 12, 0));
+    emit_cmd(rdram,
+             PARAM(0, 16, 16) | PARAM(0, 16, 0),
+             0);
+}
+
+void lambo_ws_split_wide_begin(uint8_t* rdram) {
+    if (lambo_ws_is_quad_split(rdram)) {
+        emit_viewport_align(rdram, G_EX_ORIGIN_WIDE);
+    }
+}
+
+void lambo_ws_split_wide_end(uint8_t* rdram) {
+    if (lambo_ws_is_quad_split(rdram)) {
+        emit_viewport_align(rdram, G_EX_ORIGIN_NONE);
+    }
+}

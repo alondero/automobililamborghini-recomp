@@ -1,0 +1,57 @@
+diff --git a/include/rt64_extended_gbi.h b/include/rt64_extended_gbi.h
+index d387090..a370cbe 100644
+--- a/include/rt64_extended_gbi.h
++++ b/include/rt64_extended_gbi.h
+@@ -86,6 +86,13 @@
+ #define G_EX_ORIGIN_LEFT            0x0
+ #define G_EX_ORIGIN_CENTER          0x200
+ #define G_EX_ORIGIN_RIGHT           0x400
++// Split-screen widescreen quadrant tag (Automobili Lamborghini port). A value >= NONE so
++// movedFromOrigin() leaves the viewport translate untouched; both the FOV gate
++// (rt64_projection_processor) and the NDC-scale gate (rt64_framebuffer_renderer) treat a
++// perspective viewport carrying it as "render wide" even though it only covers a fraction
++// of the framebuffer width -- so a 3P/4P quadrant fills its output quarter instead of being
++// squeezed to the 4:3 centre.
++#define G_EX_ORIGIN_WIDE            0xC00
+ 
+ #define G_EX_NOPUSH                 0x0
+ #define G_EX_PUSH                   0x1
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+index 9fae0d4..6b2b974 100644
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -1490,7 +1490,12 @@ namespace RT64 {
+                 FixedRect intersectionRect = proj.scissorRect.intersection(viewport.rect(viewportClipRatios));
+                 bool coversWholeWidth = !intersectionRect.isEmpty() && (intersectionRect.ulx <= fbPair.scissorRect.ulx) && (intersectionRect.lrx >= fbPair.scissorRect.lrx);
+                 bool horizontalRatio = !intersectionRect.isEmpty() && (intersectionRect.width(true, true) > intersectionRect.height(true, true));
+-                bool useWideViewport = (viewportOrigin == G_EX_ORIGIN_NONE) && coversWholeWidth && horizontalRatio;
++                // A split-screen quadrant (G_EX_ORIGIN_WIDE) skips the whole-width requirement:
++                // its native viewport already lands in the correct output half (NDC [-1,0]/[0,1]),
++                // so taking the wide branch (screenScale.x stays 1.0) lets it fill that half
++                // instead of being squeezed to the 4:3 centre. computeOrigin() treats WIDE (>= NONE)
++                // as centre, so convertViewportRect still produces the correct half-width scissor.
++                bool useWideViewport = ((viewportOrigin == G_EX_ORIGIN_NONE) && coversWholeWidth && horizontalRatio) || (viewportOrigin == G_EX_ORIGIN_WIDE);
+                 if (useWideViewport) {
+                     projInvRatioScale = 1.0f;
+                 }
+diff --git a/src/render/rt64_projection_processor.cpp b/src/render/rt64_projection_processor.cpp
+index e842dcc..d7bf957 100644
+--- a/src/render/rt64_projection_processor.cpp
++++ b/src/render/rt64_projection_processor.cpp
+@@ -82,8 +82,14 @@ namespace RT64 {
+ 
+             const uint32_t curProjGroupIndex = workload.drawData.viewProjTransformGroups[proj.transformsIndex];
+             const TransformGroup &curProjGroup = workload.drawData.transformGroups[curProjGroupIndex];
+-            bool adjustAspectRatio = (curProjGroup.aspectMode == G_EX_ASPECT_ADJUST);
+-            if (curProjGroup.aspectMode == G_EX_ASPECT_AUTO) {
++            // A split-screen quadrant (G_EX_ORIGIN_WIDE) widens its FOV like a full-width wide
++            // viewport: its own source/target aspect scale equals the global aspectRatioScale
++            // (a quadrant is a uniformly-halved copy of the whole frame), so the standard widen
++            // is exactly right -- without it the quadrant, stretched to fill its output quarter,
++            // would be horizontally distorted.
++            const bool wideSubViewport = (viewportOrigin == G_EX_ORIGIN_WIDE);
++            bool adjustAspectRatio = (curProjGroup.aspectMode == G_EX_ASPECT_ADJUST) || wideSubViewport;
++            if ((curProjGroup.aspectMode == G_EX_ASPECT_AUTO) && !wideSubViewport) {
+                 FixedRect intersectionRect = proj.scissorRect;
+                 if (proj.usesViewport()) {
+                     const interop::RSPViewport &viewport = drawData.rspViewports[proj.transformsIndex];

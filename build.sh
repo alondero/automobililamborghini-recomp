@@ -14,7 +14,7 @@
 #   3. Submodule init (recursive; core.longpaths isn't needed on Linux).
 #   4. Defensive submodule reset before patching (half-applied patches from a
 #      prior run would otherwise break the next apply with "patch failed: ...").
-#   5. Apply Lamborghini patches (Linux: 0001, 0007, 0006, 0008 — no MinGW/D3D12
+#   5. Apply Lamborghini patches (Linux: 0001, 0007, 0006, 0008, 0009 — no MinGW/D3D12
 #      fixes needed; no plume patch). 0007 adds the save-state thread-context
 #      registry; without it, src/lambo_savestate.c fails to link with
 #      "undefined reference to ultramodern_relink_thread_contexts".
@@ -96,7 +96,7 @@ git -C lib/N64ModernRuntime checkout -- .
 git -C lib/rt64 checkout -- .
 git -C lib/rt64/src/contrib/plume checkout -- . 2>/dev/null || true
 
-# --- 6. Apply Lamborghini patches (Linux: 0001, 0007, 0006, 0008) ----------------
+# --- 6. Apply Lamborghini patches (Linux: 0001, 0007, 0006, 0008, 0009) ----------------
 # Mirrors CI's Linux job exactly (workflow lines 93-95). 0001 then 0007 both
 # patch N64ModernRuntime with disjoint hunks (verified to apply sequentially
 # on the pinned commit). 0007 adds the save-state thread-context registry +
@@ -109,6 +109,7 @@ PATCHES=(
     "lib/N64ModernRuntime:0007-ultramodern-savestate-thread-context-relink.patch"
     "lib/rt64:0006-rt64-interp-angular-velocity-matching.patch"
     "lib/rt64:0008-rt64-skybox-stretch-parallaxless-backdrop.patch"
+    "lib/rt64:0009-rt64-widescreen-split-subviewport.patch"
 )
 for entry in "${PATCHES[@]}"; do
     sub="${entry%%:*}"

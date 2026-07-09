@@ -574,3 +574,27 @@ text = "lambo_flare_ws_aspect_stretch(rdram);"
 func = "func_80036854"
 before_vram = 0x80036A60
 text = "lambo_flare_ws_aspect_reset(rdram);"
+
+# Issue #42 follow-up — widescreen 3P/4P split screen. The race renderer func_800030F8
+# sets up each player's 3D view as a 2x2 quadrant viewport (six perspective viewports per
+# frame: four half-width quadrants + full-width sky/minimap). Each quadrant covers only half
+# the framebuffer width, so under ar_option Expand RT64 squeezes it to the 4:3 centre and the
+# composite is pillarboxed (dark side bars). Setting gEXSetViewportAlign(G_EX_ORIGIN_WIDE)
+# makes RT64 render a tagged quadrant wide -- filling its output quarter with a Hor+-widened
+# FOV (patches/0008); it is a no-op on the already-full-width viewports. The origin is sticky
+# global RSP state, so WIDE is set once before the scene's DL calls (0x800044DC, the cursor
+# alloc for the first gSPDisplayList of the tail) and reset at the entry of the 2D HUD
+# dispatcher func_80050860 (0x8004FC60) -- which func_800030F8 calls after emitting the whole
+# 3D scene -- so it spans every quadrant viewport but never reaches the HUD's 2D/ortho draws.
+# The natives self-gate on the player count (0x800CE6A4 >= 3): 1P (full screen) and 2P
+# (top/bottom, already full width) never set WIDE. Natives in src/lambo_hud_widescreen.c;
+# no-op at 4:3. See docs/HUD.md.
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x800044DC
+text = "lambo_ws_split_wide_begin(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8004FC60
+text = "lambo_ws_split_wide_end(rdram);"

@@ -15,7 +15,7 @@
       3. ROM check (skippable via -RomPath; CI forwards its $env:ROM_FILENAME).
       4. Defensive submodule reset before patching (a half-applied patch from a
          prior run would otherwise break the next apply).
-      5. Apply Lamborghini patches (Windows: 0001, 0007, 0006, 0008, 0005, 0004) with
+      5. Apply Lamborghini patches (Windows: 0001, 0007, 0006, 0008, 0009, 0005, 0004) with
          --ignore-whitespace (CRLF mismatches on Windows git). 0007 adds the
          save-state thread-context registry; without it, src/lambo_savestate.c
          fails to link with "undefined reference to ultramodern_relink_thread_contexts".
@@ -135,7 +135,7 @@ try {
     git -C lib/rt64 checkout -- . | Out-Null
     git -C lib/rt64/src/contrib/plume checkout -- . | Out-Null
 
-    # --- 6. Apply Lamborghini patches (Windows: 0001, 0007, 0006, 0008, 0005, 0004) -
+    # --- 6. Apply Lamborghini patches (Windows: 0001, 0007, 0006, 0008, 0009, 0005, 0004) -
     # Mirrors CI's Windows job exactly (workflow lines 210-214). 0001 then 0007
     # both patch N64ModernRuntime with disjoint hunks (verified to apply
     # sequentially on the pinned commit). 0007 adds the save-state thread-
@@ -152,6 +152,7 @@ try {
         @{ Sub = 'lib/rt64';                   Patch = 'patches/0006-rt64-interp-angular-velocity-matching.patch' },
         @{ Sub = 'lib/rt64';                   Patch = 'patches/0008-rt64-skybox-stretch-parallaxless-backdrop.patch' },
         @{ Sub = 'lib/rt64';                   Patch = 'patches/0005-rt64-mingw-gcc-compat.patch' },
+        @{ Sub = 'lib/rt64';                   Patch = 'patches/0009-rt64-widescreen-split-subviewport.patch' },
         @{ Sub = 'lib/rt64/src/contrib/plume'; Patch = 'patches/0004-plume-d3d12-mingw-com-abi-struct-return.patch' }
     )
     foreach ($p in $patches) {

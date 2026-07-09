@@ -58,7 +58,7 @@ players field boots straight into any of these). The **race mode** at `0x800CE6B
 | 1P arcade | `players=1`, `0x800CE6B4=2` | stretched wide | done (#2/#41) |
 | 1P time trial | `players=1`, `0x800CE6B4=0` (`LAMBO_WARP_MODE=0`) | stretched wide | done (#42): PREVIOUS left, RECORD/BEST-LAP right; LAPTIME centred; speedo+minimap shared with 1P (already pinned) |
 | 2P split | `players=2` | stretched wide (top/bottom, full width) | done (#42/#56): per half RANK right, LAP left, speed readout right, alt-dial gauge tracked by the bracket's matrix walker, **minimap pinned left** (2D per half) |
-| 3P/4P | `players=3`/`4` | **pillarboxed 4:3** (dark side bars) | none needed — quad viewports don't cover the framebuffer width, so RT64 keeps them 4:3; the HUD is correct inside each 4:3 quadrant |
+| 3P/4P | `players=3`/`4` | **full widescreen quarters** (`G_EX_ORIGIN_WIDE` tag; was pillarboxed 4:3) | 3D views done; per-quadrant HUD text pinning is a follow-up (see below) |
 
 Before/after (widescreen output, edge-pinning off vs on):
 
@@ -97,6 +97,45 @@ Details verified live:
   `0x80050FF8`. No 3D hook or camera-unit calibration, and no aspect scaling — RT64's
   `hr_option` gives the rect pins the right edge travel at every aspect (verified 4:3
   no-op, 16:9 Clamp16x9, 21:9 Full).
+
+### 3P/4P split-screen widescreen (quadrant views)
+
+Unlike 2P (top/bottom, each half full-width, so RT64 stretches them for free), 3P/4P split
+into a 2×2 grid: each player's 3D view is a **half-width** quadrant viewport. RT64's Expand
+only stretches a viewport that covers the *whole* framebuffer width (`useWideViewport` /
+`adjustAspectRatio`, keyed on `coversWholeWidth` against `fbPair.scissorRect`), so a quadrant
+falls through to the squeeze path → the whole composite is a centred 4:3 image with dark
+pillarbars.
+
+Fix (two coupled pieces):
+- **RT64 (`patches/0008`)**: a new viewport-origin tag `G_EX_ORIGIN_WIDE` (`0xC00`, ≥ `NONE`
+  so `movedFromOrigin()` leaves the translate untouched). A perspective viewport carrying it
+  takes the wide branch in *both* gates — `rt64_projection_processor.cpp` (FOV Hor+) and
+  `rt64_framebuffer_renderer.cpp` (NDC scale) — skipping the whole-width requirement. The
+  magic is that a quadrant is a **uniformly-halved copy** of the whole frame (160×120 vs
+  320×240, both 4:3), so its own widescreen scale equals the global `aspectRatioScale` RT64
+  already computes, and its native viewport already lands in the correct output half
+  (NDC `[-1,0]`/`[0,1]`). So the existing global scale places and widens each quadrant
+  correctly with no new math; `computeOrigin()` maps `WIDE` to centre so the half-width
+  scissor is still produced. No-op at 4:3 (`aspectRatioScale == 1`).
+- **Game (`func_800030F8`)**: `viewportOrigin` is sticky global RSP state, so
+  `gEXSetViewportAlign(WIDE)` is emitted once before the scene's DL calls (hook at
+  `0x800044DC`) and reset to `NONE` at the entry of the 2D HUD dispatcher `func_80050860`
+  (`0x8004FC60`) — which `func_800030F8` calls after emitting the whole 3D scene. This spans
+  every quadrant viewport (six perspective viewports/frame: four quadrants + full-width
+  sky/minimap; `WIDE` is a no-op on the already-full-width ones) but resets before the HUD's
+  2D/ortho draws. Natives self-gate on the player count (`0x800CE6A4 >= 3`): 1P/2P never set
+  `WIDE`. Verified live 4:3 (no-op) / 16:9 / 21:9, both 3P and 4P (`src/lambo_hud_widescreen.c`,
+  `lambo_ws_split_wide_begin`/`_end`).
+
+**Follow-up (not yet done): per-quadrant HUD text pinning.** The 3D views now fill their
+quarters, but the 2D HUD text (RANK / LAP / speed, drawn by `func_80050860`'s quad section at
+`L_800517A8` at fixed 4:3-space corners `x=0x20` left column / `x=0x110` right column) is still
+placed by RT64 in the 4:3-centre band, so at wide aspects it clusters toward the centre split
+instead of hugging each quarter's edges (mild at 16:9, pronounced at 21:9). Pinning it needs
+column-aware `gEXSetRectAlign` (LEFT for the left column, RIGHT for the right, CENTER near the
+divide) per element × 4 quadrants — the quad analogue of the 2P work. Tracked as a follow-up
+(mirrors how 2P split #42 core preceded #56 minimap/HUD polish).
 
 ## Injection mechanism (no MIPS patch pipeline needed)
 
