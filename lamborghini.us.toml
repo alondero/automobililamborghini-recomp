@@ -611,3 +611,231 @@ text = "lambo_ws_split_wide_end(rdram);"
 func = "func_800030F8"
 before_vram = 0x80004E94
 text = "{ extern uint32_t lambo_sky_match_1p_guard(uint8_t*, uint32_t); ctx->r1 = lambo_sky_match_1p_guard(rdram, (uint32_t)ctx->r1); }"
+
+# Issue #78 — 3P/4P per-quadrant HUD text pinning. The quad section (L_800517A8) draws
+# each player's RANK (x=0x20/0x110), speed readout (x=0x14-0x46 / 0xEB-0x11D), lap-notify
+# glyph (x=0x19/0x118) and the inline per-player tag texrects in the outer columns, plus
+# quadrant-centred message glyphs (x=0x50/0xF0) and the 3P map panel (centred 240,180).
+# Control flow merges at branch labels and hook text at a label runs on every incoming
+# path, so instead of per-element scissor pin/reset pairs (unbalanceable across the
+# 4P-only branches) one full-width scissor spans the section (begin at 0x800517D0, popped
+# flag-guarded at the shared exit L_80052C00) and the hooks in between only switch the
+# sticky rect-align state: LEFT for the left column, RIGHT for the right, 25%/75%
+# fractional origins for quadrant-centred elements, NONE for centre-anchored ones (LAP
+# row at x=0x60/0xB4 and the 4P map overlay at screen centre are correct untagged).
+# Natives in src/lambo_hud_widescreen.c; no-op at 4:3. See docs/HUD.md.
+
+# RANK corners: Q1 left, Q2 right, Q3 left, Q4 (4P-only body) right; NONE at the merge
+# label 0x80051898 before the untagged static DL 0x80166FF0.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x800517D0
+text = "lambo_ws_quad_text_begin(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051804
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051838
+text = "lambo_ws_quad_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051880
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051898
+text = "lambo_ws_quad_none(rdram);"
+
+# Speed readouts, mph branch (unit flag 0x800CE802 != 0): P1 left, P2 right, P3 left,
+# P4 (4P body) right; NONE at the branch's exit label 0x80051B30.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051938
+text = "lambo_ws_quad_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x800519C8
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051A58
+text = "lambo_ws_quad_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051AFC
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051B30
+text = "lambo_ws_quad_none(rdram);"
+
+# Speed readouts, km/h branch (unit flag == 0), same shape; the exit label 0x80051CFC is
+# also branch A's landing point, where align-NONE is an idempotent repeat.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051B70
+text = "lambo_ws_quad_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051BDC
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051C48
+text = "lambo_ws_quad_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051CC8
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051CFC
+text = "lambo_ws_quad_none(rdram);"
+
+# Lap-notify glyphs (drawn after the centre-anchored LAP row): P1 left (label 0x80051DB4,
+# both format paths converge before the draw), P2 right, P3 left, P4 right (labels inside
+# the 4P-only body); NONE before the 4P LAP draw (x=0xB4, centre-anchored) and at the
+# all-paths merge label 0x80051F90.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051DB4
+text = "lambo_ws_quad_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051E3C
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051EC4
+text = "lambo_ws_quad_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051F60
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051F78
+text = "lambo_ws_quad_none(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051F90
+text = "lambo_ws_quad_left(rdram);"
+
+# Inline per-player tag texrects (two per quadrant, outer columns, one shared texture
+# loaded after 0x80051F90): the four blocks are bounded by labels — Q1 left from
+# 0x80051F90 above, Q2 right at 0x8005245C, Q3 left at 0x80052648, Q4 right at
+# 0x80052834, NONE at the merge 0x80052A34.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8005245C
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052648
+text = "lambo_ws_quad_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052834
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052A34
+text = "lambo_ws_quad_none(rdram);"
+
+# Quadrant-centred message glyphs (x=0x50 left quadrants, 0xF0 right): pin to the 25%/75%
+# fractional origins inside each conditional body, NONE at each merge label.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052A80
+text = "lambo_ws_quad_quarter_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052AA8
+text = "lambo_ws_quad_none(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052AC0
+text = "lambo_ws_quad_quarter_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052AE8
+text = "lambo_ws_quad_none(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052B00
+text = "lambo_ws_quad_quarter_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052B28
+text = "lambo_ws_quad_none(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052B54
+text = "lambo_ws_quad_quarter_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052B7C
+text = "lambo_ws_quad_none(rdram);"
+
+# 3P map panel: the overlay call at 0x80052BB4 (3P-only body) pins to the 75% origin; the
+# reset also game-space-shifts any arrow LOAD matrices the overlay emitted (half an edge
+# pin's travel, rightward). The 4P overlay call (0x80052BE8) is screen-centred = untagged.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052B90
+text = "lambo_ws_quad_panel_pin(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052BBC
+text = "lambo_ws_quad_panel_reset(rdram);"
+
+# Common exit for every dispatcher path (1P/2P jump here too): pop the section scissor,
+# flag-guarded so non-quad paths are a no-op.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052C00
+text = "lambo_ws_quad_text_end(rdram);"
+
+# 3P map-panel background: func_800030F8's tail emits the static sub-DL 0x8011F1C0
+# (black fillrect over the unused 4th quadrant) at 0x800051D4-0x80005204. Stretch it
+# from the output centre to the right edge (mixed-origin align + wide scissor); the
+# reset sits on the merge label 0x80005208, hence flag-guarded.
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x800051D4
+text = "lambo_ws_quad_panel_bg_stretch(rdram);"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x80005208
+text = "lambo_ws_quad_panel_bg_reset(rdram);"
