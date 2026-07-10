@@ -34,6 +34,10 @@ std::string g_texture_dump;
 // regardless (the rewrite self-gates on player count).
 bool g_widescreen_fog_match = true;
 
+// Draw the sky panorama in 3P/4P split screen like 1P/2P (issue #84). Same
+// enhancement family as the fog match; 1P/2P take the sky path natively anyway.
+bool g_widescreen_sky_match = true;
+
 // Read a key into `out`, keeping the existing (default) value when the key is
 // missing or invalid. NLOHMANN_JSON_SERIALIZE_ENUM does NOT throw on an
 // unrecognised string -- it silently maps it to the FIRST enumerator, which for
@@ -75,6 +79,7 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"texture_pack", g_texture_pack},
         {"texture_dump", g_texture_dump},
         {"widescreen_fog_match", g_widescreen_fog_match},
+        {"widescreen_sky_match", g_widescreen_sky_match},
     };
 }
 
@@ -95,6 +100,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "texture_pack", g_texture_pack);
     from_or_default(j, "texture_dump", g_texture_dump);
     from_or_default(j, "widescreen_fog_match", g_widescreen_fog_match);
+    from_or_default(j, "widescreen_sky_match", g_widescreen_sky_match);
     // Sanity-bound the window size: below the N64 framebuffer is useless, above 8K
     // is a typo -- either way SDL_CreateWindow would fail and the port would run
     // permanently headless, so reset to defaults instead.
@@ -263,6 +269,14 @@ bool widescreen_fog_match() {
         return v[0] == '1';
     }
     return g_widescreen_fog_match;
+}
+
+// LAMBO_SKY_MATCH_1P=1/0 overrides the JSON key for headless capture/testing.
+bool widescreen_sky_match() {
+    if (const char* v = std::getenv("LAMBO_SKY_MATCH_1P")) {
+        return v[0] == '1';
+    }
+    return g_widescreen_sky_match;
 }
 
 } // namespace config

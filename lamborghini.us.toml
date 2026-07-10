@@ -598,3 +598,16 @@ text = "lambo_ws_split_wide_begin(rdram);"
 func = "func_80050860"
 before_vram = 0x8004FC60
 text = "lambo_ws_split_wide_end(rdram);"
+
+# Issue #84 — 3P/4P split screen skips the sky panorama (the horizon band above the fog is
+# the frame-clear fill colour, authored = the near-black variant-2 fog colour). The frame
+# dispatcher func_800030F8 selects environment variant 2 for players >= 3 and guards the
+# per-viewport sky-emitter call (jal 0x8000F6D8 at 0x80004E9C) with `slti $at, players, 0x3`
+# (0x80004E90) + `beq $at, $zero` (0x80004E94). Routing $at through the native lets the
+# game's own emitter run for 3P/4P exactly as it does for 1P/2P (it builds its matrices from
+# the per-viewport camera angles at 0x800A2EC0/0x800A2EE8, so it is viewport-correct).
+# Native in src/lambo_sky_widescreen.cpp; graphics.json key "widescreen_sky_match".
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x80004E94
+text = "{ extern uint32_t lambo_sky_match_1p_guard(uint8_t*, uint32_t); ctx->r1 = lambo_sky_match_1p_guard(rdram, (uint32_t)ctx->r1); }"

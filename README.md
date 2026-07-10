@@ -35,6 +35,7 @@ N64Recomp ports (Zelda 64: Recompiled et al.):
 | `window_width` / `window_height` | pixels | `1600`/`900` | Windowed-mode size. |
 | `api_option` | `Auto`, `D3D12`, `Vulkan`, `Metal` | `Auto` | Graphics API. |
 | `widescreen_fog_match` | `true`, `false` | `true` | Widens the dense 3P/4P split-screen fog to the open 1P fog window/colour so the extra draw distance shows. Only affects 3+ player races. |
+| `widescreen_sky_match` | `true`, `false` | `true` | Draws the sky panorama in 3P/4P split screen (the original skips it, leaving a flat dark backdrop above the horizon). Only affects 3+ player races. |
 
 ## Developer warp (race-track warp)
 
