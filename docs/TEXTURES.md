@@ -155,8 +155,65 @@ python tools/make_pack.py <pack> --shift none
 Use an **open-licensed** bold face (e.g. Liberation Sans Bold / Bold-Italic, or DejaVu Sans
 Bold / Bold-Oblique) so the shipped pack embeds no proprietary font. **This is an opt-in,
 experimental pack — texture packs are never on by default** (`texture_pack` is empty unless the
-user sets it / `LAMBO_TEXTURE_PACK`). Not yet covered: the larger blue-chrome HUD/menu font
-(LAP/TIME/RANK, PAUSED, the name grid) — a separate atlas still to be located.
+user sets it / `LAMBO_TEXTURE_PACK`). The larger blue-chrome HUD/menu font (LAP/TIME/RANK,
+PAUSED, the name grid) is **not an atlas** — it is ~40 per-glyph 16×16 textures (see the
+xBRZ section below), so a vector re-render would need a per-glyph pipeline; the xBRZ
+upscale covers it meanwhile.
+
+### xBRZ-upscaling everything else: HUD art, wordmarks, signs (issue #52 follow-up)
+
+Text re-rendering covers the small fonts, but the rest of the 2D art — the title
+wordmark, the Lamborghini bull, the speedometer dial, the gold countdown letters,
+trackside signs — is still tiny pixel art that reads blocky against natively-rendered
+polygons. `tools/upscale_texture.py` batch-runs the **xBRZ** pixel-art scaler (vendored
+under `tools/xbrz/`, GPLv3 like this repo; the CLI auto-builds with g++ on first run)
+over a whole decoded dump:
+
+```bash
+python tools/decode_dump.py <dump>
+python tools/upscale_texture.py <dump> <pack> --scale 6
+python tools/make_pack.py <pack> --shift none     # grid-aligned -> shift none, as ever
+```
+
+Verified end-to-end at 1600×900: title bull/wordmark/PRESS START, the race HUD
+(LAP/TIME/RANK, the whole speedo dial, gear pill, mp/h readout) and the pak-message
+text all render visibly smoother with original letterforms intact.
+
+What the tool does beyond calling xBRZ, and why:
+
+- **Edge padding follows each tile's clamp bits** (`cms`/`cmt` from the dump's
+  tile.json: 0=wrap, 1=mirror, 2/3=clamp). A tiling texture scaled in isolation gets
+  seams at every repeat because xBRZ treats the bitmap edge as a hard boundary; the
+  tool pads 3 texels per side in the tile's own addressing mode, scales, then crops.
+- **Transparent texels get RGB bled from opaque neighbours** before scaling (same
+  reason as `upscale_font.py` — palettized decodes leave junk RGB under alpha=0).
+- **CI textures whose decode hit the palette-fallback (magenta) are skipped loudly** —
+  a handful of dumped CI palettes are shorter than the indices used, and shipping the
+  fallback would replace a good texture with corruption. ~30 of ~620 skip this way;
+  they stay at their original resolution in-game.
+
+Trade-off to know about: xBRZ turns the banding in smooth photographic gradients
+(skies, clouds) into crisp painterly regions — most textures look strictly better, the
+sky becomes a matter of taste. Use `--only`/`--exclude` (hash-prefix filters) to carve
+the pack if wanted, e.g. `--exclude` the three small-font atlases when layering the
+`render_font.py` output on top (or simply run `render_font.py` into the pack dir
+afterwards — later writes win since the manifest is per-hash).
+
+Dump-coverage discoveries that took real chasing (don't re-derive):
+
+- **The big blue-chrome HUD font (LAP/TIME/RANK, PAUSED, name grid) is NOT an atlas** —
+  it ships as ~40 individual 16×16 RGBA textures, one per glyph, plus 128×16 strips
+  for the ordinal suffixes ("st/nd/rd/th"). They only enter TMEM once a real race HUD
+  draws, so a menu-only dump misses them entirely.
+- The gold on-track message letters (GET READY / countdown ONE-TWO-THREE etc.) are
+  individual 24×24 RGBA tiles.
+- The speedo dial is assembled from parts: 32×32 rim/arc quadrants, a 32×13 gear
+  pill, a 96×21 red-glass mph window, 32×8 "mp/h" labels, 16×7 red shift-light arrows.
+- The title wordmark ("automobili Lamborghini") is ~20 64×32 RGBA16 tiles.
+
+So: to build a complete pack, dump through **attract → title → menus → an actual
+race with rivals** (gear changes, countdown, at least one lap for all HUD states).
+Union multiple dumps by running the tool over each into the same pack directory.
 
 ### 5. Build the manifest + pack
 

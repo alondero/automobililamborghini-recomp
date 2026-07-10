@@ -66,3 +66,7 @@ nextsessionprompt.md
 *.bmp
 # Generic scratch
 *.tmp
+
+# Built xBRZ CLI (tools/upscale_texture.py rebuilds it from tools/xbrz/ sources)
+tools/xbrz/xbrz_cli
+tools/xbrz/xbrz_cli.exe
