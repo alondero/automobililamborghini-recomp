@@ -179,6 +179,9 @@ Verified end-to-end at 1600×900: title bull/wordmark/PRESS START, the race HUD
 (LAP/TIME/RANK, the whole speedo dial, gear pill, mp/h readout) and the pak-message
 text all render visibly smoother with original letterforms intact.
 
+Output is PNG — right for iterating, but the shipping rule from step 4 still applies:
+convert to BC7 DDS + mipmaps and `.rtz` (step 5) before distributing a pack.
+
 What the tool does beyond calling xBRZ, and why:
 
 - **Edge padding follows each tile's clamp bits** (`cms`/`cmt` from the dump's
