@@ -58,6 +58,11 @@ std::string texture_dump_dir();
 // LAMBO_FOG_MATCH_1P=1/0. The rewrite still self-gates on player count >= 3.
 bool widescreen_fog_match();
 
+// Draw the sky panorama in 3P/4P split screen like 1P/2P (issue #84).
+// graphics.json key "widescreen_sky_match" (default true), overridable by
+// LAMBO_SKY_MATCH_1P=1/0. Only flips a branch that 1P/2P already take.
+bool widescreen_sky_match();
+
 } // namespace config
 } // namespace lambo
 

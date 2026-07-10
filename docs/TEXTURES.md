@@ -38,6 +38,7 @@ by an env var so a headless capture never has to touch the user's `graphics.json
 | `texture_pack` | string | `""` | `LAMBO_TEXTURE_PACK` | Directory or `.rtz` auto-loaded at startup. |
 | `texture_dump` | string | `""` | `LAMBO_TEXTURE_DUMP` | Directory RT64 writes every used texture to. |
 | `widescreen_fog_match` | bool | `true` | `LAMBO_FOG_MATCH_1P=1/0` | Issue #83: widen the dense 3P/4P split-screen fog to the 1P window/colour (rewrite of `G_MW_FOG` + `gDPSetFogColor` on the shared RDRAM DL, gated `players >= 3`). 1P/2P stay faithful. |
+| `widescreen_sky_match` | bool | `true` | `LAMBO_SKY_MATCH_1P=1/0` | Issue #84: draw the sky panorama in 3P/4P split screen (a `patches.hook` routes the player-count guard on the game's per-viewport sky-emitter call through `src/lambo_sky_widescreen.cpp`). 1P/2P take that path natively. |
 
 Both are independent of `developer_mode`, so an end-user pack loads **without** the F1
 developer overlay. On success the log prints `[rt64] texture pack loaded: …` /

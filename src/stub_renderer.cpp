@@ -1368,6 +1368,36 @@ public:
                 }
             }
         }
+        // Race-DL dump (issue #84, LAMBO_RACE_DL_DUMP=<basename>): once the race state (>=8)
+        // has settled, dump the walked frame DL to <basename>.txt and RDRAM to <basename>.bin
+        // so a 1P-vs-3P sky draw can be diffed offline. Default: env unset -> skipped.
+        static const char* s_race_dump = std::getenv("LAMBO_RACE_DL_DUMP");
+        if (s_race_dump && t && g_lambo_rdram) {
+            static bool s_done = false;
+            static int s_settle = 0;
+            uint32_t w = *(const uint32_t*)(g_lambo_rdram + (0x800CE6AC - 0x80000000u));
+            int state = (int)((w >> 16) & 0xFFFF);
+            if (!s_done && state >= 8 && ++s_settle >= 400) {
+                char path[512];
+                std::snprintf(path, sizeof(path), "%s.txt", s_race_dump);
+                uint32_t dl_addr = (uint32_t)(int32_t)t->t.data_ptr;
+                if (std::FILE* f = std::fopen(path, "w")) {
+                    std::fprintf(f, "# race DL dump send_dl=%d dl_addr=0x%08X state=%d\n",
+                                 count, dl_addr, state);
+                    uint32_t seg[16] = {0};
+                    dlinspect::dump_walk(g_lambo_rdram, dl_addr, seg, f, 0);
+                    std::fclose(f);
+                    std::snprintf(path, sizeof(path), "%s.bin", s_race_dump);
+                    if (std::FILE* rf = std::fopen(path, "wb")) {
+                        std::fwrite(g_lambo_rdram, 1, 0x800000, rf);
+                        std::fclose(rf);
+                    }
+                    std::fprintf(stderr, "[racedl] dumped DL @0x%08X + RDRAM to %s.{txt,bin}\n",
+                                 dl_addr, s_race_dump);
+                    s_done = true;
+                }
+            }
+        }
         // Menu-DL trace (issue #32, LAMBO_MENU_DL_TRACE=1): per-frame command census keyed by
         // the menu screen id, logged on every (screen, count) change -- the port-vs-ares DL
         // convergence tool that found the missing cursor/arrow emitters. Default: env unset.
