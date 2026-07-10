@@ -51,7 +51,8 @@ static void emit_cmd(uint8_t* rdram, uint32_t w0, uint32_t w1) {
     MEM_W(0, curp) = (int32_t)(cur + 8);
 }
 
-static void emit_rect_align(uint8_t* rdram, uint32_t origin, int32_t xoff) {
+static void emit_rect_align2(uint8_t* rdram, uint32_t lorigin, int32_t lxoff,
+                             uint32_t rorigin, int32_t rxoff) {
     // RT64 only honours extended opcodes after the enable hook; emit it every bracket
     // (idempotent) since nothing else in this port enables the extended GBI.
     emit_cmd(rdram,
@@ -59,10 +60,14 @@ static void emit_rect_align(uint8_t* rdram, uint32_t origin, int32_t xoff) {
              PARAM(RT64_HOOK_OP_ENABLE, 4, 28) | PARAM(RT64_EXTENDED_OPCODE, 8, 0));
     emit_cmd(rdram,
              PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_SETRECTALIGN_V1, 24, 0),
-             PARAM(origin, 12, 0) | PARAM(origin, 12, 12));
+             PARAM(lorigin, 12, 0) | PARAM(rorigin, 12, 12));
     emit_cmd(rdram,
-             PARAM(xoff, 16, 16) | PARAM(0, 16, 0),
-             PARAM(xoff, 16, 16) | PARAM(0, 16, 0));
+             PARAM(lxoff, 16, 16) | PARAM(0, 16, 0),
+             PARAM(rxoff, 16, 16) | PARAM(0, 16, 0));
+}
+
+static void emit_rect_align(uint8_t* rdram, uint32_t origin, int32_t xoff) {
+    emit_rect_align2(rdram, origin, xoff, origin, xoff);
 }
 
 static void pin(uint8_t* rdram, uint32_t origin, int32_t xoff) {
@@ -203,6 +208,119 @@ uint32_t lambo_ws_minimap_outline_x(uint32_t x_bits) {
 // docs/HUD.md). Distinct from lambo_ws_minimap_pin only to skip the 1P outline frame-gate.
 void lambo_ws_minimap_pin_2p(uint8_t* rdram) {
     lambo_ws_pin_left(rdram);
+}
+
+// Quad-split HUD text pinning (issue #78). func_80050860's quad section (L_800517A8)
+// draws each player's RANK/speed/lap-notify text and tag texrects at fixed 4:3-space
+// columns (left ~0x14-0x46, right ~0xEB-0x11D) plus per-quadrant-centred message glyphs
+// (x=0x50/0xF0) and, in 3P, the map panel centred at (240,180). With the quadrant 3D
+// views widened (G_EX_ORIGIN_WIDE below), the text must follow its quarter: left column
+// pins LEFT, right column RIGHT, quadrant-centred elements pin to fractional origins
+// (RT64's computeOrigin is generic: origin/0x400 of the output width) with the matching
+// quarter-pixel rebase, mirroring how pin_right rebases by -SCREEN_WIDTH_QP.
+//
+// The section's control flow merges at branch labels, and hook text at a label runs on
+// EVERY incoming path (N64Recomp emits the label before the hook text), so per-element
+// pin/reset scissor pairs cannot stay balanced across the 4P-only branches. Instead ONE
+// full-width scissor spans the whole section — pushed at entry, popped at the common
+// exit label L_80052C00 — and the hooks in between only switch the sticky rect-align
+// state, which is idempotent and safe at merge labels. The pop is flag-guarded because
+// L_80052C00 is shared with the 1P/2P dispatcher paths.
+
+#define G_EX_ORIGIN_QUARTER_LEFT (G_EX_ORIGIN_CENTER / 2)
+#define G_EX_ORIGIN_QUARTER_RIGHT ((G_EX_ORIGIN_CENTER + G_EX_ORIGIN_RIGHT) / 2)
+
+static int s_quad_text_scissor_open;
+
+void lambo_ws_quad_text_begin(uint8_t* rdram) {
+    lambo_ws_pin_left(rdram); /* wide scissor push + LEFT for the first RANK draw */
+    s_quad_text_scissor_open = 1;
+}
+
+void lambo_ws_quad_left(uint8_t* rdram) {
+    emit_rect_align(rdram, G_EX_ORIGIN_LEFT, 0);
+}
+
+void lambo_ws_quad_right(uint8_t* rdram) {
+    emit_rect_align(rdram, G_EX_ORIGIN_RIGHT, -SCREEN_WIDTH_QP);
+}
+
+void lambo_ws_quad_quarter_left(uint8_t* rdram) {
+    emit_rect_align(rdram, G_EX_ORIGIN_QUARTER_LEFT, -SCREEN_WIDTH_QP / 4);
+}
+
+void lambo_ws_quad_quarter_right(uint8_t* rdram) {
+    emit_rect_align(rdram, G_EX_ORIGIN_QUARTER_RIGHT, -SCREEN_WIDTH_QP * 3 / 4);
+}
+
+void lambo_ws_quad_none(uint8_t* rdram) {
+    emit_rect_align(rdram, G_EX_ORIGIN_NONE, 0);
+}
+
+void lambo_ws_quad_text_end(uint8_t* rdram) {
+    if (!s_quad_text_scissor_open) {
+        return; /* reached via the 1P/2P paths that share L_80052C00 */
+    }
+    s_quad_text_scissor_open = 0;
+    emit_cmd(rdram,
+             PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_POPSCISSOR_V1, 24, 0),
+             0);
+    emit_rect_align(rdram, G_EX_ORIGIN_NONE, 0);
+}
+
+// 3P map-panel BACKGROUND: func_800030F8's tail emits a static sub-DL (0x8011F1C0,
+// black fillrect (160,120)-(319,239)) that blanks the unused 4th quadrant. Untagged it
+// covers only the 4:3 band's right half, leaving a frame-clear-coloured gap out to the
+// widened quarter's edge. A mixed-origin align STRETCHES it: left edge pinned to the
+// output centre (the quadrant divide), right edge to the output right edge, each with
+// the rebase for its game-space coordinate (160 -> CENTER, 320 -> RIGHT). Rects need
+// the wide scissor or RT64 crops the moved edge at the 4:3 band; the reset is
+// flag-guarded because the hook after the emission sits on a merge label.
+static int s_quad_panel_bg_open;
+
+void lambo_ws_quad_panel_bg_stretch(uint8_t* rdram) {
+    emit_rect_align2(rdram, G_EX_ORIGIN_CENTER, -SCREEN_WIDTH_QP / 2,
+                     G_EX_ORIGIN_RIGHT, -SCREEN_WIDTH_QP);
+    emit_cmd(rdram,
+             PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_PUSHSCISSOR_V1, 24, 0),
+             0);
+    emit_cmd(rdram,
+             PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_SETSCISSOR_V1, 24, 0),
+             PARAM(0, 2, 0) | PARAM(G_EX_ORIGIN_LEFT, 12, 2) | PARAM(G_EX_ORIGIN_RIGHT, 12, 14));
+    emit_cmd(rdram,
+             PARAM(0, 16, 16) | PARAM(0, 16, 0),
+             PARAM(0, 16, 16) | PARAM(240 * 4, 16, 0));
+    s_quad_panel_bg_open = 1;
+}
+
+void lambo_ws_quad_panel_bg_reset(uint8_t* rdram) {
+    if (!s_quad_panel_bg_open) {
+        return; /* merge-label hook: paths that skipped the stretch */
+    }
+    s_quad_panel_bg_open = 0;
+    emit_cmd(rdram,
+             PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_POPSCISSOR_V1, 24, 0),
+             0);
+    emit_rect_align(rdram, G_EX_ORIGIN_NONE, 0);
+}
+
+// 3P map panel: the minimap overlay func_80054FFC composite is centred at (240,180) =
+// the 4th quadrant's 4:3 centre, so its rects pin to the 75% origin; the player arrow
+// is geometry (pool LOAD matrices, as in 1P/2P), shifted in game space by the walker.
+// A 75%-origin rect travels half as far as an edge pin: 160/3 / 2 game px * 10 units/px
+// at 16:9, rightward, scaled for other aspects like every other geometry shift.
+#define LAMBO_WS_QUAD_PANEL_DX (800.0f / 3.0f)
+
+void lambo_ws_quad_panel_pin(uint8_t* rdram) {
+    emit_rect_align(rdram, G_EX_ORIGIN_QUARTER_RIGHT, -SCREEN_WIDTH_QP * 3 / 4);
+    lambo_ws_bracket_start = MEM_W(0, (gpr)(int32_t)LAMBO_DL_CURSOR);
+}
+
+void lambo_ws_quad_panel_reset(uint8_t* rdram) {
+    patch_load_mtx_dx(rdram, lambo_ws_bracket_start,
+                      MEM_W(0, (gpr)(int32_t)LAMBO_DL_CURSOR),
+                      LAMBO_WS_QUAD_PANEL_DX);
+    emit_rect_align(rdram, G_EX_ORIGIN_NONE, 0);
 }
 
 // 3P/4P split-screen widescreen (issue #42 follow-up). Unlike the rect-align pins above

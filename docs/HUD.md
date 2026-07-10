@@ -128,14 +128,36 @@ Fix (two coupled pieces):
   `WIDE`. Verified live 4:3 (no-op) / 16:9 / 21:9, both 3P and 4P (`src/lambo_hud_widescreen.c`,
   `lambo_ws_split_wide_begin`/`_end`).
 
-**Follow-up (not yet done): per-quadrant HUD text pinning.** The 3D views now fill their
-quarters, but the 2D HUD text (RANK / LAP / speed, drawn by `func_80050860`'s quad section at
-`L_800517A8` at fixed 4:3-space corners `x=0x20` left column / `x=0x110` right column) is still
-placed by RT64 in the 4:3-centre band, so at wide aspects it clusters toward the centre split
-instead of hugging each quarter's edges (mild at 16:9, pronounced at 21:9). Pinning it needs
-column-aware `gEXSetRectAlign` (LEFT for the left column, RIGHT for the right, CENTER near the
-divide) per element × 4 quadrants — the quad analogue of the 2P work. Tracked as a follow-up
-(mirrors how 2P split #42 core preceded #56 minimap/HUD polish).
+### 3P/4P per-quadrant HUD text pinning (issue #78)
+
+The quad HUD is drawn by `func_80050860`'s quad section (`L_800517A8`..`L_80052C00`, quad-only:
+the 2P tail's `L_800517A0` branches straight past it). Element map (all verified in the
+generated code; y needs no repositioning, only x):
+
+| Element | Draw sites (runtime vram) | 4:3 x | Pin |
+|---|---|---|---|
+| RANK digits (`func_8004CCB4`) | Q1 `0x800517E0`, Q2 `0x80051814`, Q3 `0x80051848`, Q4 (4P) `0x80051890` | 0x20 / 0x110 | LEFT / RIGHT |
+| Speed digits + unit glyph (`func_8004D468`; two branches on the unit flag `0x800CE802`) | mph: `0x80051948/64`, `0x800519D8/F4`, `0x80051A68/84`, 4P `0x80051B0C/28`; km/h: `0x80051B80/9C`, `0x80051BEC`+`0x80051C08`, `0x80051C58/74`, 4P `0x80051CD8`+`0x80051CF4` | 0x14–0x46 / 0xEB–0x11D | LEFT / RIGHT |
+| LAP counters (`func_80058530`) | `0x80051D0C`, `0x80051D24`, `0x80051D3C`, 4P `0x80051F88` | 0x60 / 0xB4 | none (centre-anchored untagged = tracks the divide) |
+| Lap-notify glyph (digit or "N") | `0x80051DC4`, `0x80051E4C`, `0x80051ED4`, 4P `0x80051F70` | 0x19 / 0x118 | LEFT / RIGHT |
+| Per-player tag texrects (inline DL, 2 per quadrant, shared texture `0x801651B0`) | blocks bounded by labels `0x80051F90`/`0x8005245C`/`0x80052648`/`0x80052834`/`0x80052A34` | lr 46–59 / 299–301 | LEFT / RIGHT |
+| Message glyphs (quadrant-centred) | `0x80052AA0`, `0x80052AE0`, `0x80052B20`, 4P `0x80052B74` | 0x50 / 0xF0 | 25% / 75% fractional origin |
+| 3P map panel (overlay `func_80054FFC` at centre 240,180) | jal `0x80052BB4` (3P only) | centred on 240 | 75% origin + arrow matrix walker (+266.7 units·scale) |
+| 4P map overlay (same helper at screen centre 160,120) | jal `0x80052BE8` | centred | none (untagged = centred) |
+
+Mechanism notes specific to this section (see `lamborghini.us.toml` issue-#78 block and
+`lambo_ws_quad_*` natives):
+- **Hook text at a branch-target label runs on EVERY incoming path** (N64Recomp emits the
+  label before the hook text — `recompilation.cpp`, label pass before `process_instruction`).
+  Per-element scissor pin/reset pairs therefore cannot stay balanced across the 4P-only
+  branches; instead ONE full-width scissor spans the whole section (`lambo_ws_quad_text_begin`
+  at `0x800517D0`, flag-guarded pop at the shared exit `L_80052C00`) and the intermediate hooks
+  only switch the sticky rect-align state, which is idempotent and safe at merge labels.
+- **Fractional origins**: RT64's `computeOrigin` is generic (`origin/0x400` of the output
+  width, `rt64_framebuffer_renderer.cpp:57`), so quarter-centre pinning uses origins `0x100`
+  (25%) / `0x300` (75%) with quarter-pixel rebases `-320`/`-960` (same pattern as `pin_right`'s
+  `-1280`): an element at game-x 80/240 sits exactly on its quarter's centre at any aspect and
+  `hr_option`.
 
 ## Injection mechanism (no MIPS patch pipeline needed)
 
