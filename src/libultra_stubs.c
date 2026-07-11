@@ -251,14 +251,16 @@ extern void lambo_pak_set_rumble(int on);
 // itself issues an osMotorStart-style write, so rumble is faithful (never synthesised by us).
 //
 // FAITHFULNESS NOTE (#105, corrected 2026-07-11): Contrary to the prior note, the game DOES drive
-// the motor during gameplay (e.g. collisions, off-road). However, it bypasses libultra's osMotorStart
-// and __osContRamWrite, instead formatting raw PIF packets for address 0xC000 directly inside its
-// custom start/stop wrappers (func_8006A7A0/func_8006A82C) and submitting them via func_8007F780.
-// Furthermore, the ROM's pak scan (func_80069710) runs osPfsInitPak first and skips osMotorInit if it
-// succeeds. Because our virtual socket satisfies both, the game would normally think a Controller Pak
-// is present and completely skip rumble detection. To resolve this, we force the rumble present flag
-// (0x80110F08) to 1 every frame inside func_8007F780, allowing rumble and Controller Pak saving to
-// coexist concurrently in the same session with zero user action.
+// the motor during gameplay (e.g. collisions, off-road) via its custom start/stop wrappers
+// (func_8006A7A0/func_8006A82C). These wrappers call libultra's osMotorStart (func_8007AC78) and
+// osMotorStop (func_8007AB10). However, the ROM's pak scan (func_80069710) runs osPfsInitPak first
+// and skips osMotorInit if it succeeds. Because our virtual socket satisfies both, the game would
+// normally think a Controller Pak is present and skip rumble initialization. While we force the
+// present flag (0x80110F08) to 1 every frame inside func_8007F780 to enable the wrappers, skipping
+// osMotorInit leaves the OSPfs struct uninitialized (e.g. null queue), which would crash or submit
+// all-zero buffers during raw PIF DMA. To prevent this and achieve clean dual-pak coexistence, we
+// stub out osMotorStart and osMotorStop, directly intercepting the start/stop requests and natively
+// driving the SDL rumble.
 static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
     int pos = 0, channel = 0;
     int pak_ch0 = lambo_pak_enabled();  /* ch0 carries a formatted pak (#69) */
@@ -494,4 +496,24 @@ void func_8007F780(uint8_t* rdram, recomp_context* ctx) {
         }
     }
     ctx->r2 = 0; /* osContStartReadData returns 0 on success */
+}
+
+void func_8007AC78(uint8_t* rdram, recomp_context* ctx) {
+    /* osMotorStart / __osMotorAccess: VRAM 0x8007a078
+     * Natively bypasses the uninitialized pfs->queue and pfs->channel (which remain zero/uninitialized
+     * since osMotorInit is skipped when a Controller Pak is detected) and directly drives the motor. */
+    int channel = ((int32_t)ctx->r4 - 0x80110D68) / 40;
+    if (channel == 0) {
+        lambo_pak_set_rumble(1);
+    }
+    ctx->r2 = 0; /* return 0 (success) */
+}
+
+void func_8007AB10(uint8_t* rdram, recomp_context* ctx) {
+    /* osMotorStop: VRAM 0x80079f10 */
+    int channel = ((int32_t)ctx->r4 - 0x80110D68) / 40;
+    if (channel == 0) {
+        lambo_pak_set_rumble(0);
+    }
+    ctx->r2 = 0; /* return 0 (success) */
 }
