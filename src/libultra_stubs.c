@@ -503,6 +503,7 @@ void func_8007AC78(uint8_t* rdram, recomp_context* ctx) {
      * Natively bypasses the uninitialized pfs->queue and pfs->channel (which remain zero/uninitialized
      * since osMotorInit is skipped when a Controller Pak is detected) and directly drives the motor. */
     int channel = ((int32_t)ctx->r4 - 0x80110D68) / 40;
+    if (lambo_pak_trace()) fprintf(stderr, "[pak] MOTOR START ch=%d\n", channel);
     if (channel == 0) {
         lambo_pak_set_rumble(1);
     }
@@ -512,6 +513,7 @@ void func_8007AC78(uint8_t* rdram, recomp_context* ctx) {
 void func_8007AB10(uint8_t* rdram, recomp_context* ctx) {
     /* osMotorStop: VRAM 0x80079f10 */
     int channel = ((int32_t)ctx->r4 - 0x80110D68) / 40;
+    if (lambo_pak_trace()) fprintf(stderr, "[pak] MOTOR STOP ch=%d\n", channel);
     if (channel == 0) {
         lambo_pak_set_rumble(0);
     }
