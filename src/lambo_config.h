@@ -67,6 +67,11 @@ bool widescreen_fog_match();
 // LAMBO_SKY_MATCH_1P=1/0. Only flips a branch that 1P/2P already take.
 bool widescreen_sky_match();
 
+// Remove the ROM's per-mode LOD reductions (issues #87/#91): emit each track
+// segment's scenery layer in 2P-4P races like 1P does. graphics.json key
+// "no_lod" (default true), overridable by LAMBO_NO_LOD=1/0.
+bool no_lod();
+
 } // namespace config
 } // namespace lambo
 

@@ -185,6 +185,45 @@ following the same pattern as #83's `widescreen_fog_match`. It does **not** move
 ruling as the fog fix). `no_lod` covers only the *remaining* reductions (tickets above).
 
 ---
+
+## 7. Addendum (2026-07-11): the audit missed the per-segment scenery layer
+
+A 3P save-state investigation (paused just before visible pop-in) falsified two of this
+report's conclusions:
+
+- **"Per-mode draw distance is measured intact" was wrong for scenery.** The scene DL
+  builder `func_8000A6C0` draws each track segment as up to three sub-DLs from its
+  64-byte segment record (+0x4 road, +0x8 walls, +0xC far scenery: distant canyon
+  relief, trees, trackside structures) — and gates the scenery emit on
+  `slti $at, players, 0x2` + `beq $at, $zero` (0x8000CFA0/0x8000CFA4 in the segment
+  loop; 0x8000D834/0x8000D838 for the camera's own segment). **2P, 3P and 4P races
+  never draw the scenery layer at all**, which reads as short draw distance and pop-in;
+  #83's fog widening unmasked it (the near-black variant-2 fog used to hide the gap).
+  Fixed by the `no_lod` graphics.json key (default true): `[[patches.hook]]`s route
+  `$at` through `lambo_no_lod_scenery_guard` (src/lambo_no_lod.cpp), so every mode
+  takes the branch the way 1P does. The emit still self-gates on record+0xC being
+  non-null, and the scenery DLs are streamed in all modes (verified from a 3P save
+  state), so nothing is synthesised. Verified: 3P/4P scenery present and stable,
+  `LAMBO_NO_LOD=0` frame pixel-identical to the pre-patch binary, 1P unchanged.
+- **Why the scan missed it:** `tools/scan_lod_patterns.py` fingerprints
+  *single-precision FP compares* only. This gate is an integer `slti` on the player
+  count — a whole class (integer/per-mode branch gates inside DL emitters) the scan
+  cannot see. Double-precision compares (`c.lt.d`, ~200 sites) were also outside the
+  scan; the one guarding func_80060464's pair loop is a 0.01 epsilon, not a cull.
+- **Misleading role classifications:** `func_8000A6C0` ("ratio/range/normalisation
+  math") is actually the per-frame scene DL builder, and `func_80032450` ("camera
+  math") also maintains the per-viewport segment machinery. Their Axis-A FP-compare
+  verdicts stand; the role labels shouldn't be reused for navigation.
+- **Residual (unmeasured impact):** at the same track spot the 1P frame emits 5
+  segment groups ahead vs 3–4 per 3P viewport. With the scenery layer restored the
+  horizon is filled and no chunk pop was visible in the verification captures; if a
+  residual far-road pop shows up in play, the next probe is the per-viewport segment
+  list builder (func_80032450 / the list consumed at 0x8000CD5C via 0x800A2F28).
+- New diagnostic: `LAMBO_RACE_DL_DUMP_AT="n1,n2,..."` (with `LAMBO_RACE_DL_DUMP=<base>`)
+  dumps the walked frame DL + RDRAM at exact send_dl counts — pairs with
+  `LAMBO_STATE_LOAD` to diff the frames around a pop deterministically.
+
+---
 *Method note: MIPS classification used `tools/scan_lod_patterns.py` output cross-read
 against the recompiled C (per-instruction VRAM comments) rather than raw disassembly;
 extraction script preserved in the session scratchpad. ROM scans were byte-pattern

@@ -943,6 +943,24 @@ text = "lambo_ws_split_wide_end(rdram);"
 func = "func_800030F8"
 before_vram = 0x80004E94
 text = "{ extern uint32_t lambo_sky_match_1p_guard(uint8_t*, uint32_t); ctx->r1 = lambo_sky_match_1p_guard(rdram, (uint32_t)ctx->r1); }"
+
+# Issues #87/#91 -- no_lod: emit the per-segment scenery layer in 2P-4P like 1P. The scene
+# builder func_8000A6C0 draws each track segment as up to three sub-DLs from the 64-byte
+# segment record (+0x4 road, +0x8 walls, +0xC far scenery) but gates the scenery emit on
+# `slti $at, players, 0x2` + `beq $at, $zero`: 0x8000CFA0/0x8000CFA4 in the segment loop
+# (which also checks record+0xC != 0 first) and 0x8000D834/0x8000D838 for the camera's own
+# segment. Routing $at through the native makes every mode take the branch the way 1P does;
+# the scenery DLs are streamed in all modes (verified from a 3P save state), only the emit
+# was skipped. Native in src/lambo_no_lod.cpp; graphics.json key "no_lod".
+[[patches.hook]]
+func = "func_8000A6C0"
+before_vram = 0x8000CFA4
+text = "{ extern uint32_t lambo_no_lod_scenery_guard(uint8_t*, uint32_t); ctx->r1 = lambo_no_lod_scenery_guard(rdram, (uint32_t)ctx->r1); }"
+
+[[patches.hook]]
+func = "func_8000A6C0"
+before_vram = 0x8000D838
+text = "{ extern uint32_t lambo_no_lod_scenery_guard(uint8_t*, uint32_t); ctx->r1 = lambo_no_lod_scenery_guard(rdram, (uint32_t)ctx->r1); }"
 """
 
 UNSTUB = [

@@ -1377,7 +1377,42 @@ public:
             static int s_settle = 0;
             uint32_t w = *(const uint32_t*)(g_lambo_rdram + (0x800CE6AC - 0x80000000u));
             int state = (int)((w >> 16) & 0xFFFF);
-            if (!s_done && state >= 8 && ++s_settle >= 400) {
+            // LAMBO_RACE_DL_DUMP_AT="n1,n2,..." dumps at exact send_dl counts instead of the
+            // one-shot 400-frame settle -- lets a state-load run diff the frames around a
+            // pop-in without racing the settle timer. Each dump goes to <basename>-<n>.txt
+            // (+ .bin RDRAM snapshot per dump).
+            static const char* s_dump_at = std::getenv("LAMBO_RACE_DL_DUMP_AT");
+            if (s_dump_at) {
+                bool hit = false;
+                {   // parse the list each hit-check; counts are small and this is a debug knob
+                    const char* p = s_dump_at;
+                    while (*p) {
+                        long n = std::strtol(p, (char**)&p, 10);
+                        if (n == count) { hit = true; break; }
+                        while (*p && *p != ',') ++p;
+                        if (*p == ',') ++p;
+                    }
+                }
+                if (hit) {
+                    char path[512];
+                    std::snprintf(path, sizeof(path), "%s-%d.txt", s_race_dump, count);
+                    uint32_t dl_addr = (uint32_t)(int32_t)t->t.data_ptr;
+                    if (std::FILE* f = std::fopen(path, "w")) {
+                        std::fprintf(f, "# race DL dump send_dl=%d dl_addr=0x%08X state=%d\n",
+                                     count, dl_addr, state);
+                        uint32_t seg[16] = {0};
+                        dlinspect::dump_walk(g_lambo_rdram, dl_addr, seg, f, 0);
+                        std::fclose(f);
+                        std::snprintf(path, sizeof(path), "%s-%d.bin", s_race_dump, count);
+                        if (std::FILE* rf = std::fopen(path, "wb")) {
+                            std::fwrite(g_lambo_rdram, 1, 0x800000, rf);
+                            std::fclose(rf);
+                        }
+                        std::fprintf(stderr, "[racedl] dumped DL @0x%08X at send_dl=%d\n",
+                                     dl_addr, count);
+                    }
+                }
+            } else if (!s_done && state >= 8 && ++s_settle >= 400) {
                 char path[512];
                 std::snprintf(path, sizeof(path), "%s.txt", s_race_dump);
                 uint32_t dl_addr = (uint32_t)(int32_t)t->t.data_ptr;
