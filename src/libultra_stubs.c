@@ -250,13 +250,15 @@ extern void lambo_pak_set_rumble(int on);
 // 0x600 (addr 0xC000) is answered here and forwarded to SDL rumble -- it fires ONLY when the ROM
 // itself issues an osMotorStart-style write, so rumble is faithful (never synthesised by us).
 //
-// FAITHFULNESS NOTE (#69, verified 2026-07-03 by exhaustive caller enumeration): this title's ROM
-// DETECTS the Rumble Pak (func_8007AF60's 0x80 bank-echo probe) but never drives the motor -- none
-// of the ~22 __osContRamWrite call sites ever targets address 0xC000 with an 0x01 payload; it is a
-// Controller-Pak (save) user, not a Rumble-Pak user. So the motor branch below is the CORRECT wiring
-// for a capability the ROM advertises but does not exercise: it stays dormant for this game and will
-// vibrate only if some ROM path we did not see issues a motor write. It is deliberately retained (not
-// dead scaffolding) as the honest hook -- do NOT add a synthetic trigger to "make rumble work".
+// FAITHFULNESS NOTE (#105, corrected 2026-07-11): Contrary to the prior note, the game DOES drive
+// the motor during gameplay (e.g. collisions, off-road). However, it bypasses libultra's osMotorStart
+// and __osContRamWrite, instead formatting raw PIF packets for address 0xC000 directly inside its
+// custom start/stop wrappers (func_8006A7A0/func_8006A82C) and submitting them via func_8007F780.
+// Furthermore, the ROM's pak scan (func_80069710) runs osPfsInitPak first and skips osMotorInit if it
+// succeeds. Because our virtual socket satisfies both, the game would normally think a Controller Pak
+// is present and completely skip rumble detection. To resolve this, we force the rumble present flag
+// (0x80110F08) to 1 every frame inside func_8007F780, allowing rumble and Controller Pak saving to
+// coexist concurrently in the same session with zero user action.
 static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
     int pos = 0, channel = 0;
     int pak_ch0 = lambo_pak_enabled();  /* ch0 carries a formatted pak (#69) */
@@ -433,6 +435,9 @@ void func_8007F780(uint8_t* rdram, recomp_context* ctx) {
 
     buf = ctx->r5;                          /* a1 = game controller read buffer (D_8011C6D0) */
     osContStartReadData_recomp(rdram, ctx); /* native: poll_input + send_si (unblocks osRecvMesg) */
+
+    /* Force the rumble pak present flag to 1 on controller 0 every frame, coexisting with Controller Pak */
+    MEM_W(0, (gpr)(int32_t)0x80110F08u) = 1;
 
     /* Zero ALL fields (incl. stick_x/y): osContGetReadData only fills pads[c] for
      * c < max_controllers, which is 0 until osContInit runs. Early boot reads (vi~51)
