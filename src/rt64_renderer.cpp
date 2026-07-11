@@ -26,6 +26,7 @@
 
 #include "lambo_rt64.h"
 #include "lambo_config.h"
+#include "lambo_gpu_advisory.h"
 #include "lambo_hud_widescreen.h"
 
 extern "C" void lambo_fog_match_1p(uint8_t* rdram, uint32_t dl_addr);  // src/lambo_fog_widescreen.cpp
@@ -166,6 +167,41 @@ ultramodern::renderer::GraphicsApi map_graphics_api(RT64::UserConfiguration::Gra
     return ultramodern::renderer::GraphicsApi::Auto;
 }
 
+// GPU driver advisory (issue #109): an out-of-date Intel driver trips RT64's
+// force-Vulkan workaround, and on Iris Xe that Vulkan driver immediately loses
+// the device (vkQueueSubmit VK_ERROR_DEVICE_LOST) -> a black screen with nothing
+// user-readable anywhere. Detect the condition after setup and say what to do.
+void warn_about_gpu_driver(RT64::Application* app, ultramodern::renderer::GraphicsApi chosen_api) {
+    const auto desc = app->device->getDescription();
+    uint32_t vendor = (uint32_t)desc.vendor;
+    uint64_t driver_version = desc.driverVersion;
+    // Replay a reported machine's device on any box: LAMBO_FAKE_GPU="8086,1e00000065057c"
+    if (const char* fake = std::getenv("LAMBO_FAKE_GPU")) {
+        unsigned v = 0; unsigned long long d = 0;
+        if (std::sscanf(fake, "%x,%llx", &v, &d) == 2) {
+            vendor = v; driver_version = d;
+            std::fprintf(stderr, "[gpu] LAMBO_FAKE_GPU active: vendor=0x%X driver=0x%llX\n", v, d);
+        }
+    }
+    const int severity = lambo_gpu_advisory_severity(
+        vendor, driver_version,
+        chosen_api == ultramodern::renderer::GraphicsApi::Vulkan ? 1 : 0);
+    if (severity == LAMBO_GPU_ADVISORY_NONE) {
+        return;
+    }
+
+    static char text[1024];
+    lambo_gpu_advisory_message(severity, desc.name.c_str(), driver_version,
+                               lambo::config::graphics_config_path().string().c_str(),
+                               text, sizeof text);
+    std::fprintf(stderr, "[gpu] driver advisory:\n%s\n", text);
+    if (severity == LAMBO_GPU_ADVISORY_SEVERE) {
+        // The affected user sees only a black window; a console line is not enough.
+        // Post to the main thread's event pump, which owns showing the message box.
+        lambo_gpu_advisory_set_pending(text);
+    }
+}
+
 class RT64Context final : public ultramodern::renderer::RendererContext {
 public:
     RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle, bool debug) {
@@ -253,6 +289,8 @@ public:
         }
 
         std::fprintf(stderr, "[rt64] RT64 renderer initialised (api=%d)\n", (int)chosen_api);
+
+        warn_about_gpu_driver(app.get(), chosen_api);
 
         // Publish the app pointer for the widescreen HUD rect-aspect helper
         // (lambo_ws_get_hud_rect_aspect_bits reads this on the game-logic thread),

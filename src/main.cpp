@@ -39,6 +39,7 @@
 #include "lambo_audio.h"
 #include "lambo_config.h"
 #include "lambo_crash.h"   // issue #13 / A14
+#include "lambo_gpu_advisory.h"  // issue #109: outdated-driver popup handoff
 // ultramodern's native VI API (events.cpp), used by the promote_vi_context RT64 bridge.
 extern "C" void osViSwapBuffer(uint8_t* rdram, int32_t frameBufPtr);
 extern "C" void osViSetMode(uint8_t* rdram, int32_t mode_);
@@ -427,6 +428,14 @@ static void update_gfx_stub(void* /*gfx_data*/) {
             else if (event.type == SDL_CONTROLLERDEVICEREMOVED) {
                 input_close_controller(event.cdevice.which);  // which = instance id (REMOVED)
             }
+        }
+        // Severe GPU-driver advisory posted by renderer setup (issue #109): the affected
+        // user sees only a black window, so show it as a modal box. Main thread owns all
+        // UI; blocking the pump here is fine -- game threads keep running behind it.
+        if (const char* advisory = lambo_gpu_advisory_take_pending()) {
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING,
+                                     "Lamborghini Recomp - outdated graphics driver",
+                                     advisory, g_sdl_window);
         }
         // SDL_PollEvent pumped events above (implicitly SDL_GameControllerUpdate); sample the
         // fresh keyboard+pad state into the atomic snapshot the game thread reads via get_input.
