@@ -38,6 +38,13 @@ bool g_widescreen_fog_match = true;
 // enhancement family as the fog match; 1P/2P take the sky path natively anyway.
 bool g_widescreen_sky_match = true;
 
+// Remove the ROM's per-mode LOD reductions (issues #87/#91): the scene builder
+// func_8000A6C0 emits each track segment's scenery layer (record+0xC sub-DL: the
+// distant canyon walls / roadside relief) only when players < 2, so 2P-4P races
+// lose the far scenery entirely. Default-on; the emit still self-gates on the
+// record pointer being non-null, so segments without a scenery DL are unaffected.
+bool g_no_lod = true;
+
 // Read a key into `out`, keeping the existing (default) value when the key is
 // missing or invalid. NLOHMANN_JSON_SERIALIZE_ENUM does NOT throw on an
 // unrecognised string -- it silently maps it to the FIRST enumerator, which for
@@ -80,6 +87,7 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"texture_dump", g_texture_dump},
         {"widescreen_fog_match", g_widescreen_fog_match},
         {"widescreen_sky_match", g_widescreen_sky_match},
+        {"no_lod", g_no_lod},
     };
 }
 
@@ -101,6 +109,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "texture_dump", g_texture_dump);
     from_or_default(j, "widescreen_fog_match", g_widescreen_fog_match);
     from_or_default(j, "widescreen_sky_match", g_widescreen_sky_match);
+    from_or_default(j, "no_lod", g_no_lod);
     // Sanity-bound the window size: below the N64 framebuffer is useless, above 8K
     // is a typo -- either way SDL_CreateWindow would fail and the port would run
     // permanently headless, so reset to defaults instead.
@@ -281,6 +290,14 @@ bool widescreen_sky_match() {
         return v[0] == '1';
     }
     return g_widescreen_sky_match;
+}
+
+// LAMBO_NO_LOD=1/0 overrides the JSON key for headless capture/testing.
+bool no_lod() {
+    if (const char* v = std::getenv("LAMBO_NO_LOD")) {
+        return v[0] == '1';
+    }
+    return g_no_lod;
 }
 
 } // namespace config
