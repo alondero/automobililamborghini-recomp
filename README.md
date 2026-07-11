@@ -37,6 +37,17 @@ N64Recomp ports (Zelda 64: Recompiled et al.):
 | `widescreen_fog_match` | `true`, `false` | `true` | Widens the dense 3P/4P split-screen fog to the open 1P fog window/colour so the extra draw distance shows. Only affects 3+ player races. |
 | `widescreen_sky_match` | `true`, `false` | `true` | Draws the sky panorama in 3P/4P split screen (the original skips it, leaving a flat dark backdrop above the horizon). Only affects 3+ player races. |
 
+## Troubleshooting
+
+**Black screen / `vkQueueSubmit failed` spam on Intel graphics.** Intel drivers
+older than 31.0.101.2115 are known-broken with RT64: the renderer avoids Direct3D 12
+on them, and on newer Intel GPUs (e.g. Iris Xe) stuck on an old driver the Vulkan
+fallback then loses the device. The game detects this at startup and shows a warning.
+The fix is to update the Intel graphics driver (Windows Update or
+[intel.com/download-center](https://www.intel.com/content/www/us/en/download-center/home.html)).
+If you cannot update, set `"api_option": "D3D12"` in `graphics.json` to stay on
+Direct3D 12 instead.
+
 ## Developer warp (race-track warp)
 
 For development it is useful to jump straight into a race without driving the menus

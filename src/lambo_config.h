@@ -21,6 +21,10 @@ namespace config {
 //   else:    $XDG_CONFIG_HOME/LamborghiniRecomp (or ~/.config/LamborghiniRecomp)
 std::filesystem::path app_config_dir();
 
+// Absolute path of the live graphics.json (honours the LAMBO_GRAPHICS_CONFIG
+// override), for user-facing messages that tell people what file to edit.
+std::filesystem::path graphics_config_path();
+
 // The enhancement-oriented defaults this port ships with (widescreen Expand,
 // display-rate interpolated rendering, window-scaled internal resolution).
 ultramodern::renderer::GraphicsConfig default_graphics_config();

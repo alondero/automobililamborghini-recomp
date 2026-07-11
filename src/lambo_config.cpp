@@ -146,6 +146,10 @@ std::filesystem::path graphics_json_path() {
 namespace lambo {
 namespace config {
 
+std::filesystem::path graphics_config_path() {
+    return graphics_json_path();
+}
+
 std::filesystem::path app_config_dir() {
     // Portable mode: a portable.txt in the working directory keeps everything local.
     std::error_code ec;
