@@ -20,11 +20,30 @@ int lambo_gpu_intel_driver_predates_fix(uint64_t driver_version) {
     return driver_version <= kBrokenIntelDriverD3D12 ? 1 : 0;
 }
 
-int lambo_gpu_advisory_severity(uint32_t vendor, uint64_t driver_version, int running_vulkan) {
+int lambo_gpu_name_is_modern_intel(const char* device_name) {
+    if (device_name == nullptr) {
+        return 0;
+    }
+    // Gen12+ marketing names: "Intel(R) Iris(R) Xe Graphics", "Intel(R) Arc(TM) ...".
+    // 6th-gen (D3D12-broken) names are "HD Graphics 5xx" / "Iris (Pro) Graphics 5xx"
+    // and contain neither token, so they correctly fall through to RT64's fallback.
+    return (std::strstr(device_name, "Xe") || std::strstr(device_name, "Arc")) ? 1 : 0;
+}
+
+int lambo_gpu_advisory_severity(uint32_t vendor, uint64_t driver_version,
+                                int running_vulkan, const char* device_name) {
     if (vendor != LAMBO_GPU_VENDOR_INTEL || !lambo_gpu_intel_driver_predates_fix(driver_version)) {
         return LAMBO_GPU_ADVISORY_NONE;
     }
-    return running_vulkan ? LAMBO_GPU_ADVISORY_SEVERE : LAMBO_GPU_ADVISORY_INFO;
+    if (!running_vulkan) {
+        return LAMBO_GPU_ADVISORY_INFO; // on D3D12: works, driver merely old.
+    }
+    // On Vulkan with an old driver: only a MODERN Intel part is in trouble here
+    // (device loss -> black screen). A 6th-gen part on Vulkan is RT64 doing the
+    // right thing -- D3D12 would device-remove -- so that is INFO, not SEVERE.
+    return lambo_gpu_name_is_modern_intel(device_name)
+        ? LAMBO_GPU_ADVISORY_SEVERE
+        : LAMBO_GPU_ADVISORY_INFO;
 }
 
 static char g_pending_text[1024];
