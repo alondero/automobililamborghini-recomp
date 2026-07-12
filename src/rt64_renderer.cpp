@@ -185,7 +185,8 @@ void warn_about_gpu_driver(RT64::Application* app, ultramodern::renderer::Graphi
     }
     const int severity = lambo_gpu_advisory_severity(
         vendor, driver_version,
-        chosen_api == ultramodern::renderer::GraphicsApi::Vulkan ? 1 : 0);
+        chosen_api == ultramodern::renderer::GraphicsApi::Vulkan ? 1 : 0,
+        desc.name.c_str());
     if (severity == LAMBO_GPU_ADVISORY_NONE) {
         return;
     }
@@ -258,34 +259,63 @@ public:
         appConfig.appId = "lamborghini-recomp";
         appConfig.useConfigurationFile = false;
 
-        app = std::make_unique<RT64::Application>(appCore, appConfig);
-
         auto& cur_config = ultramodern::renderer::get_graphics_config();
-        set_application_user_config(app.get(), cur_config);
-        app->userConfig.developerMode = debug;
-        // Force gbi depth branches to prevent LODs from kicking in (Zelda64Recomp default).
-        app->enhancementConfig.f3dex.forceBranch = true;
-        // Scale LODs based on the output resolution.
-        app->enhancementConfig.textureLOD.scale = true;
-
-        switch (cur_config.api_option) {
-            case ultramodern::renderer::GraphicsApi::D3D12:  app->userConfig.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::D3D12; break;
-            case ultramodern::renderer::GraphicsApi::Vulkan: app->userConfig.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::Vulkan; break;
-            case ultramodern::renderer::GraphicsApi::Metal:  app->userConfig.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::Metal; break;
-            default:                                         app->userConfig.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::Automatic; break;
-        }
-
         uint32_t thread_id = 0;
 #ifdef _WIN32
         thread_id = window_handle.thread_id;
 #endif
-        setup_result = map_setup_result(app->setup(thread_id));
-        chosen_api = map_graphics_api(app->chosenGraphicsAPI);
-        if (setup_result != ultramodern::renderer::SetupResult::Success) {
-            std::fprintf(stderr, "[rt64] RT64::Application::setup FAILED (SetupResult=%d)\n",
-                         (int)setup_result);
-            app = nullptr;
-            return;
+
+        auto to_rt64_api = [](ultramodern::renderer::GraphicsApi a) {
+            switch (a) {
+                case ultramodern::renderer::GraphicsApi::D3D12:  return RT64::UserConfiguration::GraphicsAPI::D3D12;
+                case ultramodern::renderer::GraphicsApi::Vulkan: return RT64::UserConfiguration::GraphicsAPI::Vulkan;
+                case ultramodern::renderer::GraphicsApi::Metal:  return RT64::UserConfiguration::GraphicsAPI::Metal;
+                default:                                         return RT64::UserConfiguration::GraphicsAPI::Automatic;
+            }
+        };
+
+        // (Re)create and set up the RT64 application under a specific backend. Split
+        // out so we can retry the other backend below without duplicating the wiring.
+        auto try_setup = [&](RT64::UserConfiguration::GraphicsAPI api) {
+            app = std::make_unique<RT64::Application>(appCore, appConfig);
+            set_application_user_config(app.get(), cur_config);
+            app->userConfig.developerMode = debug;
+            // Force gbi depth branches to prevent LODs from kicking in (Zelda64Recomp default).
+            app->enhancementConfig.f3dex.forceBranch = true;
+            // Scale LODs based on the output resolution.
+            app->enhancementConfig.textureLOD.scale = true;
+            app->userConfig.graphicsAPI = api;
+            setup_result = map_setup_result(app->setup(thread_id));
+            chosen_api = map_graphics_api(app->chosenGraphicsAPI);
+            return setup_result == ultramodern::renderer::SetupResult::Success;
+        };
+
+        if (!try_setup(to_rt64_api(cur_config.api_option))) {
+            std::fprintf(stderr, "[rt64] RT64::Application::setup FAILED (SetupResult=%d, api=%d)\n",
+                         (int)setup_result, (int)cur_config.api_option);
+            // RT64 auto-retries the other backend itself only when the API choice is
+            // Automatic. For an EXPLICIT choice that fails to initialise we flip once
+            // rather than leaving the user on a black screen -- a working game beats an
+            // honoured-but-dead preference. Auto and Metal have no Windows sibling to try.
+            RT64::UserConfiguration::GraphicsAPI fallback = RT64::UserConfiguration::GraphicsAPI::OptionCount;
+#ifdef _WIN32
+            if (cur_config.api_option == ultramodern::renderer::GraphicsApi::D3D12) {
+                fallback = RT64::UserConfiguration::GraphicsAPI::Vulkan;
+            } else if (cur_config.api_option == ultramodern::renderer::GraphicsApi::Vulkan) {
+                fallback = RT64::UserConfiguration::GraphicsAPI::D3D12;
+            }
+#endif
+            if (fallback == RT64::UserConfiguration::GraphicsAPI::OptionCount) {
+                app = nullptr;
+                return;
+            }
+            std::fprintf(stderr, "[rt64] retrying with the other graphics API...\n");
+            if (!try_setup(fallback)) {
+                std::fprintf(stderr, "[rt64] retry also FAILED (SetupResult=%d)\n", (int)setup_result);
+                app = nullptr;
+                return;
+            }
+            std::fprintf(stderr, "[rt64] retry succeeded (api=%d)\n", (int)chosen_api);
         }
 
         std::fprintf(stderr, "[rt64] RT64 renderer initialised (api=%d)\n", (int)chosen_api);

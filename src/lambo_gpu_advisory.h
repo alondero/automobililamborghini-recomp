@@ -30,9 +30,21 @@ void lambo_gpu_format_driver_version(uint64_t driver_version, char* out, size_t 
 // or below 31.0.101.2115 are forced onto Vulkan when the API choice is automatic.
 int lambo_gpu_intel_driver_predates_fix(uint64_t driver_version);
 
+// True for Gen12+ Intel iGPUs/dGPUs (Iris Xe, Arc), identified by the "Xe"/"Arc"
+// substring in the device name. These have no D3D12 device-removal bug, so RT64's
+// old-driver force-Vulkan (written for 6th-gen HD Graphics that DO device-remove on
+// D3D12) is wrong for them: it pushes them onto the Vulkan path that device-LOSES
+// (issue #109). patches/0010 uses the same substring test to keep them on D3D12.
+// NULL/empty name -> 0 (unknown, keep RT64's conservative fallback).
+int lambo_gpu_name_is_modern_intel(const char* device_name);
+
 // Classify the post-setup device state. running_vulkan reflects the API that was
 // actually chosen (after any RT64 fallback), not what the config asked for.
-int lambo_gpu_advisory_severity(uint32_t vendor, uint64_t driver_version, int running_vulkan);
+// device_name distinguishes a modern Intel iGPU wrongly on Vulkan (SEVERE: the #109
+// device-loss black screen) from a 6th-gen part correctly on Vulkan (INFO: working,
+// driver merely old). NULL name is treated as not-modern.
+int lambo_gpu_advisory_severity(uint32_t vendor, uint64_t driver_version,
+                                int running_vulkan, const char* device_name);
 
 // Build the user-facing advisory text for a non-NONE severity. config_path is the
 // absolute graphics.json path shown to the user for the api_option escape hatch.

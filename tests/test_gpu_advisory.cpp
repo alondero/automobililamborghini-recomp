@@ -44,18 +44,32 @@ int main() {
     CHECK(lambo_gpu_intel_driver_predates_fix(kRT64Threshold + 1) == 0);
     CHECK(lambo_gpu_intel_driver_predates_fix(kModernDriver) == 0);
 
+    // --- modern-Intel discriminator (Xe/Arc keep D3D12; #109 core fix) ----------
+    CHECK(lambo_gpu_name_is_modern_intel("Intel(R) Iris(R) Xe Graphics") == 1);
+    CHECK(lambo_gpu_name_is_modern_intel("Intel(R) Arc(TM) A770 Graphics") == 1);
+    CHECK(lambo_gpu_name_is_modern_intel("Intel(R) HD Graphics 530") == 0);   // 6th-gen
+    CHECK(lambo_gpu_name_is_modern_intel("Intel(R) Iris(R) Pro Graphics 580") == 0);
+    CHECK(lambo_gpu_name_is_modern_intel(nullptr) == 0);
+    CHECK(lambo_gpu_name_is_modern_intel("") == 0);
+
     // --- severity matrix --------------------------------------------------------
-    // Old Intel driver running Vulkan = the exact #109 failure: severe.
-    CHECK(lambo_gpu_advisory_severity(LAMBO_GPU_VENDOR_INTEL, kReporterDriver, /*vulkan*/1)
+    const char* kXe   = "Intel(R) Iris(R) Xe Graphics";
+    const char* k6thGen = "Intel(R) HD Graphics 530";
+    // Modern Intel on Vulkan with an old driver = the exact #109 failure: severe.
+    CHECK(lambo_gpu_advisory_severity(LAMBO_GPU_VENDOR_INTEL, kReporterDriver, /*vulkan*/1, kXe)
           == LAMBO_GPU_ADVISORY_SEVERE);
-    // Old Intel driver on D3D12 (user escape hatch active): still worth a note.
-    CHECK(lambo_gpu_advisory_severity(LAMBO_GPU_VENDOR_INTEL, kReporterDriver, /*vulkan*/0)
+    // Modern Intel on D3D12 (now the default after the narrowing): works, just note it.
+    CHECK(lambo_gpu_advisory_severity(LAMBO_GPU_VENDOR_INTEL, kReporterDriver, /*vulkan*/0, kXe)
           == LAMBO_GPU_ADVISORY_INFO);
-    // Up-to-date Intel driver: silence.
-    CHECK(lambo_gpu_advisory_severity(LAMBO_GPU_VENDOR_INTEL, kModernDriver, 1)
+    // 6th-gen on Vulkan is RT64 doing the RIGHT thing (D3D12 would device-remove):
+    // do NOT scare the user with a black-screen popup -- just a note.
+    CHECK(lambo_gpu_advisory_severity(LAMBO_GPU_VENDOR_INTEL, kReporterDriver, /*vulkan*/1, k6thGen)
+          == LAMBO_GPU_ADVISORY_INFO);
+    // Up-to-date Intel driver: silence, regardless of GPU/API.
+    CHECK(lambo_gpu_advisory_severity(LAMBO_GPU_VENDOR_INTEL, kModernDriver, 1, kXe)
           == LAMBO_GPU_ADVISORY_NONE);
     // Other vendors: not our advisory, even on ancient drivers.
-    CHECK(lambo_gpu_advisory_severity(0x10DEu /*NVIDIA*/, kReporterDriver, 1)
+    CHECK(lambo_gpu_advisory_severity(0x10DEu /*NVIDIA*/, kReporterDriver, 1, kXe)
           == LAMBO_GPU_ADVISORY_NONE);
 
     // --- the user-facing message ------------------------------------------------

@@ -2,16 +2,22 @@ diff --git a/src/hle/rt64_application.cpp b/src/hle/rt64_application.cpp
 index 785de27..204810b 100644
 --- a/src/hle/rt64_application.cpp
 +++ b/src/hle/rt64_application.cpp
-@@ -250,8 +250,11 @@ namespace RT64 {
+@@ -250,8 +250,17 @@ namespace RT64 {
          else if (deviceDescription.vendor == RenderDeviceVendor::INTEL) {
              if (chosenGraphicsAPI == UserConfiguration::GraphicsAPI::D3D12) {
                  // End of life driver for Intel 6th Gen Processor Graphics. D3D12 fails with DXGI_ERROR_DEVICE_REMOVED after running a display list in RT64. Vulkan has been reported to work fine on this driver.
 +                // Only applied when the API choice is automatic: on newer Intel GPUs stuck on old drivers
 +                // (e.g. Iris Xe on 30.0.101.x) Vulkan is the one that fails (VK_ERROR_DEVICE_LOST), so an
 +                // explicit D3D12 selection must win as an escape hatch.
++                //
++                // Also skip the fallback for Gen12+ parts (Iris Xe, Arc): they have no D3D12
++                // device-removal bug, so forcing them onto Vulkan on an old driver just moves them
++                // onto the path that device-LOSES (issue #109). Keep them on D3D12 by name.
++                const bool isModernIntel = (deviceDescription.name.find("Xe") != std::string::npos)
++                    || (deviceDescription.name.find("Arc") != std::string::npos);
                  const uint64_t BrokenIntelDriverD3D12 = 0x1F000000650843; // 31.0.101.2115
 -                if (deviceDescription.driverVersion <= BrokenIntelDriverD3D12) {
-+                if (automaticGraphicsAPI && (deviceDescription.driverVersion <= BrokenIntelDriverD3D12)) {
++                if (automaticGraphicsAPI && !isModernIntel && (deviceDescription.driverVersion <= BrokenIntelDriverD3D12)) {
                      forceVulkanForCompatibility = true;
                  }
              }

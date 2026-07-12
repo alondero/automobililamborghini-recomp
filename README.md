@@ -40,13 +40,18 @@ N64Recomp ports (Zelda 64: Recompiled et al.):
 ## Troubleshooting
 
 **Black screen / `vkQueueSubmit failed` spam on Intel graphics.** Intel drivers
-older than 31.0.101.2115 are known-broken with RT64: the renderer avoids Direct3D 12
-on them, and on newer Intel GPUs (e.g. Iris Xe) stuck on an old driver the Vulkan
-fallback then loses the device. The game detects this at startup and shows a warning.
-The fix is to update the Intel graphics driver (Windows Update or
+older than 31.0.101.2115 trip an RT64 workaround that avoids Direct3D 12; on the
+6th-gen HD Graphics parts it was written for, D3D12 removes the device, but on newer
+Intel GPUs (Iris Xe, Arc) stuck on an old driver it is the Vulkan fallback that loses
+the device. The game now keeps those modern Intel GPUs on Direct3D 12 automatically,
+so this should no longer happen out of the box — but the real fix is still to update
+the Intel graphics driver (Windows Update or
 [intel.com/download-center](https://www.intel.com/content/www/us/en/download-center/home.html)).
-If you cannot update, set `"api_option": "D3D12"` in `graphics.json` to stay on
-Direct3D 12 instead.
+
+**Still a black screen, or a different GPU?** Force a specific backend by setting
+`"api_option"` in `graphics.json` to `"D3D12"` or `"Vulkan"`. On Windows the game also
+retries the other backend automatically if your chosen one fails to initialise, so a
+bad `api_option` no longer strands you on a black screen.
 
 ## Developer warp (race-track warp)
 
