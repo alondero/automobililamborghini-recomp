@@ -1,4 +1,5 @@
 # Automobili Lamborghini: Recompiled
+<img width="1376" height="768" alt="Automobili Lamborghini Recompiled" src="https://github.com/user-attachments/assets/696712e3-926a-4aab-919d-4627cd483b7f" />
 
 A native PC port of the Nintendo 64 game **Automobili Lamborghini** (USA), produced by *static recompilation* of the original game code. The N64 machine instructions are translated ahead-of-time into C with [N64Recomp](https://github.com/N64Recomp/N64Recomp), run on the [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime) libraries (`ultramodern` + `librecomp`), and rendered with [RT64](https://github.com/rt64/rt64).
 
