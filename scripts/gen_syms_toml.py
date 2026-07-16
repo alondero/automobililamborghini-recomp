@@ -477,6 +477,31 @@ SPLIT_MERGES = {
     # present-names filter; func_8004FB78 was emitted-real but is only reachable as this function's
     # tail (0 jal callers, 0 data refs). TRACKER #69.
     "func_8004F5F0": (0x5EC, ["func_8004F674", "func_8004FAC8", "func_8004FB78"]),
+    # Issue #116: func_80041538 (runtime 0x80040938) = the CHAMPIONSHIP STANDINGS 'Done' handler --
+    # the action pointer screen 26's single element record carries at +0x4 (static per-screen element
+    # tables, screen->records array runtime 0x801EB320; dispatched by the jalr at runtime 0x80041EAC).
+    # Never jal'd anywhere (pointer-dispatch only), so the splat truncation (head 0x138 branches to
+    # 0x80040B5C/0x80040B6C inside the tail -> race-stubbed) was invisible: the Done press on the
+    # championship standings screen hit an EMPTY body and the season could not continue past race 1
+    # (reproduced from a user save state: screen 26's record holds 0x80040938, emitted body empty).
+    # Real extent 0x80040938..0x80040B7C = 0x244 (single epilogue `jr $ra; addiu $sp,0x18` matching
+    # the head's -0x18 prologue). All branch targets internal (capstone sweep, zero out-of-span);
+    # jal callees all emitted-real (screen-request 0x800377A8, pad-read 0x8003F5F0, advance 0x8004F674);
+    # pure RDRAM, no COP0/MMIO, no jump tables. Tail func_80041670: ZERO jal callers (whole-ROM jal
+    # scan) and ZERO data refs -> absorb.
+    "func_80041538": (0x244, ["func_80041670"]),
+    # Issue #116: func_8004EF0C (runtime 0x8004E30C) = the SECOND BUTTON handler of the two-button
+    # pak/records confirm dialogs (screens 19 and 30 pair it with the OK handler func_8004F5F0 above;
+    # same pointer-dispatch, records at +0x4). Same truncation class: head 0xD0 branches to 0x8004E9C4
+    # and switches through 4 jump tables (0x8008E404/41C/438/450) whose cases land across the seams ->
+    # race-stubbed -> the button is a dead no-op. Real extent 0x8004E30C..0x8004E9F0 = 0x6E4 (epilogue
+    # `jr $ra` at 0x8004E9E8 matching the head's -0x30 prologue). All plain branches AND all 24 jump-
+    # table case targets verified internal to the span (capstone + table decode); jal callees all
+    # emitted-real (0x8003F5F0 pad-read, 0x8004EFDC/0x8004F254/0x8004F674/0x8004FB78 menu drivers,
+    # 0x80069710 pak scan chain, 0x800698BC/0x80069A84/0x800694D4/0x8006927C save layer) or native
+    # (0x800740C0 = osSetEventMesg); pure RDRAM, no COP0/MMIO. Both tails func_8004EFDC/func_8004F254:
+    # ZERO jal callers (whole-ROM jal scan) and ZERO data refs -> absorb.
+    "func_8004EF0C": (0x6E4, ["func_8004EFDC", "func_8004F254"]),
     # --- Controller-Pak SAVE path (#35): the osPfs file-operation layer was entirely force-stubbed
     # because splat carved every function into contiguous fragments whose branches cross the seams
     # ("branch outside" -> iterate_stubs). The save flow (records screen 30/31 -> confirm) dies in
@@ -639,6 +664,12 @@ NATIVE_OVERRIDES = [
     # poll becomes a dispatch point, modelling the AI/retrace interrupt that preempts this spin on
     # real hardware (same class as the W97 osSetIntMask yield; limitation (a) closed for this loop).
     "func_80079720",
+    # Rumble (PR #108, map #95): osMotorStart (func_8007AC78) / osMotorStop (func_8007AB10) are
+    # intercepted natively in src/libultra_stubs.c (SDL rumble; the game-side wrappers still run).
+    # They were hand-added to the emitted us.toml `ignored` list post-regen; carried here so a
+    # regen keeps them (the PATCH_BLOCKS-stale trap, W136 class).
+    "func_8007AC78",
+    "func_8007AB10",
 ]
 
 # Self-contained leaf functions removed from the race `stubs` list (un-stubbed) because they
@@ -961,6 +992,234 @@ text = "{ extern uint32_t lambo_no_lod_scenery_guard(uint8_t*, uint32_t); ctx->r
 func = "func_8000A6C0"
 before_vram = 0x8000D838
 text = "{ extern uint32_t lambo_no_lod_scenery_guard(uint8_t*, uint32_t); ctx->r1 = lambo_no_lod_scenery_guard(rdram, (uint32_t)ctx->r1); }"
+
+# Issue #78 — 3P/4P per-quadrant HUD text pinning. The quad section (L_800517A8) draws
+# each player's RANK (x=0x20/0x110), speed readout (x=0x14-0x46 / 0xEB-0x11D), lap-notify
+# glyph (x=0x19/0x118) and the inline per-player tag texrects in the outer columns, plus
+# quadrant-centred message glyphs (x=0x50/0xF0) and the 3P map panel (centred 240,180).
+# Control flow merges at branch labels and hook text at a label runs on every incoming
+# path, so instead of per-element scissor pin/reset pairs (unbalanceable across the
+# 4P-only branches) one full-width scissor spans the section (begin at 0x800517D0, popped
+# flag-guarded at the shared exit L_80052C00) and the hooks in between only switch the
+# sticky rect-align state: LEFT for the left column, RIGHT for the right, 25%/75%
+# fractional origins for quadrant-centred elements, NONE for centre-anchored ones (LAP
+# row at x=0x60/0xB4 and the 4P map overlay at screen centre are correct untagged).
+# Natives in src/lambo_hud_widescreen.c; no-op at 4:3. See docs/HUD.md.
+
+# RANK corners: Q1 left, Q2 right, Q3 left, Q4 (4P-only body) right; NONE at the merge
+# label 0x80051898 before the untagged static DL 0x80166FF0.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x800517D0
+text = "lambo_ws_quad_text_begin(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051804
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051838
+text = "lambo_ws_quad_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051880
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051898
+text = "lambo_ws_quad_none(rdram);"
+
+# Speed readouts, mph branch (unit flag 0x800CE802 != 0): P1 left, P2 right, P3 left,
+# P4 (4P body) right; NONE at the branch's exit label 0x80051B30.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051938
+text = "lambo_ws_quad_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x800519C8
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051A58
+text = "lambo_ws_quad_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051AFC
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051B30
+text = "lambo_ws_quad_none(rdram);"
+
+# Speed readouts, km/h branch (unit flag == 0), same shape; the exit label 0x80051CFC is
+# also branch A's landing point, where align-NONE is an idempotent repeat.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051B70
+text = "lambo_ws_quad_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051BDC
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051C48
+text = "lambo_ws_quad_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051CC8
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051CFC
+text = "lambo_ws_quad_none(rdram);"
+
+# Lap-notify glyphs (drawn after the centre-anchored LAP row): P1 left (label 0x80051DB4,
+# both format paths converge before the draw), P2 right, P3 left, P4 right (labels inside
+# the 4P-only body); NONE before the 4P LAP draw (x=0xB4, centre-anchored) and at the
+# all-paths merge label 0x80051F90.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051DB4
+text = "lambo_ws_quad_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051E3C
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051EC4
+text = "lambo_ws_quad_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051F60
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051F78
+text = "lambo_ws_quad_none(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051F90
+text = "lambo_ws_quad_left(rdram);"
+
+# Inline per-player tag texrects (two per quadrant, outer columns, one shared texture
+# loaded after 0x80051F90): the four blocks are bounded by labels — Q1 left from
+# 0x80051F90 above, Q2 right at 0x8005245C, Q3 left at 0x80052648, Q4 right at
+# 0x80052834, NONE at the merge 0x80052A34.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8005245C
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052648
+text = "lambo_ws_quad_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052834
+text = "lambo_ws_quad_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052A34
+text = "lambo_ws_quad_none(rdram);"
+
+# Quadrant-centred message glyphs (x=0x50 left quadrants, 0xF0 right): pin to the 25%/75%
+# fractional origins inside each conditional body, NONE at each merge label.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052A80
+text = "lambo_ws_quad_quarter_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052AA8
+text = "lambo_ws_quad_none(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052AC0
+text = "lambo_ws_quad_quarter_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052AE8
+text = "lambo_ws_quad_none(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052B00
+text = "lambo_ws_quad_quarter_left(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052B28
+text = "lambo_ws_quad_none(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052B54
+text = "lambo_ws_quad_quarter_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052B7C
+text = "lambo_ws_quad_none(rdram);"
+
+# 3P map panel: the overlay call at 0x80052BB4 (3P-only body) pins to the 75% origin; the
+# reset also game-space-shifts any arrow LOAD matrices the overlay emitted (half an edge
+# pin's travel, rightward). The 4P overlay call (0x80052BE8) is screen-centred = untagged.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052B90
+text = "lambo_ws_quad_panel_pin(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052BBC
+text = "lambo_ws_quad_panel_reset(rdram);"
+
+# Common exit for every dispatcher path (1P/2P jump here too): pop the section scissor,
+# flag-guarded so non-quad paths are a no-op.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80052C00
+text = "lambo_ws_quad_text_end(rdram);"
+
+# 3P map-panel background: func_800030F8's tail emits the static sub-DL 0x8011F1C0
+# (black fillrect over the unused 4th quadrant) at 0x800051D4-0x80005204. Stretch it
+# from the output centre to the right edge (mixed-origin align + wide scissor); the
+# reset sits on the merge label 0x80005208, hence flag-guarded.
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x800051D4
+text = "lambo_ws_quad_panel_bg_stretch(rdram);"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x80005208
+text = "lambo_ws_quad_panel_bg_reset(rdram);"
 """
 
 UNSTUB = [
@@ -999,6 +1258,15 @@ UNSTUB = [
     # to 0x5EC; emit the real body so the pak-message screen's OK press actually runs the confirm
     # dispatch instead of a no-op (#69 stuck-screen root cause, measured live 2026-07-03).
     "func_8004F5F0",
+    # func_80041538 (runtime 0x80040938) = championship-standings 'Done' handler (see its
+    # SPLIT_MERGES entry): race-`stubs` only because splat truncated it. Merged to 0x244; emit the
+    # real body so the standings screen's Done press advances the season instead of a no-op.
+    # TRACKER #116.
+    "func_80041538",
+    # func_8004EF0C (runtime 0x8004E30C) = second-button handler of the two-button pak/records
+    # confirm dialogs, screens 19/30 (see its SPLIT_MERGES entry): race-`stubs` only because splat
+    # shredded it across 4 jump tables. Merged to 0x6E4; emit the real body. TRACKER #116.
+    "func_8004EF0C",
     # func_8007FDC4 (runtime 0x8007F1C4) = the cascade's shared TAIL-CALL EPILOGUE, 0x8 bytes
     # (`jr $ra; addiu $sp, $sp, 0x38`). It's the audio producer cascade's shared epilogue: at
     # least func_80079F10 (audio command builder, splat asm line `0C01FF71  jal func_8007FDC4`)
