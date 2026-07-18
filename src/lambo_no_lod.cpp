@@ -13,9 +13,31 @@
 
 #include <cstdint>
 
+#include "recomp.h"
+
 #include "lambo_config.h"
 
 extern "C" uint32_t lambo_no_lod_scenery_guard(uint8_t* rdram, uint32_t at) {
     (void)rdram;
     return lambo::config::no_lod() ? 1u : at;
+}
+
+// Distance pop-in (the other half of the same builder): each entry of a segment's
+// 10-slot visibility list is culled against a per-circuit, per-player-count radius
+// from a float[6][5] table at 0x80088FD0 (coarse test 0x8000D370, fine 16-sub-point
+// test 0x8000D568). The radii are N64 fill-rate budgets -- the city circuits are
+// authored shortest (35000 vs 55000 on circuit 1), so whole blocks pop in at the
+// radius edge. Hooked per frame on the world-draw path (0x8000CD3C, before the first
+// table read) rather than once at load because a savestate restore brings the ROM
+// values back. Only the radius is lifted: the forward-cone/half-plane tests and the
+// authored per-segment visibility lists still decide what is drawn.
+extern "C" void lambo_no_lod_draw_distance(uint8_t* rdram) {
+    if (!lambo::config::no_lod()) {
+        return;
+    }
+    constexpr uint32_t kTableAddr = 0x80088FD0u;  // float[6][5]: [circuit][player-count]
+    constexpr int32_t kFarBits = 0x4E6E6B28;      // 1e9f, beyond any on-track distance
+    for (uint32_t i = 0; i < 6 * 5; i++) {
+        MEM_W(i * 4, (gpr)(int32_t)kTableAddr) = kFarBits;
+    }
 }
