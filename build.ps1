@@ -102,8 +102,23 @@ try {
             if ($candidate) { $PythonScripts = $candidate }
         }
     }
+    # Native Git for Windows must beat any MSYS/Cygwin git (e.g. devkitPro's
+    # C:\devkitPro\msys2\usr\bin\git.exe). CMake's FetchContent/ExternalProject
+    # resolve `git` from PATH via find_package(Git); an MSYS-family git invoked
+    # outside its own shell can die with a cygheap "add_item ... failed" fatal
+    # error, which CMake reports as Git_VERSION='' and the directx-headers
+    # fetch aborts. Override the auto-discovery with $env:LAMBO_GIT_CMD if Git
+    # for Windows lives somewhere unusual.
+    $GitCmd = $env:LAMBO_GIT_CMD
+    if (-not $GitCmd) {
+        $GitCmd = @(
+            (Join-Path $env:ProgramFiles 'Git\cmd'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Git\cmd'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Git\cmd')
+        ) | Where-Object { $_ -and (Test-Path (Join-Path $_ 'git.exe')) } | Select-Object -First 1
+    }
     $MinGW         = 'C:\ProgramData\mingw64\mingw64\bin'
-    $NewPrefix     = @($PythonScripts, $MinGW) | Where-Object { $_ -and (Test-Path $_) }
+    $NewPrefix     = @($PythonScripts, $MinGW, $GitCmd) | Where-Object { $_ -and (Test-Path $_) }
     if ($NewPrefix.Count -gt 0) {
         $env:PATH = ($NewPrefix -join ';') + ';' + $env:PATH
         Write-Host ("[path] + {0}" -f ($NewPrefix -join '; ')) -ForegroundColor DarkGray
@@ -114,14 +129,20 @@ try {
     $gcc   = (Get-Command gcc.exe   -ErrorAction SilentlyContinue).Source
     $gxx   = (Get-Command g++.exe   -ErrorAction SilentlyContinue).Source
     $ninja = (Get-Command ninja.exe -ErrorAction SilentlyContinue).Source
+    $git   = (Get-Command git.exe   -ErrorAction SilentlyContinue).Source
     if (-not $cmake) { throw 'cmake.exe not on PATH. Set $env:LAMBO_PYTHON_SCRIPTS to Python''s Scripts dir, add it to PATH manually, or install CMake.' }
     if (-not $gcc)   { throw 'gcc.exe not on PATH. Add MinGW to $env:PATH (see comment in script).' }
     if (-not $gxx)   { throw 'g++.exe not on PATH. Add MinGW to $env:PATH.' }
     if (-not $ninja) { throw 'ninja not on PATH. Install it (pip install ninja) and put on PATH.' }
+    if (-not $git)   { throw 'git.exe not on PATH. Install Git for Windows (or set $env:LAMBO_GIT_CMD to its cmd\ dir).' }
     Write-Host "[tools] cmake=$cmake" -ForegroundColor DarkGray
     Write-Host "[tools] gcc=$gcc"     -ForegroundColor DarkGray
     Write-Host "[tools] g++=$gxx"     -ForegroundColor DarkGray
     Write-Host "[tools] ninja=$ninja" -ForegroundColor DarkGray
+    Write-Host "[tools] git=$git"     -ForegroundColor DarkGray
+    if ($git -match '\\(msys2?|cygwin)\\') {
+        Write-Warning "git resolved to an MSYS/Cygwin build ($git); CMake's dependency fetch may crash with a cygheap 'add_item' fatal error. Install Git for Windows or set `$env:LAMBO_GIT_CMD."
+    }
 
     # Sanity check: reject MSYS2's 3.25 cmake if it slipped back onto PATH first.
     $cmakeVersion = (& $cmake --version | Select-Object -First 1) -replace 'cmake version ', ''
