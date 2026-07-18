@@ -1001,10 +1001,10 @@ text = "{ extern uint32_t lambo_no_lod_scenery_guard(uint8_t*, uint32_t); ctx->r
 # players 0x800CE6A4). The radii are N64 fill-rate budgets -- circuits 5/6 are authored at
 # 35000 vs 55000 for circuit 1 -- so whole city blocks pop in at the radius edge. The hook
 # sits on the world-draw path (0x8000CD3C, after the 0x200 state gate, before the first
-# table read) and rewrites the radii to 1e9 when no_lod(): per frame, not once at load,
-# because a savestate restore brings the ROM values back. Cone/half-plane tests and the
-# authored visibility lists are untouched, so nothing is synthesised -- the game just stops
-# hiding segments it already streamed. Native in src/lambo_no_lod.cpp.
+# table read) and rewrites the radii when no_lod() to authored * draw_distance config
+# (0 = unlimited 1e9): per frame, not once at load, because a savestate restore brings
+# the ROM values back. Cone/half-plane tests are untouched, so nothing is synthesised --
+# the game just stops hiding segments it already streamed. Native in src/lambo_no_lod.cpp.
 [[patches.hook]]
 func = "func_8000A6C0"
 before_vram = 0x8000CD3C

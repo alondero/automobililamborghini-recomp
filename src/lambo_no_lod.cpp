@@ -12,6 +12,7 @@
 // state: record+0xC pointers populated), so no geometry is synthesised here.
 
 #include <cstdint>
+#include <cstring>
 
 #include "recomp.h"
 
@@ -29,16 +30,36 @@ extern "C" uint32_t lambo_no_lod_scenery_guard(uint8_t* rdram, uint32_t at) {
 // authored shortest (35000 vs 55000 on circuit 1), so whole blocks pop in at the
 // radius edge. Hooked per frame on the world-draw path (0x8000CD3C, before the first
 // table read) rather than once at load because a savestate restore brings the ROM
-// values back. Only the radius is lifted: the forward-cone/half-plane tests and the
-// authored per-segment visibility lists still decide what is drawn.
+// values back. The radii are scaled by the draw_distance config (0 = unlimited) from
+// a compiled-in copy of the authored table: the live table can't be trusted as the
+// baseline because this hook rewrites it every frame and a savestate captured while
+// it ran would restore the rewritten values. The forward-cone/half-plane tests and
+// the per-frame visibility walk still decide what is drawn.
 extern "C" void lambo_no_lod_draw_distance(uint8_t* rdram) {
     if (!lambo::config::no_lod()) {
         return;
     }
-    constexpr uint32_t kTableAddr = 0x80088FD0u;  // float[6][5]: [circuit][player-count]
-    constexpr int32_t kFarBits = 0x4E6E6B28;      // 1e9f, beyond any on-track distance
-    for (uint32_t i = 0; i < 6 * 5; i++) {
-        MEM_W(i * 4, (gpr)(int32_t)kTableAddr) = kFarBits;
+    // ROM copy of the float[6][5] at 0x80088FD0 ([circuit][player-count column]),
+    // extracted from the .z64 at 0x89BD0 (= vram - 0x80000000 + 0xC00).
+    static constexpr float kAuthored[6][5] = {
+        {55000.0f, 55000.0f, 50000.0f, 25000.0f, 25000.0f},
+        {50000.0f, 50000.0f, 40000.0f, 20000.0f, 20000.0f},
+        {40000.0f, 40000.0f, 30000.0f, 20000.0f, 20000.0f},
+        {45000.0f, 45000.0f, 30000.0f, 25000.0f, 25000.0f},
+        {35000.0f, 35000.0f, 27500.0f, 25000.0f, 25000.0f},
+        {35000.0f, 35000.0f, 27500.0f, 25000.0f, 25000.0f},
+    };
+    constexpr uint32_t kTableAddr = 0x80088FD0u;
+    constexpr float kUnlimited = 1e9f;  // beyond any on-track distance
+    for (int c = 0; c < 6; c++) {
+        const double scale = lambo::config::draw_distance(c);
+        for (int p = 0; p < 5; p++) {
+            float r = scale <= 0.0 ? kUnlimited : (float)(kAuthored[c][p] * scale);
+            if (r > kUnlimited) r = kUnlimited;
+            int32_t bits;
+            std::memcpy(&bits, &r, sizeof(bits));
+            MEM_W((c * 5 + p) * 4, (gpr)(int32_t)kTableAddr) = bits;
+        }
     }
 }
 

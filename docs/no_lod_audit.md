@@ -300,6 +300,31 @@ row-membership changes. Verified on the reporting savestate: stock walk draws
 the pipeline), `LAMBO_NO_LOD=0` restores the stock list bit-for-bit, and a 4P race
 smokes clean with the list clamp holding.
 
+## 10. Addendum (2026-07-18): configurable draw distance (`draw_distance`)
+
+Unlimited reach (§8's 1e9 radii + §9's full-track walk) exposes geometry the track
+authors relied on the radius cull to hide: segments across the map render with
+nothing modelled in between (distant track pieces "float in the sky"), and scenery
+sub-DLs appear from angles their PVS rows deliberately excluded. The forward-cone
+tests can't help — they are view culling, not occlusion.
+
+So the §8 radius rewrite is now a dial instead of a switch: `lambo_no_lod_draw_distance`
+writes `authored_radius x draw_distance` per frame, where the authored `float[6][5]`
+values are a compiled-in copy of the ROM table (extracted from the .z64 at `0x89BD0`
+= vram `0x80088FD0` − `0x80000000` + `0xC00`; the live RDRAM copy is not a usable
+baseline because the hook itself rewrites it every frame and a savestate captured
+mid-race restores the rewritten values). graphics.json keys: `draw_distance` (global,
+default **1.5**) and `draw_distance_circuit` (6 per-circuit multipliers, like
+`fog_scale_circuit`); `0` = unlimited (the previous behaviour); `LAMBO_DRAW_DISTANCE`
+env overrides both. The §9 full-track walk is unchanged — it supplies the candidates,
+the scaled radius bounds reach, so the authored 10-slot rows still never limit what
+is drawn within the radius.
+
+Default rationale: the worst measured authored-radius pop (§8: circuit 5 segment 31
+at ~51k units vs its 35000 radius) needs ≥1.46x, so 1.5 fixes every measured pop
+while staying close to authored reach. With the multiplier the per-mode budget
+*ratios* (multiplayer columns 20000–27500) are preserved rather than flattened.
+
 ---
 *Method note: MIPS classification used `tools/scan_lod_patterns.py` output cross-read
 against the recompiled C (per-instruction VRAM comments) rather than raw disassembly;
