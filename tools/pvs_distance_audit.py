@@ -37,7 +37,9 @@ def main(path):
     def gw(a):
         return struct.unpack_from('<I', d, a - 0x80000000)[0]
 
-    pvs = gw(0x800CE678)      # 20-byte rows of 10 s16 entries, -1 terminated
+    pvs = gw(0x800CE678)      # 20-byte rows of 10 s16 slots; -1 slots are HOLES, not
+                              # terminators (the builder always walks all 10, skipping
+                              # negatives)
     rec64 = gw(0x800BF1D0)    # viewport-0 segment record list (64-byte stride)
     rec16 = gw(0x800BF1C0)    # 16-byte test-point records
     circuit = gh(0x800CE794)
@@ -54,23 +56,16 @@ def main(path):
         z = gh(rec16 + idx * 16 + 0x2) + gh(rec64 + seg * 64 + 0x12)
         return x, z
 
-    # Segment count: PVS rows are only sane for real segments; stop at the first
-    # row whose entries leave plausible range.
+    # Segment count = the PVS block size itself: the track header (ptr 0x80098238)
+    # holds the PVS base at +0x4 and the next block at +0x8, and the region divides
+    # exactly into 20-byte rows (circuit 5: 1100/20 = 55 -- NOT 42; the old scan here
+    # treated -1 slots as terminators and stopped at the first all-hole-prefixed row).
+    hdr = gw(0x80098238)
+    n = (gw(hdr + 8) - gw(hdr + 4)) // 20
     rows = []
-    k = 0
-    while k < 200:
+    for k in range(n):
         raw = [gh(pvs + k * 20 + i * 2) for i in range(10)]
-        ents = []
-        for v in raw:
-            if v < 0:
-                break
-            ents.append(v)
-        if (not ents and k > 0) or any(v > 4096 for v in ents):
-            break
-        rows.append(ents)
-        k += 1
-
-    n = len(rows)
+        rows.append([v for v in raw if 0 <= v < n])
     total = 0
     worst = []
     for k, ents in enumerate(rows):

@@ -72,6 +72,14 @@ bool widescreen_sky_match();
 // "no_lod" (default true), overridable by LAMBO_NO_LOD=1/0.
 bool no_lod();
 
+// Fog density multiplier applied to every fog moveword in the frame DL: 1.0 =
+// authored fog, 0.0 = no fog, values in between thin the fog uniformly without
+// moving its onset distance. graphics.json keys "fog_scale" (global, default 1.0)
+// and "fog_scale_circuit" (array of 6 per-circuit multipliers, default all 1.0,
+// multiplied with the global -- lets a hazy city track be cleared individually).
+// LAMBO_FOG_SCALE=<float> overrides the whole computation for capture/testing.
+double fog_scale(int circuit);
+
 } // namespace config
 } // namespace lambo
 

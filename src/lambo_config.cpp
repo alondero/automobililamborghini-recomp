@@ -6,6 +6,7 @@
 // minus the RmlUi menu: this port's UI is the JSON file itself plus hotkeys.
 #include "lambo_config.h"
 
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -46,6 +47,11 @@ bool g_widescreen_sky_match = true;
 // lose the far scenery entirely. Default-on; the emit still self-gates on the
 // record pointer being non-null, so segments without a scenery DL are unaffected.
 bool g_no_lod = true;
+
+// Fog density multipliers (see lambo_config.h). Stored as double: the round-trip
+// validity check in from_or_default would reject float (0.3 -> 0.3f -> 0.30000001...).
+double g_fog_scale = 1.0;
+std::array<double, 6> g_fog_scale_circuit{1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
 
 // Read a key into `out`, keeping the existing (default) value when the key is
 // missing or invalid. NLOHMANN_JSON_SERIALIZE_ENUM does NOT throw on an
@@ -90,6 +96,8 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"widescreen_fog_match", g_widescreen_fog_match},
         {"widescreen_sky_match", g_widescreen_sky_match},
         {"no_lod", g_no_lod},
+        {"fog_scale", g_fog_scale},
+        {"fog_scale_circuit", g_fog_scale_circuit},
     };
 }
 
@@ -112,6 +120,8 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "widescreen_fog_match", g_widescreen_fog_match);
     from_or_default(j, "widescreen_sky_match", g_widescreen_sky_match);
     from_or_default(j, "no_lod", g_no_lod);
+    from_or_default(j, "fog_scale", g_fog_scale);
+    from_or_default(j, "fog_scale_circuit", g_fog_scale_circuit);
     // Sanity-bound the window size: below the N64 framebuffer is useless, above 8K
     // is a typo -- either way SDL_CreateWindow would fail and the port would run
     // permanently headless, so reset to defaults instead.
@@ -300,6 +310,22 @@ bool no_lod() {
         return v[0] == '1';
     }
     return g_no_lod;
+}
+
+// LAMBO_FOG_SCALE=<float> overrides both JSON keys for headless capture/testing.
+double fog_scale(int circuit) {
+    double s;
+    if (const char* v = std::getenv("LAMBO_FOG_SCALE")) {
+        s = std::atof(v);
+    } else {
+        s = g_fog_scale;
+        if (circuit >= 0 && circuit < (int)g_fog_scale_circuit.size()) {
+            s *= g_fog_scale_circuit[(size_t)circuit];
+        }
+    }
+    if (s < 0.0) s = 0.0;
+    if (s > 8.0) s = 8.0;
+    return s;
 }
 
 } // namespace config
