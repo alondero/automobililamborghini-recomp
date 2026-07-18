@@ -37,9 +37,11 @@ N64Recomp ports (Zelda 64: Recompiled et al.):
 | `api_option` | `Auto`, `D3D12`, `Vulkan`, `Metal` | `Auto` | Graphics API. |
 | `widescreen_fog_match` | `true`, `false` | `true` | Widens the dense 3P/4P split-screen fog to the open 1P fog window/colour so the extra draw distance shows. Only affects 3+ player races. |
 | `widescreen_sky_match` | `true`, `false` | `true` | Draws the sky panorama in 3P/4P split screen (the original skips it, leaving a flat dark backdrop above the horizon). Only affects 3+ player races. |
-| `no_lod` | `true`, `false` | `true` | Removes the ROM's draw-distance reductions: the per-mode scenery-layer skip, the per-circuit distance culls, and the trimmed per-segment visibility lists (the whole track is drawn subject only to normal view culling). Eliminates world pop-in; `false` restores the N64-authored behaviour. |
+| `no_lod` | `true`, `false` | `true` | Removes the ROM's draw-distance reductions: the per-mode scenery-layer skip and the trimmed per-segment visibility lists, with reach then governed by `draw_distance` instead of the N64 fill-rate budgets. `false` restores the N64-authored behaviour entirely. |
 | `fog_scale` | `0.0`–`8.0` | `1.0` | Fog density multiplier. `1.0` = authored fog, `0.0` = no fog; values in between thin the fog uniformly without moving where it starts. |
 | `fog_scale_circuit` | array of 6 numbers | `[1,1,1,1,1,1]` | Per-circuit fog multipliers (multiplied with `fog_scale`), e.g. clear a single hazy track by lowering its entry. |
+| `draw_distance` | `0` or `0.1`–`100` | `1.5` | Multiplier on the authored per-circuit draw-distance radii (needs `no_lod`). `1.0` = the N64 distances, higher = see further, `0` = unlimited — note that unlimited draws distant track pieces the artists never meant to be visible (they float with nothing in between). |
+| `draw_distance_circuit` | array of 6 numbers | `[1,1,1,1,1,1]` | Per-circuit draw-distance multipliers (multiplied with `draw_distance`), e.g. extend just one short-sighted city track. |
 
 ## Troubleshooting
 

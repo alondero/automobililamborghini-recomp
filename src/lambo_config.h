@@ -80,6 +80,17 @@ bool no_lod();
 // LAMBO_FOG_SCALE=<float> overrides the whole computation for capture/testing.
 double fog_scale(int circuit);
 
+// Draw-distance multiplier applied (while no_lod is on) to the authored per-circuit
+// segment-cull radii the scene builder tests visibility-list entries against.
+// 1.0 = the N64 radii, larger = see further, 0 (or negative) = unlimited: the whole
+// track subject only to the per-frame view-cone tests. Unlimited shows geometry the
+// track authors never meant to be visible (distant segments floating with nothing
+// in between), hence the finite default. graphics.json keys "draw_distance"
+// (global, default 1.5) and "draw_distance_circuit" (array of 6 per-circuit
+// multipliers, default all 1.0, multiplied with the global).
+// LAMBO_DRAW_DISTANCE=<float> overrides the whole computation for capture/testing.
+double draw_distance(int circuit);
+
 } // namespace config
 } // namespace lambo
 

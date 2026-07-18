@@ -53,6 +53,12 @@ bool g_no_lod = true;
 double g_fog_scale = 1.0;
 std::array<double, 6> g_fog_scale_circuit{1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
 
+// Draw-distance multipliers (see lambo_config.h). 1.5 covers the worst measured
+// authored-radius pop (circuit 5 segment 31 at ~51k units vs its 35000 radius)
+// without reaching the cross-track geometry an unlimited radius exposes.
+double g_draw_distance = 1.5;
+std::array<double, 6> g_draw_distance_circuit{1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+
 // Read a key into `out`, keeping the existing (default) value when the key is
 // missing or invalid. NLOHMANN_JSON_SERIALIZE_ENUM does NOT throw on an
 // unrecognised string -- it silently maps it to the FIRST enumerator, which for
@@ -98,6 +104,8 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"no_lod", g_no_lod},
         {"fog_scale", g_fog_scale},
         {"fog_scale_circuit", g_fog_scale_circuit},
+        {"draw_distance", g_draw_distance},
+        {"draw_distance_circuit", g_draw_distance_circuit},
     };
 }
 
@@ -122,6 +130,8 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "no_lod", g_no_lod);
     from_or_default(j, "fog_scale", g_fog_scale);
     from_or_default(j, "fog_scale_circuit", g_fog_scale_circuit);
+    from_or_default(j, "draw_distance", g_draw_distance);
+    from_or_default(j, "draw_distance_circuit", g_draw_distance_circuit);
     // Sanity-bound the window size: below the N64 framebuffer is useless, above 8K
     // is a typo -- either way SDL_CreateWindow would fail and the port would run
     // permanently headless, so reset to defaults instead.
@@ -325,6 +335,25 @@ double fog_scale(int circuit) {
     }
     if (s < 0.0) s = 0.0;
     if (s > 8.0) s = 8.0;
+    return s;
+}
+
+// LAMBO_DRAW_DISTANCE=<float> overrides both JSON keys for capture/testing.
+// Returns 0.0 for "unlimited"; positive values are clamped to [0.1, 100] (100x the
+// shortest authored radius already exceeds any cross-track distance).
+double draw_distance(int circuit) {
+    double s;
+    if (const char* v = std::getenv("LAMBO_DRAW_DISTANCE")) {
+        s = std::atof(v);
+    } else {
+        s = g_draw_distance;
+        if (circuit >= 0 && circuit < (int)g_draw_distance_circuit.size()) {
+            s *= g_draw_distance_circuit[(size_t)circuit];
+        }
+    }
+    if (s <= 0.0) return 0.0;
+    if (s < 0.1) s = 0.1;
+    if (s > 100.0) s = 100.0;
     return s;
 }
 
