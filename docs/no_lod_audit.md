@@ -224,6 +224,45 @@ report's conclusions:
   `LAMBO_STATE_LOAD` to diff the frames around a pop deterministically.
 
 ---
+
+## 8. Addendum (2026-07-18): per-circuit draw-distance radii (the within-mode pop-in)
+
+A user report of residual distance pop-in — worst on the city track — led back into the
+scene builder `func_8000A6C0` and falsified the last of this report's "no mechanism
+remains" claims, this time *within* a mode rather than between modes:
+
+- **The builder distance-culls every segment it could draw.** Each frame it walks the
+  camera segment's precomputed visibility list (up to 10 entries, 20-byte rows, `-1`
+  terminated; table pointer `0x800CE678`, loaded from the track asset header
+  `*(0x800A2238)+0x4`) and per entry computes `dist = sqrt(dx²+dz²)` from the camera.
+  The entry is drawn only if `dist <` a radius fetched from a **float[6][5] table at
+  `0x80088FD0`, indexed `[circuit (0x800CE794)][player-count (0x800CE6A4)]`** — a coarse
+  test at `0x8000D370` (AND-ed with a 0.886 forward-cone on the view direction, double at
+  `0x8008D8C0`), falling back to a fine test (`0x8000D568`) of up to 16 sub-points of the
+  segment against the same radius plus a front-half-plane check.
+- **The radii are authored per circuit for N64 fill-rate**, 1P column: 55000 / 50000 /
+  40000 / 45000 / 35000 / 35000 (multiplayer columns drop to 20000–27500). The city
+  circuits sit at the bottom — exactly the track where whole building blocks visibly pop
+  at the radius edge. This is why "draw distance measured intact" (§1 Axis B) held on the
+  circuit measured in #83 yet pop-in persisted elsewhere: the cull is per-circuit *data*,
+  not per-mode code.
+- **Why every scan missed it:** the compare is an FP `c.lt.s`, but against a *table load*,
+  not an immediate — `scan_lod_patterns.py` classified func_8000A6C0's compares as
+  "normalisation math" (§1) because the threshold never appears as a constant in code.
+  The table has exactly two readers, both in this cull (whole-RecompiledFuncs scan for
+  the `-0x7030(0x8009)` address pattern; the third hit is a `G_DL` word at `0x801F8FD0`,
+  a false positive).
+- **Fix (shipped under the existing `no_lod` key):** a `[[patches.hook]]` at
+  `0x8000CD3C` (world-draw path, before the first table read) rewrites the 30 radii to
+  1e9 each frame via `lambo_no_lod_draw_distance` (src/lambo_no_lod.cpp). Per frame, not
+  once at load, because a savestate restore (#22) brings the ROM values back. The
+  forward-cone and half-plane tests are untouched and the authored 10-entry visibility
+  lists still bound what exists to draw, so no geometry is synthesised — segments the
+  game already streamed simply stop being hidden. Residual pop beyond this is
+  visibility-list-bound (an entry missing from the row entirely), a separate, larger
+  change if it ever proves visible.
+
+---
 *Method note: MIPS classification used `tools/scan_lod_patterns.py` output cross-read
 against the recompiled C (per-instruction VRAM comments) rather than raw disassembly;
 extraction script preserved in the session scratchpad. ROM scans were byte-pattern
