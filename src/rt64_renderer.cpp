@@ -16,6 +16,8 @@
 #include <memory>
 #include <mutex>
 
+#include "lambo_log.h"
+
 #include "hle/rt64_application.h"
 #include "hle/rt64_state.h"
 #include "render/rt64_texture_cache.h"
@@ -180,7 +182,7 @@ void warn_about_gpu_driver(RT64::Application* app, ultramodern::renderer::Graphi
         unsigned v = 0; unsigned long long d = 0;
         if (std::sscanf(fake, "%x,%llx", &v, &d) == 2) {
             vendor = v; driver_version = d;
-            std::fprintf(stderr, "[gpu] LAMBO_FAKE_GPU active: vendor=0x%X driver=0x%llX\n", v, d);
+            LAMBO_LOG("gpu", "LAMBO_FAKE_GPU active: vendor=0x%X driver=0x%llX\n", v, d);
         }
     }
     const int severity = lambo_gpu_advisory_severity(
@@ -195,7 +197,7 @@ void warn_about_gpu_driver(RT64::Application* app, ultramodern::renderer::Graphi
     lambo_gpu_advisory_message(severity, desc.name.c_str(), driver_version,
                                lambo::config::graphics_config_path().string().c_str(),
                                text, sizeof text);
-    std::fprintf(stderr, "[gpu] driver advisory:\n%s\n", text);
+    LAMBO_LOG("gpu", "driver advisory:\n%s\n", text);
     if (severity == LAMBO_GPU_ADVISORY_SEVERE) {
         // The affected user sees only a black window; a console line is not enough.
         // Post to the main thread's event pump, which owns showing the message box.
@@ -291,7 +293,7 @@ public:
         };
 
         if (!try_setup(to_rt64_api(cur_config.api_option))) {
-            std::fprintf(stderr, "[rt64] RT64::Application::setup FAILED (SetupResult=%d, api=%d)\n",
+            LAMBO_LOG("rt64", "RT64::Application::setup FAILED (SetupResult=%d, api=%d)\n",
                          (int)setup_result, (int)cur_config.api_option);
             // RT64 auto-retries the other backend itself only when the API choice is
             // Automatic. For an EXPLICIT choice that fails to initialise we flip once
@@ -309,16 +311,16 @@ public:
                 app = nullptr;
                 return;
             }
-            std::fprintf(stderr, "[rt64] retrying with the other graphics API...\n");
+            LAMBO_LOG("rt64", "retrying with the other graphics API...\n");
             if (!try_setup(fallback)) {
-                std::fprintf(stderr, "[rt64] retry also FAILED (SetupResult=%d)\n", (int)setup_result);
+                LAMBO_LOG("rt64", "retry also FAILED (SetupResult=%d)\n", (int)setup_result);
                 app = nullptr;
                 return;
             }
-            std::fprintf(stderr, "[rt64] retry succeeded (api=%d)\n", (int)chosen_api);
+            LAMBO_LOG("rt64", "retry succeeded (api=%d)\n", (int)chosen_api);
         }
 
-        std::fprintf(stderr, "[rt64] RT64 renderer initialised (api=%d)\n", (int)chosen_api);
+        LAMBO_LOG("rt64", "RT64 renderer initialised (api=%d)\n", (int)chosen_api);
 
         warn_about_gpu_driver(app.get(), chosen_api);
 
@@ -337,14 +339,14 @@ public:
             // Setting this non-empty makes TextureManager::dumpTexture write every
             // uploaded texture (raw TMEM + RDRAM + tile JSON) to the directory.
             app->state->dumpingTexturesDirectory = std::filesystem::path(dump_dir);
-            std::fprintf(stderr, "[rt64] texture dump enabled -> %s\n", dump_dir.c_str());
+            LAMBO_LOG("rt64", "texture dump enabled -> %s\n", dump_dir.c_str());
         }
 
         const std::string pack = lambo::config::texture_pack_path();
         if (!pack.empty()) {
             const bool ok = app->textureCache->loadReplacementDirectory(
                 RT64::ReplacementDirectory(std::filesystem::path(pack)));
-            std::fprintf(stderr, "[rt64] texture pack %s: %s\n",
+            LAMBO_LOG("rt64", "texture pack %s: %s\n",
                          ok ? "loaded" : "FAILED to load", pack.c_str());
         }
     }
@@ -381,8 +383,7 @@ public:
     void send_dl(const OSTask* task) override {
         static int count = 0;
         if (++count == 1) {
-            std::fprintf(stderr,
-                         "[rt64] first send_dl: ucode=0x%08x ucode_data=0x%08x dl=0x%08x\n",
+            LAMBO_LOG("rt64", "first send_dl: ucode=0x%08x ucode_data=0x%08x dl=0x%08x\n",
                          (uint32_t)task->t.ucode, (uint32_t)task->t.ucode_data,
                          (uint32_t)task->t.data_ptr);
         }
@@ -397,7 +398,9 @@ public:
         // comparable against headless logs. VI_ORIGIN/STATUS prove the present path is
         // scanning out the game's REAL framebuffer (via the promote_vi_context bridge),
         // not the pre-game dummy at 0x80700000 / a blanked STATUS of 0.
-        if (count % 30 == 0) {
+        // The lambo_log_enabled check short-circuits the WHOLE block (VI-reg read +
+        // interpolatedMutex lock) on a default boot, not just the inner fprintf.
+        if (lambo_log_enabled && (count % 30 == 0)) {
             const ultramodern::renderer::ViRegs* vr = ultramodern::renderer::get_vi_regs();
             // Interpolation health (#1 display-rate rendering): viOriginalRate is the game's
             // detected update rate (30 for this title), targetRate the present pace RT64 aims
@@ -423,8 +426,7 @@ public:
                 interp_count = fc.count;
                 interp_presented = fc.presented;
             }
-            std::fprintf(stderr,
-                         "[rt64] send_dl count=%d VI_ORIGIN=0x%08x VI_STATUS=0x%04x VI_WIDTH=%u"
+            LAMBO_LOG("rt64", "send_dl count=%d VI_ORIGIN=0x%08x VI_STATUS=0x%04x VI_WIDTH=%u"
                          " | viRate=%u targetRate=%u swapHz=%u interp count=%u presented=%u\n",
                          count, vr->VI_ORIGIN_REG, vr->VI_STATUS_REG, vr->VI_WIDTH_REG,
                          vi_rate, target_rate, swap_hz, interp_count, interp_presented);

@@ -14,6 +14,8 @@
 #include <algorithm>
 #include <vector>
 
+#include "lambo_log.h"
+
 #include "ultramodern/renderer_context.hpp"
 
 #include "lambo_rt64.h" // RT64 default presenter (#58); LAMBO_HEADLESS=1 keeps swrender
@@ -242,13 +244,13 @@ static const char* opname(uint8_t op) {
 static void dump_raw(const uint8_t* rdram, uint32_t dl_addr, uint32_t byte_len, int max_cmds) {
     uint32_t off;
     uint32_t noseg[16] = {0};
-    if (!resolve(dl_addr, noseg, &off)) { std::fprintf(stderr, "[dl-inspect]   (unresolvable)\n"); return; }
+    if (!resolve(dl_addr, noseg, &off)) { LAMBO_LOG("dl-inspect", "  (unresolvable)\n"); return; }
     uint32_t end = off + byte_len;
     int n = 0;
     for (uint32_t o = off; o + 8 <= end && o + 8 <= 0x00800000 && n < max_cmds; o += 8, ++n) {
         uint32_t w0 = *(const uint32_t*)(rdram + o);
         uint32_t w1 = *(const uint32_t*)(rdram + o + 4);
-        std::fprintf(stderr, "[dl-inspect]   %3d  %08X %08X  %s\n", n, w0, w1, opname((w0 >> 24) & 0xFF));
+        LAMBO_LOG("dl-inspect", "  %3d  %08X %08X  %s\n", n, w0, w1, opname((w0 >> 24) & 0xFF));
     }
 }
 
@@ -256,12 +258,11 @@ static void dump_summary(const uint8_t* rdram, const OSTask* t) {
     uint32_t seg[16] = {0};
     Stats st;
     uint32_t dl_addr = (uint32_t)(int32_t)t->t.data_ptr;
-    std::fprintf(stderr, "[dl-inspect] --- raw first commands (bounded by data_size) ---\n");
+    LAMBO_LOG("dl-inspect", "--- raw first commands (bounded by data_size) ---\n");
     dump_raw(rdram, dl_addr, (uint32_t)t->t.data_size, 64);
-    std::fprintf(stderr, "[dl-inspect] --- unbounded walk aggregate (may overrun if no in-buffer ENDDL) ---\n");
+    LAMBO_LOG("dl-inspect", "--- unbounded walk aggregate (may overrun if no in-buffer ENDDL) ---\n");
     walk(rdram, dl_addr, seg, st, 0);
-    std::fprintf(stderr,
-        "[dl-inspect] state-gated one-shot DL @ 0x%08X (size=%u)\n"
+    LAMBO_LOG("dl-inspect", "state-gated one-shot DL @ 0x%08X (size=%u)\n"
         "  cmds=%u  vtx_loads=%u vtx_total=%u  tris=%u\n"
         "  mtx=%u popmtx=%u moveword=%u movemem=%u texture=%u geommode=%u\n"
         "  settimg=%u settile=%u loadblock=%u loadtile=%u settilesize=%u  texrect=%u fillrect=%u\n"
@@ -271,10 +272,10 @@ static void dump_summary(const uint8_t* rdram, const OSTask* t) {
         st.mtx, st.popmtx, st.moveword, st.movemem, st.texture, st.geommode,
         st.settimg, st.settile, st.loadblock, st.loadtile, st.settilesize, st.texrect, st.fillrect,
         st.dl_calls, st.enddl, st.unknown, st.max_depth, st.first_timg);
-    std::fprintf(stderr, "[dl-inspect] texture working-set: %d distinct (first %d shown)\n",
+    LAMBO_LOG("dl-inspect", "texture working-set: %d distinct (first %d shown)\n",
                  st.tex_count, st.tex_count);
     for (int i = 0; i < st.tex_count; ++i)
-        std::fprintf(stderr, "[dl-inspect]   tex[%2d] addr=0x%08X  fmt=%s siz=%s\n",
+        LAMBO_LOG("dl-inspect", "  tex[%2d] addr=0x%08X  fmt=%s siz=%s\n",
                      i, st.tex_addr[i], fmt_name(st.tex_fmt[i]), siz_name(st.tex_siz[i]));
 }
 
@@ -325,8 +326,7 @@ static void sprite_scan(const uint8_t* rdram, uint32_t start_addr, uint32_t seg[
                     n1w0 = *(const uint32_t*)(rdram + off + 16);
                     n1w1 = *(const uint32_t*)(rdram + off + 20);
                 }
-                std::fprintf(stderr,
-                    "[menudl]   #%u @off=0x%06X  base=%08X %08X  next=%08X %08X | %08X %08X\n",
+                LAMBO_LOG("menudl", "  #%u @off=0x%06X  base=%08X %08X  next=%08X %08X | %08X %08X\n",
                     sc.count, off, w0, w1, n0w0, n0w1, n1w0, n1w1);
                 uint32_t soff;
                 if (resolve(w1, seg, &soff) && soff + 24 <= 0x00800000) {
@@ -339,8 +339,7 @@ static void sprite_scan(const uint8_t* rdram, uint32_t start_addr, uint32_t seg[
                     auto rd16x = [&](int o) { int a = o ^ 2; return (int16_t)((s[a + 1] << 8) | s[a]); };
                     auto rd8x  = [&](int o) { return s[o ^ 3]; };
                     (void)rd16;
-                    std::fprintf(stderr,
-                        "[menudl]     uSprite@%08X img=%08X tlut=%08X stride=%d w=%d h=%d "
+                    LAMBO_LOG("menudl", "    uSprite@%08X img=%08X tlut=%08X stride=%d w=%d h=%d "
                         "fmt=%u siz=%u offS=%d offT=%d\n",
                         w1, rd32(0), rd32(4), rd16x(8), rd16x(10), rd16x(12),
                         rd8x(14), rd8x(15), rd16x(16), rd16x(18));
@@ -1345,7 +1344,7 @@ public:
             lambo_fog_match_1p(g_lambo_rdram, (uint32_t)(int32_t)t->t.data_ptr);
         }
         if (count == 1) {
-            std::fprintf(stderr, "[gfx] first OSTask submitted to renderer (send_dl); task type=%u\n",
+            LAMBO_LOG("gfx", "first OSTask submitted to renderer (send_dl); task type=%u\n",
                          t ? (unsigned)t->t.type : 0u);
         }
         // Renderer-seam DL introspection (LAMBO_DL_INSPECT=1). One-shot at a target state
@@ -1361,7 +1360,7 @@ public:
                 uint32_t w = *(const uint32_t*)(g_lambo_rdram + (0x800CE6AC - 0x80000000u));
                 int state = (int)((w >> 16) & 0xFFFF);
                 if (state >= target) {
-                    std::fprintf(stderr, "[dl-inspect] state=%d (>= target %d), send_dl #%d\n",
+                    LAMBO_LOG("dl-inspect", "state=%d (>= target %d), send_dl #%d\n",
                                  state, target, count);
                     dlinspect::dump_summary(g_lambo_rdram, t);
                     s_done = true;
@@ -1408,7 +1407,7 @@ public:
                             std::fwrite(g_lambo_rdram, 1, 0x800000, rf);
                             std::fclose(rf);
                         }
-                        std::fprintf(stderr, "[racedl] dumped DL @0x%08X at send_dl=%d\n",
+                        LAMBO_LOG("racedl", "dumped DL @0x%08X at send_dl=%d\n",
                                      dl_addr, count);
                     }
                 }
@@ -1427,7 +1426,7 @@ public:
                         std::fwrite(g_lambo_rdram, 1, 0x800000, rf);
                         std::fclose(rf);
                     }
-                    std::fprintf(stderr, "[racedl] dumped DL @0x%08X + RDRAM to %s.{txt,bin}\n",
+                    LAMBO_LOG("racedl", "dumped DL @0x%08X + RDRAM to %s.{txt,bin}\n",
                                  dl_addr, s_race_dump);
                     s_done = true;
                 }
@@ -1448,7 +1447,7 @@ public:
             static uint32_t s_cmds = 0;
             if (scr != s_scr || sc.count != s_count || sc.cmds != s_cmds) {
                 s_cmds = sc.cmds;
-                std::fprintf(stderr, "[menudl] send_dl #%d screen=%d sprite2d_count=%u cmds=%u texrects=%u (was scr=%d n=%u)\n",
+                LAMBO_LOG("menudl", "send_dl #%d screen=%d sprite2d_count=%u cmds=%u texrects=%u (was scr=%d n=%u)\n",
                              count, scr, sc.count, sc.cmds, sc.texrects, s_scr, s_count);
                 if (sc.count > 0) {   // re-walk verbosely to dump the sequences
                     uint32_t seg2[16] = {0};
@@ -1472,13 +1471,13 @@ public:
                     uint32_t seg3[16] = {0};
                     dlinspect::dump_walk(g_lambo_rdram, dl_addr, seg3, f, 0);
                     std::fclose(f);
-                    std::fprintf(stderr, "[menudl] dumped DL @0x%08X to %s\n", dl_addr, path);
+                    LAMBO_LOG("menudl", "dumped DL @0x%08X to %s\n", dl_addr, path);
                     char rpath[128];
                     std::snprintf(rpath, sizeof(rpath), "rdram_screen%d.bin", scr);
                     if (std::FILE* rf = std::fopen(rpath, "wb")) {
                         std::fwrite(g_lambo_rdram, 1, 0x800000, rf);
                         std::fclose(rf);
-                        std::fprintf(stderr, "[menudl] dumped RDRAM to %s\n", rpath);
+                        LAMBO_LOG("menudl", "dumped RDRAM to %s\n", rpath);
                     }
                     s_dumped = true;
                 }
@@ -1520,8 +1519,7 @@ public:
                     // "horizon gap" that was two DIFFERENT demos compared frame-to-frame.
                     uint32_t dw = *(const uint32_t*)(g_lambo_rdram + (0x800CE774 - 0x80000000u));
                     int demo_idx = (int)((dw >> 16) & 0xFFFF);
-                    std::fprintf(stderr,
-                        "[dl-render] captured state=%d demo_idx=%d frame (send_dl #%d) -> %s (%s)\n"
+                    LAMBO_LOG("dl-render", "captured state=%d demo_idx=%d frame (send_dl #%d) -> %s (%s)\n"
                         "[dl-render]   verts_loaded=%u tris_in=%u drawn=%u clipped=%u pixels=%u tex_pixels=%u  viewport=%s\n"
                         "[dl-render]   fog: pixels=%u mul=%d off=%d color=(%u,%u,%u)\n",
                         state, demo_idx, count, path, ok ? "written" : "WRITE FAILED",
@@ -1534,8 +1532,11 @@ public:
         }
         // Periodic heartbeat: a SUSTAINED gfx pipeline (not the #58 1-task stall). Before the
         // __osViCurr/__osViNext retrace-promotion fix (vi_cb in main.cpp), this stuck at 1 forever.
-        if (count % 30 == 0) {
-            std::fprintf(stderr, "[gfx] send_dl count=%d (pipeline sustained)\n", count);
+        // lambo_log_enabled short-circuits the WHOLE block on a default boot (the rt64 sibling
+        // also wraps so its VI-reg read + mutex lock are skipped -- here the block is just the
+        // LAMBO_LOG, but the modulo is skipped for symmetry).
+        if (lambo_log_enabled && (count % 30 == 0)) {
+            LAMBO_LOG("gfx", "send_dl count=%d (pipeline sustained)\n", count);
         }
     }
     void update_screen() override {}
@@ -1562,10 +1563,10 @@ create_render_context(uint8_t* rdram, ultramodern::renderer::WindowHandle window
     if (lambo_rt64::enabled()) {
         auto rt64_ctx = lambo_rt64::create_render_context(rdram, window_handle, developer_mode);
         if (rt64_ctx) {
-            std::fprintf(stderr, "[rt64] RT64 renderer ACTIVE (default presenter)\n");
+            LAMBO_LOG("rt64", "RT64 renderer ACTIVE (default presenter)\n");
             return rt64_ctx;
         }
-        std::fprintf(stderr, "[rt64] RT64 setup failed -- falling back to headless swrender\n");
+        LAMBO_LOG("rt64", "RT64 setup failed -- falling back to headless swrender\n");
     }
     (void)window_handle;
     (void)developer_mode;
