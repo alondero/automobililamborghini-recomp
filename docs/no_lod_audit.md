@@ -262,6 +262,44 @@ remains" claims, this time *within* a mode rather than between modes:
   visibility-list-bound (an entry missing from the row entirely), a separate, larger
   change if it ever proves visible.
 
+## 9. Addendum (2026-07-18): the visibility lists themselves (full-track walk)
+
+The §8 residual proved visible the same day: a city-track savestate showed the camera
+in segment 21 with **segment 54 only 1,027 units away and absent from the authored
+row** — a parallel street (chimney and all) that block-pops the moment the camera's
+row changes. Corrections to §8's data model, from re-reading the loop and the track
+header rather than the row scan:
+
+- **PVS rows are 10 fixed slots with `-1` holes, NOT `-1`-terminated.** The loop at
+  `L_8000D028` always runs to its `slti 0xA` cap and `bltz`-skips negative slots
+  (the skip branches to the increment, not out). `tools/pvs_distance_audit.py`'s
+  original terminator-based parse silently dropped every entry after the first hole.
+- **The segment count is not stored anywhere** — it is the PVS block size:
+  `(header+0x8 − header+0x4) / 20` with the header pointer at `0x80098238`
+  (`*(header)+0x0` is the 64-byte record list, `+0x10` the 16-byte test points).
+  Circuit 5 has **55 segments** (1100/20), not the 42 a terminator-parse suggests;
+  record 55 is all-null (a natural sentinel).
+- **Every segment's road/wall/scenery sub-DLs stay resident for the whole race**
+  (verified: all 55 records' three pointers valid in a mid-race savestate), so the
+  authored rows are the only thing bounding reach.
+
+**Fix (shipped under `no_lod`):** three natives in src/lambo_no_lod.cpp bend the
+existing walk — `lambo_no_lod_pvs_entry` (hook after the row fetch `lh` at
+`0x8000D058`) replaces each fetched entry with one from a synthesized all-segments
+row (authored entries first, camera segment excluded, null-record segments skipped);
+`lambo_no_lod_pvs_more` (hook over the `slti` result at `0x8000D904`) widens the
+10-iteration cap to the synthesized length; `lambo_no_lod_seg_list_clamp` (hooks at
+`0x8000D8D0`/`0x8000D920`) clamps the per-frame drawn-segment-list index to slot 20 —
+the list at `0x800B6758` has **21 slots** (`0x800B6782` is the next global) and
+accumulates across viewports without reset, so the widened walk can exceed it in
+split screen; excess appends collapse onto the last slot and the `-1` terminator
+lands on top. The per-entry forward-cone tests are untouched: they are frame-coherent
+view culling, so segments now emerge at the horizon/screen edge instead of popping on
+row-membership changes. Verified on the reporting savestate: stock walk draws
+`[21,22,23,24]`; widened walk draws `[21,22,23,24,25,48,49,50]` (+645 triangles into
+the pipeline), `LAMBO_NO_LOD=0` restores the stock list bit-for-bit, and a 4P race
+smokes clean with the list clamp holding.
+
 ---
 *Method note: MIPS classification used `tools/scan_lod_patterns.py` output cross-read
 against the recompiled C (per-instruction VRAM comments) rather than raw disassembly;

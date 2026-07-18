@@ -1010,6 +1010,39 @@ func = "func_8000A6C0"
 before_vram = 0x8000CD3C
 text = "{ extern void lambo_no_lod_draw_distance(uint8_t*); lambo_no_lod_draw_distance(rdram); }"
 
+# no_lod full-track walk -- the remaining pop-in axis after the radius lift. The builder
+# only draws segments listed in the camera segment's authored PVS row (10 fixed slots
+# with -1 holes, NOT -1 terminated: the loop always runs its cap and skips negatives),
+# and the city circuits' rows are trimmed for N64 fill rate -- on circuit 5 the row can
+# omit a parallel street 1k units away, which pops in on the next segment boundary. All
+# segment sub-DLs stay resident for the whole race, so the fix is to widen the walk:
+# override the fetched row entry (after the lh at 0x8000D058) with a native synthesized
+# all-segments row (authored entries first, camera segment excluded) and stretch the
+# 10-iteration cap (slti at 0x8000D904) to its length. The per-frame drawn-segment list
+# at 0x800B6758 holds 21 slots (0x800B6782 is the next global), so both list-index
+# computations are clamped to slot 20 -- excess appends collapse there and the -1
+# terminator lands on top, keeping the stock-shaped prefix for the list's consumers.
+# The per-entry forward-cone tests still run untouched. Native in src/lambo_no_lod.cpp.
+[[patches.hook]]
+func = "func_8000A6C0"
+before_vram = 0x8000D05C
+text = "{ extern uint32_t lambo_no_lod_pvs_entry(uint8_t*, uint32_t, uint32_t); ctx->r11 = (gpr)(int32_t)lambo_no_lod_pvs_entry(rdram, (uint32_t)ctx->r11, (uint32_t)ctx->r12); }"
+
+[[patches.hook]]
+func = "func_8000A6C0"
+before_vram = 0x8000D908
+text = "{ extern uint32_t lambo_no_lod_pvs_more(uint8_t*, uint32_t, uint32_t); ctx->r1 = lambo_no_lod_pvs_more(rdram, (uint32_t)ctx->r1, (uint32_t)ctx->r12); }"
+
+[[patches.hook]]
+func = "func_8000A6C0"
+before_vram = 0x8000D8D0
+text = "{ extern uint32_t lambo_no_lod_seg_list_clamp(uint8_t*, uint32_t); ctx->r25 = lambo_no_lod_seg_list_clamp(rdram, (uint32_t)ctx->r25); }"
+
+[[patches.hook]]
+func = "func_8000A6C0"
+before_vram = 0x8000D920
+text = "{ extern uint32_t lambo_no_lod_seg_list_clamp(uint8_t*, uint32_t); ctx->r25 = lambo_no_lod_seg_list_clamp(rdram, (uint32_t)ctx->r25); }"
+
 # Issue #78 — 3P/4P per-quadrant HUD text pinning. The quad section (L_800517A8) draws
 # each player's RANK (x=0x20/0x110), speed readout (x=0x14-0x46 / 0xEB-0x11D), lap-notify
 # glyph (x=0x19/0x118) and the inline per-player tag texrects in the outer columns, plus
