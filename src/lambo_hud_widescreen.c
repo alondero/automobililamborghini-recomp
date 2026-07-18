@@ -43,6 +43,29 @@ static float lambo_ws_get_hud_shift_scale(void) {
 
 static gpr lambo_ws_bracket_start;
 
+// Pin/reset hooks sit on recompiled branch labels (the instruction after each bracketed
+// jal), and N64Recomp runs label hook text on EVERY incoming path — including game paths
+// that branch over the jal (e.g. the pit-stop screen hides the dial/RANK/LAP draws by
+// jumping straight to the post-jal label). An unpaired reset would pop a scissor that was
+// never pushed and run the matrix walker over a stale [bracket_start, cursor) range,
+// shifting arbitrary scene matrices (issue: pit-stop flicker; cold-start value 0 even
+// walks out of RDRAM and crashes). The flag models the pairing: pins arm, resets disarm,
+// label-landing-only paths leave it untouched. Quad-text section uses a similar flag for
+// the same merge-label trap.
+static int s_bracket_open;
+
+static void bracket_arm(uint8_t* rdram) {
+    lambo_ws_bracket_start = MEM_W(0, (gpr)(int32_t)LAMBO_DL_CURSOR);
+    s_bracket_open = 1;
+}
+
+// Returns 1 iff a paired reset should run; clears the flag on the way out.
+static int bracket_disarm_if_open(void) {
+    if (!s_bracket_open) return 0;
+    s_bracket_open = 0;
+    return 1;
+}
+
 static void emit_cmd(uint8_t* rdram, uint32_t w0, uint32_t w1) {
     gpr curp = (gpr)(int32_t)LAMBO_DL_CURSOR;
     gpr cur = MEM_W(0, curp);
@@ -85,7 +108,7 @@ static void pin(uint8_t* rdram, uint32_t origin, int32_t xoff) {
     emit_cmd(rdram,
              PARAM(0, 16, 16) | PARAM(0, 16, 0),
              PARAM(0, 16, 16) | PARAM(240 * 4, 16, 0));
-    lambo_ws_bracket_start = MEM_W(0, (gpr)(int32_t)LAMBO_DL_CURSOR);
+    bracket_arm(rdram);
 }
 
 void lambo_ws_pin_left(uint8_t* rdram) {
@@ -139,6 +162,9 @@ static void patch_load_mtx_dx(uint8_t* rdram, gpr start, gpr end, float dx_units
 }
 
 void lambo_ws_pin_reset(uint8_t* rdram) {
+    if (!bracket_disarm_if_open()) {
+        return; /* label-landing path that skipped the pin (e.g. pit stop) */
+    }
     patch_load_mtx_dx(rdram, lambo_ws_bracket_start,
                       MEM_W(0, (gpr)(int32_t)LAMBO_DL_CURSOR), LAMBO_WS_NEEDLE_DX);
     emit_cmd(rdram,
@@ -173,6 +199,9 @@ void lambo_ws_minimap_pin(uint8_t* rdram) {
 }
 
 void lambo_ws_minimap_reset(uint8_t* rdram) {
+    if (!bracket_disarm_if_open()) {
+        return; /* label-landing path that skipped the pin (e.g. pit stop) */
+    }
     patch_load_mtx_dx(rdram, lambo_ws_bracket_start,
                       MEM_W(0, (gpr)(int32_t)LAMBO_DL_CURSOR),
                       LAMBO_WS_MINIMAP_ARROW_DX);
@@ -262,6 +291,7 @@ void lambo_ws_quad_text_end(uint8_t* rdram) {
         return; /* reached via the 1P/2P paths that share L_80052C00 */
     }
     s_quad_text_scissor_open = 0;
+    (void)bracket_disarm_if_open(); /* quad_text_begin armed via pin_left; no pin_reset runs here */
     emit_cmd(rdram,
              PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_POPSCISSOR_V1, 24, 0),
              0);
@@ -313,10 +343,14 @@ void lambo_ws_quad_panel_bg_reset(uint8_t* rdram) {
 
 void lambo_ws_quad_panel_pin(uint8_t* rdram) {
     emit_rect_align(rdram, G_EX_ORIGIN_QUARTER_RIGHT, -SCREEN_WIDTH_QP * 3 / 4);
-    lambo_ws_bracket_start = MEM_W(0, (gpr)(int32_t)LAMBO_DL_CURSOR);
+    bracket_arm(rdram);
 }
 
 void lambo_ws_quad_panel_reset(uint8_t* rdram) {
+    if (!bracket_disarm_if_open()) {
+        return; /* label-landing path that skipped the pin */
+    }
+    s_bracket_open = 0;
     patch_load_mtx_dx(rdram, lambo_ws_bracket_start,
                       MEM_W(0, (gpr)(int32_t)LAMBO_DL_CURSOR),
                       LAMBO_WS_QUAD_PANEL_DX);
