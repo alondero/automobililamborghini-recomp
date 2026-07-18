@@ -21,6 +21,8 @@
 
 #include "lambo_audio.h"
 
+#include "lambo_log.h"
+
 #include <SDL.h>
 #include <ultramodern/ultramodern.hpp>
 #include "recomp.h" // recomp_context + MEM_W for the func_80079720 native override below
@@ -63,8 +65,7 @@ std::mutex g_state_mtx;
 void log_opened_once() {
     bool expected = false;
     if (g_init_logged.compare_exchange_strong(expected, true)) {
-        std::fprintf(stderr,
-                     "[probe] audio: opened SDL2 device freq=%u fmt=%d ch=%u samples=%u\n",
+        LAMBO_LOG("probe", "audio: opened SDL2 device freq=%u fmt=%d ch=%u samples=%u\n",
                      (unsigned)g_obtained.freq, (int)g_obtained.format,
                      (unsigned)g_obtained.channels, (unsigned)g_obtained.samples);
     }
@@ -84,8 +85,7 @@ void submit(const int16_t* pcm, size_t sample_count) {
             if (pcm[i] != 0) {
                 bool exp2 = false;
                 if (g_first_nonsilent_logged.compare_exchange_strong(exp2, true)) {
-                    std::fprintf(stderr,
-                                 "[probe] audio: first NON-SILENT buffer (sample[%zu]=%d of %zu)\n",
+                    LAMBO_LOG("probe", "audio: first NON-SILENT buffer (sample[%zu]=%d of %zu)\n",
                                  i, (int)pcm[i], sample_count);
                 }
                 break;
@@ -106,7 +106,7 @@ void submit(const int16_t* pcm, size_t sample_count) {
         static std::atomic<bool> s_oversize_logged{false};
         bool exp = false;
         if (s_oversize_logged.compare_exchange_strong(exp, true)) {
-            std::fprintf(stderr, "[probe] audio: dropped oversize submit (%zu samples > AI max)\n",
+            LAMBO_LOG("probe", "audio: dropped oversize submit (%zu samples > AI max)\n",
                          sample_count);
         }
         return;
@@ -140,7 +140,7 @@ void submit(const int16_t* pcm, size_t sample_count) {
     const bool native_chan  = g_obtained.channels == 2;
     if (native_rate && native_fmt && native_chan) {
         if (SDL_QueueAudio(g_dev, swapped.data(), byte_count) != 0) {
-            std::fprintf(stderr, "[probe] audio: SDL_QueueAudio failed: %s\n", SDL_GetError());
+            LAMBO_LOG("probe", "audio: SDL_QueueAudio failed: %s\n", SDL_GetError());
         }
     } else {
         // Convert via a PERSISTENT SDL_AudioStream (stateful resampler — see the note at
@@ -154,20 +154,20 @@ void submit(const int16_t* pcm, size_t sample_count) {
                                           g_obtained.freq);
             g_stream_src_rate = g_desired_rate;
             if (g_stream == nullptr) {
-                std::fprintf(stderr, "[probe] audio: SDL_NewAudioStream failed: %s\n",
+                LAMBO_LOG("probe", "audio: SDL_NewAudioStream failed: %s\n",
                              SDL_GetError());
             }
         }
         if (g_stream == nullptr) {
             // Degraded fallback: queue unconverted (wrong rate beats silence).
             if (SDL_QueueAudio(g_dev, swapped.data(), byte_count) != 0) {
-                std::fprintf(stderr, "[probe] audio: SDL_QueueAudio (fallback) failed: %s\n",
+                LAMBO_LOG("probe", "audio: SDL_QueueAudio (fallback) failed: %s\n",
                              SDL_GetError());
             }
             return;
         }
         if (SDL_AudioStreamPut(g_stream, swapped.data(), (int)byte_count) != 0) {
-            std::fprintf(stderr, "[probe] audio: SDL_AudioStreamPut failed: %s\n", SDL_GetError());
+            LAMBO_LOG("probe", "audio: SDL_AudioStreamPut failed: %s\n", SDL_GetError());
             return;
         }
         const int avail = SDL_AudioStreamAvailable(g_stream);
@@ -177,7 +177,7 @@ void submit(const int16_t* pcm, size_t sample_count) {
             const int got = SDL_AudioStreamGet(g_stream, out.data(), avail);
             if (got > 0) {
                 if (SDL_QueueAudio(g_dev, out.data(), (Uint32)got) != 0) {
-                    std::fprintf(stderr, "[probe] audio: SDL_QueueAudio (stream) failed: %s\n",
+                    LAMBO_LOG("probe", "audio: SDL_QueueAudio (stream) failed: %s\n",
                                  SDL_GetError());
                 }
             }
@@ -187,8 +187,7 @@ void submit(const int16_t* pcm, size_t sample_count) {
     bool expected = false;
     if (g_first_hit_logged.compare_exchange_strong(expected, true)) {
         const uint32_t frames = (uint32_t)(sample_count / 2);
-        std::fprintf(stderr,
-                     "[probe] audio: first osAiSetNextBuffer routed (%u samples, %u frames)\n",
+        LAMBO_LOG("probe", "audio: first osAiSetNextBuffer routed (%u samples, %u frames)\n",
                      (unsigned)sample_count, (unsigned)frames);
     }
 }
@@ -237,7 +236,7 @@ size_t get_frames_remaining() {
 void set_frequency(uint32_t freq) {
     std::lock_guard<std::mutex> lock(g_state_mtx);
     if (freq != g_desired_rate) {
-        std::fprintf(stderr, "[probe] audio: set_frequency %u -> %u\n", g_desired_rate, freq);
+        LAMBO_LOG("probe", "audio: set_frequency %u -> %u\n", g_desired_rate, freq);
     }
     g_desired_rate = freq;
     // We do not reopen the device on every set_frequency. SDL honours the
@@ -268,7 +267,7 @@ void init(uint32_t desired_sample_rate) {
     {
         const char* headless = std::getenv("LAMBO_HEADLESS");
         if (headless && headless[0] && headless[0] != '0') {
-            std::fprintf(stderr, "[probe] audio: headless -- no SDL device (ideal-drain sink)\n");
+            LAMBO_LOG("probe", "audio: headless -- no SDL device (ideal-drain sink)\n");
             return;
         }
     }
@@ -281,7 +280,7 @@ void init(uint32_t desired_sample_rate) {
 #endif
 
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
-        std::fprintf(stderr, "[probe] audio: SDL_InitSubSystem(SDL_INIT_AUDIO) failed: %s\n",
+        LAMBO_LOG("probe", "audio: SDL_InitSubSystem(SDL_INIT_AUDIO) failed: %s\n",
                      SDL_GetError());
         return;
     }
@@ -299,7 +298,7 @@ void init(uint32_t desired_sample_rate) {
                                 &want, &g_obtained,
                                 SDL_AUDIO_ALLOW_ANY_CHANGE);
     if (g_dev == 0) {
-        std::fprintf(stderr, "[probe] audio: SDL_OpenAudioDevice failed: %s\n", SDL_GetError());
+        LAMBO_LOG("probe", "audio: SDL_OpenAudioDevice failed: %s\n", SDL_GetError());
         return;
     }
     SDL_PauseAudioDevice(g_dev, 0);  // start playback immediately

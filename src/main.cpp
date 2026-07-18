@@ -40,6 +40,7 @@
 #include "lambo_config.h"
 #include "lambo_crash.h"   // issue #13 / A14
 #include "lambo_gpu_advisory.h"  // issue #109: outdated-driver popup handoff
+#include "lambo_log.h"   
 // ultramodern's native VI API (events.cpp), used by the promote_vi_context RT64 bridge.
 extern "C" void osViSwapBuffer(uint8_t* rdram, int32_t frameBufPtr);
 extern "C" void osViSetMode(uint8_t* rdram, int32_t mode_);
@@ -88,12 +89,12 @@ static int watchdog_seconds() {
 }
 
 static void on_init_cb(uint8_t*, recomp_context*) {
-    std::fprintf(stderr, "[probe] init complete; entering recomp_entrypoint @ 0x80000400\n");
+    LAMBO_LOG("probe", "init complete; entering recomp_entrypoint @ 0x80000400\n");
 }
 
 static void thread_create_cb(uint8_t*, recomp_context*) {
     int n = ++g_threads;
-    if (n <= 12) std::fprintf(stderr, "[probe] game thread #%d started (osCreateThread)\n", n);
+    if (n <= 12) LAMBO_LOG("probe", "game thread #%d started (osCreateThread)\n", n);
 }
 
 // Print the one-line boot summary the runtime guard (tests/pivot/test_boot_smoke.py) parses,
@@ -105,7 +106,7 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
 // quitting anyway, so skip the unwind and let process exit tear the game threads down.
 // (Graceful game-thread shutdown is RT64-integration work, #58.)
 [[noreturn]] static void boot_summary_and_exit() {
-    std::fprintf(stderr, "[probe] boot summary; threads=%d vis=%d first_vi=%d max_state=%d swaps=%d\n",
+    LAMBO_LOG("probe", "boot summary; threads=%d vis=%d first_vi=%d max_state=%d swaps=%d\n",
                  g_threads.load(), g_vis.load(), (int)g_first_vi.load(), g_max_state.load(),
                  g_swaps.load());
     std::fflush(nullptr);
@@ -195,7 +196,7 @@ static void state_probe() {
     if (state > g_max_state.load()) g_max_state.store(state);
     static int s_last = -1;
     if (state != s_last) {
-        std::fprintf(stderr, "[state] vi=%d  state=%d (was %d)\n", g_vis.load(), state, s_last);
+        LAMBO_LOG("state", "vi=%d  state=%d (was %d)\n", g_vis.load(), state, s_last);
         s_last = state;
     }
 }
@@ -216,7 +217,7 @@ static void menu_probe() {
     int sub = (int)(int16_t)h(0x80098560);
     static int s_scr = -9999, s_sub = -9999;
     if (scr != s_scr || sub != s_sub) {
-        std::fprintf(stderr, "[menu] vi=%d  screen=%d sub=%d (was %d/%d)\n",
+        LAMBO_LOG("menu", "vi=%d  screen=%d sub=%d (was %d/%d)\n",
                      g_vis.load(), scr, sub, s_scr, s_sub);
         s_scr = scr; s_sub = sub;
     }
@@ -239,7 +240,7 @@ static void pace_probe(int vi_n) {
     if ((vi_n % 600) == 0) {
         static int s_prev_total = 0;
         int total = g_swaps.load();
-        std::fprintf(stderr, "[pace] vi=%d swaps_last_600vi=%d (~%.1f fps)\n",
+        LAMBO_LOG("pace", "vi=%d swaps_last_600vi=%d (~%.1f fps)\n",
                      vi_n, total - s_prev_total, (total - s_prev_total) / 10.0);
         s_prev_total = total;
     }
@@ -253,9 +254,9 @@ static void vi_cb() {
     int n = ++g_vis;
     pace_probe(n);
     if ((n % 50) == 0) lambo_thread_trace_dump(n); // THROWAWAY: per-thread recv/send snapshot to find the frozen thread
-    if (!g_first_vi.exchange(true)) std::fprintf(stderr, "[probe] FIRST VI retrace\n");
+    if (!g_first_vi.exchange(true)) LAMBO_LOG("probe", "FIRST VI retrace\n");
     if (n == kQuitAfterVis) {
-        std::fprintf(stderr, "[probe] reached %d VIs; quitting\n", n);
+        LAMBO_LOG("probe", "reached %d VIs; quitting\n", n);
         boot_summary_and_exit();
     }
 }
@@ -276,7 +277,7 @@ static void vi_cb() {
 static RspExitReason audio_ucode_noop(uint8_t* /*rdram*/, uint32_t /*ucode_addr*/) {
     static std::atomic<bool> logged{false};
     if (!logged.exchange(true))
-        std::fprintf(stderr, "[probe] audio_ucode_noop: first M_AUDTASK (type 2) -> Broke (no PCM; #53)\n");
+        LAMBO_LOG("probe", "audio_ucode_noop: first M_AUDTASK (type 2) -> Broke (no PCM; #53)\n");
     return RspExitReason::Broke;
 }
 
@@ -291,13 +292,13 @@ static RspUcodeFunc* get_rsp_microcode_stub(const OSTask* task) {
     if (task->t.type == 2) return aspMain; // M_AUDTASK: RSPRecomp'd real synthesis (#53)
     static std::atomic<bool> logged{false};
     if (!logged.exchange(true))
-        std::fprintf(stderr, "[probe] get_rsp_microcode: unhandled task type %u -> nullptr\n",
+        LAMBO_LOG("probe", "get_rsp_microcode: unhandled task type %u -> nullptr\n",
                      (unsigned)task->t.type);
     return nullptr;
 }
 
 static void message_box_stub(const char* msg) {
-    std::fprintf(stderr, "[probe] message_box: %s\n", msg);
+    LAMBO_LOG("probe", "message_box: %s\n", msg);
 }
 
 // Input (#68) — defined below in the input section; used by the window/pump callbacks above them.
@@ -324,13 +325,13 @@ static void toggle_fullscreen() {
     bool to_fullscreen = (SDL_GetWindowFlags(g_sdl_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == 0;
     if (SDL_SetWindowFullscreen(g_sdl_window,
                                 to_fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0) != 0) {
-        std::fprintf(stderr, "[config] fullscreen toggle FAILED: %s\n", SDL_GetError());
+        LAMBO_LOG("config", "fullscreen toggle FAILED: %s\n", SDL_GetError());
         return; // window unchanged -> persist nothing, config and reality stay agreed
     }
     lambo::config::update_saved_window_mode(
         to_fullscreen ? ultramodern::renderer::WindowMode::Fullscreen
                       : ultramodern::renderer::WindowMode::Windowed);
-    std::fprintf(stderr, "[config] fullscreen %s (F11 / Alt+Enter)\n", to_fullscreen ? "ON" : "OFF");
+    LAMBO_LOG("config", "fullscreen %s (F11 / Alt+Enter)\n", to_fullscreen ? "ON" : "OFF");
 }
 
 static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/) {
@@ -348,7 +349,7 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
         SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
         // GAMECONTROLLER pulls in JOYSTICK + enables CONTROLLERDEVICEADDED/REMOVED events (#68).
         if (SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
-            std::fprintf(stderr, "[rt64] SDL_InitSubSystem(VIDEO|GAMECONTROLLER) failed: %s -- staying headless\n",
+            LAMBO_LOG("rt64", "SDL_InitSubSystem(VIDEO|GAMECONTROLLER) failed: %s -- staying headless\n",
                          SDL_GetError());
             return ultramodern::renderer::WindowHandle{};
         }
@@ -371,13 +372,13 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
                                               SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                               win_size.width, win_size.height, flags);
         if (window == nullptr) {
-            std::fprintf(stderr, "[rt64] SDL_CreateWindow failed: %s -- staying headless\n",
+            LAMBO_LOG("rt64", "SDL_CreateWindow failed: %s -- staying headless\n",
                          SDL_GetError());
             return ultramodern::renderer::WindowHandle{};
         }
         g_sdl_window = window;
 #if defined(__linux__)
-        std::fprintf(stderr, "[rt64] SDL window created (%dx%d, Vulkan surface)\n",
+        LAMBO_LOG("rt64", "SDL window created (%dx%d, Vulkan surface)\n",
                      win_size.width, win_size.height);
         return ultramodern::renderer::WindowHandle{window};
 #elif defined(_WIN32)
@@ -387,16 +388,16 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
         SDL_SysWMinfo wmInfo;
         SDL_VERSION(&wmInfo.version);
         if (SDL_GetWindowWMInfo(window, &wmInfo) != SDL_TRUE) {
-            std::fprintf(stderr, "[rt64] SDL_GetWindowWMInfo failed: %s -- staying headless\n",
+            LAMBO_LOG("rt64", "SDL_GetWindowWMInfo failed: %s -- staying headless\n",
                          SDL_GetError());
             SDL_DestroyWindow(window);
             return ultramodern::renderer::WindowHandle{};
         }
-        std::fprintf(stderr, "[rt64] SDL window created (%dx%d, Win32 HWND -> D3D12)\n",
+        LAMBO_LOG("rt64", "SDL window created (%dx%d, Win32 HWND -> D3D12)\n",
                      win_size.width, win_size.height);
         return ultramodern::renderer::WindowHandle{wmInfo.info.win.window, GetCurrentThreadId()};
 #else
-        std::fprintf(stderr, "[rt64] window handle wiring not implemented on this platform\n");
+        LAMBO_LOG("rt64", "window handle wiring not implemented on this platform\n");
         SDL_DestroyWindow(window);
         return ultramodern::renderer::WindowHandle{};
 #endif
@@ -414,7 +415,7 @@ static void update_gfx_stub(void* /*gfx_data*/) {
             // process exit; see boot_summary_and_exit's rationale).
             if (event.type == SDL_QUIT ||
                 (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE)) {
-                std::fprintf(stderr, "[probe] window closed; quitting\n");
+                LAMBO_LOG("probe", "window closed; quitting\n");
                 boot_summary_and_exit();
             }
             else if (event.type == SDL_KEYDOWN && !event.key.repeat &&
@@ -630,7 +631,7 @@ static void input_open_controller(int joystick_index) {
     if (!SDL_IsGameController(joystick_index)) return;
     g_pad = SDL_GameControllerOpen(joystick_index);
     if (g_pad != nullptr)
-        std::fprintf(stderr, "[input] controller connected: %s\n",
+        LAMBO_LOG("input", "controller connected: %s\n",
                      SDL_GameControllerName(g_pad) ? SDL_GameControllerName(g_pad) : "(unknown)");
 }
 static void input_close_controller(SDL_JoystickID which) {
@@ -639,7 +640,7 @@ static void input_close_controller(SDL_JoystickID which) {
     if (js != nullptr && SDL_JoystickInstanceID(js) == which) {
         SDL_GameControllerClose(g_pad);
         g_pad = nullptr;
-        std::fprintf(stderr, "[input] controller disconnected\n");
+        LAMBO_LOG("input", "controller disconnected\n");
     }
 }
 
@@ -677,8 +678,20 @@ int main(int argc, char** argv) {
     if (std::getenv("LAMBO_LIGHTING_SELFTEST")) {
         return headless::run_lighting_selftest();
     }
-    const char* rom_path = (argc > 1) ? argv[1] : "Automobili Lamborghini (USA).z64";
-    std::fprintf(stderr, "[probe] ROM: %s\n", rom_path);
+    // Parse --lambo-debug BEFORE anything else that might print a [probe] line.
+    // The flag is read by every LAMBO_LOG() site via the lambo_log_enabled bool.
+    lambo_log_parse_flag(argc, argv);
+    // The ROM path is the first non-flag positional arg; skip argv entries that
+    // start with "--" so e.g. `lamborghini_modern --lambo-debug` still finds the
+    // bundled ROM at argv[2] (or falls back to the default when no path given).
+    const char* rom_path = "Automobili Lamborghini (USA).z64";
+    for (int i = 1; i < argc; ++i) {
+        if (argv[i] && argv[i][0] != '-' && argv[i][0] != '\0') {
+            rom_path = argv[i];
+            break;
+        }
+    }
+    LAMBO_LOG("probe", "ROM: %s\n", rom_path);
 
     register_overlays();
     // After register_overlays so the native-ptr -> vram map is already wired.
@@ -688,7 +701,7 @@ int main(int argc, char** argv) {
     // sleep then a deliberate crash so the dump format can be verified in
     // CI / field testing without waiting for a real bug.
     if (const char* ct = std::getenv("LAMBO_CRASH_TEST")) {
-        std::fprintf(stderr, "[probe] LAMBO_CRASH_TEST=%s; injecting deliberate crash in 2s\n", ct);
+        LAMBO_LOG("probe", "LAMBO_CRASH_TEST=%s; injecting deliberate crash in 2s\n", ct);
         std::thread([](const char* reason){
             std::this_thread::sleep_for(std::chrono::seconds(2));
             lambo::crash::record_recent(0x80001CD0u, 0x800024F8u);  // func_800028D0 entry, $ra into menu driver
@@ -724,16 +737,16 @@ int main(int argc, char** argv) {
     std::u8string game_id = u8"lamborghini.us";
     recomp::RomValidationError verr = recomp::select_rom(rom_path, game_id);
     if (verr != recomp::RomValidationError::Good) {
-        std::fprintf(stderr, "[probe] select_rom FAILED (RomValidationError=%d)\n", (int)verr);
+        LAMBO_LOG("probe", "select_rom FAILED (RomValidationError=%d)\n", (int)verr);
         return 1;
     }
-    std::fprintf(stderr, "[probe] ROM validated; rom_hash matches\n");
+    LAMBO_LOG("probe", "ROM validated; rom_hash matches\n");
 
     // recomp::start() blocks the calling thread until ultramodern::quit(), so
     // kick the game off from a side thread once the runtime has set up.
     std::thread starter([game_id]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(150));
-        std::fprintf(stderr, "[probe] calling start_game\n");
+        LAMBO_LOG("probe", "calling start_game\n");
         std::u8string gid = game_id;
         recomp::start_game(gid);
     });
@@ -743,7 +756,7 @@ int main(int argc, char** argv) {
     const int wd_sec = watchdog_seconds();
     std::thread watchdog([wd_sec]() {
         std::this_thread::sleep_for(std::chrono::seconds(wd_sec));
-        std::fprintf(stderr, "[probe] WATCHDOG %ds: threads=%d vis=%d first_vi=%d\n",
+        LAMBO_LOG("probe", "WATCHDOG %ds: threads=%d vis=%d first_vi=%d\n",
                      wd_sec, g_threads.load(), g_vis.load(), (int)g_first_vi.load());
         // Exit deterministically (same as the VI-cap path) rather than ultramodern::quit(),
         // whose teardown munmaps RDRAM out from under the live game threads (SIGSEGV race).
@@ -790,13 +803,13 @@ int main(int argc, char** argv) {
         if (end && *end == ':') g_pulse_duty   = (int)std::strtol(end + 1, &end, 10);
         if (end && *end == ':') g_pulse_start  = (int)std::strtol(end + 1, &end, 10);
         if (end && *end == ':') g_pulse_count  = (int)std::strtol(end + 1, nullptr, 10);
-        std::fprintf(stderr, "[probe] input pulse: btn=%04x period=%d duty=%d start=%d count=%d\n",
+        LAMBO_LOG("probe", "input pulse: btn=%04x period=%d duty=%d start=%d count=%d\n",
                      g_pulse_buttons, g_pulse_period, g_pulse_duty, g_pulse_start, g_pulse_count);
     }
     cfg.input_callbacks.poll_input = input_poll_stub;
     cfg.input_callbacks.get_input = input_get_input;
     cfg.input_callbacks.get_connected_device_info = input_device_info;
-    std::fprintf(stderr, "[probe] input: controller0 connected (default), buttons=%04x\n", g_held_buttons);
+    LAMBO_LOG("probe", "input: controller0 connected (default), buttons=%04x\n", g_held_buttons);
 
     // Audio epic #53 (PR 1 of 3): populate the host audio sink. ultramodern
     // reads cfg.audio_callbacks inside recomp::start (recomp.cpp:743), before
@@ -807,9 +820,9 @@ int main(int argc, char** argv) {
     // into SDL via ultramodern's shim.
     lambo::audio::init(48000);
     lambo::audio::get_callbacks(&cfg.audio_callbacks);
-    std::fprintf(stderr, "[probe] audio: callbacks wired (queue_samples/get_frames_remaining/set_frequency)\n");
+    LAMBO_LOG("probe", "audio: callbacks wired (queue_samples/get_frames_remaining/set_frequency)\n");
 
-    std::fprintf(stderr, "[probe] calling recomp::start\n");
+    LAMBO_LOG("probe", "calling recomp::start\n");
     recomp::start(cfg);
     // Reached only via the watchdog quit path (a boot stall before the VI cap): the VI-cap
     // path exits from vi_cb via boot_summary_and_exit() and never returns here.

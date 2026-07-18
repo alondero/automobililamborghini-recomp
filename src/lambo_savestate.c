@@ -57,6 +57,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "lambo_log.h"
+
 #include "recomp.h"
 
 // After a wholesale RDRAM restore, guest RAM's OSThread.context fields hold the SAVE process's
@@ -102,12 +104,12 @@ static const char* slot_path(void) {
 static void do_save(uint8_t* rdram, const char* path) {
     char tmp[1100];
     if ((size_t)snprintf(tmp, sizeof(tmp), "%s.tmp", path) >= sizeof(tmp)) {
-        fprintf(stderr, "[state] save: path too long: %s\n", path);
+        LAMBO_LOG("state", "save: path too long: %s\n", path);
         return;
     }
     FILE* f = fopen(tmp, "wb");
     if (f == NULL) {
-        fprintf(stderr, "[state] save: cannot open %s for write\n", tmp);
+        LAMBO_LOG("state", "save: cannot open %s for write\n", tmp);
         return;
     }
     state_header_t h;
@@ -122,7 +124,7 @@ static void do_save(uint8_t* rdram, const char* path) {
     ok = ok && (fflush(f) == 0);
     fclose(f);
     if (!ok) {
-        fprintf(stderr, "[state] save: write failed for %s\n", path);
+        LAMBO_LOG("state", "save: write failed for %s\n", path);
         remove(tmp);
         return;
     }
@@ -134,11 +136,11 @@ static void do_save(uint8_t* rdram, const char* path) {
     if (rename(tmp, path) != 0) {
         remove(path);
         if (rename(tmp, path) != 0) {
-            fprintf(stderr, "[state] save: could not publish %s; snapshot kept at %s\n", path, tmp);
+            LAMBO_LOG("state", "save: could not publish %s; snapshot kept at %s\n", path, tmp);
             return;
         }
     }
-    fprintf(stderr, "[state] saved %u bytes to %s (state=%u)\n",
+    LAMBO_LOG("state", "saved %u bytes to %s (state=%u)\n",
             RDRAM_SNAP_SIZE, path, h.state);
 }
 
@@ -148,32 +150,32 @@ static void do_save(uint8_t* rdram, const char* path) {
 static void do_load(uint8_t* rdram, const char* path) {
     FILE* f = fopen(path, "rb");
     if (f == NULL) {
-        fprintf(stderr, "[state] load: cannot open %s\n", path);
+        LAMBO_LOG("state", "load: cannot open %s\n", path);
         return;
     }
     state_header_t h;
     if (fread(&h, 1, sizeof(h), f) != sizeof(h) ||
         memcmp(h.magic, STATE_MAGIC, 8) != 0) {
-        fprintf(stderr, "[state] load: %s is not a save-state (bad magic)\n", path);
+        LAMBO_LOG("state", "load: %s is not a save-state (bad magic)\n", path);
         fclose(f);
         return;
     }
     if (h.version != STATE_VERSION || h.rdram_size != RDRAM_SNAP_SIZE) {
-        fprintf(stderr, "[state] load: %s version/size mismatch (v%u size %u)\n",
+        LAMBO_LOG("state", "load: %s version/size mismatch (v%u size %u)\n",
                 path, h.version, h.rdram_size);
         fclose(f);
         return;
     }
     uint8_t* buf = (uint8_t*)malloc(RDRAM_SNAP_SIZE);
     if (buf == NULL) {
-        fprintf(stderr, "[state] load: out of memory\n");
+        LAMBO_LOG("state", "load: out of memory\n");
         fclose(f);
         return;
     }
     size_t got = fread(buf, 1, RDRAM_SNAP_SIZE, f);
     fclose(f);
     if (got != RDRAM_SNAP_SIZE) {
-        fprintf(stderr, "[state] load: %s truncated (%zu/%u bytes)\n",
+        LAMBO_LOG("state", "load: %s truncated (%zu/%u bytes)\n",
                 path, got, RDRAM_SNAP_SIZE);
         free(buf);
         return;
@@ -183,7 +185,7 @@ static void do_load(uint8_t* rdram, const char* path) {
     // Repair the native OSThread.context pointers the memcpy just clobbered with the save
     // process's addresses; without this the scheduler dereferences garbage on the next tick.
     ultramodern_relink_thread_contexts(rdram);
-    fprintf(stderr, "[state] loaded %u bytes from %s (state=%u)\n",
+    LAMBO_LOG("state", "loaded %u bytes from %s (state=%u)\n",
             RDRAM_SNAP_SIZE, path, h.state);
 }
 

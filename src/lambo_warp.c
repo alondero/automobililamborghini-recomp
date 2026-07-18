@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "lambo_log.h"
 #include "recomp.h"
 
 // Audio quiesce pair the ROM runs before every state->7 write (menu RACE action,
@@ -84,7 +85,7 @@ static void parse_env_request(void) {
         if (p != NULL) p++;
     }
     if (v[0] < 1 || v[0] > 6) {
-        fprintf(stderr, "[warp] LAMBO_WARP=%s invalid: circuit must be 1-6\n", env);
+        LAMBO_LOG("warp", "LAMBO_WARP=%s invalid: circuit must be 1-6\n", env);
         return;
     }
     atomic_store_explicit(&g_warp_request, pack_request(v[0] - 1, v[1], v[2], v[3]),
@@ -146,6 +147,6 @@ void lambo_warp_tick(uint8_t* rdram, recomp_context* ctx) {
     func_80008ECC(rdram, ctx);
     MEM_H(0, (gpr)(int32_t)WARP_STATE) = 7;
 
-    fprintf(stderr, "[warp] %s: single race, %d lap(s), car %d, %d player(s) (from state %d)\n",
+    LAMBO_LOG("warp", "%s: single race, %d lap(s), car %d, %d player(s) (from state %d)\n",
             lambo_scene_table[circuit0], laps, car, players, state);
 }
