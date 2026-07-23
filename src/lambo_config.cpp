@@ -48,6 +48,11 @@ bool g_widescreen_sky_match = true;
 // record pointer being non-null, so segments without a scenery DL are unaffected.
 bool g_no_lod = true;
 
+// Per-circuit refinement of the global no_lod. Rationale + JSON key in
+// lambo_config.h; see that header for the ship-safe default and the
+// basic/pro split.
+std::array<bool, 6> g_no_lod_circuit{true, true, true, false, false, false};
+
 // Fog density multipliers (see lambo_config.h). Stored as double: the round-trip
 // validity check in from_or_default would reject float (0.3 -> 0.3f -> 0.30000001...).
 double g_fog_scale = 1.0;
@@ -102,6 +107,7 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"widescreen_fog_match", g_widescreen_fog_match},
         {"widescreen_sky_match", g_widescreen_sky_match},
         {"no_lod", g_no_lod},
+        {"no_lod_circuit", g_no_lod_circuit},
         {"fog_scale", g_fog_scale},
         {"fog_scale_circuit", g_fog_scale_circuit},
         {"draw_distance", g_draw_distance},
@@ -128,6 +134,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "widescreen_fog_match", g_widescreen_fog_match);
     from_or_default(j, "widescreen_sky_match", g_widescreen_sky_match);
     from_or_default(j, "no_lod", g_no_lod);
+    from_or_default(j, "no_lod_circuit", g_no_lod_circuit);
     from_or_default(j, "fog_scale", g_fog_scale);
     from_or_default(j, "fog_scale_circuit", g_fog_scale_circuit);
     from_or_default(j, "draw_distance", g_draw_distance);
@@ -320,6 +327,16 @@ bool no_lod() {
         return v[0] == '1';
     }
     return g_no_lod;
+}
+
+// Per-circuit refinement of no_lod (see lambo_config.h). No env var: the JSON
+// array is the only knob, since per-circuit toggling is a user-facing choice,
+// not a headless test parameter. The function returns the global no_lod for an
+// out-of-range circuit so a stale array length never disables PVS synth
+// wholesale.
+bool no_lod_circuit(int circuit) {
+    if (circuit < 0 || circuit >= (int)g_no_lod_circuit.size()) return no_lod();
+    return g_no_lod_circuit[(size_t)circuit];
 }
 
 // LAMBO_FOG_SCALE=<float> overrides both JSON keys for headless capture/testing.

@@ -72,6 +72,17 @@ bool widescreen_sky_match();
 // "no_lod" (default true), overridable by LAMBO_NO_LOD=1/0.
 bool no_lod();
 
+// Per-circuit refinement of no_lod: the full-track walk (PVS synth) is what fixes
+// the cross-track distance pop-in (PR #122), but on the pro tracks it surfaces
+// back-of-buildings / cross-track geometry the track authors relied on the
+// authored PVS rows to hide. Ship-safe default: pro tracks (3-5) ship with the
+// PVS synth OFF (N64-style authoring); basic tracks (0-2) ship with it ON (modern
+// pop-in fix). The radius cull and the 2P+ scenery sub-DL stay gated on the
+// global no_lod() so distance culling and 2P scenery work on all 6 tracks.
+// graphics.json key "no_lod_circuit" (array of 6 bools, default [true, true, true,
+// false, false, false]).
+bool no_lod_circuit(int circuit);
+
 // Fog density multiplier applied to every fog moveword in the frame DL: 1.0 =
 // authored fog, 0.0 = no fog, values in between thin the fog uniformly without
 // moving its onset distance. graphics.json keys "fog_scale" (global, default 1.0)
