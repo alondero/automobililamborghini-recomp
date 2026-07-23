@@ -41,13 +41,17 @@ extern "C" void lambo_no_lod_draw_distance(uint8_t* rdram) {
     }
     // ROM copy of the float[6][5] at 0x80088FD0 ([circuit][player-count column]),
     // extracted from the .z64 at 0x89BD0 (= vram - 0x80000000 + 0xC00).
+    // Basics: index 0-2 (1P radii 55000/50000/40000), pros 3-5 (45000/35000/35000).
+    // Index 4 is the city track (second pro) — the one we routinely tune down via
+    // draw_distance_circuit[4] in graphics.json. See docs/TRACK_INDEX.md for the
+    // full 0-based/1-based/F-key mapping.
     static constexpr float kAuthored[6][5] = {
-        {55000.0f, 55000.0f, 50000.0f, 25000.0f, 25000.0f},
-        {50000.0f, 50000.0f, 40000.0f, 20000.0f, 20000.0f},
-        {40000.0f, 40000.0f, 30000.0f, 20000.0f, 20000.0f},
-        {45000.0f, 45000.0f, 30000.0f, 25000.0f, 25000.0f},
-        {35000.0f, 35000.0f, 27500.0f, 25000.0f, 25000.0f},
-        {35000.0f, 35000.0f, 27500.0f, 25000.0f, 25000.0f},
+        {55000.0f, 55000.0f, 50000.0f, 25000.0f, 25000.0f},  // circuit 1 (basic)
+        {50000.0f, 50000.0f, 40000.0f, 20000.0f, 20000.0f},  // circuit 2 (basic)
+        {40000.0f, 40000.0f, 30000.0f, 20000.0f, 20000.0f},  // circuit 3 (basic)
+        {45000.0f, 45000.0f, 30000.0f, 25000.0f, 25000.0f},  // circuit 4 (pro 1)
+        {35000.0f, 35000.0f, 27500.0f, 25000.0f, 25000.0f},  // circuit 5 (pro 2, city)
+        {35000.0f, 35000.0f, 27500.0f, 25000.0f, 25000.0f},  // circuit 6 (pro 3)
     };
     constexpr uint32_t kTableAddr = 0x80088FD0u;
     constexpr float kUnlimited = 1e9f;  // beyond any on-track distance
@@ -80,6 +84,7 @@ constexpr gpr kHdrPtrAddr  = (gpr)(int32_t)0x80098238u;  // track asset header p
 constexpr gpr kCamSegAddr  = (gpr)(int32_t)0x800BF1CCu;  // camera segment (this viewport)
 constexpr gpr kPvsPtrAddr  = (gpr)(int32_t)0x800CE678u;  // PVS base (header+0x4 copy)
 constexpr gpr kRecListAddr = (gpr)(int32_t)0x800BF1D0u;  // 64-byte segment records (viewport)
+constexpr gpr kCurCircuitAddr = (gpr)(int32_t)0x800CE794u;  // current circuit (no_lod_audit.md §8)
 
 int16_t s_synth_row[256];
 int s_synth_n = -1;  // -1 = passthrough (feature off or sanity check failed)
@@ -96,6 +101,13 @@ bool valid_guest_ptr(int32_t p) {
 // this walk and the authored row is used untouched.
 void build_synth_row(uint8_t* rdram) {
     s_synth_n = -1;
+    // Per-circuit gate (2026-07-23): the PVS synth surfaces back-of-building /
+    // cross-track geometry on the pro tracks that the authored PVS rows
+    // deliberately hid. See lambo_config.h for the basic/pro default. The
+    // radius cull and 2P+ scenery sub-DL stay gated on the global no_lod()
+    // so they still work on tracks where the synth is off.
+    int32_t cur_circuit = MEM_H(0, kCurCircuitAddr);
+    if (!lambo::config::no_lod_circuit(cur_circuit)) return;
     int32_t hdr = MEM_W(0, kHdrPtrAddr);
     int32_t pvs = MEM_W(0, kPvsPtrAddr);
     int32_t recs = MEM_W(0, kRecListAddr);
@@ -132,6 +144,9 @@ void build_synth_row(uint8_t* rdram) {
 
 // Hooked after the row-entry fetch (before 0x8000D05C): replaces the authored entry
 // with the synthesized row's. idx is the loop counter the fetch used ($t4).
+// s_synth_n < 0 here means "passthrough" -- one of: global no_lod off, per-circuit
+// no_lod_circuit off (city/pro tracks), or build_synth_row failed its sanity
+// checks. All three fall back to the ROM-authored 10-slot PVS row.
 extern "C" uint32_t lambo_no_lod_pvs_entry(uint8_t* rdram, uint32_t orig, uint32_t idx) {
     if (!lambo::config::no_lod()) {
         s_synth_n = -1;
@@ -147,7 +162,8 @@ extern "C" uint32_t lambo_no_lod_pvs_entry(uint8_t* rdram, uint32_t orig, uint32
 }
 
 // Hooked over the loop-cap test result (before 0x8000D908): keep looping until the
-// synthesized row is exhausted instead of stopping at 10. next is i+1 ($t4).
+// synthesized row is exhausted instead of stopping at 10. next is i+1 ($t4). Like
+// pvs_entry, s_synth_n < 0 here means passthrough (see pvs_entry comment).
 extern "C" uint32_t lambo_no_lod_pvs_more(uint8_t* rdram, uint32_t orig, uint32_t next) {
     (void)rdram;
     if (!lambo::config::no_lod() || s_synth_n < 0) return orig;

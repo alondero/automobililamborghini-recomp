@@ -50,6 +50,8 @@ void func_80008ECC(uint8_t* rdram, recomp_context* ctx);
 
 // The game's circuits are unnamed (menu shows "CIRCUIT" + a numbered map preview;
 // ROM has no track-name strings), so the scene table mirrors that presentation.
+// The basic/pro split is documented in docs/TRACK_INDEX.md, not in these labels —
+// the labels feed runtime log output, and the basic/pro category is a doc concern.
 static const char* const lambo_scene_table[6] = {
     "CIRCUIT 1", "CIRCUIT 2", "CIRCUIT 3", "CIRCUIT 4", "CIRCUIT 5", "CIRCUIT 6",
 };
