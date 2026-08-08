@@ -34,12 +34,15 @@ ultramodern::renderer::GraphicsConfig default_graphics_config();
 // users always have a complete, editable file on disk. Returns the applied config.
 ultramodern::renderer::GraphicsConfig load_and_apply_graphics();
 
+// Snapshot/apply helpers for the in-app menu. apply_graphics() updates RT64 live
+// through ultramodern's config action queue and persists the same value.
+ultramodern::renderer::GraphicsConfig current_graphics();
+void apply_graphics(const ultramodern::renderer::GraphicsConfig& cfg);
+
 // Persist the given config (full overwrite of graphics.json).
 void save_graphics(const ultramodern::renderer::GraphicsConfig& cfg);
 
-// Persist a runtime window-mode change (F11) by re-reading the on-disk file and
-// updating only wm_option, so concurrent hand-edits to other keys survive. A file
-// that fails to parse is left untouched.
+// Persist a runtime window-mode change (F11/menu) in the main-thread snapshot.
 void update_saved_window_mode(ultramodern::renderer::WindowMode wm);
 
 // Requested window size for windowed mode (from graphics.json; defaults 1600x900,
@@ -61,16 +64,19 @@ std::string texture_dump_dir();
 // graphics.json key "widescreen_fog_match" (default true), overridable by
 // LAMBO_FOG_MATCH_1P=1/0. The rewrite still self-gates on player count >= 3.
 bool widescreen_fog_match();
+void set_widescreen_fog_match(bool enabled);
 
 // Draw the sky panorama in 3P/4P split screen like 1P/2P (issue #84).
 // graphics.json key "widescreen_sky_match" (default true), overridable by
 // LAMBO_SKY_MATCH_1P=1/0. Only flips a branch that 1P/2P already take.
 bool widescreen_sky_match();
+void set_widescreen_sky_match(bool enabled);
 
 // Remove the ROM's per-mode LOD reductions (issues #87/#91): emit each track
 // segment's scenery layer in 2P-4P races like 1P does. graphics.json key
 // "no_lod" (default true), overridable by LAMBO_NO_LOD=1/0.
 bool no_lod();
+void set_no_lod(bool enabled);
 
 // Per-circuit refinement of no_lod: the full-track walk (PVS synth) is what fixes
 // the cross-track distance pop-in (PR #122), but on the pro tracks it surfaces
@@ -82,6 +88,7 @@ bool no_lod();
 // graphics.json key "no_lod_circuit" (array of 6 bools, default [true, true, true,
 // false, false, false]).
 bool no_lod_circuit(int circuit);
+void set_no_lod_circuit(int circuit, bool enabled);
 
 // Fog density multiplier applied to every fog moveword in the frame DL: 1.0 =
 // authored fog, 0.0 = no fog, values in between thin the fog uniformly without
@@ -90,6 +97,8 @@ bool no_lod_circuit(int circuit);
 // multiplied with the global -- lets a hazy city track be cleared individually).
 // LAMBO_FOG_SCALE=<float> overrides the whole computation for capture/testing.
 double fog_scale(int circuit);
+double global_fog_scale();
+void set_global_fog_scale(double scale);
 
 // Draw-distance multiplier applied (while no_lod is on) to the authored per-circuit
 // segment-cull radii the scene builder tests visibility-list entries against.
@@ -101,6 +110,8 @@ double fog_scale(int circuit);
 // multipliers, default all 1.0, multiplied with the global).
 // LAMBO_DRAW_DISTANCE=<float> overrides the whole computation for capture/testing.
 double draw_distance(int circuit);
+double global_draw_distance();
+void set_global_draw_distance(double scale);
 
 } // namespace config
 } // namespace lambo
