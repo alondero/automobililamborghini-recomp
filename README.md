@@ -21,7 +21,11 @@ Graphics settings persist in `graphics.json` (in `%LOCALAPPDATA%\LamborghiniReco
 Windows, `~/.config/LamborghiniRecomp` elsewhere; create a `portable.txt` in the
 directory you launch from to keep everything there instead). Game saves live in the
 same directory. The file is created with
-defaults on first run — edit it and relaunch. The schema and vocabulary match the other
+defaults on first run. On Windows, the **Graphics** and **Enhancements** menu-bar menus
+apply the commonly used options immediately and save them automatically. The graphics API
+selection is also in the menu but takes effect on the next launch because RT64 creates the
+backend at startup. Advanced settings (texture paths and per-circuit numeric overrides) remain
+available by editing the file and relaunching. The schema and vocabulary match the other
 N64Recomp ports (Zelda 64: Recompiled et al.):
 
 | Key | Values | Default | Meaning |

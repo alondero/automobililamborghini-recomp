@@ -36,9 +36,6 @@ extern "C" uint32_t lambo_no_lod_scenery_guard(uint8_t* rdram, uint32_t at) {
 // it ran would restore the rewritten values. The forward-cone/half-plane tests and
 // the per-frame visibility walk still decide what is drawn.
 extern "C" void lambo_no_lod_draw_distance(uint8_t* rdram) {
-    if (!lambo::config::no_lod()) {
-        return;
-    }
     // ROM copy of the float[6][5] at 0x80088FD0 ([circuit][player-count column]),
     // extracted from the .z64 at 0x89BD0 (= vram - 0x80000000 + 0xC00).
     // Basics: index 0-2 (1P radii 55000/50000/40000), pros 3-5 (45000/35000/35000).
@@ -55,8 +52,12 @@ extern "C" void lambo_no_lod_draw_distance(uint8_t* rdram) {
     };
     constexpr uint32_t kTableAddr = 0x80088FD0u;
     constexpr float kUnlimited = 1e9f;  // beyond any on-track distance
+    const bool enabled = lambo::config::no_lod();
     for (int c = 0; c < 6; c++) {
-        const double scale = lambo::config::draw_distance(c);
+        // This hook runs every frame, so switching the enhancement off must also
+        // put the ROM-authored radii back. An early return would leave the most
+        // recently expanded table live until the next track load.
+        const double scale = enabled ? lambo::config::draw_distance(c) : 1.0;
         for (int p = 0; p < 5; p++) {
             float r = scale <= 0.0 ? kUnlimited : (float)(kAuthored[c][p] * scale);
             if (r > kUnlimited) r = kUnlimited;

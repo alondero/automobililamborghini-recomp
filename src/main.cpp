@@ -41,6 +41,7 @@
 #include "lambo_crash.h"   // issue #13 / A14
 #include "lambo_gpu_advisory.h"  // issue #109: outdated-driver popup handoff
 #include "lambo_log.h"   
+#include "lambo_menu.h"
 // ultramodern's native VI API (events.cpp), used by the promote_vi_context RT64 bridge.
 extern "C" void osViSwapBuffer(uint8_t* rdram, int32_t frameBufPtr);
 extern "C" void osViSetMode(uint8_t* rdram, int32_t mode_);
@@ -321,17 +322,7 @@ static SDL_Window* g_sdl_window = nullptr;
 //    an upstream ultramodern flaw). Nothing renderer-side consumes wm_option, so the
 //    live config staying at its startup value is harmless.
 static void toggle_fullscreen() {
-    if (g_sdl_window == nullptr) return;
-    bool to_fullscreen = (SDL_GetWindowFlags(g_sdl_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == 0;
-    if (SDL_SetWindowFullscreen(g_sdl_window,
-                                to_fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0) != 0) {
-        LAMBO_LOG("config", "fullscreen toggle FAILED: %s\n", SDL_GetError());
-        return; // window unchanged -> persist nothing, config and reality stay agreed
-    }
-    lambo::config::update_saved_window_mode(
-        to_fullscreen ? ultramodern::renderer::WindowMode::Fullscreen
-                      : ultramodern::renderer::WindowMode::Windowed);
-    LAMBO_LOG("config", "fullscreen %s (F11 / Alt+Enter)\n", to_fullscreen ? "ON" : "OFF");
+    lambo::menu::toggle_fullscreen();
 }
 
 static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/) {
@@ -377,6 +368,7 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
             return ultramodern::renderer::WindowHandle{};
         }
         g_sdl_window = window;
+        lambo::menu::attach(window);
 #if defined(__linux__)
         LAMBO_LOG("rt64", "SDL window created (%dx%d, Vulkan surface)\n",
                      win_size.width, win_size.height);
@@ -410,6 +402,9 @@ static void update_gfx_stub(void* /*gfx_data*/) {
     if (lambo_rt64::enabled()) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            if (lambo::menu::handle_event(event)) {
+                continue;
+            }
             // Play mode has no VI cap (see quit_after_vis), so closing the window is the
             // quit path: reuse the summary+_Exit teardown (game threads are torn down by
             // process exit; see boot_summary_and_exit's rationale).

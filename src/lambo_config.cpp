@@ -3,10 +3,11 @@
 // Schema and behaviour mirror Zelda64Recomp's src/game/config.cpp graphics.json
 // (same key names, same per-key fall-back-to-default on missing/corrupt values,
 // and a "portable.txt in the LAUNCH directory -> keep config there" escape hatch),
-// minus the RmlUi menu: this port's UI is the JSON file itself plus hotkeys.
+// with a lightweight native menu for the common live-safe options.
 #include "lambo_config.h"
 
 #include <array>
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -35,34 +36,38 @@ std::string g_texture_dump;
 // Widen the dense 3P/4P split-screen fog to the open 1P window/colour (issue #83).
 // Enhancement default-on, consistent with the widescreen wave; 1P/2P are unaffected
 // regardless (the rewrite self-gates on player count).
-bool g_widescreen_fog_match = true;
+std::atomic_bool g_widescreen_fog_match{true};
 
 // Draw the sky panorama in 3P/4P split screen like 1P/2P (issue #84). Same
 // enhancement family as the fog match; 1P/2P take the sky path natively anyway.
-bool g_widescreen_sky_match = true;
+std::atomic_bool g_widescreen_sky_match{true};
 
 // Remove the ROM's per-mode LOD reductions (issues #87/#91): the scene builder
 // func_8000A6C0 emits each track segment's scenery layer (record+0xC sub-DL: the
 // distant canyon walls / roadside relief) only when players < 2, so 2P-4P races
 // lose the far scenery entirely. Default-on; the emit still self-gates on the
 // record pointer being non-null, so segments without a scenery DL are unaffected.
-bool g_no_lod = true;
+std::atomic_bool g_no_lod{true};
 
 // Per-circuit refinement of the global no_lod. Rationale + JSON key in
 // lambo_config.h; see that header for the ship-safe default and the
 // basic/pro split.
-std::array<bool, 6> g_no_lod_circuit{true, true, true, false, false, false};
+std::array<std::atomic_bool, 6> g_no_lod_circuit{{true, true, true, false, false, false}};
 
 // Fog density multipliers (see lambo_config.h). Stored as double: the round-trip
 // validity check in from_or_default would reject float (0.3 -> 0.3f -> 0.30000001...).
-double g_fog_scale = 1.0;
+std::atomic<double> g_fog_scale{1.0};
 std::array<double, 6> g_fog_scale_circuit{1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
 
 // Draw-distance multipliers (see lambo_config.h). 1.5 covers the worst measured
 // authored-radius pop (circuit 5 segment 31 at ~51k units vs its 35000 radius)
 // without reaching the cross-track geometry an unlimited radius exposes.
-double g_draw_distance = 1.5;
+std::atomic<double> g_draw_distance{1.5};
 std::array<double, 6> g_draw_distance_circuit{1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+
+// Main-thread-owned snapshot used by native menu actions. It avoids reading the
+// runtime's reference-returning getter while another thread may be applying a change.
+ultramodern::renderer::GraphicsConfig g_current_graphics{};
 
 // Read a key into `out`, keeping the existing (default) value when the key is
 // missing or invalid. NLOHMANN_JSON_SERIALIZE_ENUM does NOT throw on an
@@ -104,13 +109,16 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"window_height", g_window_size.height},
         {"texture_pack", g_texture_pack},
         {"texture_dump", g_texture_dump},
-        {"widescreen_fog_match", g_widescreen_fog_match},
-        {"widescreen_sky_match", g_widescreen_sky_match},
-        {"no_lod", g_no_lod},
-        {"no_lod_circuit", g_no_lod_circuit},
-        {"fog_scale", g_fog_scale},
+        {"widescreen_fog_match", g_widescreen_fog_match.load()},
+        {"widescreen_sky_match", g_widescreen_sky_match.load()},
+        {"no_lod", g_no_lod.load()},
+        {"no_lod_circuit", nlohmann::json::array({
+            g_no_lod_circuit[0].load(), g_no_lod_circuit[1].load(),
+            g_no_lod_circuit[2].load(), g_no_lod_circuit[3].load(),
+            g_no_lod_circuit[4].load(), g_no_lod_circuit[5].load()})},
+        {"fog_scale", g_fog_scale.load()},
         {"fog_scale_circuit", g_fog_scale_circuit},
-        {"draw_distance", g_draw_distance},
+        {"draw_distance", g_draw_distance.load()},
         {"draw_distance_circuit", g_draw_distance_circuit},
     };
 }
@@ -131,14 +139,31 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "window_height", g_window_size.height);
     from_or_default(j, "texture_pack", g_texture_pack);
     from_or_default(j, "texture_dump", g_texture_dump);
-    from_or_default(j, "widescreen_fog_match", g_widescreen_fog_match);
-    from_or_default(j, "widescreen_sky_match", g_widescreen_sky_match);
-    from_or_default(j, "no_lod", g_no_lod);
-    from_or_default(j, "no_lod_circuit", g_no_lod_circuit);
-    from_or_default(j, "fog_scale", g_fog_scale);
+    bool widescreen_fog_match = g_widescreen_fog_match.load();
+    bool widescreen_sky_match = g_widescreen_sky_match.load();
+    bool no_lod = g_no_lod.load();
+    std::array<bool, 6> no_lod_circuit{};
+    for (size_t i = 0; i < no_lod_circuit.size(); ++i) {
+        no_lod_circuit[i] = g_no_lod_circuit[i].load();
+    }
+    double fog_scale = g_fog_scale.load();
+    double draw_distance = g_draw_distance.load();
+    from_or_default(j, "widescreen_fog_match", widescreen_fog_match);
+    from_or_default(j, "widescreen_sky_match", widescreen_sky_match);
+    from_or_default(j, "no_lod", no_lod);
+    from_or_default(j, "no_lod_circuit", no_lod_circuit);
+    from_or_default(j, "fog_scale", fog_scale);
     from_or_default(j, "fog_scale_circuit", g_fog_scale_circuit);
-    from_or_default(j, "draw_distance", g_draw_distance);
+    from_or_default(j, "draw_distance", draw_distance);
     from_or_default(j, "draw_distance_circuit", g_draw_distance_circuit);
+    g_widescreen_fog_match.store(widescreen_fog_match);
+    g_widescreen_sky_match.store(widescreen_sky_match);
+    g_no_lod.store(no_lod);
+    for (size_t i = 0; i < no_lod_circuit.size(); ++i) {
+        g_no_lod_circuit[i].store(no_lod_circuit[i]);
+    }
+    g_fog_scale.store(fog_scale);
+    g_draw_distance.store(draw_distance);
     // Sanity-bound the window size: below the N64 framebuffer is useless, above 8K
     // is a typo -- either way SDL_CreateWindow would fail and the port would run
     // permanently headless, so reset to defaults instead.
@@ -243,6 +268,7 @@ ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
     const ReadResult r = read_graphics_file(path, cfg);
 
     ultramodern::renderer::set_graphics_config(cfg);
+    g_current_graphics = cfg;
     // Write the merged config back so the on-disk file is always complete and
     // editable (new keys appear with their defaults after an upgrade) -- but NEVER
     // overwrite a file that failed to parse: a hand-edit typo must stay recoverable,
@@ -254,17 +280,22 @@ ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
     return cfg;
 }
 
-void update_saved_window_mode(ultramodern::renderer::WindowMode wm) {
-    // Persist a runtime window-mode change by re-reading the on-disk file and
-    // updating ONLY wm_option -- a user hand-editing other keys while the game runs
-    // must not have those edits clobbered by an F11 press.
-    ultramodern::renderer::GraphicsConfig cfg = default_graphics_config();
-    const std::filesystem::path path = graphics_json_path();
-    if (read_graphics_file(path, cfg) == ReadResult::Unparseable) {
-        return; // don't destroy a recoverable (broken) file just to save a toggle
-    }
-    cfg.wm_option = wm;
+ultramodern::renderer::GraphicsConfig current_graphics() {
+    return g_current_graphics;
+}
+
+void apply_graphics(const ultramodern::renderer::GraphicsConfig& cfg) {
+    g_current_graphics = cfg;
+    ultramodern::renderer::set_graphics_config(cfg);
     save_graphics(cfg);
+}
+
+void update_saved_window_mode(ultramodern::renderer::WindowMode wm) {
+    // All runtime config values now have one main-thread snapshot. Do not re-run
+    // from_json here: its enhancement fields are read by the game/render threads.
+    // Mutating those arrays during an F11 press would introduce a data race.
+    g_current_graphics.wm_option = wm;
+    save_graphics(g_current_graphics);
 }
 
 void save_graphics(const ultramodern::renderer::GraphicsConfig& cfg) {
@@ -310,7 +341,12 @@ bool widescreen_fog_match() {
     if (const char* v = std::getenv("LAMBO_FOG_MATCH_1P")) {
         return v[0] == '1';
     }
-    return g_widescreen_fog_match;
+    return g_widescreen_fog_match.load();
+}
+
+void set_widescreen_fog_match(bool enabled) {
+    g_widescreen_fog_match.store(enabled);
+    save_graphics(g_current_graphics);
 }
 
 // LAMBO_SKY_MATCH_1P=1/0 overrides the JSON key for headless capture/testing.
@@ -318,7 +354,12 @@ bool widescreen_sky_match() {
     if (const char* v = std::getenv("LAMBO_SKY_MATCH_1P")) {
         return v[0] == '1';
     }
-    return g_widescreen_sky_match;
+    return g_widescreen_sky_match.load();
+}
+
+void set_widescreen_sky_match(bool enabled) {
+    g_widescreen_sky_match.store(enabled);
+    save_graphics(g_current_graphics);
 }
 
 // LAMBO_NO_LOD=1/0 overrides the JSON key for headless capture/testing.
@@ -326,7 +367,12 @@ bool no_lod() {
     if (const char* v = std::getenv("LAMBO_NO_LOD")) {
         return v[0] == '1';
     }
-    return g_no_lod;
+    return g_no_lod.load();
+}
+
+void set_no_lod(bool enabled) {
+    g_no_lod.store(enabled);
+    save_graphics(g_current_graphics);
 }
 
 // Per-circuit refinement of no_lod (see lambo_config.h). No env var: the JSON
@@ -336,7 +382,13 @@ bool no_lod() {
 // wholesale.
 bool no_lod_circuit(int circuit) {
     if (circuit < 0 || circuit >= (int)g_no_lod_circuit.size()) return no_lod();
-    return g_no_lod_circuit[(size_t)circuit];
+    return g_no_lod_circuit[(size_t)circuit].load();
+}
+
+void set_no_lod_circuit(int circuit, bool enabled) {
+    if (circuit < 0 || circuit >= (int)g_no_lod_circuit.size()) return;
+    g_no_lod_circuit[(size_t)circuit].store(enabled);
+    save_graphics(g_current_graphics);
 }
 
 // LAMBO_FOG_SCALE=<float> overrides both JSON keys for headless capture/testing.
@@ -345,7 +397,7 @@ double fog_scale(int circuit) {
     if (const char* v = std::getenv("LAMBO_FOG_SCALE")) {
         s = std::atof(v);
     } else {
-        s = g_fog_scale;
+        s = g_fog_scale.load();
         if (circuit >= 0 && circuit < (int)g_fog_scale_circuit.size()) {
             s *= g_fog_scale_circuit[(size_t)circuit];
         }
@@ -353,6 +405,17 @@ double fog_scale(int circuit) {
     if (s < 0.0) s = 0.0;
     if (s > 8.0) s = 8.0;
     return s;
+}
+
+double global_fog_scale() {
+    return g_fog_scale.load();
+}
+
+void set_global_fog_scale(double scale) {
+    if (scale < 0.0) scale = 0.0;
+    if (scale > 8.0) scale = 8.0;
+    g_fog_scale.store(scale);
+    save_graphics(g_current_graphics);
 }
 
 // LAMBO_DRAW_DISTANCE=<float> overrides both JSON keys for capture/testing.
@@ -363,7 +426,7 @@ double draw_distance(int circuit) {
     if (const char* v = std::getenv("LAMBO_DRAW_DISTANCE")) {
         s = std::atof(v);
     } else {
-        s = g_draw_distance;
+        s = g_draw_distance.load();
         if (circuit >= 0 && circuit < (int)g_draw_distance_circuit.size()) {
             s *= g_draw_distance_circuit[(size_t)circuit];
         }
@@ -372,6 +435,17 @@ double draw_distance(int circuit) {
     if (s < 0.1) s = 0.1;
     if (s > 100.0) s = 100.0;
     return s;
+}
+
+double global_draw_distance() {
+    return g_draw_distance.load();
+}
+
+void set_global_draw_distance(double scale) {
+    if (scale > 0.0 && scale < 0.1) scale = 0.1;
+    if (scale > 100.0) scale = 100.0;
+    g_draw_distance.store(scale <= 0.0 ? 0.0 : scale);
+    save_graphics(g_current_graphics);
 }
 
 } // namespace config

@@ -20,6 +20,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(lamborghini_modern LANGUAGES C CXX)
 
+include(CTest)
+
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -36,6 +38,20 @@ set(N64MR ${CMAKE_CURRENT_SOURCE_DIR}/lib/N64ModernRuntime)
 if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/CMakeLists.txt)
     message(FATAL_ERROR "lib/rt64 submodule is missing. Initialise it first:\n"
         "  git submodule update --init --recursive")
+endif()
+
+if(BUILD_TESTING)
+    add_executable(lambo_config_tests
+        tests/test_live_config.cpp
+        src/lambo_config.cpp
+        src/lambo_log.cpp
+    )
+    target_include_directories(lambo_config_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/ultramodern/include
+        ${N64MR}/thirdparty
+    )
+    add_test(NAME lambo_config_live_updates COMMAND lambo_config_tests)
 endif()
 set(RT64_STATIC TRUE)
 if(WIN32)
@@ -140,6 +156,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/stub_renderer.cpp
         src/lambo_audio.cpp    # SDL2 push-audio sink for the AI buffer (audio epic #53, PR 1 of 3)
         src/lambo_config.cpp   # persistent graphics.json -> ultramodern GraphicsConfig (enhancements #1/#2)
+        src/lambo_menu.cpp     # lightweight native Win32 menu bar; live config actions + persistence
         src/lambo_crash.cpp    # native crash backtrace (issue #13 / A14): Win32 EXCEPTION_POINTERS +
                                # POSIX sigaction handler printing KSEG0/RDRAM offset + a 32-entry
                                # function-lookup trace ring. No deps beyond libc + DbgHelp (Win) /
