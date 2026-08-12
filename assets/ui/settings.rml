@@ -1,0 +1,18 @@
+<rml>
+  <head>
+    <title>Settings</title>
+    <link type="text/rcss" href="lambo.rcss"/>
+  </head>
+  <body>
+    <div id="window">
+      <div class="panel">
+        <h1>Settings</h1>
+        <button id="autofocus" onclick="page:graphics">Graphics</button>
+        <button onclick="page:enhancements">Enhancements</button>
+        <button onclick="page:controls">Controls (coming soon)</button>
+        <button onclick="page:haptics">Haptics (coming soon)</button>
+        <button onclick="back">Back</button>
+      </div>
+    </div>
+  </body>
+</rml>

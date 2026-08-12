@@ -1,0 +1,51 @@
+<rml>
+  <head>
+    <title>Graphics</title>
+    <link type="text/rcss" href="../lambo.rcss"/>
+  </head>
+  <body>
+    <div id="window">
+      <div class="panel">
+        <h1>Graphics</h1>
+        <div id="graphics-summary" class="summary">Loading...</div>
+        <p class="warning">Graphics API changes are marked restart required.</p>
+        <div class="columns">
+          <div class="column">
+            <h2>Display</h2>
+            <button id="autofocus" onclick="setting:res:auto">Internal resolution: Automatic</button>
+            <button onclick="setting:res:original">Internal resolution: Original</button>
+            <button onclick="setting:res:2x">Internal resolution: Original 2x</button>
+            <button onclick="setting:ss:1">Supersampling: 1x</button>
+            <button onclick="setting:ss:2">Supersampling: 2x</button>
+            <button onclick="setting:ss:3">Supersampling: 3x</button>
+            <button onclick="setting:ss:4">Supersampling: 4x</button>
+            <button onclick="setting:aspect:original">Aspect ratio: Original</button>
+            <button onclick="setting:aspect:expand">Aspect ratio: Expand</button>
+            <button onclick="setting:hud:original">HUD: Original</button>
+            <button onclick="setting:hud:16x9">HUD: Clamp to 16:9</button>
+            <button onclick="setting:hud:full">HUD: Full width</button>
+          </div>
+          <div class="column">
+            <h2>Quality</h2>
+            <button onclick="setting:rate:original">Refresh rate: Original</button>
+            <button onclick="setting:rate:display">Refresh rate: Display</button>
+            <button onclick="setting:rate:30">Refresh rate: 30 Hz</button>
+            <button onclick="setting:rate:60">Refresh rate: 60 Hz</button>
+            <button onclick="setting:rate:120">Refresh rate: 120 Hz</button>
+            <button onclick="setting:msaa:off">MSAA: Off</button>
+            <button onclick="setting:msaa:2">MSAA: 2x</button>
+            <button onclick="setting:msaa:4">MSAA: 4x</button>
+            <button onclick="setting:msaa:8">MSAA: 8x</button>
+            <button onclick="setting:hpfb:auto">Framebuffer precision: Automatic</button>
+            <button onclick="setting:hpfb:on">Framebuffer precision: On</button>
+            <button onclick="setting:hpfb:off">Framebuffer precision: Off</button>
+            <button onclick="setting:api:auto">Graphics API: Automatic</button>
+            <button onclick="setting:api:d3d12">Graphics API: Direct3D 12</button>
+            <button onclick="setting:api:vulkan">Graphics API: Vulkan</button>
+          </div>
+        </div>
+        <button onclick="back">Back</button>
+      </div>
+    </div>
+  </body>
+</rml>

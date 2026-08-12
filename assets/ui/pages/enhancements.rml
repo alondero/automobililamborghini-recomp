@@ -1,0 +1,35 @@
+<rml>
+  <head>
+    <title>Enhancements</title>
+    <link type="text/rcss" href="../lambo.rcss"/>
+  </head>
+  <body>
+    <div id="window">
+      <div class="panel">
+        <h1>Enhancements</h1>
+        <div id="enhancement-summary" class="summary">Loading...</div>
+        <div class="columns">
+          <div class="column">
+            <h2>Widescreen</h2>
+            <button id="autofocus" onclick="setting:fog:toggle">3P/4P widescreen fog</button>
+            <button onclick="setting:sky:toggle">3P/4P widescreen sky</button>
+            <button onclick="setting:lod:toggle">N64 LOD removal</button>
+            <button onclick="setting:distance:1">Draw distance: 1x</button>
+            <button onclick="setting:distance:1.5">Draw distance: 1.5x</button>
+            <button onclick="setting:distance:2">Draw distance: 2x</button>
+            <button onclick="setting:distance:unlimited">Draw distance: Unlimited</button>
+          </div>
+          <div class="column">
+            <h2>Fog density</h2>
+            <button onclick="setting:fogdensity:off">Fog density: Off</button>
+            <button onclick="setting:fogdensity:1">Fog density: Original</button>
+            <button onclick="setting:fogdensity:1.5">Fog density: 150%</button>
+            <button onclick="setting:fogdensity:2">Fog density: 200%</button>
+            <p>Per-circuit visibility remains available through the persisted graphics configuration and will use the same binding seam as the follow-up controls work.</p>
+          </div>
+        </div>
+        <button onclick="back">Back</button>
+      </div>
+    </div>
+  </body>
+</rml>
