@@ -34,6 +34,7 @@ p, .summary { font-size: 20dp; line-height: 30dp; }
 
 h1, h2, p, .summary, .footer {
   display: block;
+  width: 100%;
   background-color: transparent;
   border: none;
 }
@@ -66,9 +67,31 @@ button:disabled {
 .columns {
   display: flex;
   flex-direction: row;
+  width: 100%;
   gap: 20dp;
 }
 
 .column { width: 50%; }
 .warning { color: #ffd166; font-size: 18dp; }
 .footer { margin-top: 20dp; color: #aebbd0; font-size: 16dp; }
+
+scrollbarvertical {
+  width: 18dp;
+}
+
+scrollbarvertical slidertrack {
+  background-color: #121b2a;
+}
+
+scrollbarvertical sliderbar {
+  width: 14dp;
+  min-height: 40dp;
+  margin-left: 2dp;
+  background-color: #536b8e;
+}
+
+scrollbarvertical sliderarrowdec,
+scrollbarvertical sliderarrowinc {
+  width: 18dp;
+  height: 0;
+}

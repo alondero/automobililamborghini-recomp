@@ -84,8 +84,21 @@ def main() -> None:
     require("position: absolute" in rcss and "left: 7%" in rcss and "top: 7%" in rcss,
             "panel layout must bypass RmlUi's padded percentage-width behavior")
     require("font-family: Lato" in rcss, "UI stylesheet must request the registered font family")
-    require("h1, h2, p, .summary, .footer" in rcss and "display: block" in rcss,
+    semantic_rule = re.search(r"h1,\s*h2,\s*p,\s*\.summary,\s*\.footer\s*\{([^}]*)\}",
+                              rcss, re.DOTALL)
+    require(semantic_rule is not None and "display: block" in semantic_rule.group(1),
             "semantic text elements must not collapse into RmlUi's inline default")
+    require(semantic_rule is not None and "width: 100%" in semantic_rule.group(1),
+            "semantic text elements must fill the panel instead of using min-content width")
+    columns_rule = re.search(r"\.columns\s*\{([^}]*)\}", rcss, re.DOTALL)
+    require(columns_rule is not None and "width: 100%" in columns_rule.group(1),
+            "settings columns must fill the panel before percentage children are resolved")
+    panel_rule = re.search(r"\.panel\s*\{([^}]*)\}", rcss, re.DOTALL)
+    require(panel_rule is not None and "overflow-y: auto" in panel_rule.group(1),
+            "only overflowing settings pages should create a vertical scrollbar")
+    scrollbar_rule = re.search(r"scrollbarvertical\s*\{([^}]*)\}", rcss, re.DOTALL)
+    require(scrollbar_rule is not None and "width:" in scrollbar_rule.group(1),
+            "RmlUi scrollbars need an explicit width or they consume the content area")
     ui_source = (repo / "src" / "ui" / "lambo_ui.cpp").read_text(encoding="utf-8")
     require('data, "Lato"' in ui_source,
             "fonts must be registered explicitly under the stylesheet family name")
