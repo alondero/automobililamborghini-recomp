@@ -33,6 +33,7 @@ h2 { font-size: 30dp; margin: 0 0 24dp 0; }
 p, .summary { font-size: 20dp; line-height: 30dp; }
 
 h1, h2, p, .summary, .footer {
+  display: block;
   background-color: transparent;
   border: none;
 }

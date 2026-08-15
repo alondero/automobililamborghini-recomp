@@ -123,6 +123,8 @@ struct UiState {
     Rml::Context* context = nullptr;
     Rml::ElementDocument* document = nullptr;
     UiEventListenerInstancer event_listener_instancer;
+    // RmlUi's memory font API retains these pointers until Rml::Shutdown.
+    std::vector<std::vector<Rml::byte>> font_data;
     std::vector<lambo::ui::Page> pages;
     std::unordered_map<lambo::ui::Page, std::string> focused_element_by_page;
     lambo::ui::EntryPoint entry_point = lambo::ui::EntryPoint::Startup;
@@ -356,6 +358,7 @@ void init_hook(RT64::RenderInterface* interface, RT64::RenderDevice* device) {
     }
     const auto fonts = asset_root() / "fonts";
     const auto bundled_fonts = std::filesystem::current_path() / "lib" / "RmlUi" / "Samples" / "assets";
+    state->font_data.reserve(2);
     const auto load_font = [&](const char* filename, Rml::Style::FontWeight weight) {
         const auto configured_path = fonts / filename;
         const auto fallback_path = bundled_fonts / filename;
@@ -370,8 +373,9 @@ void init_hook(RT64::RenderInterface* interface, RT64::RenderDevice* device) {
             return;
         }
         std::ifstream file(*use_path, std::ios::binary);
-        auto data = std::vector<Rml::byte>(std::istreambuf_iterator<char>(file),
-                                           std::istreambuf_iterator<char>{});
+        state->font_data.emplace_back(std::istreambuf_iterator<char>(file),
+                                      std::istreambuf_iterator<char>{});
+        const auto& data = state->font_data.back();
         const bool ok = !data.empty() && Rml::LoadFontFace(
             data, "Lato", Rml::Style::FontStyle::Normal, weight, false);
         LAMBO_LOG("ui", "font %s: %s (path=%s)\n",

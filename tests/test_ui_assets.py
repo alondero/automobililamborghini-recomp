@@ -84,9 +84,13 @@ def main() -> None:
     require("position: absolute" in rcss and "left: 7%" in rcss and "top: 7%" in rcss,
             "panel layout must bypass RmlUi's padded percentage-width behavior")
     require("font-family: Lato" in rcss, "UI stylesheet must request the registered font family")
+    require("h1, h2, p, .summary, .footer" in rcss and "display: block" in rcss,
+            "semantic text elements must not collapse into RmlUi's inline default")
     ui_source = (repo / "src" / "ui" / "lambo_ui.cpp").read_text(encoding="utf-8")
     require('data, "Lato"' in ui_source,
             "fonts must be registered explicitly under the stylesheet family name")
+    require("font_data" in ui_source and "font_data.reserve(2)" in ui_source,
+            "memory-loaded font bytes must outlive RmlUi font rasterization")
     workflow = (repo / ".github" / "workflows" / "build-release.yml").read_text(encoding="utf-8")
     require("cp -r build/assets dist/" in workflow,
             "Linux release archive must include packaged UI assets")
