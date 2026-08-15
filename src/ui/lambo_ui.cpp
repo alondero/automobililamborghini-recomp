@@ -370,8 +370,8 @@ void init_hook(RT64::RenderInterface* interface, RT64::RenderDevice* device) {
             return;
         }
         std::ifstream file(*use_path, std::ios::binary);
-        std::vector<Rml::byte> data(std::istreambuf_iterator<char>(file),
-                                    std::istreambuf_iterator<char>());
+        auto data = std::vector<Rml::byte>(std::istreambuf_iterator<char>(file),
+                                           std::istreambuf_iterator<char>{});
         const bool ok = !data.empty() && Rml::LoadFontFace(
             data, "Lato", Rml::Style::FontStyle::Normal, weight, false);
         LAMBO_LOG("ui", "font %s: %s (path=%s)\n",
