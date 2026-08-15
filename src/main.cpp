@@ -443,6 +443,7 @@ static void update_gfx_stub(void* /*gfx_data*/) {
                 continue;
             }
             if (event.type == SDL_CONTROLLERDEVICEREMOVED) {
+                lambo::ui::handle_event(event);
                 input_close_controller(event.cdevice.which);  // which = instance id (REMOVED)
                 continue;
             }
@@ -476,7 +477,6 @@ static void update_gfx_stub(void* /*gfx_data*/) {
         }
         // Update the cross-thread capture gate before sampling physical state. The guest reads a
         // neutral snapshot while the UI owns input, plus one neutral frame after release.
-        lambo::ui::update_capture();
         lambo::input_gate::set_ui_capture(lambo::ui::captures_input());
         input_sample();
         // Apply the game thread's latest rumble-pak motor state to the physical pad (#69).
@@ -813,7 +813,8 @@ int main(int argc, char** argv) {
     watchdog.detach();
 
     recomp::Configuration cfg{};
-    cfg.project_version = recomp::Version{1, 0, 0, std::string{}};
+    cfg.project_version = recomp::Version{
+        LAMBO_VERSION_MAJOR, LAMBO_VERSION_MINOR, LAMBO_VERSION_PATCH, std::string{}};
     cfg.rsp_callbacks.get_rsp_microcode = get_rsp_microcode_stub;
     cfg.renderer_callbacks.create_render_context = headless::create_render_context;
     cfg.gfx_callbacks.create_window = create_window_stub; // avoids start()'s no-window assert

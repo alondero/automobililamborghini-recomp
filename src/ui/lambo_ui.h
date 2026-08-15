@@ -30,7 +30,6 @@ void set_window(SDL_Window* window);
 void install_render_hooks();
 void set_startup_controller(lambo::StartupController* controller);
 bool handle_event(const SDL_Event& event);
-void update_capture();
 void open_launcher();
 void open_settings();
 void close_top_page();

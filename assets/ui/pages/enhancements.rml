@@ -17,15 +17,24 @@
             <button onclick="setting:distance:1">Draw distance: 1x</button>
             <button onclick="setting:distance:1.5">Draw distance: 1.5x</button>
             <button onclick="setting:distance:2">Draw distance: 2x</button>
+            <button onclick="setting:distance:3">Draw distance: 3x</button>
             <button onclick="setting:distance:unlimited">Draw distance: Unlimited</button>
+            <h2>Full-track visibility</h2>
+            <button onclick="setting:circuit:1">Circuit 1</button>
+            <button onclick="setting:circuit:2">Circuit 2</button>
+            <button onclick="setting:circuit:3">Circuit 3</button>
+            <button onclick="setting:circuit:4">Circuit 4</button>
+            <button onclick="setting:circuit:5">Circuit 5</button>
+            <button onclick="setting:circuit:6">Circuit 6</button>
           </div>
           <div class="column">
             <h2>Fog density</h2>
             <button onclick="setting:fogdensity:off">Fog density: Off</button>
+            <button onclick="setting:fogdensity:0.5">Fog density: 50%</button>
+            <button onclick="setting:fogdensity:0.75">Fog density: 75%</button>
             <button onclick="setting:fogdensity:1">Fog density: Original</button>
             <button onclick="setting:fogdensity:1.5">Fog density: 150%</button>
             <button onclick="setting:fogdensity:2">Fog density: 200%</button>
-            <p>Per-circuit visibility remains available through the persisted graphics configuration and will use the same binding seam as the follow-up controls work.</p>
           </div>
         </div>
         <button onclick="back">Back</button>

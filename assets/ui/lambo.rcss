@@ -15,9 +15,12 @@ body {
 }
 
 .panel {
+  position: absolute;
+  left: 7%;
+  top: 7%;
   width: 86%;
-  min-height: 78%;
-  margin: auto;
+  height: 86%;
+  margin: 0;
   padding: 4%;
   overflow-y: auto;
   background-color: rgba(26, 36, 55, 250);
@@ -28,6 +31,11 @@ body {
 h1 { font-size: 44dp; margin: 0 0 8dp 0; }
 h2 { font-size: 30dp; margin: 0 0 24dp 0; }
 p, .summary { font-size: 20dp; line-height: 30dp; }
+
+h1, h2, p, .summary, .footer {
+  background-color: transparent;
+  border: none;
+}
 
 button {
   display: block;
@@ -41,7 +49,8 @@ button {
   text-align: left;
 }
 
-button:hover, button:focus {
+.mouse-active button:hover,
+.controller-active button:focus {
   background-color: #5076a8;
   border-color: #d8e7ff;
   color: #ffffff;

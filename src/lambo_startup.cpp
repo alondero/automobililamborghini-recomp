@@ -1,13 +1,26 @@
 #include "lambo_startup.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
+#include <string>
 #include <utility>
 
 namespace {
 
-bool env_present(const char* name) {
+bool env_has_value(const char* name) {
     const char* value = std::getenv(name);
-    return value != nullptr && value[0] != '\0' && value[0] != '0';
+    return value != nullptr && value[0] != '\0';
+}
+
+bool env_enabled(const char* name) {
+    const char* value = std::getenv(name);
+    if (value == nullptr || value[0] == '\0') return false;
+    std::string normalized(value);
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return normalized != "0" && normalized != "false" && normalized != "no" &&
+           normalized != "off";
 }
 
 } // namespace
@@ -17,18 +30,28 @@ namespace lambo {
 StartupMode startup_mode_from_environment() {
     // These knobs drive a deterministic harness/probe run and must never wait
     // for a human to press Play. Keep this list as the single bypass policy.
-    constexpr const char* automatic_variables[] = {
+    constexpr const char* boolean_variables[] = {
+        "CI",
         "LAMBO_HEADLESS",
         "LAMBO_LIGHTING_SELFTEST",
+        "LAMBO_CRASH_TEST",
+        "LAMBO_SELFTEST",
+    };
+    for (const char* variable : boolean_variables) {
+        if (env_enabled(variable)) return StartupMode::Automatic;
+    }
+
+    // These variables carry structured or numeric values. Zero can be a valid
+    // first field (for example, a neutral button mask with a scripted stick),
+    // so any non-empty value selects deterministic automatic startup.
+    constexpr const char* scripted_variables[] = {
         "LAMBO_WARP",
         "LAMBO_MODERN_INPUT",
         "LAMBO_INPUT_PULSE",
         "LAMBO_MODERN_MAX_VIS",
-        "LAMBO_CRASH_TEST",
-        "LAMBO_SELFTEST",
     };
-    for (const char* variable : automatic_variables) {
-        if (env_present(variable)) return StartupMode::Automatic;
+    for (const char* variable : scripted_variables) {
+        if (env_has_value(variable)) return StartupMode::Automatic;
     }
     return StartupMode::InteractiveLauncher;
 }

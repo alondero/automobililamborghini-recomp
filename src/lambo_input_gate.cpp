@@ -7,7 +7,6 @@ namespace {
 std::atomic<bool> g_ui_capture{false};
 std::atomic<bool> g_release_barrier{false};
 std::atomic<bool> g_release_barrier_sampled{false};
-std::atomic<uint32_t> g_physical_snapshot{0};
 std::atomic<uint32_t> g_guest_snapshot{0};
 
 } // namespace
@@ -37,7 +36,6 @@ bool guest_input_suppressed() {
 }
 
 void publish_physical_snapshot(uint32_t snapshot) {
-    g_physical_snapshot.store(snapshot, std::memory_order_release);
     if (g_ui_capture.load(std::memory_order_acquire)) {
         g_guest_snapshot.store(0, std::memory_order_release);
     } else if (g_release_barrier.load(std::memory_order_acquire)) {
@@ -58,10 +56,7 @@ void publish_physical_snapshot(uint32_t snapshot) {
 uint32_t guest_snapshot() {
     if (g_ui_capture.load(std::memory_order_acquire)) return 0;
     if (g_release_barrier.load(std::memory_order_acquire)) return 0;
-    // The physical sample may have been taken while capture was active, so the
-    // guest snapshot is intentionally neutral. Once the one-frame barrier has
-    // elapsed, resume from the latest physical sample immediately.
-    return g_physical_snapshot.load(std::memory_order_acquire);
+    return g_guest_snapshot.load(std::memory_order_acquire);
 }
 
 } // namespace lambo::input_gate

@@ -5,14 +5,17 @@
 #include "lambo_ui.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
-#include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -28,11 +31,40 @@
 #include "lambo_config.h"
 #include "lambo_log.h"
 #include "lambo_startup.h"
+#include "lambo_ui_input.h"
 #include "lambo_ui_render_interface.h"
+#include "lambo_ui_settings.h"
+
+#ifndef LAMBO_VERSION
+#define LAMBO_VERSION "dev"
+#endif
 
 namespace {
 
 using Clock = std::chrono::steady_clock;
+
+enum class InputMode {
+    Mouse,
+    KeyboardOrController,
+};
+
+struct PageDescriptor {
+    const char* document;
+    const char* title;
+};
+
+constexpr std::array page_descriptors{
+    PageDescriptor{"launcher.rml", "Home"},
+    PageDescriptor{"settings.rml", "Settings"},
+    PageDescriptor{"pages/graphics.rml", "Graphics"},
+    PageDescriptor{"pages/enhancements.rml", "Enhancements"},
+    PageDescriptor{"pages/controls.rml", "Controls"},
+    PageDescriptor{"pages/haptics.rml", "Haptics"},
+};
+
+const PageDescriptor& page_descriptor(lambo::ui::Page page) {
+    return page_descriptors.at(static_cast<size_t>(page));
+}
 
 struct QueuedEvent {
     SDL_Event event{};
@@ -92,11 +124,24 @@ struct UiState {
     Rml::ElementDocument* document = nullptr;
     UiEventListenerInstancer event_listener_instancer;
     std::vector<lambo::ui::Page> pages;
+    std::unordered_map<lambo::ui::Page, std::string> focused_element_by_page;
     lambo::ui::EntryPoint entry_point = lambo::ui::EntryPoint::Startup;
-    int focused_key = SDLK_UNKNOWN;
-    Clock::time_point next_repeat{};
-    bool axis_x_latched = false;
-    bool axis_y_latched = false;
+    std::optional<lambo::ui::Page> current_page;
+    lambo::ui::ControllerNavigation controller_navigation;
+    InputMode input_mode = InputMode::Mouse;
+
+    void remember_focus();
+    void restore_focus(lambo::ui::Page page);
+    void set_input_mode(InputMode mode);
+    void set_text(const char* id, const std::string& value);
+    void refresh_document_values();
+    void load_page(lambo::ui::Page page, bool push_history);
+    void show_page(lambo::ui::Page page);
+    void hide_pages();
+    void back();
+    void process_key_down(int key, bool repeat);
+    void process_navigation_events(const std::vector<lambo::ui::NavigationEvent>& events);
+    void process_queued_events();
 
     ~UiState() {
         if (document != nullptr && context != nullptr) {
@@ -140,167 +185,112 @@ std::filesystem::path asset_root() {
     return cwd_ui;
 }
 
-const char* page_document(lambo::ui::Page page) {
-    switch (page) {
-        case lambo::ui::Page::Home:         return "launcher.rml";
-        case lambo::ui::Page::Settings:     return "settings.rml";
-        case lambo::ui::Page::Graphics:     return "pages/graphics.rml";
-        case lambo::ui::Page::Enhancements: return "pages/enhancements.rml";
-        case lambo::ui::Page::Controls:     return "pages/controls.rml";
-        case lambo::ui::Page::Haptics:      return "pages/haptics.rml";
+void UiState::remember_focus() {
+    if (!current_page.has_value() || context == nullptr) return;
+    if (Rml::Element* focused = context->GetFocusElement();
+        focused != nullptr && !focused->GetId().empty()) {
+        focused_element_by_page[*current_page] = focused->GetId();
     }
-    return "launcher.rml";
 }
 
-const char* page_title(lambo::ui::Page page) {
-    switch (page) {
-        case lambo::ui::Page::Home:         return "Home";
-        case lambo::ui::Page::Settings:     return "Settings";
-        case lambo::ui::Page::Graphics:     return "Graphics";
-        case lambo::ui::Page::Enhancements: return "Enhancements";
-        case lambo::ui::Page::Controls:     return "Controls";
-        case lambo::ui::Page::Haptics:      return "Haptics";
+void UiState::restore_focus(lambo::ui::Page page) {
+    if (document == nullptr) return;
+    Rml::Element* focus = nullptr;
+    if (const auto saved = focused_element_by_page.find(page);
+        saved != focused_element_by_page.end()) {
+        focus = document->GetElementById(saved->second);
     }
-    return "Home";
+    if (focus == nullptr) focus = document->GetElementById("autofocus");
+    if (focus != nullptr) focus->Focus();
 }
 
-void set_text(const char* id, const std::string& value) {
-    if (g_state == nullptr || g_state->document == nullptr) return;
-    if (Rml::Element* element = g_state->document->GetElementById(id)) {
+void UiState::set_input_mode(InputMode mode) {
+    input_mode = mode;
+    if (document == nullptr) return;
+    document->SetClass("mouse-active", mode == InputMode::Mouse);
+    document->SetClass("controller-active", mode == InputMode::KeyboardOrController);
+    if (mode == InputMode::KeyboardOrController && context->GetFocusElement() == nullptr &&
+        current_page.has_value()) {
+        restore_focus(*current_page);
+    }
+}
+
+void UiState::set_text(const char* id, const std::string& value) {
+    if (document == nullptr) return;
+    if (Rml::Element* element = document->GetElementById(id)) {
         element->SetInnerRML(value);
     }
 }
 
-std::string graphics_summary() {
-    const auto cfg = lambo::config::current_graphics();
-    using namespace ultramodern::renderer;
-    const char* api = cfg.api_option == GraphicsApi::D3D12 ? "Direct3D 12" :
-                      cfg.api_option == GraphicsApi::Vulkan ? "Vulkan" : "Automatic";
-    const char* aspect = cfg.ar_option == AspectRatio::Original ? "Original 4:3" : "Expand";
-    return std::string("API: ") + api + " (restart required)<br/>Aspect: " + aspect +
-           "<br/>Supersampling: " + std::to_string(cfg.ds_option) + "x";
+void UiState::refresh_document_values() {
+    if (document == nullptr) return;
+    set_text("version", std::string("v") + LAMBO_VERSION);
+    set_text("graphics-summary", lambo::ui::graphics_summary_html());
+    set_text("enhancement-summary", lambo::ui::enhancements_summary_html());
 }
 
-void refresh_document_values() {
-    if (g_state == nullptr || g_state->document == nullptr) return;
-    set_text("version", "v1.0.0");
-    set_text("graphics-summary", graphics_summary());
-    set_text("enhancement-summary",
-             std::string("Fog: ") + (lambo::config::widescreen_fog_match() ? "matched" : "original") +
-             "<br/>Sky: " + (lambo::config::widescreen_sky_match() ? "matched" : "original") +
-             "<br/>LOD: " + (lambo::config::no_lod() ? "removed" : "original") +
-             "<br/>Draw distance: " + std::to_string(lambo::config::global_draw_distance()) + "x");
-}
-
-void load_page(lambo::ui::Page page, bool push_history) {
-    if (g_state == nullptr || g_state->context == nullptr) return;
-    if (g_state->document != nullptr) {
-        g_state->context->UnloadDocument(g_state->document);
-        g_state->document = nullptr;
+void UiState::load_page(lambo::ui::Page page, bool push_history) {
+    if (context == nullptr) return;
+    remember_focus();
+    if (document != nullptr) {
+        context->UnloadDocument(document);
+        document = nullptr;
     }
 
-    const std::filesystem::path path = asset_root() / page_document(page);
-    g_state->document = g_state->context->LoadDocument(path.string());
-    if (g_state->document == nullptr) {
+    const PageDescriptor& descriptor = page_descriptor(page);
+    const std::filesystem::path path = asset_root() / descriptor.document;
+    document = context->LoadDocument(path.string());
+    if (document == nullptr) {
         LAMBO_LOG("ui", "failed to load %s\n", path.string().c_str());
         g_visible.store(false, std::memory_order_release);
         g_capture.store(false, std::memory_order_release);
+        current_page.reset();
         return;
     }
-    g_state->document->Show();
-    g_state->document->PullToFront();
-    if (push_history) g_state->pages.push_back(page);
+    document->Show();
+    document->PullToFront();
+    current_page = page;
+    if (push_history) pages.push_back(page);
     refresh_document_values();
-    if (Rml::Element* autofocus = g_state->document->GetElementById("autofocus")) {
-        autofocus->Focus();
-    }
+    restore_focus(page);
+    set_input_mode(input_mode);
     g_visible.store(true, std::memory_order_release);
     g_capture.store(true, std::memory_order_release);
-    LAMBO_LOG("ui", "opened %s page\n", page_title(page));
+    LAMBO_LOG("ui", "opened %s page\n", descriptor.title);
 }
 
-void show_page(lambo::ui::Page page) {
+void UiState::show_page(lambo::ui::Page page) {
     load_page(page, true);
 }
 
-void hide_pages() {
-    if (g_state == nullptr) return;
-    if (g_state->document != nullptr) {
-        g_state->context->UnloadDocument(g_state->document);
-        g_state->document = nullptr;
+void UiState::hide_pages() {
+    remember_focus();
+    if (document != nullptr) {
+        context->UnloadDocument(document);
+        document = nullptr;
     }
-    g_state->pages.clear();
+    pages.clear();
+    current_page.reset();
+    controller_navigation.reset();
     g_visible.store(false, std::memory_order_release);
     g_capture.store(false, std::memory_order_release);
 }
 
-void back() {
-    if (g_state == nullptr || g_state->pages.empty()) return;
-    if (g_state->pages.size() > 1) {
-        g_state->pages.pop_back();
-        load_page(g_state->pages.back(), false);
+void UiState::back() {
+    if (pages.empty()) return;
+    if (pages.size() > 1) {
+        pages.pop_back();
+        load_page(pages.back(), false);
         return;
     }
-    if (g_state->entry_point == lambo::ui::EntryPoint::InGameOverlay) hide_pages();
-}
-
-void apply_setting(const std::string& setting) {
-    auto cfg = lambo::config::current_graphics();
-    using namespace ultramodern::renderer;
-
-    if (setting == "res:auto") cfg.res_option = Resolution::Auto;
-    else if (setting == "res:original") cfg.res_option = Resolution::Original;
-    else if (setting == "res:2x") cfg.res_option = Resolution::Original2x;
-    else if (setting == "ss:1") cfg.ds_option = 1;
-    else if (setting == "ss:2") cfg.ds_option = 2;
-    else if (setting == "ss:3") cfg.ds_option = 3;
-    else if (setting == "ss:4") cfg.ds_option = 4;
-    else if (setting == "aspect:original") cfg.ar_option = AspectRatio::Original;
-    else if (setting == "aspect:expand") cfg.ar_option = AspectRatio::Expand;
-    else if (setting == "hud:original") cfg.hr_option = HUDRatioMode::Original;
-    else if (setting == "hud:16x9") cfg.hr_option = HUDRatioMode::Clamp16x9;
-    else if (setting == "hud:full") cfg.hr_option = HUDRatioMode::Full;
-    else if (setting == "rate:original") cfg.rr_option = RefreshRate::Original;
-    else if (setting == "rate:display") cfg.rr_option = RefreshRate::Display;
-    else if (setting == "rate:30" || setting == "rate:60" || setting == "rate:120") {
-        cfg.rr_option = RefreshRate::Manual;
-        cfg.rr_manual_value = std::stoi(setting.substr(5));
-    } else if (setting == "msaa:off") cfg.msaa_option = Antialiasing::None;
-    else if (setting == "msaa:2") cfg.msaa_option = Antialiasing::MSAA2X;
-    else if (setting == "msaa:4") cfg.msaa_option = Antialiasing::MSAA4X;
-    else if (setting == "msaa:8") cfg.msaa_option = Antialiasing::MSAA8X;
-    else if (setting == "hpfb:auto") cfg.hpfb_option = HighPrecisionFramebuffer::Auto;
-    else if (setting == "hpfb:on") cfg.hpfb_option = HighPrecisionFramebuffer::On;
-    else if (setting == "hpfb:off") cfg.hpfb_option = HighPrecisionFramebuffer::Off;
-    else if (setting == "api:auto") cfg.api_option = GraphicsApi::Auto;
-    else if (setting == "api:d3d12") cfg.api_option = GraphicsApi::D3D12;
-    else if (setting == "api:vulkan") cfg.api_option = GraphicsApi::Vulkan;
-    else if (setting == "fog:toggle") lambo::config::set_widescreen_fog_match(!lambo::config::widescreen_fog_match());
-    else if (setting == "sky:toggle") lambo::config::set_widescreen_sky_match(!lambo::config::widescreen_sky_match());
-    else if (setting == "lod:toggle") lambo::config::set_no_lod(!lambo::config::no_lod());
-    else if (setting == "distance:1") lambo::config::set_global_draw_distance(1.0);
-    else if (setting == "distance:1.5") lambo::config::set_global_draw_distance(1.5);
-    else if (setting == "distance:2") lambo::config::set_global_draw_distance(2.0);
-    else if (setting == "distance:unlimited") lambo::config::set_global_draw_distance(0.0);
-    else if (setting == "fogdensity:off") lambo::config::set_global_fog_scale(0.0);
-    else if (setting == "fogdensity:1") lambo::config::set_global_fog_scale(1.0);
-    else if (setting == "fogdensity:1.5") lambo::config::set_global_fog_scale(1.5);
-    else if (setting == "fogdensity:2") lambo::config::set_global_fog_scale(2.0);
-    else return;
-
-    if (setting.rfind("fog:", 0) != 0 && setting.rfind("sky:", 0) != 0 &&
-        setting.rfind("lod:", 0) != 0 && setting.rfind("distance:", 0) != 0 &&
-        setting.rfind("fogdensity:", 0) != 0) {
-        lambo::config::apply_graphics(cfg);
-    }
-    refresh_document_values();
+    if (entry_point == lambo::ui::EntryPoint::InGameOverlay) hide_pages();
 }
 
 void process_action(const std::string& action, const std::string& parameter) {
     if (action == "play") {
         auto* controller = g_startup_controller.load(std::memory_order_acquire);
         if (controller != nullptr && controller->request_play()) {
-            hide_pages();
+            if (g_state != nullptr) g_state->hide_pages();
             LAMBO_LOG("ui", "Play accepted; launcher hidden\n");
         }
     } else if (action == "quit") {
@@ -311,17 +301,21 @@ void process_action(const std::string& action, const std::string& parameter) {
         event.type = SDL_QUIT;
         SDL_PushEvent(&event);
     } else if (action == "settings") {
-        show_page(lambo::ui::Page::Settings);
+        if (g_state != nullptr) g_state->show_page(lambo::ui::Page::Settings);
     } else if (action == "page") {
-        if (parameter == "settings") show_page(lambo::ui::Page::Settings);
-        else if (parameter == "graphics") show_page(lambo::ui::Page::Graphics);
-        else if (parameter == "enhancements") show_page(lambo::ui::Page::Enhancements);
-        else if (parameter == "controls") show_page(lambo::ui::Page::Controls);
-        else if (parameter == "haptics") show_page(lambo::ui::Page::Haptics);
+        if (g_state == nullptr) return;
+        if (parameter == "settings") g_state->show_page(lambo::ui::Page::Settings);
+        else if (parameter == "graphics") g_state->show_page(lambo::ui::Page::Graphics);
+        else if (parameter == "enhancements") g_state->show_page(lambo::ui::Page::Enhancements);
+        else if (parameter == "controls") g_state->show_page(lambo::ui::Page::Controls);
+        else if (parameter == "haptics") g_state->show_page(lambo::ui::Page::Haptics);
     } else if (action == "back") {
-        back();
+        if (g_state != nullptr) g_state->back();
     } else if (action == "setting") {
-        apply_setting(parameter);
+        const auto setting = lambo::ui::setting_action_from_name(parameter);
+        if (setting.has_value() && lambo::ui::apply_setting_action(*setting) && g_state != nullptr) {
+            g_state->refresh_document_values();
+        }
     }
 }
 
@@ -362,93 +356,150 @@ void init_hook(RT64::RenderInterface* interface, RT64::RenderDevice* device) {
     }
     const auto fonts = asset_root() / "fonts";
     const auto bundled_fonts = std::filesystem::current_path() / "lib" / "RmlUi" / "Samples" / "assets";
-    const auto load_font = [&](const char* filename) {
+    const auto load_font = [&](const char* filename, Rml::Style::FontWeight weight) {
         const auto configured_path = fonts / filename;
         const auto fallback_path = bundled_fonts / filename;
+        const std::filesystem::path* use_path = nullptr;
         if (std::filesystem::exists(configured_path)) {
-            Rml::LoadFontFace(configured_path.string(), false);
+            use_path = &configured_path;
+        } else if (std::filesystem::exists(fallback_path)) {
+            use_path = &fallback_path;
         } else {
-            Rml::LoadFontFace(fallback_path.string(), false);
+            LAMBO_LOG("ui", "font %s not found (configured=%s, fallback=%s)\n",
+                filename, configured_path.string().c_str(), fallback_path.string().c_str());
+            return;
         }
+        std::ifstream file(*use_path, std::ios::binary);
+        std::vector<Rml::byte> data(std::istreambuf_iterator<char>(file),
+                                    std::istreambuf_iterator<char>());
+        const bool ok = !data.empty() && Rml::LoadFontFace(
+            data, "Lato", Rml::Style::FontStyle::Normal, weight, false);
+        LAMBO_LOG("ui", "font %s: %s (path=%s)\n",
+            filename, ok ? "loaded" : "FAILED", use_path->string().c_str());
     };
-    load_font("LatoLatin-Regular.ttf");
-    load_font("LatoLatin-Bold.ttf");
+    load_font("LatoLatin-Regular.ttf", Rml::Style::FontWeight::Normal);
+    load_font("LatoLatin-Bold.ttf", Rml::Style::FontWeight::Bold);
     g_state = std::move(state);
     LAMBO_LOG("ui", "RmlUi render hooks initialised\n");
 }
 
-void process_key(int key) {
-    if (g_state == nullptr || g_state->context == nullptr) return;
+std::optional<lambo::ui::NavigationKey> navigation_key_from_button(uint8_t button) {
+    using lambo::ui::NavigationKey;
+    switch (button) {
+        case SDL_CONTROLLER_BUTTON_A: return NavigationKey::Activate;
+        case SDL_CONTROLLER_BUTTON_B: return NavigationKey::Back;
+        case SDL_CONTROLLER_BUTTON_DPAD_UP: return NavigationKey::Up;
+        case SDL_CONTROLLER_BUTTON_DPAD_DOWN: return NavigationKey::Down;
+        case SDL_CONTROLLER_BUTTON_DPAD_LEFT: return NavigationKey::Left;
+        case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: return NavigationKey::Right;
+        default: return std::nullopt;
+    }
+}
+
+int sdl_key_from_navigation(lambo::ui::NavigationKey key) {
+    using lambo::ui::NavigationKey;
+    switch (key) {
+        case NavigationKey::Activate: return SDLK_RETURN;
+        case NavigationKey::Back: return SDLK_ESCAPE;
+        case NavigationKey::Up: return SDLK_UP;
+        case NavigationKey::Down: return SDLK_DOWN;
+        case NavigationKey::Left: return SDLK_LEFT;
+        case NavigationKey::Right: return SDLK_RIGHT;
+        case NavigationKey::None: case NavigationKey::Count: return SDLK_UNKNOWN;
+    }
+    return SDLK_UNKNOWN;
+}
+
+void UiState::process_key_down(int key, bool repeat) {
+    if (context == nullptr) return;
+    set_input_mode(InputMode::KeyboardOrController);
     if (key == SDLK_ESCAPE) {
-        back();
+        if (!repeat) back();
         return;
     }
-    g_state->context->ProcessKeyDown(RmlSDL::ConvertKey(key), RmlSDL::GetKeyModifierState());
-    g_state->focused_key = key;
-    g_state->next_repeat = Clock::now() + std::chrono::milliseconds(500);
+    context->ProcessKeyDown(RmlSDL::ConvertKey(key), RmlSDL::GetKeyModifierState());
 }
 
-void process_controller_axis(const SDL_ControllerAxisEvent& axis) {
-    const bool horizontal = axis.axis == SDL_CONTROLLER_AXIS_LEFTX;
-    const bool vertical = axis.axis == SDL_CONTROLLER_AXIS_LEFTY;
-    if (!horizontal && !vertical) return;
-    bool& latched = horizontal ? g_state->axis_x_latched : g_state->axis_y_latched;
-    const int magnitude = std::abs(static_cast<int>(axis.value));
-    if (magnitude < 9000) {
-        latched = false;
-        return;
+void UiState::process_navigation_events(
+    const std::vector<lambo::ui::NavigationEvent>& events) {
+    using lambo::ui::NavigationEventType;
+    using lambo::ui::NavigationKey;
+    for (const auto& event : events) {
+        if (event.type == NavigationEventType::Press) {
+            set_input_mode(InputMode::KeyboardOrController);
+        }
+        if (event.key == NavigationKey::Back) {
+            if (event.type == NavigationEventType::Press) back();
+            continue;
+        }
+        const int key = sdl_key_from_navigation(event.key);
+        if (key == SDLK_UNKNOWN) continue;
+        if (event.type == NavigationEventType::Press) {
+            context->ProcessKeyDown(RmlSDL::ConvertKey(key), 0);
+        } else {
+            context->ProcessKeyUp(RmlSDL::ConvertKey(key), 0);
+        }
     }
-    if (latched) return;
-    latched = true;
-    process_key(horizontal
-        ? (axis.value > 0 ? SDLK_RIGHT : SDLK_LEFT)
-        : (axis.value > 0 ? SDLK_DOWN : SDLK_UP));
 }
 
-void process_queued_events() {
+void UiState::process_queued_events() {
     QueuedEvent queued{};
     while (g_event_queue.try_dequeue(queued)) {
         SDL_Event& event = queued.event;
-        if (g_state == nullptr || g_state->context == nullptr) continue;
+        if (context == nullptr) continue;
         switch (event.type) {
             case SDL_KEYDOWN:
-                if (!event.key.repeat) process_key(event.key.keysym.sym);
+                process_key_down(event.key.keysym.sym, event.key.repeat != 0);
                 break;
             case SDL_KEYUP:
-                g_state->context->ProcessKeyUp(RmlSDL::ConvertKey(event.key.keysym.sym),
-                                               RmlSDL::GetKeyModifierState());
-                if (g_state->focused_key == event.key.keysym.sym) g_state->focused_key = SDLK_UNKNOWN;
+                context->ProcessKeyUp(RmlSDL::ConvertKey(event.key.keysym.sym),
+                                      RmlSDL::GetKeyModifierState());
                 break;
-            case SDL_CONTROLLERBUTTONDOWN:
-                switch (event.cbutton.button) {
-                    case SDL_CONTROLLER_BUTTON_A: process_key(SDLK_RETURN); break;
-                    case SDL_CONTROLLER_BUTTON_B: process_key(SDLK_ESCAPE); break;
-                    case SDL_CONTROLLER_BUTTON_DPAD_UP: process_key(SDLK_UP); break;
-                    case SDL_CONTROLLER_BUTTON_DPAD_DOWN: process_key(SDLK_DOWN); break;
-                    case SDL_CONTROLLER_BUTTON_DPAD_LEFT: process_key(SDLK_LEFT); break;
-                    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: process_key(SDLK_RIGHT); break;
-                    default: break;
+            case SDL_CONTROLLERBUTTONDOWN: {
+                if (const auto key = navigation_key_from_button(event.cbutton.button)) {
+                    process_navigation_events(controller_navigation.button_down(*key, Clock::now()));
                 }
                 break;
-            case SDL_CONTROLLERBUTTONUP:
-                if (event.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
-                    g_state->context->ProcessKeyUp(RmlSDL::ConvertKey(SDLK_RETURN), 0);
+            }
+            case SDL_CONTROLLERBUTTONUP: {
+                if (const auto key = navigation_key_from_button(event.cbutton.button)) {
+                    process_navigation_events(controller_navigation.button_up(*key, Clock::now()));
                 }
                 break;
-            case SDL_CONTROLLERAXISMOTION:
-                process_controller_axis(event.caxis);
+            }
+            case SDL_CONTROLLERAXISMOTION: {
+                std::optional<lambo::ui::NavigationAxis> axis;
+                if (event.caxis.axis == SDL_CONTROLLER_AXIS_LEFTX) {
+                    axis = lambo::ui::NavigationAxis::Horizontal;
+                } else if (event.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) {
+                    axis = lambo::ui::NavigationAxis::Vertical;
+                }
+                if (axis.has_value()) {
+                    process_navigation_events(
+                        controller_navigation.axis_motion(*axis, event.caxis.value, Clock::now()));
+                }
+                break;
+            }
+            case SDL_CONTROLLERDEVICEREMOVED:
+                controller_navigation.reset();
+                break;
+            case SDL_MOUSEMOTION:
+            case SDL_MOUSEBUTTONDOWN:
+            case SDL_MOUSEBUTTONUP:
+            case SDL_MOUSEWHEEL:
+                set_input_mode(InputMode::Mouse);
+                RmlSDL::InputEventHandler(context, event);
+                break;
+            case SDL_TEXTINPUT:
+                set_input_mode(InputMode::KeyboardOrController);
+                RmlSDL::InputEventHandler(context, event);
                 break;
             default:
-                RmlSDL::InputEventHandler(g_state->context, event);
+                RmlSDL::InputEventHandler(context, event);
                 break;
         }
     }
-
-    if (g_state != nullptr && g_state->focused_key != SDLK_UNKNOWN &&
-        Clock::now() >= g_state->next_repeat) {
-        process_key(g_state->focused_key);
-        g_state->next_repeat = Clock::now() + std::chrono::milliseconds(50);
-    }
+    process_navigation_events(controller_navigation.update(Clock::now()));
 }
 
 void draw_hook(RT64::RenderCommandList* command_list,
@@ -461,10 +512,10 @@ void draw_hook(RT64::RenderCommandList* command_list,
         g_state->entry_point = static_cast<lambo::ui::EntryPoint>(
             g_requested_entry_point.load(std::memory_order_acquire));
         g_state->pages.clear();
-        show_page(static_cast<lambo::ui::Page>(requested));
+        g_state->show_page(static_cast<lambo::ui::Page>(requested));
     }
-    if (g_requested_back.exchange(false, std::memory_order_acq_rel)) back();
-    process_queued_events();
+    if (g_requested_back.exchange(false, std::memory_order_acq_rel)) g_state->back();
+    g_state->process_queued_events();
     if (!g_visible.load(std::memory_order_acquire)) return;
 
     const int width = swap_chain_framebuffer->getWidth();
@@ -505,12 +556,30 @@ bool handle_event(const SDL_Event& event) {
         case SDL_MOUSEBUTTONDOWN:
         case SDL_MOUSEBUTTONUP:
         case SDL_MOUSEWHEEL:
+            SDL_ShowCursor(SDL_ENABLE);
+            g_event_queue.enqueue(QueuedEvent{event});
+            return true;
         case SDL_KEYDOWN:
-        case SDL_KEYUP:
         case SDL_TEXTINPUT:
         case SDL_CONTROLLERBUTTONDOWN:
+            SDL_ShowCursor(SDL_DISABLE);
+            g_event_queue.enqueue(QueuedEvent{event});
+            return true;
+        case SDL_KEYUP:
         case SDL_CONTROLLERBUTTONUP:
+            g_event_queue.enqueue(QueuedEvent{event});
+            return true;
         case SDL_CONTROLLERAXISMOTION:
+            if ((event.caxis.axis == SDL_CONTROLLER_AXIS_LEFTX ||
+                 event.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) &&
+                lambo::ui::navigation_axis_active(event.caxis.value)) {
+                SDL_ShowCursor(SDL_DISABLE);
+            }
+            g_event_queue.enqueue(QueuedEvent{event});
+            return true;
+        case SDL_CONTROLLERDEVICEREMOVED:
+            g_event_queue.enqueue(QueuedEvent{event});
+            return true;
         case SDL_WINDOWEVENT:
             g_event_queue.enqueue(QueuedEvent{event});
             return true;
@@ -519,18 +588,16 @@ bool handle_event(const SDL_Event& event) {
     }
 }
 
-void update_capture() {
-    (void)g_capture.load(std::memory_order_acquire);
-}
-
 void open_launcher() {
     g_requested_entry_point.store(static_cast<int>(EntryPoint::Startup), std::memory_order_release);
+    SDL_ShowCursor(SDL_ENABLE);
     g_capture.store(true, std::memory_order_release);
     g_requested_page.store(static_cast<int>(Page::Home), std::memory_order_release);
 }
 
 void open_settings() {
     g_requested_entry_point.store(static_cast<int>(EntryPoint::InGameOverlay), std::memory_order_release);
+    SDL_ShowCursor(SDL_ENABLE);
     g_capture.store(true, std::memory_order_release);
     g_requested_page.store(static_cast<int>(Page::Settings), std::memory_order_release);
 }

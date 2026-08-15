@@ -31,7 +31,11 @@
             <button onclick="setting:rate:display">Refresh rate: Display</button>
             <button onclick="setting:rate:30">Refresh rate: 30 Hz</button>
             <button onclick="setting:rate:60">Refresh rate: 60 Hz</button>
+            <button onclick="setting:rate:90">Refresh rate: 90 Hz</button>
             <button onclick="setting:rate:120">Refresh rate: 120 Hz</button>
+            <button onclick="setting:rate:144">Refresh rate: 144 Hz</button>
+            <button onclick="setting:rate:165">Refresh rate: 165 Hz</button>
+            <button onclick="setting:rate:240">Refresh rate: 240 Hz</button>
             <button onclick="setting:msaa:off">MSAA: Off</button>
             <button onclick="setting:msaa:2">MSAA: 2x</button>
             <button onclick="setting:msaa:4">MSAA: 4x</button>

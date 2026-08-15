@@ -12,7 +12,7 @@
         <button id="autofocus" onclick="play">Play</button>
         <button onclick="page:settings">Settings</button>
         <button onclick="quit">Quit</button>
-        <div id="version" class="footer">v1.0.0</div>
+        <div id="version" class="footer">Loading version...</div>
       </div>
     </div>
   </body>

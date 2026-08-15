@@ -79,7 +79,7 @@ enum class ImageType {
 
 struct ImageFromBytes {
     ImageType type;
-    // Dimensions only used for RGBA32 data. Files pull the size from the file data. 
+    // Encoded files carry their own dimensions; raw RGBA data does not.
     uint32_t width;
     uint32_t height;
     std::string name;
@@ -120,7 +120,8 @@ class RmlRenderInterface_RT64_impl : public Rml::RenderInterfaceCompatibility {
     Rml::Matrix4f transform_ = Rml::Matrix4f::Identity();
     Rml::Matrix4f mvp_ = Rml::Matrix4f::Identity();
     std::unordered_map<Rml::TextureHandle, TextureHandle> textures_{};
-    Rml::TextureHandle texture_count_ = 2; // Start at 1 to reserve texture 0 as the 1x1 pixel white texture
+    // Handles 0 and 1 are stable white/transparent fallback textures.
+    Rml::TextureHandle texture_count_ = 2;
     DynamicBuffer upload_buffer_;
     DynamicBuffer vertex_buffer_;
     DynamicBuffer index_buffer_;
@@ -289,17 +290,15 @@ public:
     }
 
     void resize_dynamic_buffer(DynamicBuffer &dynamic_buffer, uint32_t new_size, bool map = true) {
-        // Unmap the buffer if it's mapped
         if (dynamic_buffer.mapped_data_ != nullptr) {
             dynamic_buffer.buffer_->unmap();
         }
-        
-        // If there's already a buffer, move it into the stale buffers so it persists until the start of next frame.
+
+        // The submitted command list may still reference the old allocation.
         if (dynamic_buffer.buffer_ != nullptr) {
             stale_buffers_.emplace_back(std::move(dynamic_buffer.buffer_));
         }
 
-        // Create the new buffer, update the size and map it.
         dynamic_buffer.buffer_ = device_->createBuffer(RT64::RenderBufferDesc::UploadBuffer(new_size, dynamic_buffer.flags_));
         dynamic_buffer.size_ = new_size;
         dynamic_buffer.bytes_used_ = 0;
@@ -343,10 +342,9 @@ public:
             return 0;
         }
 
-        // Otherwise allocate the padding and required bytes and offset the allocated position by the padding size.
         return allocate_dynamic_data(dynamic_buffer, padding_bytes + num_bytes) + padding_bytes;
     }
-    
+
     void RenderGeometry(Rml::Vertex* vertices, int num_vertices, int* indices, int num_indices, Rml::TextureHandle texture, const Rml::Vector2f& translation) override {
         if (!textures_.contains(texture)) {
             if (texture == 0) {
@@ -428,7 +426,7 @@ public:
             texture_dimensions.y = 1;
             return true;
         }
-        
+
         RT64::Texture* texture = nullptr;
         std::unique_ptr<RT64::RenderBuffer> texture_buffer;
         ImageFromBytes& img = it->second;
@@ -437,7 +435,6 @@ public:
         switch (img.type) {
             case ImageType::RGBA32:
                 {
-                    // Read the image header (two 32-bit values for width and height respectively).
                     uint32_t rowPitch = img.width * 4;
                     size_t byteCount = img.height * rowPitch;
                     texture = new RT64::Texture();
@@ -452,7 +449,7 @@ public:
                 }
                 break;
         }
-        
+
         copy_command_list_->end();
         copy_command_queue_->executeCommandLists(copy_command_list_.get(), copy_command_fence_.get());
         copy_command_queue_->waitForCommandFence(copy_command_fence_.get());
@@ -490,22 +487,19 @@ public:
         if (texture != nullptr) {
             uint32_t image_size_bytes = source_dimensions.x * source_dimensions.y * RmlTextureFormatBytesPerPixel;
 
-            // Calculate the texture padding for alignment purposes.
+            // RT64 texture-copy rows must be aligned to 256 bytes.
             uint32_t row_pitch = source_dimensions.x * RmlTextureFormatBytesPerPixel;
             uint32_t row_byte_width, row_byte_padding;
             CalculateTextureRowWidthPadding(row_pitch, row_byte_width, row_byte_padding);
             uint32_t row_width = row_byte_width / RmlTextureFormatBytesPerPixel;
 
-            // Calculate the real number of bytes to upload including padding.
             uint32_t uploaded_size_bytes = row_byte_width * source_dimensions.y;
 
-            // Allocate room in the upload buffer for the uploaded data.
             if (uploaded_size_bytes > copy_buffer_size_) {
                 copy_buffer_size_ = (uploaded_size_bytes * 3) / 2;
                 copy_buffer_ = device_->createBuffer(RT64::RenderBufferDesc::UploadBuffer(copy_buffer_size_));
             }
 
-            // Copy the source data into the upload buffer.
             uint8_t* dst_data = (uint8_t *)(copy_buffer_->map());
             if (row_byte_padding == 0) {
                 // Copy row-by-row if the image is flipped.
@@ -533,23 +527,18 @@ public:
 
             copy_buffer_->unmap();
 
-            // Reset the command list.
             copy_command_list_->begin();
 
-            // Prepare the texture to be a destination for copying.
             copy_command_list_->barriers(RT64::RenderBarrierStage::COPY, RT64::RenderTextureBarrier(texture.get(), RT64::RenderTextureLayout::COPY_DEST));
-            
-            // Copy the upload buffer into the texture.
+
             copy_command_list_->copyTextureRegion(
                 RT64::RenderTextureCopyLocation::Subresource(texture.get()),
                 RT64::RenderTextureCopyLocation::PlacedFootprint(copy_buffer_.get(), RmlTextureFormat, source_dimensions.x, source_dimensions.y, 1, row_width));
-            
-            // End the command list, execute it and wait.
+
             copy_command_list_->end();
             copy_command_queue_->executeCommandLists(copy_command_list_.get(), copy_command_fence_.get());
             copy_command_queue_->waitForCommandFence(copy_command_fence_.get());
 
-            // Create a descriptor set with this texture in it.
             std::unique_ptr<RT64::RenderDescriptorSet> set = texture_set_builder_->create(device_);
 
             set->setTexture(gTexture_descriptor_index, texture.get(), RT64::RenderTextureLayout::SHADER_READ);
