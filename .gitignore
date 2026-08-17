@@ -44,6 +44,7 @@ gdb_bt*.txt
 __pycache__/
 
 # --- Local AI Artefacts ----------------------------------------------------
+.codex/
 .claude/settings.local.json
 .claude/worktrees/
 CLAUDE.local.md

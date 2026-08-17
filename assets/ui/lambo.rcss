@@ -1,0 +1,148 @@
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  font-family: Lato;
+  color: #f5f7fb;
+  background-color: rgba(10, 16, 28, 245);
+}
+
+#window {
+  width: 100%;
+  height: 100%;
+  padding: 7%;
+  box-sizing: border-box;
+}
+
+.panel {
+  position: absolute;
+  left: 7%;
+  top: 7%;
+  width: 86%;
+  height: 86%;
+  margin: 0;
+  padding: 4%;
+  overflow-y: auto;
+  background-color: rgba(26, 36, 55, 250);
+  border: 2px solid #6c86aa;
+  box-sizing: border-box;
+}
+
+h1 { font-size: 44dp; margin: 0 0 8dp 0; }
+h2 { font-size: 27dp; margin: 0 0 12dp 0; }
+p, .summary { font-size: 20dp; line-height: 30dp; }
+
+h1, h2, p, .summary, .footer {
+  display: block;
+  width: 100%;
+  background-color: transparent;
+  border: none;
+}
+
+button {
+  display: block;
+  width: 100%;
+  margin: 8dp 0;
+  padding: 13dp 18dp;
+  border: 2px solid #536b8e;
+  background-color: #30445f;
+  color: #f5f7fb;
+  font-size: 22dp;
+  text-align: left;
+}
+
+button.primary {
+  background-color: #8f2e24;
+  border-color: #c95b4e;
+}
+
+button.secondary {
+  margin-top: 18dp;
+  background-color: #252f40;
+}
+
+.intro {
+  margin: 0 0 14dp 0;
+  color: #c6d2e3;
+}
+
+.subheading {
+  margin-top: 28dp;
+  color: #aebbd0;
+  font-size: 20dp;
+}
+
+.setting-label {
+  display: inline-block;
+  width: 68%;
+}
+
+.setting-value {
+  display: inline-block;
+  width: 30%;
+  color: #ffd166;
+  text-align: right;
+}
+
+.help {
+  margin: 0 0 8dp 0;
+  color: #aebbd0;
+  font-size: 16dp;
+  line-height: 23dp;
+}
+
+.note {
+  margin: 10dp 0 0 0;
+  color: #ffd166;
+  font-size: 16dp;
+}
+
+.mouse-active button:hover,
+.controller-active button:focus {
+  background-color: #5076a8;
+  border-color: #d8e7ff;
+  color: #ffffff;
+}
+
+button:disabled {
+  color: #9aa7b8;
+  background-color: #252f40;
+  border-color: #3d4a5f;
+}
+
+.columns {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  gap: 20dp;
+}
+
+.column {
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0;
+  min-width: 0;
+}
+.warning { color: #ffd166; font-size: 18dp; }
+.footer { margin-top: 20dp; color: #aebbd0; font-size: 16dp; }
+
+scrollbarvertical {
+  width: 18dp;
+}
+
+scrollbarvertical slidertrack {
+  background-color: #121b2a;
+}
+
+scrollbarvertical sliderbar {
+  width: 14dp;
+  min-height: 40dp;
+  margin-left: 2dp;
+  background-color: #536b8e;
+}
+
+scrollbarvertical sliderarrowdec,
+scrollbarvertical sliderarrowinc {
+  width: 18dp;
+  height: 0;
+}

@@ -1,0 +1,35 @@
+<rml>
+  <head>
+    <title>Enhancements</title>
+    <link type="text/rcss" href="../lambo.rcss"/>
+  </head>
+  <body>
+    <div id="window">
+      <div class="panel">
+        <h1>Enhancements</h1>
+        <p class="intro">Optional visual changes. Select a row to change it; settings save automatically.</p>
+        <p class="help">Full-track visibility reduces distant pop-in per circuit when LOD limits are removed. Pro circuits may reveal unfinished scenery.</p>
+        <div class="columns">
+          <div class="column">
+            <h2>Visuals</h2>
+            <button id="autofocus" onclick="setting:fog:toggle"><span class="setting-label">Match 3P/4P fog</span><span id="enhancement-fog" class="setting-value">Loading...</span></button>
+            <button onclick="setting:sky:toggle"><span class="setting-label">Match 3P/4P sky</span><span id="enhancement-sky" class="setting-value">Loading...</span></button>
+            <button onclick="setting:lod:toggle"><span class="setting-label">Remove original LOD limits</span><span id="enhancement-lod" class="setting-value">Loading...</span></button>
+            <button onclick="setting:distance:next"><span class="setting-label">Draw distance</span><span id="enhancement-distance" class="setting-value">Loading...</span></button>
+            <button onclick="setting:fogdensity:next"><span class="setting-label">Fog density</span><span id="enhancement-fog-density" class="setting-value">Loading...</span></button>
+          </div>
+          <div class="column">
+            <h2>Full-track visibility</h2>
+            <button onclick="setting:circuit:1"><span class="setting-label">Circuit 1 (Basic)</span><span id="enhancement-circuit-1" class="setting-value">Loading...</span></button>
+            <button onclick="setting:circuit:2"><span class="setting-label">Circuit 2 (Basic)</span><span id="enhancement-circuit-2" class="setting-value">Loading...</span></button>
+            <button onclick="setting:circuit:3"><span class="setting-label">Circuit 3 (Basic)</span><span id="enhancement-circuit-3" class="setting-value">Loading...</span></button>
+            <button onclick="setting:circuit:4"><span class="setting-label">Circuit 4 (Pro)</span><span id="enhancement-circuit-4" class="setting-value">Loading...</span></button>
+            <button onclick="setting:circuit:5"><span class="setting-label">Circuit 5 (Pro)</span><span id="enhancement-circuit-5" class="setting-value">Loading...</span></button>
+            <button onclick="setting:circuit:6"><span class="setting-label">Circuit 6 (Pro)</span><span id="enhancement-circuit-6" class="setting-value">Loading...</span></button>
+          </div>
+        </div>
+        <button class="secondary" onclick="back">Back</button>
+      </div>
+    </div>
+  </body>
+</rml>

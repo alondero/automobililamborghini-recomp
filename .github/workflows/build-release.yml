@@ -100,6 +100,7 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           cp build/lamborghini_modern dist/
+          cp -r build/assets dist/
           # Crash-handler symbol table: probed next to the exe at runtime so
           # field crash dumps show function names, not raw N64 PCs (issue #80).
           cp lamborghini.syms.toml dist/
@@ -210,11 +211,13 @@ jobs:
             'build\SDL2.dll',
             'build\dxcompiler.dll',
             'build\dxil.dll',
+            'build\freetype.dll',
+            'build\assets',
             'lamborghini.syms.toml'
           )
           $missing = $payload | Where-Object { -not (Test-Path $_) }
           if ($missing) { throw "Packaging aborted -- required files missing: $($missing -join ', ')" }
-          Copy-Item $payload dist\
+          Copy-Item -Recurse $payload dist\
           Compress-Archive -Path dist\* -DestinationPath lamborghini-recomp-windows-x64.zip
 
       - name: Upload artifact

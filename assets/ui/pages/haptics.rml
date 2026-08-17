@@ -1,0 +1,15 @@
+<rml>
+  <head>
+    <title>Haptics</title>
+    <link type="text/rcss" href="../lambo.rcss"/>
+  </head>
+  <body>
+    <div id="window">
+      <div class="panel">
+        <h1>Haptics</h1>
+        <p>Rumble strength controls will be available here when their follow-up issue lands.</p>
+        <button id="autofocus" onclick="back">Back</button>
+      </div>
+    </div>
+  </body>
+</rml>
