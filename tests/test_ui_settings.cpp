@@ -56,20 +56,11 @@ int main() {
     lambo::config::load_and_apply_graphics();
 
     constexpr std::array binding_names{
-        "res:auto", "res:original", "res:2x",
-        "ss:1", "ss:2", "ss:3", "ss:4",
-        "aspect:original", "aspect:expand",
-        "hud:original", "hud:16x9", "hud:full",
-        "rate:original", "rate:display", "rate:30", "rate:60", "rate:90",
-        "rate:120", "rate:144", "rate:165", "rate:240",
-        "msaa:off", "msaa:2", "msaa:4", "msaa:8",
-        "hpfb:auto", "hpfb:on", "hpfb:off",
-        "api:auto", "api:d3d12", "api:vulkan",
+        "res:next", "ss:next", "aspect:next", "hud:next", "rate:next",
+        "msaa:next", "hpfb:next", "api:next",
         "fog:toggle", "sky:toggle", "lod:toggle",
         "circuit:1", "circuit:2", "circuit:3", "circuit:4", "circuit:5", "circuit:6",
-        "distance:1", "distance:1.5", "distance:2", "distance:3", "distance:unlimited",
-        "fogdensity:off", "fogdensity:0.5", "fogdensity:0.75", "fogdensity:1",
-        "fogdensity:1.5", "fogdensity:2",
+        "distance:next", "fogdensity:next",
     };
     for (const char* name : binding_names) {
         expect(lambo::ui::setting_action_from_name(name).has_value(),
@@ -83,61 +74,112 @@ int main() {
         return action.has_value() && lambo::ui::apply_setting_action(*action);
     };
 
-    expect(apply("res:2x") && apply("ss:4") && apply("aspect:original") &&
-           apply("hud:full") && apply("rate:144") && apply("msaa:8") &&
-           apply("hpfb:on") && apply("api:vulkan"),
-           "graphics bindings apply through the typed settings seam");
+    auto custom_refresh = lambo::config::current_graphics();
+    custom_refresh.rr_option = ultramodern::renderer::RefreshRate::Manual;
+    custom_refresh.rr_manual_value = 75;
+    lambo::config::apply_graphics(custom_refresh);
+    expect(apply("rate:next") && lambo::config::current_graphics().rr_manual_value == 90,
+           "refresh cycle advances a custom manual value to the next preset");
+    lambo::config::apply_graphics(lambo::config::default_graphics_config());
+
+    expect(apply("res:next") && apply("ss:next") && apply("aspect:next") &&
+           apply("hud:next") && apply("rate:next") && apply("msaa:next") &&
+           apply("hpfb:next") && apply("api:next"),
+           "graphics cycle bindings apply through the typed settings seam");
     const auto graphics = lambo::config::current_graphics();
     using namespace ultramodern::renderer;
-    expect(graphics.res_option == Resolution::Original2x, "resolution binding updates config");
-    expect(graphics.ds_option == 4, "supersampling binding updates config");
-    expect(graphics.ar_option == AspectRatio::Original, "aspect binding updates config");
-    expect(graphics.hr_option == HUDRatioMode::Full, "HUD binding updates config");
-    expect(graphics.rr_option == RefreshRate::Manual && graphics.rr_manual_value == 144,
-           "manual refresh binding updates config");
-    expect(graphics.msaa_option == Antialiasing::MSAA8X, "MSAA binding updates config");
+    expect(graphics.res_option == Resolution::Original, "resolution cycle updates config");
+    expect(graphics.ds_option == 2, "supersampling cycle updates config");
+    expect(graphics.ar_option == AspectRatio::Original, "aspect cycle updates config");
+    expect(graphics.hr_option == HUDRatioMode::Full, "HUD cycle updates config");
+    expect(graphics.rr_option == RefreshRate::Manual && graphics.rr_manual_value == 30,
+           "refresh cycle updates config");
+    expect(graphics.msaa_option == Antialiasing::MSAA4X, "MSAA cycle updates config");
     expect(graphics.hpfb_option == HighPrecisionFramebuffer::On,
-           "framebuffer precision binding updates config");
-    expect(graphics.api_option == GraphicsApi::Vulkan, "graphics API binding updates config");
+           "framebuffer precision cycle updates config");
+#if defined(_WIN32)
+    expect(graphics.api_option == GraphicsApi::D3D12, "graphics API cycle updates config");
+#elif defined(__APPLE__)
+    expect(graphics.api_option == GraphicsApi::Metal, "graphics API cycle updates config");
+#else
+    expect(graphics.api_option == GraphicsApi::Vulkan, "graphics API cycle updates config");
+#endif
 
     expect(apply("fog:toggle") && apply("sky:toggle") && apply("lod:toggle") &&
-           apply("circuit:6") && apply("distance:3") && apply("fogdensity:0.75"),
+           apply("circuit:6") && apply("distance:next") && apply("fogdensity:next"),
            "enhancement bindings apply through the typed settings seam");
     expect(!lambo::config::widescreen_fog_match(), "fog match toggles live");
     expect(!lambo::config::widescreen_sky_match(), "sky match toggles live");
     expect(!lambo::config::no_lod(), "LOD removal toggles live");
     expect(lambo::config::no_lod_circuit(5), "per-circuit visibility toggles live");
-    expect(lambo::config::global_draw_distance() == 3.0, "3x draw distance applies live");
-    expect(lambo::config::global_fog_scale() == 0.75, "75% fog density applies live");
+    expect(lambo::config::global_draw_distance() == 2.0, "draw-distance cycle applies live");
+    expect(lambo::config::global_fog_scale() == 1.5, "fog-density cycle applies live");
 
-    const std::string graphics_summary = lambo::ui::graphics_summary_html();
-    expect(graphics_summary.find("Resolution: Original 2x") != std::string::npos,
-           "graphics summary presents resolution");
-    expect(graphics_summary.find("Refresh rate: 144 Hz") != std::string::npos,
-           "graphics summary presents manual refresh rate");
-    expect(graphics_summary.find("MSAA: 8x") != std::string::npos,
-           "graphics summary presents MSAA");
-    expect(graphics_summary.find("restart required") != std::string::npos,
-           "graphics API is marked restart required");
+    const auto snapshot = lambo::ui::settings_snapshot();
+    expect(snapshot.resolution == "Original", "settings snapshot presents resolution");
+    expect(snapshot.refresh_rate == "30 Hz", "settings snapshot presents refresh rate");
+    expect(snapshot.msaa == "4x", "settings snapshot presents MSAA");
+    expect(snapshot.circuit_visibility[5] == "Enabled",
+           "settings snapshot presents every circuit");
+    expect(snapshot.draw_distance == "2x", "settings snapshot presents draw distance");
+    expect(snapshot.fog_density == "150%", "settings snapshot presents fog density");
 
-    const std::string enhancements_summary = lambo::ui::enhancements_summary_html();
-    expect(enhancements_summary.find("6:on") != std::string::npos,
-           "enhancement summary presents every circuit");
-    expect(enhancements_summary.find("Draw distance: 3x") != std::string::npos,
-           "enhancement summary presents draw distance");
-    expect(enhancements_summary.find("Fog density: 75%") != std::string::npos,
-           "enhancement summary presents fog density");
+    using SnapshotStringMember = std::string lambo::ui::SettingsSnapshot::*;
+    const auto expect_cycle_wraps = [&](const char* binding, int steps, const std::string& initial,
+                                        SnapshotStringMember member,
+                                        const char* message) {
+        for (int step = 0; step < steps; ++step) expect(apply(binding), message);
+        expect(lambo::ui::settings_snapshot().*member == initial, message);
+    };
+    expect_cycle_wraps("res:next", 3, snapshot.resolution,
+                       &lambo::ui::SettingsSnapshot::resolution, "resolution cycle wraps");
+    expect_cycle_wraps("ss:next", 4, snapshot.supersampling,
+                       &lambo::ui::SettingsSnapshot::supersampling, "supersampling cycle wraps");
+    expect_cycle_wraps("aspect:next", 2, snapshot.aspect_ratio,
+                       &lambo::ui::SettingsSnapshot::aspect_ratio, "aspect cycle wraps");
+    expect_cycle_wraps("hud:next", 3, snapshot.hud_layout,
+                       &lambo::ui::SettingsSnapshot::hud_layout, "HUD cycle wraps");
+    expect_cycle_wraps("rate:next", 9, snapshot.refresh_rate,
+                       &lambo::ui::SettingsSnapshot::refresh_rate, "refresh cycle wraps");
+    expect_cycle_wraps("msaa:next", 4, snapshot.msaa,
+                       &lambo::ui::SettingsSnapshot::msaa, "MSAA cycle wraps");
+    expect_cycle_wraps("hpfb:next", 3, snapshot.framebuffer_precision,
+                       &lambo::ui::SettingsSnapshot::framebuffer_precision,
+                       "framebuffer precision cycle wraps");
+#if defined(_WIN32)
+    constexpr int api_cycle_size = 3;
+#else
+    constexpr int api_cycle_size = 2;
+#endif
+    expect_cycle_wraps("api:next", api_cycle_size, snapshot.graphics_api,
+                       &lambo::ui::SettingsSnapshot::graphics_api, "graphics API cycle wraps");
+    expect_cycle_wraps("distance:next", 5, snapshot.draw_distance,
+                       &lambo::ui::SettingsSnapshot::draw_distance, "draw-distance cycle wraps");
+    expect_cycle_wraps("fogdensity:next", 6, snapshot.fog_density,
+                       &lambo::ui::SettingsSnapshot::fog_density, "fog-density cycle wraps");
 
     const auto persisted = read_json(config_path);
+#if defined(_WIN32)
+    expect(persisted.at("api_option") == "D3D12", "graphics API persists");
+#elif defined(__APPLE__)
+    expect(persisted.at("api_option") == "Metal", "graphics API persists");
+#else
     expect(persisted.at("api_option") == "Vulkan", "graphics API persists");
-    expect(persisted.at("rr_manual_value") == 144, "manual refresh rate persists");
+#endif
+    expect(persisted.at("rr_manual_value") == 30, "manual refresh rate persists");
     expect(persisted.at("no_lod_circuit").at(5) == true,
            "per-circuit visibility persists");
-    expect(persisted.at("draw_distance") == 3.0, "draw distance persists");
-    expect(persisted.at("fog_scale") == 0.75, "fog density persists");
+    expect(persisted.at("draw_distance") == 2.0, "draw distance persists");
+    expect(persisted.at("fog_scale") == 1.5, "fog density persists");
 
     lambo::config::load_and_apply_graphics();
+#if defined(_WIN32)
+    expect(lambo::config::current_graphics().api_option == GraphicsApi::D3D12,
+#elif defined(__APPLE__)
+    expect(lambo::config::current_graphics().api_option == GraphicsApi::Metal,
+#else
     expect(lambo::config::current_graphics().api_option == GraphicsApi::Vulkan,
+#endif
            "settings survive reload through the config source of truth");
 
     std::error_code error;

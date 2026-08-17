@@ -1,6 +1,7 @@
 #ifndef LAMBO_UI_SETTINGS_H
 #define LAMBO_UI_SETTINGS_H
 
+#include <array>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -8,37 +9,14 @@
 namespace lambo::ui {
 
 enum class SettingAction {
-    ResolutionAuto,
-    ResolutionOriginal,
-    ResolutionOriginal2x,
-    Supersampling1x,
-    Supersampling2x,
-    Supersampling3x,
-    Supersampling4x,
-    AspectOriginal,
-    AspectExpand,
-    HudOriginal,
-    HudClamp16x9,
-    HudFull,
-    RefreshOriginal,
-    RefreshDisplay,
-    Refresh30,
-    Refresh60,
-    Refresh90,
-    Refresh120,
-    Refresh144,
-    Refresh165,
-    Refresh240,
-    MsaaOff,
-    Msaa2x,
-    Msaa4x,
-    Msaa8x,
-    HpfbAuto,
-    HpfbOn,
-    HpfbOff,
-    ApiAuto,
-    ApiD3D12,
-    ApiVulkan,
+    ResolutionNext,
+    SupersamplingNext,
+    AspectNext,
+    HudNext,
+    RefreshNext,
+    MsaaNext,
+    HpfbNext,
+    ApiNext,
     FogMatchToggle,
     SkyMatchToggle,
     NoLodToggle,
@@ -48,23 +26,30 @@ enum class SettingAction {
     Circuit4Toggle,
     Circuit5Toggle,
     Circuit6Toggle,
-    DrawDistance1x,
-    DrawDistance1_5x,
-    DrawDistance2x,
-    DrawDistance3x,
-    DrawDistanceUnlimited,
-    FogDensityOff,
-    FogDensity50,
-    FogDensity75,
-    FogDensity100,
-    FogDensity150,
-    FogDensity200,
+    DrawDistanceNext,
+    FogDensityNext,
+};
+
+struct SettingsSnapshot {
+    std::string resolution;
+    std::string supersampling;
+    std::string aspect_ratio;
+    std::string hud_layout;
+    std::string refresh_rate;
+    std::string msaa;
+    std::string framebuffer_precision;
+    std::string graphics_api;
+    std::string widescreen_fog;
+    std::string widescreen_sky;
+    std::string lod_removal;
+    std::string draw_distance;
+    std::string fog_density;
+    std::array<std::string, 6> circuit_visibility;
 };
 
 std::optional<SettingAction> setting_action_from_name(std::string_view name);
 bool apply_setting_action(SettingAction action);
-std::string graphics_summary_html();
-std::string enhancements_summary_html();
+SettingsSnapshot settings_snapshot();
 
 } // namespace lambo::ui
 

@@ -7,48 +7,25 @@
     <div id="window">
       <div class="panel">
         <h1>Graphics</h1>
-        <div id="graphics-summary" class="summary">Loading...</div>
-        <p class="warning">Graphics API changes are marked restart required.</p>
+        <p class="intro">Activate a row to cycle its value. Live-safe changes apply and save immediately.</p>
         <div class="columns">
           <div class="column">
             <h2>Display</h2>
-            <button id="autofocus" onclick="setting:res:auto">Internal resolution: Automatic</button>
-            <button onclick="setting:res:original">Internal resolution: Original</button>
-            <button onclick="setting:res:2x">Internal resolution: Original 2x</button>
-            <button onclick="setting:ss:1">Supersampling: 1x</button>
-            <button onclick="setting:ss:2">Supersampling: 2x</button>
-            <button onclick="setting:ss:3">Supersampling: 3x</button>
-            <button onclick="setting:ss:4">Supersampling: 4x</button>
-            <button onclick="setting:aspect:original">Aspect ratio: Original</button>
-            <button onclick="setting:aspect:expand">Aspect ratio: Expand</button>
-            <button onclick="setting:hud:original">HUD: Original</button>
-            <button onclick="setting:hud:16x9">HUD: Clamp to 16:9</button>
-            <button onclick="setting:hud:full">HUD: Full width</button>
+            <button id="autofocus" onclick="setting:res:next"><span class="setting-label">Internal resolution</span><span id="graphics-resolution" class="setting-value">Loading...</span></button>
+            <button onclick="setting:ss:next"><span class="setting-label">Supersampling</span><span id="graphics-supersampling" class="setting-value">Loading...</span></button>
+            <button onclick="setting:aspect:next"><span class="setting-label">Aspect ratio</span><span id="graphics-aspect" class="setting-value">Loading...</span></button>
+            <button onclick="setting:hud:next"><span class="setting-label">HUD layout</span><span id="graphics-hud" class="setting-value">Loading...</span></button>
           </div>
           <div class="column">
-            <h2>Quality</h2>
-            <button onclick="setting:rate:original">Refresh rate: Original</button>
-            <button onclick="setting:rate:display">Refresh rate: Display</button>
-            <button onclick="setting:rate:30">Refresh rate: 30 Hz</button>
-            <button onclick="setting:rate:60">Refresh rate: 60 Hz</button>
-            <button onclick="setting:rate:90">Refresh rate: 90 Hz</button>
-            <button onclick="setting:rate:120">Refresh rate: 120 Hz</button>
-            <button onclick="setting:rate:144">Refresh rate: 144 Hz</button>
-            <button onclick="setting:rate:165">Refresh rate: 165 Hz</button>
-            <button onclick="setting:rate:240">Refresh rate: 240 Hz</button>
-            <button onclick="setting:msaa:off">MSAA: Off</button>
-            <button onclick="setting:msaa:2">MSAA: 2x</button>
-            <button onclick="setting:msaa:4">MSAA: 4x</button>
-            <button onclick="setting:msaa:8">MSAA: 8x</button>
-            <button onclick="setting:hpfb:auto">Framebuffer precision: Automatic</button>
-            <button onclick="setting:hpfb:on">Framebuffer precision: On</button>
-            <button onclick="setting:hpfb:off">Framebuffer precision: Off</button>
-            <button onclick="setting:api:auto">Graphics API: Automatic</button>
-            <button onclick="setting:api:d3d12">Graphics API: Direct3D 12</button>
-            <button onclick="setting:api:vulkan">Graphics API: Vulkan</button>
+            <h2>Rendering</h2>
+            <button onclick="setting:rate:next"><span class="setting-label">Refresh rate</span><span id="graphics-refresh" class="setting-value">Loading...</span></button>
+            <button onclick="setting:msaa:next"><span class="setting-label">Anti-aliasing</span><span id="graphics-msaa" class="setting-value">Loading...</span></button>
+            <button onclick="setting:hpfb:next"><span class="setting-label">Framebuffer precision</span><span id="graphics-hpfb" class="setting-value">Loading...</span></button>
+            <button onclick="setting:api:next"><span class="setting-label">Graphics API *</span><span id="graphics-api" class="setting-value">Loading...</span></button>
           </div>
         </div>
-        <button onclick="back">Back</button>
+        <p class="note">* Graphics API changes are saved for the next launch and do not apply immediately.</p>
+        <button class="secondary" onclick="back">Back</button>
       </div>
     </div>
   </body>

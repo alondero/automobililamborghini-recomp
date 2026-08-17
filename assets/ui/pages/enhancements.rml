@@ -7,37 +7,28 @@
     <div id="window">
       <div class="panel">
         <h1>Enhancements</h1>
-        <div id="enhancement-summary" class="summary">Loading...</div>
+        <p class="intro">Optional visual changes. Select a row to change it; settings save automatically.</p>
         <div class="columns">
           <div class="column">
-            <h2>Widescreen</h2>
-            <button id="autofocus" onclick="setting:fog:toggle">3P/4P widescreen fog</button>
-            <button onclick="setting:sky:toggle">3P/4P widescreen sky</button>
-            <button onclick="setting:lod:toggle">N64 LOD removal</button>
-            <button onclick="setting:distance:1">Draw distance: 1x</button>
-            <button onclick="setting:distance:1.5">Draw distance: 1.5x</button>
-            <button onclick="setting:distance:2">Draw distance: 2x</button>
-            <button onclick="setting:distance:3">Draw distance: 3x</button>
-            <button onclick="setting:distance:unlimited">Draw distance: Unlimited</button>
-            <h2>Full-track visibility</h2>
-            <button onclick="setting:circuit:1">Circuit 1</button>
-            <button onclick="setting:circuit:2">Circuit 2</button>
-            <button onclick="setting:circuit:3">Circuit 3</button>
-            <button onclick="setting:circuit:4">Circuit 4</button>
-            <button onclick="setting:circuit:5">Circuit 5</button>
-            <button onclick="setting:circuit:6">Circuit 6</button>
+            <h2>Visuals</h2>
+            <button id="autofocus" onclick="setting:fog:toggle"><span class="setting-label">Match 3P/4P fog</span><span id="enhancement-fog" class="setting-value">Loading...</span></button>
+            <button onclick="setting:sky:toggle"><span class="setting-label">Match 3P/4P sky</span><span id="enhancement-sky" class="setting-value">Loading...</span></button>
+            <button onclick="setting:lod:toggle"><span class="setting-label">Remove original LOD limits</span><span id="enhancement-lod" class="setting-value">Loading...</span></button>
+            <button onclick="setting:distance:next"><span class="setting-label">Draw distance</span><span id="enhancement-distance" class="setting-value">Loading...</span></button>
+            <button onclick="setting:fogdensity:next"><span class="setting-label">Fog density</span><span id="enhancement-fog-density" class="setting-value">Loading...</span></button>
           </div>
           <div class="column">
-            <h2>Fog density</h2>
-            <button onclick="setting:fogdensity:off">Fog density: Off</button>
-            <button onclick="setting:fogdensity:0.5">Fog density: 50%</button>
-            <button onclick="setting:fogdensity:0.75">Fog density: 75%</button>
-            <button onclick="setting:fogdensity:1">Fog density: Original</button>
-            <button onclick="setting:fogdensity:1.5">Fog density: 150%</button>
-            <button onclick="setting:fogdensity:2">Fog density: 200%</button>
+            <h2>Full-track visibility</h2>
+            <p class="help">Reduces distant pop-in per circuit when LOD limits are removed. Pro circuits may reveal unfinished scenery.</p>
+            <button onclick="setting:circuit:1"><span class="setting-label">Circuit 1 (Basic)</span><span id="enhancement-circuit-1" class="setting-value">Loading...</span></button>
+            <button onclick="setting:circuit:2"><span class="setting-label">Circuit 2 (Basic)</span><span id="enhancement-circuit-2" class="setting-value">Loading...</span></button>
+            <button onclick="setting:circuit:3"><span class="setting-label">Circuit 3 (Basic)</span><span id="enhancement-circuit-3" class="setting-value">Loading...</span></button>
+            <button onclick="setting:circuit:4"><span class="setting-label">Circuit 4 (Pro)</span><span id="enhancement-circuit-4" class="setting-value">Loading...</span></button>
+            <button onclick="setting:circuit:5"><span class="setting-label">Circuit 5 (Pro)</span><span id="enhancement-circuit-5" class="setting-value">Loading...</span></button>
+            <button onclick="setting:circuit:6"><span class="setting-label">Circuit 6 (Pro)</span><span id="enhancement-circuit-6" class="setting-value">Loading...</span></button>
           </div>
         </div>
-        <button onclick="back">Back</button>
+        <button class="secondary" onclick="back">Back</button>
       </div>
     </div>
   </body>

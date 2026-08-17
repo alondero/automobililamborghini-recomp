@@ -29,7 +29,7 @@ body {
 }
 
 h1 { font-size: 44dp; margin: 0 0 8dp 0; }
-h2 { font-size: 30dp; margin: 0 0 24dp 0; }
+h2 { font-size: 27dp; margin: 0 0 12dp 0; }
 p, .summary { font-size: 20dp; line-height: 30dp; }
 
 h1, h2, p, .summary, .footer {
@@ -49,6 +49,53 @@ button {
   color: #f5f7fb;
   font-size: 22dp;
   text-align: left;
+}
+
+button.primary {
+  background-color: #8f2e24;
+  border-color: #c95b4e;
+}
+
+button.secondary {
+  margin-top: 18dp;
+  background-color: #252f40;
+}
+
+.intro {
+  margin: 0 0 14dp 0;
+  color: #c6d2e3;
+}
+
+.subheading {
+  margin-top: 28dp;
+  color: #aebbd0;
+  font-size: 20dp;
+}
+
+.setting-label {
+  display: inline-block;
+  width: 68%;
+}
+
+.setting-value {
+  display: inline-block;
+  width: 30%;
+  color: #ffd166;
+  text-align: right;
+}
+
+.help {
+  min-height: 58dp;
+  margin: 0 0 8dp 0;
+  color: #aebbd0;
+  font-size: 16dp;
+  line-height: 23dp;
+}
+
+.note {
+  margin: 10dp 0 0 0;
+  color: #ffd166;
+  font-size: 16dp;
 }
 
 .mouse-active button:hover,

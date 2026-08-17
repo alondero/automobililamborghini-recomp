@@ -1,7 +1,9 @@
 #include "lambo_ui_settings.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <iterator>
 #include <string>
 #include <utility>
 
@@ -12,37 +14,14 @@ namespace {
 using lambo::ui::SettingAction;
 
 constexpr auto setting_bindings = std::to_array<std::pair<std::string_view, SettingAction>>({
-    {"res:auto", SettingAction::ResolutionAuto},
-    {"res:original", SettingAction::ResolutionOriginal},
-    {"res:2x", SettingAction::ResolutionOriginal2x},
-    {"ss:1", SettingAction::Supersampling1x},
-    {"ss:2", SettingAction::Supersampling2x},
-    {"ss:3", SettingAction::Supersampling3x},
-    {"ss:4", SettingAction::Supersampling4x},
-    {"aspect:original", SettingAction::AspectOriginal},
-    {"aspect:expand", SettingAction::AspectExpand},
-    {"hud:original", SettingAction::HudOriginal},
-    {"hud:16x9", SettingAction::HudClamp16x9},
-    {"hud:full", SettingAction::HudFull},
-    {"rate:original", SettingAction::RefreshOriginal},
-    {"rate:display", SettingAction::RefreshDisplay},
-    {"rate:30", SettingAction::Refresh30},
-    {"rate:60", SettingAction::Refresh60},
-    {"rate:90", SettingAction::Refresh90},
-    {"rate:120", SettingAction::Refresh120},
-    {"rate:144", SettingAction::Refresh144},
-    {"rate:165", SettingAction::Refresh165},
-    {"rate:240", SettingAction::Refresh240},
-    {"msaa:off", SettingAction::MsaaOff},
-    {"msaa:2", SettingAction::Msaa2x},
-    {"msaa:4", SettingAction::Msaa4x},
-    {"msaa:8", SettingAction::Msaa8x},
-    {"hpfb:auto", SettingAction::HpfbAuto},
-    {"hpfb:on", SettingAction::HpfbOn},
-    {"hpfb:off", SettingAction::HpfbOff},
-    {"api:auto", SettingAction::ApiAuto},
-    {"api:d3d12", SettingAction::ApiD3D12},
-    {"api:vulkan", SettingAction::ApiVulkan},
+    {"res:next", SettingAction::ResolutionNext},
+    {"ss:next", SettingAction::SupersamplingNext},
+    {"aspect:next", SettingAction::AspectNext},
+    {"hud:next", SettingAction::HudNext},
+    {"rate:next", SettingAction::RefreshNext},
+    {"msaa:next", SettingAction::MsaaNext},
+    {"hpfb:next", SettingAction::HpfbNext},
+    {"api:next", SettingAction::ApiNext},
     {"fog:toggle", SettingAction::FogMatchToggle},
     {"sky:toggle", SettingAction::SkyMatchToggle},
     {"lod:toggle", SettingAction::NoLodToggle},
@@ -52,18 +31,25 @@ constexpr auto setting_bindings = std::to_array<std::pair<std::string_view, Sett
     {"circuit:4", SettingAction::Circuit4Toggle},
     {"circuit:5", SettingAction::Circuit5Toggle},
     {"circuit:6", SettingAction::Circuit6Toggle},
-    {"distance:1", SettingAction::DrawDistance1x},
-    {"distance:1.5", SettingAction::DrawDistance1_5x},
-    {"distance:2", SettingAction::DrawDistance2x},
-    {"distance:3", SettingAction::DrawDistance3x},
-    {"distance:unlimited", SettingAction::DrawDistanceUnlimited},
-    {"fogdensity:off", SettingAction::FogDensityOff},
-    {"fogdensity:0.5", SettingAction::FogDensity50},
-    {"fogdensity:0.75", SettingAction::FogDensity75},
-    {"fogdensity:1", SettingAction::FogDensity100},
-    {"fogdensity:1.5", SettingAction::FogDensity150},
-    {"fogdensity:2", SettingAction::FogDensity200},
+    {"distance:next", SettingAction::DrawDistanceNext},
+    {"fogdensity:next", SettingAction::FogDensityNext},
 });
+
+template <typename T, size_t Size>
+T next_value(T current, const std::array<T, Size>& values) {
+    const auto position = std::find(values.begin(), values.end(), current);
+    if (position == values.end() || std::next(position) == values.end()) return values.front();
+    return *std::next(position);
+}
+
+template <size_t Size>
+double next_number(double current, const std::array<double, Size>& values) {
+    const auto position = std::find_if(values.begin(), values.end(), [current](double value) {
+        return std::abs(value - current) < 0.001;
+    });
+    if (position == values.end() || std::next(position) == values.end()) return values.front();
+    return *std::next(position);
+}
 
 const char* resolution_name(ultramodern::renderer::Resolution value) {
     using ultramodern::renderer::Resolution;
@@ -158,37 +144,49 @@ bool apply_setting_action(SettingAction action) {
     auto cfg = lambo::config::current_graphics();
 
     switch (action) {
-        case SettingAction::ResolutionAuto: cfg.res_option = Resolution::Auto; break;
-        case SettingAction::ResolutionOriginal: cfg.res_option = Resolution::Original; break;
-        case SettingAction::ResolutionOriginal2x: cfg.res_option = Resolution::Original2x; break;
-        case SettingAction::Supersampling1x: cfg.ds_option = 1; break;
-        case SettingAction::Supersampling2x: cfg.ds_option = 2; break;
-        case SettingAction::Supersampling3x: cfg.ds_option = 3; break;
-        case SettingAction::Supersampling4x: cfg.ds_option = 4; break;
-        case SettingAction::AspectOriginal: cfg.ar_option = AspectRatio::Original; break;
-        case SettingAction::AspectExpand: cfg.ar_option = AspectRatio::Expand; break;
-        case SettingAction::HudOriginal: cfg.hr_option = HUDRatioMode::Original; break;
-        case SettingAction::HudClamp16x9: cfg.hr_option = HUDRatioMode::Clamp16x9; break;
-        case SettingAction::HudFull: cfg.hr_option = HUDRatioMode::Full; break;
-        case SettingAction::RefreshOriginal: cfg.rr_option = RefreshRate::Original; break;
-        case SettingAction::RefreshDisplay: cfg.rr_option = RefreshRate::Display; break;
-        case SettingAction::Refresh30: cfg.rr_option = RefreshRate::Manual; cfg.rr_manual_value = 30; break;
-        case SettingAction::Refresh60: cfg.rr_option = RefreshRate::Manual; cfg.rr_manual_value = 60; break;
-        case SettingAction::Refresh90: cfg.rr_option = RefreshRate::Manual; cfg.rr_manual_value = 90; break;
-        case SettingAction::Refresh120: cfg.rr_option = RefreshRate::Manual; cfg.rr_manual_value = 120; break;
-        case SettingAction::Refresh144: cfg.rr_option = RefreshRate::Manual; cfg.rr_manual_value = 144; break;
-        case SettingAction::Refresh165: cfg.rr_option = RefreshRate::Manual; cfg.rr_manual_value = 165; break;
-        case SettingAction::Refresh240: cfg.rr_option = RefreshRate::Manual; cfg.rr_manual_value = 240; break;
-        case SettingAction::MsaaOff: cfg.msaa_option = Antialiasing::None; break;
-        case SettingAction::Msaa2x: cfg.msaa_option = Antialiasing::MSAA2X; break;
-        case SettingAction::Msaa4x: cfg.msaa_option = Antialiasing::MSAA4X; break;
-        case SettingAction::Msaa8x: cfg.msaa_option = Antialiasing::MSAA8X; break;
-        case SettingAction::HpfbAuto: cfg.hpfb_option = HighPrecisionFramebuffer::Auto; break;
-        case SettingAction::HpfbOn: cfg.hpfb_option = HighPrecisionFramebuffer::On; break;
-        case SettingAction::HpfbOff: cfg.hpfb_option = HighPrecisionFramebuffer::Off; break;
-        case SettingAction::ApiAuto: cfg.api_option = GraphicsApi::Auto; break;
-        case SettingAction::ApiD3D12: cfg.api_option = GraphicsApi::D3D12; break;
-        case SettingAction::ApiVulkan: cfg.api_option = GraphicsApi::Vulkan; break;
+        case SettingAction::ResolutionNext:
+            cfg.res_option = next_value(cfg.res_option,
+                std::array{Resolution::Auto, Resolution::Original, Resolution::Original2x}); break;
+        case SettingAction::SupersamplingNext:
+            cfg.ds_option = cfg.ds_option < 1 || cfg.ds_option >= 4 ? 1 : cfg.ds_option + 1; break;
+        case SettingAction::AspectNext:
+            cfg.ar_option = next_value(cfg.ar_option, std::array{AspectRatio::Expand, AspectRatio::Original}); break;
+        case SettingAction::HudNext:
+            cfg.hr_option = next_value(cfg.hr_option,
+                std::array{HUDRatioMode::Clamp16x9, HUDRatioMode::Full, HUDRatioMode::Original}); break;
+        case SettingAction::RefreshNext:
+            if (cfg.rr_option == RefreshRate::Original) cfg.rr_option = RefreshRate::Display;
+            else if (cfg.rr_option == RefreshRate::Display) { cfg.rr_option = RefreshRate::Manual; cfg.rr_manual_value = 30; }
+            else {
+                constexpr std::array rates{30, 60, 90, 120, 144, 165, 240};
+                const auto position = std::find(rates.begin(), rates.end(), cfg.rr_manual_value);
+                if (position == rates.end()) {
+                    const auto next_rate = std::upper_bound(rates.begin(), rates.end(), cfg.rr_manual_value);
+                    if (next_rate == rates.end()) cfg.rr_option = RefreshRate::Original;
+                    else cfg.rr_manual_value = *next_rate;
+                }
+                else if (std::next(position) == rates.end()) cfg.rr_option = RefreshRate::Original;
+                else cfg.rr_manual_value = *std::next(position);
+            }
+            break;
+        case SettingAction::MsaaNext:
+            cfg.msaa_option = next_value(cfg.msaa_option, std::array{
+                Antialiasing::None, Antialiasing::MSAA2X, Antialiasing::MSAA4X, Antialiasing::MSAA8X}); break;
+        case SettingAction::HpfbNext:
+            cfg.hpfb_option = next_value(cfg.hpfb_option, std::array{
+                HighPrecisionFramebuffer::Auto, HighPrecisionFramebuffer::On, HighPrecisionFramebuffer::Off}); break;
+        case SettingAction::ApiNext:
+#if defined(_WIN32)
+            cfg.api_option = next_value(cfg.api_option,
+                std::array{GraphicsApi::Auto, GraphicsApi::D3D12, GraphicsApi::Vulkan});
+#elif defined(__APPLE__)
+            cfg.api_option = next_value(cfg.api_option,
+                std::array{GraphicsApi::Auto, GraphicsApi::Metal});
+#else
+            cfg.api_option = next_value(cfg.api_option,
+                std::array{GraphicsApi::Auto, GraphicsApi::Vulkan});
+#endif
+            break;
         case SettingAction::FogMatchToggle:
             lambo::config::set_widescreen_fog_match(!lambo::config::widescreen_fog_match()); return true;
         case SettingAction::SkyMatchToggle:
@@ -202,49 +200,42 @@ bool apply_setting_action(SettingAction action) {
             lambo::config::set_no_lod_circuit(circuit, !lambo::config::no_lod_circuit(circuit));
             return true;
         }
-        case SettingAction::DrawDistance1x: lambo::config::set_global_draw_distance(1.0); return true;
-        case SettingAction::DrawDistance1_5x: lambo::config::set_global_draw_distance(1.5); return true;
-        case SettingAction::DrawDistance2x: lambo::config::set_global_draw_distance(2.0); return true;
-        case SettingAction::DrawDistance3x: lambo::config::set_global_draw_distance(3.0); return true;
-        case SettingAction::DrawDistanceUnlimited: lambo::config::set_global_draw_distance(0.0); return true;
-        case SettingAction::FogDensityOff: lambo::config::set_global_fog_scale(0.0); return true;
-        case SettingAction::FogDensity50: lambo::config::set_global_fog_scale(0.5); return true;
-        case SettingAction::FogDensity75: lambo::config::set_global_fog_scale(0.75); return true;
-        case SettingAction::FogDensity100: lambo::config::set_global_fog_scale(1.0); return true;
-        case SettingAction::FogDensity150: lambo::config::set_global_fog_scale(1.5); return true;
-        case SettingAction::FogDensity200: lambo::config::set_global_fog_scale(2.0); return true;
+        case SettingAction::DrawDistanceNext:
+            lambo::config::set_global_draw_distance(next_number(
+                lambo::config::global_draw_distance(), std::array{1.0, 1.5, 2.0, 3.0, 0.0})); return true;
+        case SettingAction::FogDensityNext:
+            lambo::config::set_global_fog_scale(next_number(
+                lambo::config::global_fog_scale(), std::array{0.0, 0.5, 0.75, 1.0, 1.5, 2.0})); return true;
     }
 
     lambo::config::apply_graphics(cfg);
     return true;
 }
 
-std::string graphics_summary_html() {
+SettingsSnapshot settings_snapshot() {
     const auto cfg = lambo::config::current_graphics();
-    return std::string("Resolution: ") + resolution_name(cfg.res_option) +
-           "<br/>Supersampling: " + std::to_string(cfg.ds_option) + "x" +
-           "<br/>Aspect ratio: " + aspect_name(cfg.ar_option) +
-           "<br/>HUD: " + hud_name(cfg.hr_option) +
-           "<br/>Refresh rate: " + refresh_name(cfg) +
-           "<br/>MSAA: " + msaa_name(cfg.msaa_option) +
-           "<br/>Framebuffer precision: " + hpfb_name(cfg.hpfb_option) +
-           "<br/>Graphics API: " + api_name(cfg.api_option) + " (restart required)";
-}
-
-std::string enhancements_summary_html() {
-    std::string circuits;
-    for (int circuit = 0; circuit < 6; ++circuit) {
-        if (!circuits.empty()) circuits += ", ";
-        circuits += std::to_string(circuit + 1) + ":" +
-                    (lambo::config::no_lod_circuit(circuit) ? "on" : "off");
-    }
+    SettingsSnapshot result{
+        resolution_name(cfg.res_option),
+        std::to_string(cfg.ds_option) + "x",
+        aspect_name(cfg.ar_option),
+        hud_name(cfg.hr_option),
+        refresh_name(cfg),
+        msaa_name(cfg.msaa_option),
+        hpfb_name(cfg.hpfb_option),
+        api_name(cfg.api_option),
+        lambo::config::widescreen_fog_match() ? "Enabled" : "Disabled",
+        lambo::config::widescreen_sky_match() ? "Enabled" : "Disabled",
+        lambo::config::no_lod() ? "Enabled" : "Disabled",
+        multiplier_name(lambo::config::global_draw_distance()),
+        {},
+        {},
+    };
     const int fog_percent = static_cast<int>(std::lround(lambo::config::global_fog_scale() * 100.0));
-    return std::string("Widescreen fog: ") + (lambo::config::widescreen_fog_match() ? "matched" : "original") +
-           "<br/>Widescreen sky: " + (lambo::config::widescreen_sky_match() ? "matched" : "original") +
-           "<br/>N64 LOD: " + (lambo::config::no_lod() ? "removed" : "original") +
-           "<br/>Full-track visibility: " + circuits +
-           "<br/>Draw distance: " + multiplier_name(lambo::config::global_draw_distance()) +
-           "<br/>Fog density: " + (fog_percent == 0 ? std::string("Off") : std::to_string(fog_percent) + "%");
+    result.fog_density = fog_percent == 0 ? "Off" : std::to_string(fog_percent) + "%";
+    for (int circuit = 0; circuit < 6; ++circuit) {
+        result.circuit_visibility[circuit] = lambo::config::no_lod_circuit(circuit) ? "Enabled" : "Disabled";
+    }
+    return result;
 }
 
 } // namespace lambo::ui

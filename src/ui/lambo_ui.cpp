@@ -227,8 +227,24 @@ void UiState::set_text(const char* id, const std::string& value) {
 void UiState::refresh_document_values() {
     if (document == nullptr) return;
     set_text("version", std::string("v") + LAMBO_VERSION);
-    set_text("graphics-summary", lambo::ui::graphics_summary_html());
-    set_text("enhancement-summary", lambo::ui::enhancements_summary_html());
+    const auto values = lambo::ui::settings_snapshot();
+    set_text("graphics-resolution", values.resolution);
+    set_text("graphics-supersampling", values.supersampling);
+    set_text("graphics-aspect", values.aspect_ratio);
+    set_text("graphics-hud", values.hud_layout);
+    set_text("graphics-refresh", values.refresh_rate);
+    set_text("graphics-msaa", values.msaa);
+    set_text("graphics-hpfb", values.framebuffer_precision);
+    set_text("graphics-api", values.graphics_api);
+    set_text("enhancement-fog", values.widescreen_fog);
+    set_text("enhancement-sky", values.widescreen_sky);
+    set_text("enhancement-lod", values.lod_removal);
+    set_text("enhancement-distance", values.draw_distance);
+    set_text("enhancement-fog-density", values.fog_density);
+    for (size_t circuit = 0; circuit < values.circuit_visibility.size(); ++circuit) {
+        const std::string id = "enhancement-circuit-" + std::to_string(circuit + 1);
+        set_text(id.c_str(), values.circuit_visibility[circuit]);
+    }
 }
 
 void UiState::load_page(lambo::ui::Page page, bool push_history) {

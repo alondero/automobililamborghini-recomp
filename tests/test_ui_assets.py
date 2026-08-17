@@ -43,26 +43,40 @@ def main() -> None:
                 page_actions.add(onclick.removeprefix("page:"))
 
     expected_settings = {
-        "res:auto", "res:original", "res:2x",
-        "ss:1", "ss:2", "ss:3", "ss:4",
-        "aspect:original", "aspect:expand",
-        "hud:original", "hud:16x9", "hud:full",
-        "rate:original", "rate:display", "rate:30", "rate:60", "rate:90",
-        "rate:120", "rate:144", "rate:165", "rate:240",
-        "msaa:off", "msaa:2", "msaa:4", "msaa:8",
-        "hpfb:auto", "hpfb:on", "hpfb:off",
-        "api:auto", "api:d3d12", "api:vulkan",
+        "res:next", "ss:next", "aspect:next", "hud:next", "rate:next",
+        "msaa:next", "hpfb:next", "api:next",
         "fog:toggle", "sky:toggle", "lod:toggle",
         "circuit:1", "circuit:2", "circuit:3", "circuit:4", "circuit:5", "circuit:6",
-        "distance:1", "distance:1.5", "distance:2", "distance:3", "distance:unlimited",
-        "fogdensity:off", "fogdensity:0.5", "fogdensity:0.75", "fogdensity:1",
-        "fogdensity:1.5", "fogdensity:2",
+        "distance:next", "fogdensity:next",
     }
     require(setting_actions == expected_settings,
             f"setting actions differ: missing={expected_settings - setting_actions}, "
             f"unexpected={setting_actions - expected_settings}")
     require({"graphics", "enhancements", "controls", "haptics"} <= page_actions,
-            "settings hub is missing a stable route")
+            "settings hub is missing a stable route identifier")
+
+    graphics = ET.parse(ui_root / "pages" / "graphics.rml")
+    graphics_controls = [element for element in graphics.iter("button")
+                         if element.attrib.get("onclick", "").startswith("setting:")]
+    require(len(graphics_controls) == 8,
+            "graphics must expose one control per setting, not one button per value")
+    for value_id in ("graphics-resolution", "graphics-supersampling", "graphics-aspect",
+                     "graphics-hud", "graphics-refresh", "graphics-msaa", "graphics-hpfb",
+                     "graphics-api"):
+        require(any(element.attrib.get("id") == value_id for element in graphics.iter()),
+                f"graphics control is missing current-value target: {value_id}")
+
+    settings = ET.parse(ui_root / "settings.rml")
+    unavailable = [element for element in settings.iter("button")
+                   if element.attrib.get("disabled") == "disabled"]
+    require(len(unavailable) == 2 and
+            {element.attrib.get("onclick") for element in unavailable} ==
+            {"page:controls", "page:haptics"},
+            "unfinished settings pages must be disabled while retaining stable routes")
+
+    graphics_text = (ui_root / "pages" / "graphics.rml").read_text(encoding="utf-8")
+    require("saved for the next launch" in graphics_text and "do not apply immediately" in graphics_text,
+            "graphics API must not pretend to apply live")
 
     launcher = (ui_root / "launcher.rml").read_text(encoding="utf-8")
     require("v1.0.0" not in launcher, "launcher must not hardcode a release version")
