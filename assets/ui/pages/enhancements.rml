@@ -8,6 +8,7 @@
       <div class="panel">
         <h1>Enhancements</h1>
         <p class="intro">Optional visual changes. Select a row to change it; settings save automatically.</p>
+        <p class="help">Full-track visibility reduces distant pop-in per circuit when LOD limits are removed. Pro circuits may reveal unfinished scenery.</p>
         <div class="columns">
           <div class="column">
             <h2>Visuals</h2>
@@ -19,7 +20,6 @@
           </div>
           <div class="column">
             <h2>Full-track visibility</h2>
-            <p class="help">Reduces distant pop-in per circuit when LOD limits are removed. Pro circuits may reveal unfinished scenery.</p>
             <button onclick="setting:circuit:1"><span class="setting-label">Circuit 1 (Basic)</span><span id="enhancement-circuit-1" class="setting-value">Loading...</span></button>
             <button onclick="setting:circuit:2"><span class="setting-label">Circuit 2 (Basic)</span><span id="enhancement-circuit-2" class="setting-value">Loading...</span></button>
             <button onclick="setting:circuit:3"><span class="setting-label">Circuit 3 (Basic)</span><span id="enhancement-circuit-3" class="setting-value">Loading...</span></button>

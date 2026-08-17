@@ -85,7 +85,6 @@ button.secondary {
 }
 
 .help {
-  min-height: 58dp;
   margin: 0 0 8dp 0;
   color: #aebbd0;
   font-size: 16dp;
@@ -118,7 +117,12 @@ button:disabled {
   gap: 20dp;
 }
 
-.column { width: 50%; }
+.column {
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0;
+  min-width: 0;
+}
 .warning { color: #ffd166; font-size: 18dp; }
 .footer { margin-top: 20dp; color: #aebbd0; font-size: 16dp; }
 

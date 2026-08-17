@@ -9,7 +9,7 @@
         <h1>Automobili Lamborghini</h1>
         <h2>Recompiled</h2>
         <p>Start with your saved settings, or adjust them before you play.</p>
-        <button id="autofocus" class="primary" onclick="play">Play game</button>
+        <button id="autofocus" class="primary" onclick="play:game">Play game</button>
         <button onclick="page:settings">Settings</button>
         <button class="secondary" onclick="quit">Exit</button>
         <div id="version" class="footer">Loading version...</div>

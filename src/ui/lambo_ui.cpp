@@ -338,7 +338,7 @@ void process_action(const std::string& action, const std::string& parameter) {
 }
 
 void install_event_handlers(UiState& state) {
-    state.event_listener_instancer.register_event("play", [](const std::string&) { process_action("play", ""); });
+    state.event_listener_instancer.register_event("play", [](const std::string& p) { process_action("play", p); });
     state.event_listener_instancer.register_event("quit", [](const std::string&) { process_action("quit", ""); });
     state.event_listener_instancer.register_event("settings", [](const std::string&) { process_action("settings", ""); });
     state.event_listener_instancer.register_event("page", [](const std::string& p) { process_action("page", p); });

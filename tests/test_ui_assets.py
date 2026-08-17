@@ -78,8 +78,14 @@ def main() -> None:
     require("saved for the next launch" in graphics_text and "do not apply immediately" in graphics_text,
             "graphics API must not pretend to apply live")
 
+    enhancements_text = (ui_root / "pages" / "enhancements.rml").read_text(encoding="utf-8")
+    require(enhancements_text.index('class="help"') < enhancements_text.index('class="columns"'),
+            "enhancement guidance must sit above both columns to keep their controls aligned")
+
     launcher = (ui_root / "launcher.rml").read_text(encoding="utf-8")
     require("v1.0.0" not in launcher, "launcher must not hardcode a release version")
+    require('onclick="play:game"' in launcher,
+            "Play must use the same explicit custom-event form as other launcher actions")
 
     cmake = (repo / "CMakeLists.txt").read_text(encoding="utf-8")
     require("copy_directory" in cmake and "assets/ui" in cmake,
