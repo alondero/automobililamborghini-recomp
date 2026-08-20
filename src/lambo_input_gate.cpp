@@ -39,15 +39,16 @@ void publish_physical_snapshot(uint32_t snapshot) {
     if (g_ui_capture.load(std::memory_order_acquire)) {
         g_guest_snapshot.store(0, std::memory_order_release);
     } else if (g_release_barrier.load(std::memory_order_acquire)) {
-        // The first physical sample after capture release defines the neutral
-        // frame. Keep the barrier active until the following sample so multiple
-        // guest reads during that frame cannot leak input through.
-        if (g_release_barrier_sampled.exchange(true, std::memory_order_acq_rel)) {
+        // Held UI input must not become guest input when the overlay closes. Wait
+        // for a genuinely neutral physical sample, publish that sample as neutral,
+        // then remove the barrier on the next neutral sample. Input resumes only on
+        // a later publish, so every guest read of the release frame remains neutral.
+        if (snapshot != 0) {
+            g_release_barrier_sampled.store(false, std::memory_order_release);
+        } else if (g_release_barrier_sampled.exchange(true, std::memory_order_acq_rel)) {
             g_release_barrier.store(false, std::memory_order_release);
-            g_guest_snapshot.store(snapshot, std::memory_order_release);
-        } else {
-            g_guest_snapshot.store(0, std::memory_order_release);
         }
+        g_guest_snapshot.store(0, std::memory_order_release);
     } else {
         g_guest_snapshot.store(snapshot, std::memory_order_release);
     }

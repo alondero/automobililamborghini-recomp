@@ -48,6 +48,7 @@ StartupMode startup_mode_from_environment() {
         "LAMBO_WARP",
         "LAMBO_MODERN_INPUT",
         "LAMBO_INPUT_PULSE",
+        "LAMBO_ANALOG_THROTTLE",
         "LAMBO_MODERN_MAX_VIS",
     };
     for (const char* variable : scripted_variables) {

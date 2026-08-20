@@ -5,10 +5,44 @@
   </head>
   <body>
     <div id="window">
-      <div class="panel">
+      <div class="panel controls-panel">
         <h1>Controls</h1>
-        <p>The controls remapper will be available here when its follow-up issue lands.</p>
-        <button id="autofocus" onclick="back">Back</button>
+        <p class="help">Remap the selected controller for N64 port 0. Keyboard controls and menu navigation remain fixed.</p>
+
+        <div class="controls-device-card">
+          <h2>Controller</h2>
+          <div id="controls-controller-list" class="controller-selector"></div>
+          <p><strong id="controls-selected-name">No controller</strong> — <span id="controls-selected-status">Keyboard remains available</span></p>
+          <p class="device-detail">Layout: <span id="controls-selected-layout">-</span> | GUID: <span id="controls-selected-guid">-</span></p>
+        </div>
+
+        <div class="controls-previews columns">
+          <div class="column preview-card"><h2>Raw SDL preview</h2><p id="controls-raw-preview">Axes: neutral</p></div>
+          <div class="column preview-card"><h2>Evaluated N64 preview</h2><p id="controls-evaluated-preview">Buttons 0x0000 / Stick (0, 0)</p></div>
+        </div>
+
+        <div id="controls-warnings" class="controls-warnings"></div>
+        <div id="controls-bindings" class="controls-bindings"></div>
+        <button id="controls-reset-profile" onclick="control:reset-profile">Reset entire profile</button>
+        <p id="controls-persistence-status" class="controls-save-status">Defaults (not saved yet)</p>
+        <button id="autofocus" class="secondary" onclick="back">Back</button>
+
+        <div id="controls-capture-modal" class="controls-modal">
+          <div class="modal-card">
+            <h2>Capture binding</h2>
+            <p id="controls-capture-message">Release all controls</p>
+            <button id="controls-capture-cancel" onclick="control:capture-cancel">Cancel</button>
+          </div>
+        </div>
+        <div id="controls-conflict-modal" class="controls-modal">
+          <div class="modal-card">
+            <h2>Binding already used</h2>
+            <p>This source is assigned to another N64 target. Keep both assignments?</p>
+            <button id="controls-conflict-accept" onclick="control:conflict-accept">Keep both</button>
+            <button id="controls-conflict-move" onclick="control:conflict-move">Move binding</button>
+            <button onclick="control:capture-cancel">Cancel</button>
+          </div>
+        </div>
       </div>
     </div>
   </body>

@@ -69,11 +69,27 @@ def main() -> None:
     settings = ET.parse(ui_root / "settings.rml")
     unavailable = [element for element in settings.iter("button")
                    if element.attrib.get("disabled") == "disabled"]
-    require(len(unavailable) == 2 and
+    require(len(unavailable) == 1 and
             {element.attrib.get("onclick") for element in unavailable} ==
-            {"page:controls", "page:haptics"},
-            "unfinished settings pages must be disabled while retaining stable routes")
+            {"page:haptics"},
+            "only the unfinished Haptics page may remain disabled")
 
+    controls = ET.parse(ui_root / "pages" / "controls.rml")
+    controls_ids = {element.attrib.get("id") for element in controls.iter() if element.attrib.get("id")}
+    required_control_ids = {
+        "controls-controller-list", "controls-selected-name", "controls-selected-status",
+        "controls-selected-layout", "controls-selected-guid", "controls-bindings",
+        "controls-raw-preview", "controls-evaluated-preview", "controls-persistence-status",
+        "controls-warnings", "controls-capture-modal", "controls-capture-message",
+        "controls-conflict-modal",
+    }
+    require(required_control_ids <= controls_ids,
+            f"Controls page is missing state targets: {required_control_ids - controls_ids}")
+    control_actions = {element.attrib.get("onclick") for element in controls.iter()
+                       if element.attrib.get("onclick", "").startswith("control:")}
+    require({"control:reset-profile", "control:capture-cancel", "control:conflict-accept",
+             "control:conflict-move"}
+            <= control_actions, "Controls page is missing modal/profile actions")
     graphics_text = (ui_root / "pages" / "graphics.rml").read_text(encoding="utf-8")
     require("saved for the next launch" in graphics_text and "do not apply immediately" in graphics_text,
             "graphics API must not pretend to apply live")

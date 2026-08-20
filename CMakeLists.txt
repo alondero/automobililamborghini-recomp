@@ -73,6 +73,56 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_input_capture_gate COMMAND lambo_input_gate_tests)
 
+    add_executable(lambo_controls_tests
+        tests/test_controls.cpp
+        src/controls/lambo_controls.cpp
+        src/lambo_config.cpp
+        src/lambo_log.cpp
+    )
+    target_include_directories(lambo_controls_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/ultramodern/include
+        ${N64MR}/thirdparty
+    )
+    add_test(NAME lambo_controls_domain_and_persistence COMMAND lambo_controls_tests)
+
+    add_executable(lambo_controls_capture_tests
+        tests/test_controls_capture.cpp
+        src/controls/lambo_controls.cpp
+        src/lambo_config.cpp
+        src/lambo_log.cpp
+    )
+    target_include_directories(lambo_controls_capture_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/ultramodern/include
+        ${N64MR}/thirdparty
+    )
+    add_test(NAME lambo_controls_capture_state_machine COMMAND lambo_controls_capture_tests)
+
+    add_executable(lambo_ui_controls_tests
+        tests/test_ui_controls.cpp
+        src/ui/lambo_ui_controls.cpp
+        src/controls/lambo_controls.cpp
+        src/lambo_config.cpp
+        src/lambo_log.cpp
+    )
+    target_include_directories(lambo_ui_controls_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/ultramodern/include
+        ${N64MR}/thirdparty
+    )
+    add_test(NAME lambo_ui_controls_actions COMMAND lambo_ui_controls_tests)
+
+    add_executable(lambo_analog_throttle_tests
+        tests/test_analog_throttle.cpp
+        src/lambo_analog_throttle.cpp
+    )
+    target_include_directories(lambo_analog_throttle_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/N64Recomp/include
+    )
+    add_test(NAME lambo_analog_throttle_bridge COMMAND lambo_analog_throttle_tests)
+
     add_executable(lambo_ui_input_tests
         tests/test_ui_input.cpp
         src/ui/lambo_ui_input.cpp
@@ -187,6 +237,29 @@ if(NOT WIN32)
     find_package(SDL2 REQUIRED)
 endif()
 
+if(BUILD_TESTING)
+    add_executable(lambo_controls_sdl_tests
+        tests/test_controls_sdl.cpp
+        src/controls/lambo_controls.cpp
+        src/controls/lambo_controls_sdl.cpp
+        src/lambo_config.cpp
+        src/lambo_log.cpp
+    )
+    target_include_directories(lambo_controls_sdl_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/ultramodern/include
+        ${N64MR}/thirdparty
+        ${SDL2_INCLUDE_DIRS}
+    )
+    if(WIN32)
+        target_compile_definitions(lambo_controls_sdl_tests PRIVATE SDL_MAIN_HANDLED)
+        target_link_libraries(lambo_controls_sdl_tests PRIVATE SDL2)
+    else()
+        target_link_libraries(lambo_controls_sdl_tests PRIVATE ${SDL2_LIBRARIES})
+    endif()
+    add_test(NAME lambo_controls_sdl_registry COMMAND lambo_controls_sdl_tests)
+endif()
+
 # ultramodern + librecomp, which cascades N64Recomp / LiveRecomp / miniz.
 # The runtime root CMake (lib/N64ModernRuntime/CMakeLists.txt) deliberately
 # omits RT64 — it is pulled in only by a game's own CMake.
@@ -235,8 +308,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_menu.cpp     # lightweight native Win32 menu bar; live config actions + persistence
         src/lambo_startup.cpp  # runtime-ready -> Play startup state machine (issue #126)
         src/lambo_input_gate.cpp # controller capture/neutral-release barrier (issue #126)
+        src/lambo_analog_throttle.cpp # issue #128: atomic native-port throttle bridge + race hook
+        src/controls/lambo_controls.cpp
+        src/controls/lambo_controls_sdl.cpp
         src/ui/lambo_ui.cpp
         src/ui/lambo_ui_input.cpp
+        src/ui/lambo_ui_controls.cpp
         src/ui/lambo_ui_render_interface.cpp
         src/ui/lambo_ui_settings.cpp
         lib/RmlUi/Backends/RmlUi_Platform_SDL.cpp

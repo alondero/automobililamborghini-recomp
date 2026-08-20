@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -43,7 +44,9 @@
 #include "lambo_log.h"   
 #include "lambo_menu.h"
 #include "lambo_input_gate.h"
+#include "lambo_analog_throttle.h"
 #include "lambo_startup.h"
+#include "controls/lambo_controls_sdl.h"
 #include "ui/lambo_ui.h"
 // ultramodern's native VI API (events.cpp), used by the promote_vi_context RT64 bridge.
 extern "C" void osViSwapBuffer(uint8_t* rdram, int32_t frameBufPtr);
@@ -314,9 +317,8 @@ static void message_box_stub(const char* msg) {
 
 // Input (#68) — defined below in the input section; used by the window/pump callbacks above them.
 static void input_sample();
-static void input_open_controller(int joystick_index);
-static void input_close_controller(SDL_JoystickID which);
 static void rumble_apply();  // rumble-pak sink (#69); defined in the input section below
+static std::unique_ptr<lambo::controls::SdlAdapter> g_controls;
 
 // The SDL window, kept for main-thread window ops (fullscreen toggle). SDL window
 // state is owned by THIS thread; the renderer only ever sees the raw handle.
@@ -357,7 +359,7 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
         }
         // Open any controller already connected at launch (ADDED events are also queued, but this
         // covers pads present before the event pump starts).
-        for (int i = 0; i < SDL_NumJoysticks(); i++) input_open_controller(i);
+        if (g_controls != nullptr) g_controls->open_existing();
         uint32_t flags = SDL_WINDOW_RESIZABLE;
 #if defined(__linux__)
         flags |= SDL_WINDOW_VULKAN;
@@ -439,22 +441,26 @@ static void update_gfx_stub(void* /*gfx_data*/) {
 
             // Hotplug is always consumed, even while the launcher owns input.
             if (event.type == SDL_CONTROLLERDEVICEADDED) {
-                input_open_controller(event.cdevice.which);   // which = joystick index (ADDED)
+                if (g_controls != nullptr) g_controls->device_added(event.cdevice.which);
                 continue;
             }
             if (event.type == SDL_CONTROLLERDEVICEREMOVED) {
+                if (g_controls != nullptr) g_controls->device_removed(event.cdevice.which);
                 lambo::ui::handle_event(event);
-                input_close_controller(event.cdevice.which);  // which = instance id (REMOVED)
                 continue;
             }
 
+            if (g_controls != nullptr && g_controls->handle_capture_event(event)) continue;
             if (lambo::menu::handle_event(event)) continue;
             if (lambo::ui::handle_event(event)) continue;
 
             // Once the launcher/overlay captures input, guest and developer shortcuts are
             // suppressed. F11 and Alt+Enter remain application-level shortcuts otherwise.
-            if (event.type == SDL_KEYDOWN && !event.key.repeat &&
-                event.key.keysym.sym == SDLK_ESCAPE &&
+            const bool settings_shortcut =
+                (event.type == SDL_KEYDOWN && !event.key.repeat &&
+                 event.key.keysym.sym == SDLK_ESCAPE) ||
+                (g_controls != nullptr && g_controls->selected_back_pressed(event));
+            if (settings_shortcut &&
                 g_startup_controller != nullptr &&
                 g_startup_controller->state() == lambo::StartupState::Started &&
                 !lambo::ui::is_visible()) {
@@ -477,6 +483,7 @@ static void update_gfx_stub(void* /*gfx_data*/) {
         }
         // Update the cross-thread capture gate before sampling physical state. The guest reads a
         // neutral snapshot while the UI owns input, plus one neutral frame after release.
+        if (g_controls != nullptr) g_controls->process_commands();
         lambo::input_gate::set_ui_capture(lambo::ui::captures_input());
         input_sample();
         // Apply the game thread's latest rumble-pak motor state to the physical pad (#69).
@@ -513,25 +520,21 @@ enum {
 // N64 hardware stick maxes at roughly +-80 after calibration; games are tuned for that range,
 // so we scale full deflection to +-80 (faithfulness) rather than the full int8 +-127.
 static constexpr int   N64_STICK_MAX   = 80;
-static constexpr int   PAD_AXIS_DEADZONE = 8000;   // ~24% of int16 range (SDL recommended ~8000)
-static constexpr int   PAD_TRIG_THRESH   = 8000;   // analog trigger -> digital
-static constexpr int   PAD_CSTICK_THRESH = 12000;  // right-stick -> C-buttons
-
 static uint16_t g_held_buttons = 0;                 // LAMBO_MODERN_INPUT env override, OR'd in
 static int8_t   g_held_sx = 0, g_held_sy = 0;       // LAMBO_MODERN_INPUT stick override (harness)
+static float    g_held_throttle = -1.0f;             // LAMBO_ANALOG_THROTTLE=[0,1] override
 // LAMBO_INPUT_PULSE=BTNHEX:PERIOD:DUTY[:STARTVI] -- periodic button pulse for headless menu
 // navigation (a held LAMBO_MODERN_INPUT mask is one EDGE forever, so it can advance at most one
 // menu; a pulse presses/releases every PERIOD VIs for DUTY VIs, walking a whole menu chain).
 static uint16_t g_pulse_buttons = 0;
 static int      g_pulse_period = 0, g_pulse_duty = 0, g_pulse_start = 0;
 static int      g_pulse_count = 0;   // optional 5th field: stop after N pulses (0 = unlimited)
-static SDL_GameController* g_pad = nullptr;          // first opened controller (port 0)
 
 // --- rumble-pak sink (#69) ----------------------------------------------------------------
 // The game's SI/PIF bridge (func_8007F780 -> lambo_joybus_answer, recomp/src/libultra_stubs.c)
 // runs on the GAME thread and decodes the ROM's motor-control pak writes (joybus cmd 0x03 to
 // pak block 0xC000: payload 0x01 = motor on, 0x00 = off). SDL rumble must be driven from the
-// MAIN thread (that owns g_pad open/close), so -- exactly like input -- the game thread only
+// MAIN thread (that owns the controller registry), so -- exactly like input -- the game thread only
 // PUBLISHES an atomic request and the main-thread pump (update_gfx_stub) applies it. Declared
 // extern "C" so the C responder in libultra_stubs.c can call lambo_pak_set_rumble().
 static std::atomic<int> g_rumble_on{0};              // game-thread write, main-thread read
@@ -552,66 +555,21 @@ extern "C" void lambo_savestate_request_load(void);
 // lets it lapse. Idempotent-ish: we only issue an SDL call on an on/off EDGE plus periodic
 // refresh while on, to avoid hammering the HID layer every frame.
 static void rumble_apply() {
-    static int last = 0;
     int on = g_rumble_on.load(std::memory_order_relaxed);
-    if (g_pad == nullptr || !SDL_GameControllerGetAttached(g_pad)) { last = 0; return; }
-    if (on) {
-        SDL_GameControllerRumble(g_pad, 0xFFFF, 0xFFFF, 150);   // refresh; expiry > frame time
-    } else if (last) {
-        SDL_GameControllerRumble(g_pad, 0, 0, 0);               // off edge: stop immediately
-    }
-    last = on;
-}
-
-static int8_t pad_axis_to_n64(int v) {              // int16 SDL axis -> int8 N64 stick (deadzoned)
-    if (v > -PAD_AXIS_DEADZONE && v < PAD_AXIS_DEADZONE) return 0;
-    float f = v / 32767.0f;
-    if (f >  1.0f) f =  1.0f;
-    if (f < -1.0f) f = -1.0f;
-    return (int8_t)(f * N64_STICK_MAX);
+    if (g_controls != nullptr) g_controls->apply_rumble(on != 0);
 }
 
 // Sample SDL keyboard + gamepad on the MAIN thread and publish the atomic snapshot.
 static void input_sample() {
     uint16_t b = 0;
     int sx = 0, sy = 0;
+    lambo::controls::EvaluatedState controller{};
 
-    if (g_pad != nullptr && SDL_GameControllerGetAttached(g_pad)) {
-        auto down = [](SDL_GameControllerButton g) { return SDL_GameControllerGetButton(g_pad, g) != 0; };
-        // Mapping is tuned to THIS game's VERIFIED menu control scheme (not the generic
-        // Zelda64Recomp default): the ROM's menu driver (func_800030F8) confirms on A|START
-        // (andi 0x9000), cancels on B (0x4000), and moves the cursor with the ANALOG STICK only
-        // -- it tests no C-button or D-pad bit for menu nav. So the face buttons follow Xbox-native
-        // intent: A=confirm, B=cancel. The C-buttons live on X/Y + the right stick, where this
-        // game's menus never look at them, so they can't produce phantom menu input.
-        // NOTE: the *in-race* meaning of each N64 bit (throttle/brake/camera) is NOT yet ROM-verified
-        // -- the race-overlay input consumer hasn't been read. This is a physical Xbox->N64 binding,
-        // not a claim about race behaviour; revisit when state 8 becomes playable (see race.md).
-        if (down(SDL_CONTROLLER_BUTTON_A))             b |= N64_A;      // confirm (menu)
-        if (down(SDL_CONTROLLER_BUTTON_B))             b |= N64_B;      // cancel (menu)
-        if (down(SDL_CONTROLLER_BUTTON_X))             b |= N64_CL;     // West  -> C-left
-        if (down(SDL_CONTROLLER_BUTTON_Y))             b |= N64_CU;     // North -> C-up
-        if (down(SDL_CONTROLLER_BUTTON_START))         b |= N64_START;  // advance / pause
-        if (down(SDL_CONTROLLER_BUTTON_LEFTSHOULDER))  b |= N64_L;
-        if (down(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) b |= N64_R;
-        if (down(SDL_CONTROLLER_BUTTON_DPAD_UP))        b |= N64_DU;
-        if (down(SDL_CONTROLLER_BUTTON_DPAD_DOWN))      b |= N64_DD;
-        if (down(SDL_CONTROLLER_BUTTON_DPAD_LEFT))      b |= N64_DL;
-        if (down(SDL_CONTROLLER_BUTTON_DPAD_RIGHT))     b |= N64_DR;
-        // N64 Z on the left analog trigger (LT); N64 R also on the right trigger (RT) for racing feel.
-        if (SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT)  > PAD_TRIG_THRESH) b |= N64_Z;
-        if (SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > PAD_TRIG_THRESH) b |= N64_R;
-        // Remaining C directions: right-stick click -> C-down; the right stick itself -> all four C's.
-        if (down(SDL_CONTROLLER_BUTTON_RIGHTSTICK))     b |= N64_CD;    // right-stick click
-        int rx = SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_RIGHTX);
-        int ry = SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_RIGHTY);
-        if (rx >  PAD_CSTICK_THRESH) b |= N64_CR;
-        if (rx < -PAD_CSTICK_THRESH) b |= N64_CL;
-        if (ry >  PAD_CSTICK_THRESH) b |= N64_CD;
-        if (ry < -PAD_CSTICK_THRESH) b |= N64_CU;
-        // Left analog stick -> N64 stick (SDL Y is +down, N64 stick_y is +up -> negate).
-        sx =  pad_axis_to_n64(SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_LEFTX));
-        sy = -pad_axis_to_n64(SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_LEFTY));
+    if (g_controls != nullptr) {
+        controller = g_controls->sample();
+        b = controller.buttons;
+        sx = controller.stick_x;
+        sy = controller.stick_y;
     }
 
     // Keyboard fallback (always sampled; OR'd with the pad). Arrow keys steer; racing essentials
@@ -657,29 +615,22 @@ static void input_sample() {
         }
     }
 
+    const bool forced_analog = g_held_throttle >= 0.0f;
+    const bool analog_mode = forced_analog ||
+        controller.throttle_mode == lambo::controls::ThrottleMode::Analog;
+    const float physical_throttle = forced_analog ? g_held_throttle : controller.throttle;
     uint32_t snap = (uint16_t)b
                   | ((uint32_t)(uint8_t)(int8_t)sx << 16)
                   | ((uint32_t)(uint8_t)(int8_t)sy << 24);
-    lambo::input_gate::publish_physical_snapshot(snap);
-}
-
-// Open the first connected game controller into port 0 (idempotent; called at init + on hotplug).
-static void input_open_controller(int joystick_index) {
-    if (g_pad != nullptr) return;
-    if (!SDL_IsGameController(joystick_index)) return;
-    g_pad = SDL_GameControllerOpen(joystick_index);
-    if (g_pad != nullptr)
-        LAMBO_LOG("input", "controller connected: %s\n",
-                     SDL_GameControllerName(g_pad) ? SDL_GameControllerName(g_pad) : "(unknown)");
-}
-static void input_close_controller(SDL_JoystickID which) {
-    if (g_pad == nullptr) return;
-    SDL_Joystick* js = SDL_GameControllerGetJoystick(g_pad);
-    if (js != nullptr && SDL_JoystickInstanceID(js) == which) {
-        SDL_GameControllerClose(g_pad);
-        g_pad = nullptr;
-        LAMBO_LOG("input", "controller disconnected\n");
-    }
+    // A throttle-only source must also hold the UI release barrier. The sentinel is
+    // observed only while suppression is already active, so it can never reach the ROM.
+    const bool suppressed_before_publish = lambo::input_gate::guest_input_suppressed();
+    const uint32_t gated_snap = suppressed_before_publish && analog_mode && physical_throttle > 0.0f
+        ? (snap | 1u) : snap;
+    lambo::input_gate::publish_physical_snapshot(gated_snap);
+    const float throttle = lambo::input_gate::guest_input_suppressed()
+        ? 0.0f : physical_throttle;
+    lambo::analog_throttle::publish(0, analog_mode, throttle);
 }
 
 static void input_poll_stub() {}
@@ -762,6 +713,7 @@ int main(int argc, char** argv) {
     std::filesystem::path config_dir = lambo::config::app_config_dir();
     std::filesystem::create_directories(config_dir);
     recomp::register_config_path(config_dir);
+    g_controls = std::make_unique<lambo::controls::SdlAdapter>();
 
     recomp::GameEntry game{};
     game.rom_hash          = 0x525201d7279f34e3ULL; // XXH3_64(big-endian .z64, padded to /4)
@@ -842,6 +794,18 @@ int main(int argc, char** argv) {
             }
         }
     }
+    if (const char* analog = std::getenv("LAMBO_ANALOG_THROTTLE")) {
+        char* end = nullptr;
+        const float parsed = std::strtof(analog, &end);
+        if (end != analog && end != nullptr && *end == '\0' && std::isfinite(parsed)) {
+            g_held_throttle = std::clamp(parsed, 0.0f, 1.0f);
+            // Headless mode has no SDL event pump, so publish the deterministic
+            // harness value here as well as from input_sample's normal main-thread path.
+            lambo::analog_throttle::publish(0, true, g_held_throttle);
+            LAMBO_LOG("probe", "analog throttle override: %.3f\n", g_held_throttle);
+        }
+    }
+    lambo::analog_throttle::set_probe(std::getenv("LAMBO_ANALOG_THROTTLE_PROBE") != nullptr);
     if (const char* pu = std::getenv("LAMBO_INPUT_PULSE")) {
         // BTNHEX:PERIOD:DUTY[:STARTVI[:COUNT]], VI units. e.g. 1000:150:4:300 taps START for 4 VIs
         // every 150 VIs starting at VI 300 -- enough edges to walk the whole menu chain headless.

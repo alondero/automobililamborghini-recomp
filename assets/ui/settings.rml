@@ -10,8 +10,8 @@
         <p class="intro">Changes are saved automatically.</p>
         <button id="autofocus" onclick="page:graphics">Graphics</button>
         <button onclick="page:enhancements">Enhancements</button>
+        <button onclick="page:controls">Controls</button>
         <h2 class="subheading">Not yet available</h2>
-        <button disabled="disabled" onclick="page:controls">Controls</button>
         <button disabled="disabled" onclick="page:haptics">Haptics</button>
         <button class="secondary" onclick="back">Back</button>
       </div>
