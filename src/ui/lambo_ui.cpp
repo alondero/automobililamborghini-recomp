@@ -32,6 +32,7 @@
 #include "lambo_log.h"
 #include "lambo_startup.h"
 #include "lambo_ui_input.h"
+#include "lambo_ui_controls.h"
 #include "lambo_ui_render_interface.h"
 #include "lambo_ui_settings.h"
 
@@ -131,12 +132,15 @@ struct UiState {
     std::optional<lambo::ui::Page> current_page;
     lambo::ui::ControllerNavigation controller_navigation;
     InputMode input_mode = InputMode::Mouse;
+    std::uint64_t controls_config_revision = ~std::uint64_t{};
+    std::uint64_t controls_sample_revision = ~std::uint64_t{};
 
     void remember_focus();
     void restore_focus(lambo::ui::Page page);
     void set_input_mode(InputMode mode);
     void set_text(const char* id, const std::string& value);
     void refresh_document_values();
+    void refresh_controls_values();
     void load_page(lambo::ui::Page page, bool push_history);
     void show_page(lambo::ui::Page page);
     void hide_pages();
@@ -168,6 +172,7 @@ std::atomic<bool> g_capture{false};
 std::atomic<int> g_requested_page{-1};
 std::atomic<int> g_requested_entry_point{static_cast<int>(lambo::ui::EntryPoint::Startup)};
 std::atomic<bool> g_requested_back{false};
+std::atomic<bool> g_requested_controls_route{false};
 std::atomic<lambo::StartupController*> g_startup_controller{nullptr};
 moodycamel::ConcurrentQueue<QueuedEvent> g_event_queue;
 
@@ -245,11 +250,50 @@ void UiState::refresh_document_values() {
         const std::string id = "enhancement-circuit-" + std::to_string(circuit + 1);
         set_text(id.c_str(), values.circuit_visibility[circuit]);
     }
+    refresh_controls_values();
+}
+
+void UiState::refresh_controls_values() {
+    if (document == nullptr || current_page != lambo::ui::Page::Controls) return;
+    const auto snapshot = lambo::controls::ui_snapshot();
+    const auto view = lambo::ui::controls_view(snapshot);
+    if (snapshot.config_revision != controls_config_revision) {
+        controls_config_revision = snapshot.config_revision;
+        set_text("controls-controller-list", view.controller_list);
+        set_text("controls-selected-name", view.selected_name);
+        set_text("controls-selected-status", view.selected_status);
+        set_text("controls-selected-layout", view.selected_layout);
+        set_text("controls-selected-guid", view.selected_guid);
+        set_text("controls-bindings", view.bindings);
+        set_text("controls-persistence-status", view.persistence_status);
+        set_text("controls-warnings", view.warnings);
+        set_text("controls-capture-message", view.capture_message);
+        if (Rml::Element* reset = document->GetElementById("controls-reset-profile")) {
+            if (snapshot.read_only || !snapshot.selected_instance) reset->SetAttribute("disabled", "disabled");
+            else reset->RemoveAttribute("disabled");
+        }
+        if (Rml::Element* modal = document->GetElementById("controls-capture-modal"))
+            modal->SetClass("visible", view.capture_visible);
+        if (Rml::Element* modal = document->GetElementById("controls-conflict-modal"))
+            modal->SetClass("visible", view.conflict_visible);
+        if (view.conflict_visible) {
+            if (Rml::Element* accept = document->GetElementById("controls-conflict-accept"))
+                accept->Focus();
+        }
+    }
+    if (snapshot.sample_revision != controls_sample_revision) {
+        controls_sample_revision = snapshot.sample_revision;
+        set_text("controls-raw-preview", view.raw_preview);
+        set_text("controls-evaluated-preview", view.evaluated_preview);
+        set_text("controls-throttle-preview", view.throttle_preview);
+    }
 }
 
 void UiState::load_page(lambo::ui::Page page, bool push_history) {
     if (context == nullptr) return;
     remember_focus();
+    if (current_page == lambo::ui::Page::Controls)
+        lambo::controls::enqueue_command({lambo::controls::CommandKind::CaptureCancel});
     if (document != nullptr) {
         context->UnloadDocument(document);
         document = nullptr;
@@ -268,6 +312,10 @@ void UiState::load_page(lambo::ui::Page page, bool push_history) {
     document->Show();
     document->PullToFront();
     current_page = page;
+    if (page == lambo::ui::Page::Controls) {
+        controls_config_revision = ~std::uint64_t{};
+        controls_sample_revision = ~std::uint64_t{};
+    }
     if (push_history) pages.push_back(page);
     refresh_document_values();
     restore_focus(page);
@@ -283,6 +331,8 @@ void UiState::show_page(lambo::ui::Page page) {
 
 void UiState::hide_pages() {
     remember_focus();
+    if (current_page == lambo::ui::Page::Controls)
+        lambo::controls::enqueue_command({lambo::controls::CommandKind::CaptureCancel});
     if (document != nullptr) {
         context->UnloadDocument(document);
         document = nullptr;
@@ -334,6 +384,8 @@ void process_action(const std::string& action, const std::string& parameter) {
         if (setting.has_value() && lambo::ui::apply_setting_action(*setting) && g_state != nullptr) {
             g_state->refresh_document_values();
         }
+    } else if (action == "control") {
+        lambo::ui::apply_control_action(parameter);
     }
 }
 
@@ -344,6 +396,7 @@ void install_event_handlers(UiState& state) {
     state.event_listener_instancer.register_event("page", [](const std::string& p) { process_action("page", p); });
     state.event_listener_instancer.register_event("back", [](const std::string&) { process_action("back", ""); });
     state.event_listener_instancer.register_event("setting", [](const std::string& p) { process_action("setting", p); });
+    state.event_listener_instancer.register_event("control", [](const std::string& p) { process_action("control", p); });
 }
 
 void init_hook(RT64::RenderInterface* interface, RT64::RenderDevice* device) {
@@ -532,11 +585,19 @@ void draw_hook(RT64::RenderCommandList* command_list,
         g_state->entry_point = static_cast<lambo::ui::EntryPoint>(
             g_requested_entry_point.load(std::memory_order_acquire));
         g_state->pages.clear();
+        if (requested == static_cast<int>(lambo::ui::Page::Controls) &&
+            g_requested_controls_route.exchange(false, std::memory_order_acq_rel)) {
+            if (g_state->entry_point == lambo::ui::EntryPoint::Startup)
+                g_state->pages = {lambo::ui::Page::Home, lambo::ui::Page::Settings};
+            else
+                g_state->pages = {lambo::ui::Page::Settings};
+        }
         g_state->show_page(static_cast<lambo::ui::Page>(requested));
     }
     if (g_requested_back.exchange(false, std::memory_order_acq_rel)) g_state->back();
     g_state->process_queued_events();
     if (!g_visible.load(std::memory_order_acquire)) return;
+    g_state->refresh_controls_values();
 
     const int width = swap_chain_framebuffer->getWidth();
     const int height = swap_chain_framebuffer->getHeight();
@@ -550,6 +611,7 @@ void draw_hook(RT64::RenderCommandList* command_list,
 
 void deinit_hook() {
     std::lock_guard lock(g_state_mutex);
+    lambo::controls::enqueue_command({lambo::controls::CommandKind::CaptureCancel});
     g_state.reset();
     g_visible.store(false, std::memory_order_release);
     g_capture.store(false, std::memory_order_release);
@@ -612,6 +674,7 @@ void open_launcher() {
     g_requested_entry_point.store(static_cast<int>(EntryPoint::Startup), std::memory_order_release);
     SDL_ShowCursor(SDL_ENABLE);
     g_capture.store(true, std::memory_order_release);
+    g_requested_controls_route.store(false, std::memory_order_release);
     g_requested_page.store(static_cast<int>(Page::Home), std::memory_order_release);
 }
 
@@ -619,7 +682,19 @@ void open_settings() {
     g_requested_entry_point.store(static_cast<int>(EntryPoint::InGameOverlay), std::memory_order_release);
     SDL_ShowCursor(SDL_ENABLE);
     g_capture.store(true, std::memory_order_release);
+    g_requested_controls_route.store(false, std::memory_order_release);
     g_requested_page.store(static_cast<int>(Page::Settings), std::memory_order_release);
+}
+
+void open_controls() {
+    auto* startup = g_startup_controller.load(std::memory_order_acquire);
+    const EntryPoint entry = startup != nullptr && startup->state() == lambo::StartupState::Started
+        ? EntryPoint::InGameOverlay : EntryPoint::Startup;
+    g_requested_entry_point.store(static_cast<int>(entry), std::memory_order_release);
+    SDL_ShowCursor(SDL_ENABLE);
+    g_capture.store(true, std::memory_order_release);
+    g_requested_controls_route.store(true, std::memory_order_release);
+    g_requested_page.store(static_cast<int>(Page::Controls), std::memory_order_release);
 }
 
 void close_top_page() {

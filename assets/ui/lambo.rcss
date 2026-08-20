@@ -146,3 +146,162 @@ scrollbarvertical sliderarrowinc {
   width: 18dp;
   height: 0;
 }
+
+.controls-panel {
+  width: 86%;
+}
+
+.controls-device-card,
+.preview-card,
+.binding-target {
+  display: block;
+  width: 100%;
+  margin: 8dp 0;
+  padding: 12dp;
+  background-color: #172235;
+  border-width: 1dp;
+  border-color: #3d4a5f;
+}
+
+.controller-selector {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  gap: 8dp;
+}
+
+.controller-choice {
+  width: auto;
+}
+
+.controller-choice.active {
+  background-color: #5076a8;
+  border-color: #ffd166;
+}
+
+.device-detail,
+.controls-save-status {
+  color: #aebbd0;
+  font-size: 14dp;
+}
+
+.controls-previews {
+  margin: 12dp 0;
+}
+
+.preview-card p {
+  font-family: monospace;
+  font-size: 14dp;
+}
+
+.controls-bindings {
+  display: block;
+  width: 100%;
+}
+
+.binding-heading,
+.binding-row {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  gap: 8dp;
+}
+
+.binding-heading strong {
+  flex-grow: 1;
+  font-size: 19dp;
+}
+
+.binding-row button,
+.binding-heading button,
+.add-binding {
+  width: auto;
+  padding: 7dp 10dp;
+  font-size: 15dp;
+}
+
+.binding-chip {
+  flex-grow: 1;
+  padding: 9dp;
+  color: #d8e7ff;
+  background-color: #252f40;
+}
+
+.driving-target button.active {
+  background-color: #5076a8;
+  border-color: #ffd166;
+}
+
+.throttle-preview {
+  display: block;
+  width: 100%;
+  margin-top: 10dp;
+  color: #d8e7ff;
+}
+
+.throttle-meter {
+  display: block;
+  width: 100%;
+  height: 10dp;
+  margin: 4dp 0 8dp 0;
+  background-color: #0d1521;
+  border-width: 1dp;
+  border-color: #3d4a5f;
+}
+
+.throttle-meter-fill {
+  height: 100%;
+  background-color: #6aa4e8;
+}
+
+.throttle-meter-fill.effective {
+  background-color: #ffd166;
+}
+
+.unbound {
+  display: block;
+  color: #9aa7b8;
+  font-style: italic;
+}
+
+.controls-warnings {
+  color: #ffd166;
+}
+
+.controls-modal {
+  display: none;
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(3, 8, 16, 210);
+}
+
+.controls-modal.visible {
+  display: block;
+}
+
+.modal-card {
+  position: absolute;
+  left: 25%;
+  top: 28%;
+  width: 50%;
+  padding: 28dp;
+  background-color: #172235;
+  border-width: 2dp;
+  border-color: #ffd166;
+}
+
+@media (max-width: 1000px) {
+  .controls-previews {
+    flex-direction: column;
+  }
+  .controls-panel {
+    width: 92%;
+  }
+  .modal-card {
+    left: 10%;
+    width: 80%;
+  }
+}

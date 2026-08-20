@@ -36,6 +36,7 @@ HMENU g_fog_menu = nullptr;
 enum Command : UINT {
     CMD_FULLSCREEN = 1000,
     CMD_SETTINGS,
+    CMD_CONTROLS,
     CMD_QUIT,
 
     CMD_RES_AUTO = 1100,
@@ -214,6 +215,7 @@ void dispatch(UINT command) {
     switch (command) {
         case CMD_FULLSCREEN: lambo::menu::toggle_fullscreen(); break;
         case CMD_SETTINGS: lambo::ui::open_settings(); break;
+        case CMD_CONTROLS: lambo::ui::open_controls(); break;
         case CMD_QUIT: {
             SDL_Event quit{};
             quit.type = SDL_QUIT;
@@ -260,6 +262,7 @@ void attach(SDL_Window* window) {
     HMENU game = g_game_menu = append_submenu(g_menu_bar, "&Game");
     append_item(game, CMD_FULLSCREEN, "&Fullscreen\tF11");
     append_item(game, CMD_SETTINGS, "&Settings...");
+    append_item(game, CMD_CONTROLS, "&Controls...");
     AppendMenuA(game, MF_SEPARATOR, 0, nullptr);
     append_item(game, CMD_QUIT, "E&xit");
 
