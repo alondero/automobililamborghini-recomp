@@ -32,6 +32,8 @@ void clear_startup_environment() {
         "LAMBO_MODERN_MAX_VIS",
         "LAMBO_CRASH_TEST",
         "LAMBO_SELFTEST",
+        "LAMBO_STEERING_PROBE",
+        "LAMBO_STEERING_SEQUENCE",
     };
     for (const char* variable : variables) set_environment(variable, nullptr);
 }
@@ -46,6 +48,21 @@ int main() {
     expect(lambo::startup_mode_from_environment() == lambo::StartupMode::Automatic,
            "structured input beginning with zero still bypasses the launcher");
     set_environment("LAMBO_MODERN_INPUT", nullptr);
+
+    set_environment("LAMBO_STEERING_SEQUENCE", "0:0,1200:80");
+    expect(lambo::startup_mode_from_environment() == lambo::StartupMode::Automatic,
+           "scripted steering probes bypass the launcher");
+    set_environment("LAMBO_STEERING_SEQUENCE", nullptr);
+
+    set_environment("LAMBO_STEERING_PROBE", "false");
+    expect(!lambo::environment_flag_enabled("LAMBO_STEERING_PROBE") &&
+               lambo::startup_mode_from_environment() == lambo::StartupMode::InteractiveLauncher,
+           "false steering probe flags neither enable the probe nor bypass the launcher");
+    set_environment("LAMBO_STEERING_PROBE", "true");
+    expect(lambo::environment_flag_enabled("LAMBO_STEERING_PROBE") &&
+               lambo::startup_mode_from_environment() == lambo::StartupMode::Automatic,
+           "true steering probe flags enable automatic probe startup");
+    set_environment("LAMBO_STEERING_PROBE", nullptr);
 
     set_environment("CI", "true");
     expect(lambo::startup_mode_from_environment() == lambo::StartupMode::Automatic,

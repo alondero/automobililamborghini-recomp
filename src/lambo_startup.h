@@ -21,6 +21,7 @@ enum class StartupState {
 
 // Keep all environment-driven bypass policy in one place. This is deliberately
 // independent of SDL and the renderer so probe tests can exercise it directly.
+bool environment_flag_enabled(const char* name);
 StartupMode startup_mode_from_environment();
 
 class StartupController {

@@ -933,6 +933,34 @@ func = "func_80019D20"
 before_vram = 0x8001A120
 text = "extern void lambo_analog_throttle_apply(uint8_t*); lambo_analog_throttle_apply(rdram);"
 
+# Issue #139 — opt-in human-steering trace. These hooks follow the values the ROM
+# actually produces: raw pad byte, signed post-trim/clamp magnitude, selected lookup
+# result, and the final vehicle + 0xB2 store after speed-dependent adjustment.
+[[patches.hook]]
+func = "func_80019D20"
+before_vram = 0x8001AA94
+text = "extern void lambo_steering_probe_capture_raw(uint8_t*); lambo_steering_probe_capture_raw(rdram);"
+
+[[patches.hook]]
+func = "func_80019D20"
+before_vram = 0x8001AC4C
+text = "extern void lambo_steering_probe_capture_trim(uint8_t*, int); lambo_steering_probe_capture_trim(rdram, 1);"
+
+[[patches.hook]]
+func = "func_80019D20"
+before_vram = 0x8001AD08
+text = "extern void lambo_steering_probe_capture_trim(uint8_t*, int); lambo_steering_probe_capture_trim(rdram, -1);"
+
+[[patches.hook]]
+func = "func_80019D20"
+before_vram = 0x8001AD64
+text = "extern void lambo_steering_probe_capture_curve(uint8_t*); lambo_steering_probe_capture_curve(rdram);"
+
+[[patches.hook]]
+func = "func_80019D20"
+before_vram = 0x8001B910
+text = "extern void lambo_steering_probe_capture_demand(uint8_t*); lambo_steering_probe_capture_demand(rdram);"
+
 # Issue #40 — widescreen lens flare. The sun flare emitter func_80036854 draws a chain of
 # 10 translucent "ghost" texrects. Under ar_option Expand RT64 squishes each small untagged
 # texrect into the central 4:3 band (invRatioScale = 1/aspectRatioScale) and collapses its
