@@ -312,6 +312,10 @@ ignored = [
     "func_80085C50",
     "func_8007FFF0",
     "func_80079720",
+    "func_8006A7A0",
+    "func_8006A82C",
+    "func_8006A8B4",
+    "func_8006A910",
     "func_8007AC78",
     "func_8007AB10",
 ]

@@ -664,10 +664,15 @@ NATIVE_OVERRIDES = [
     # poll becomes a dispatch point, modelling the AI/retrace interrupt that preempts this spin on
     # real hardware (same class as the W97 osSetIntMask yield; limitation (a) closed for this loop).
     "func_80079720",
-    # Rumble (PR #108, map #95): osMotorStart (func_8007AC78) / osMotorStop (func_8007AB10) are
-    # intercepted natively in src/libultra_stubs.c (SDL rumble; the game-side wrappers still run).
-    # They were hand-added to the emitted us.toml `ignored` list post-regen; carried here so a
-    # regen keeps them (the PATCH_BLOCKS-stale trap, W136 class).
+    # Rumble (PR #108, map #95): intercept the game-level request wrappers so native rumble can
+    # coexist with a guest-visible Controller Pak without fabricating the guest Rumble Pak flag.
+    # func_8006A910 is the per-frame PWM engine: overridden to drop only its accessory-present
+    # gate (the same word gates the save flow; see src/libultra_stubs.c). Keep the lower
+    # osMotorStart/osMotorStop boundary native as a defensive fallback.
+    "func_8006A7A0",
+    "func_8006A82C",
+    "func_8006A8B4",
+    "func_8006A910",
     "func_8007AC78",
     "func_8007AB10",
 ]
@@ -2034,7 +2039,7 @@ rom_file_path = "Automobili Lamborghini (USA).z64"
 stubs = {toml_array(race_stubs)}
 ignored = {toml_array(race_ignored)}
 {PATCH_BLOCKS}'''
-    CONFIG.write_text(cfg, encoding="utf-8")
+    CONFIG.write_text(cfg, encoding="utf-8", newline="\n")
 
     print(f"dump funcs:        {n_dump}")
     print(f"size overrides hit: {n_over} / {len(overrides)}")
