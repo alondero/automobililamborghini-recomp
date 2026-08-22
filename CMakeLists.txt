@@ -52,6 +52,15 @@ if(BUILD_TESTING)
         ${N64MR}/thirdparty
     )
     add_test(NAME lambo_config_live_updates COMMAND lambo_config_tests)
+
+    add_executable(lambo_controller_pak_tests
+        tests/test_controller_pak.c
+        src/libultra_stubs.c
+    )
+    target_include_directories(lambo_controller_pak_tests PRIVATE
+        ${N64MR}/N64Recomp/include
+    )
+    add_test(NAME lambo_controller_pak_identity COMMAND lambo_controller_pak_tests)
 endif()
 set(RT64_STATIC TRUE)
 if(WIN32)
