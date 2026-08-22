@@ -48,6 +48,16 @@ git -C lib/N64ModernRuntime apply ../../patches/0007-ultramodern-savestate-threa
 # RT64 renderer — all platforms (frame-interpolation transform matching, issue #30):
 git -C lib/rt64 apply "$(pwd)/patches/0006-rt64-interp-angular-velocity-matching.patch"
 
+# RT64 renderer — all platforms (parallaxless skybox backdrop):
+git -C lib/rt64 apply "$(pwd)/patches/0008-rt64-skybox-stretch-parallaxless-backdrop.patch"
+
+# RT64 renderer — all platforms (widescreen split subviewports; defines G_EX_ORIGIN_WIDE,
+# required by src/lambo_hud_widescreen.c):
+git -C lib/rt64 apply "$(pwd)/patches/0009-rt64-widescreen-split-subviewport.patch"
+
+# RT64 renderer — all platforms (explicit-D3D12 adapter escape hatch for Intel GPUs):
+git -C lib/rt64 apply "$(pwd)/patches/0010-rt64-intel-explicit-d3d12-escape-hatch.patch"
+
 # RT64 renderer — Windows / MinGW only (absolute paths avoid depth confusion):
 git -C lib/rt64 apply "$(pwd)/patches/0005-rt64-mingw-gcc-compat.patch"
 git -C lib/rt64/src/contrib/plume apply "$(pwd)/patches/0004-plume-d3d12-mingw-com-abi-struct-return.patch"
