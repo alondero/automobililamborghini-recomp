@@ -21,6 +21,8 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "librecomp/game.hpp"
 #include "librecomp/rsp.hpp"
@@ -45,6 +47,7 @@
 #include "lambo_menu.h"
 #include "lambo_input_gate.h"
 #include "lambo_analog_throttle.h"
+#include "lambo_steering_probe.h"
 #include "lambo_startup.h"
 #include "controls/lambo_controls_sdl.h"
 #include "ui/lambo_ui.h"
@@ -529,6 +532,7 @@ static float    g_held_throttle = -1.0f;             // LAMBO_ANALOG_THROTTLE=[0
 static uint16_t g_pulse_buttons = 0;
 static int      g_pulse_period = 0, g_pulse_duty = 0, g_pulse_start = 0;
 static int      g_pulse_count = 0;   // optional 5th field: stop after N pulses (0 = unlimited)
+static std::vector<std::pair<int, int8_t>> g_steering_sequence;
 
 // --- rumble-pak sink (#69) ----------------------------------------------------------------
 // The game's SI/PIF bridge (func_8007F780 -> lambo_joybus_answer, recomp/src/libultra_stubs.c)
@@ -650,6 +654,13 @@ static bool input_get_input(int controller_num, uint16_t* buttons, float* x, flo
     int8_t   sy = (int8_t)((snap >> 24) & 0xFF);
     if (!suppressed && sx == 0) sx = g_held_sx;                  // env stick fills in when live stick idle
     if (!suppressed && sy == 0) sy = g_held_sy;
+    if (!suppressed && !g_steering_sequence.empty()) {
+        const int vi = g_vis.load(std::memory_order_relaxed);
+        for (const auto& [start_vi, value] : g_steering_sequence) {
+            if (vi < start_vi) break;
+            sx = value;
+        }
+    }
     if (buttons) *buttons = b;
     // ultramodern does stick_x = (int8_t)(127 * x), so divide by 127 (NOT N64_STICK_MAX) to
     // preserve our authentic +-80 range through that re-scale instead of re-expanding to +-127.
@@ -806,6 +817,26 @@ int main(int argc, char** argv) {
         }
     }
     lambo::analog_throttle::set_probe(std::getenv("LAMBO_ANALOG_THROTTLE_PROBE") != nullptr);
+    lambo::steering_probe::set_enabled(
+        lambo::environment_flag_enabled("LAMBO_STEERING_PROBE"));
+    if (const char* sequence = std::getenv("LAMBO_STEERING_SEQUENCE")) {
+        const char* cursor = sequence;
+        while (*cursor != '\0') {
+            char* end = nullptr;
+            const long start_vi = std::strtol(cursor, &end, 10);
+            if (end == cursor || *end != ':') break;
+            cursor = end + 1;
+            long value = std::strtol(cursor, &end, 10);
+            if (end == cursor) break;
+            value = std::clamp(value, -80L, 80L);
+            g_steering_sequence.emplace_back(static_cast<int>(start_vi),
+                                             static_cast<int8_t>(value));
+            if (*end != ',') break;
+            cursor = end + 1;
+        }
+        std::sort(g_steering_sequence.begin(), g_steering_sequence.end());
+        LAMBO_LOG("probe", "steering sequence: %zu step(s)\n", g_steering_sequence.size());
+    }
     if (const char* pu = std::getenv("LAMBO_INPUT_PULSE")) {
         // BTNHEX:PERIOD:DUTY[:STARTVI[:COUNT]], VI units. e.g. 1000:150:4:300 taps START for 4 VIs
         // every 150 VIs starting at VI 300 -- enough edges to walk the whole menu chain headless.

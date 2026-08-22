@@ -13,7 +13,11 @@ bool env_has_value(const char* name) {
     return value != nullptr && value[0] != '\0';
 }
 
-bool env_enabled(const char* name) {
+} // namespace
+
+namespace lambo {
+
+bool environment_flag_enabled(const char* name) {
     const char* value = std::getenv(name);
     if (value == nullptr || value[0] == '\0') return false;
     std::string normalized(value);
@@ -22,10 +26,6 @@ bool env_enabled(const char* name) {
     return normalized != "0" && normalized != "false" && normalized != "no" &&
            normalized != "off";
 }
-
-} // namespace
-
-namespace lambo {
 
 StartupMode startup_mode_from_environment() {
     // These knobs drive a deterministic harness/probe run and must never wait
@@ -36,9 +36,10 @@ StartupMode startup_mode_from_environment() {
         "LAMBO_LIGHTING_SELFTEST",
         "LAMBO_CRASH_TEST",
         "LAMBO_SELFTEST",
+        "LAMBO_STEERING_PROBE",
     };
     for (const char* variable : boolean_variables) {
-        if (env_enabled(variable)) return StartupMode::Automatic;
+        if (environment_flag_enabled(variable)) return StartupMode::Automatic;
     }
 
     // These variables carry structured or numeric values. Zero can be a valid
@@ -49,6 +50,7 @@ StartupMode startup_mode_from_environment() {
         "LAMBO_MODERN_INPUT",
         "LAMBO_INPUT_PULSE",
         "LAMBO_ANALOG_THROTTLE",
+        "LAMBO_STEERING_SEQUENCE",
         "LAMBO_MODERN_MAX_VIS",
     };
     for (const char* variable : scripted_variables) {
