@@ -1030,7 +1030,7 @@ before_vram = 0x80004374
 text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6); }"
 
 
-# Issue #128 — true analog throttle. Capture the pedal demand immediately before the
+# Issue #128 - true analog throttle. Capture the pedal demand immediately before the
 # stock human-driver A/Z branch, then apply the selected native port's continuous target
 # at the common merge. The two hooks preserve the ROM's +/-10 pedal ramp, including exact
 # released/full-A behavior. Digital mode is a no-op. The natives read atomics and RDRAM only.

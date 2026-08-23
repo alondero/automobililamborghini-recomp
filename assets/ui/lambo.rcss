@@ -746,3 +746,46 @@ scrollbarvertical sliderarrowinc {
 .throttle-meter-fill.effective {
   background-color: #ffd166;
 }
+
+.binding-target {
+  display: block;
+  width: 100%;
+  margin: 8dp 0;
+  padding: 12dp;
+  background-color: #172235;
+  border-width: 1dp;
+  border-color: #3d4a5f;
+}
+
+.binding-heading,
+.binding-row {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  gap: 8dp;
+}
+
+.binding-heading strong {
+  flex-grow: 1;
+  font-size: 19dp;
+}
+
+.binding-row button,
+.binding-heading button,
+.add-binding {
+  width: auto;
+  padding: 7dp 10dp;
+  font-size: 15dp;
+}
+
+.binding-chip {
+  flex-grow: 1;
+  padding: 9dp;
+  color: #d8e7ff;
+  background-color: #252f40;
+}
+
+.driving-target button.active {
+  background-color: #5076a8;
+  border-color: #ffd166;
+}

@@ -69,6 +69,7 @@
             <p>This button or axis is already assigned to another N64 control. Keep both assignments?</p>
             <div class="modal-actions">
               <button id="controls-conflict-accept" class="primary" onclick="control:conflict-accept">Keep Both</button>
+              <button id="controls-conflict-move" class="secondary" onclick="control:conflict-move">Move Binding</button>
               <button class="secondary" onclick="control:capture-cancel">Cancel (Esc / B)</button>
             </div>
           </div>

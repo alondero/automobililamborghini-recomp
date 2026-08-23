@@ -283,6 +283,7 @@ void UiState::refresh_controls_values() {
         controls_sample_revision = snapshot.sample_revision;
         set_text("controls-raw-preview", view.raw_preview);
         set_text("controls-evaluated-preview", view.evaluated_preview);
+        set_text("controls-throttle-preview", view.throttle_preview);
     }
 }
 
