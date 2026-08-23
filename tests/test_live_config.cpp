@@ -63,12 +63,18 @@ int main() {
     lambo::config::set_no_lod_circuit(4, true);
     lambo::config::set_global_fog_scale(1.5);
     lambo::config::set_global_draw_distance(2.0);
+    lambo::config::set_camera_distance_scale(0.65);
+    lambo::config::set_camera_height_scale(0.5);
+    lambo::config::set_camera_fov_add(10.0);
     expect(!lambo::config::widescreen_fog_match(), "fog toggle updates live");
     expect(!lambo::config::widescreen_sky_match(), "sky toggle updates live");
     expect(!lambo::config::no_lod(), "LOD toggle updates live");
     expect(lambo::config::no_lod_circuit(4), "per-circuit visibility updates live");
     expect(lambo::config::global_fog_scale() == 1.5, "fog scale updates live");
     expect(lambo::config::global_draw_distance() == 2.0, "draw distance updates live");
+    expect(lambo::config::camera_distance_scale() == 0.65, "camera distance scale updates live");
+    expect(lambo::config::camera_height_scale() == 0.5, "camera height scale updates live");
+    expect(lambo::config::camera_fov_add() == 10.0, "camera FOV delta updates live");
 
     lambo::config::update_saved_window_mode(ultramodern::renderer::WindowMode::Fullscreen);
     const auto json = read_json(path);
@@ -82,8 +88,22 @@ int main() {
     expect(json.at("no_lod_circuit").at(4) == true, "per-circuit visibility persists");
     expect(json.at("fog_scale") == 1.5, "fog scale persists");
     expect(json.at("draw_distance") == 2.0, "draw distance persists");
+    expect(json.at("camera_distance_scale") == 0.65, "camera distance scale persists");
+    expect(json.at("camera_height_scale") == 0.5, "camera height scale persists");
+    expect(json.at("camera_fov_add") == 10.0, "camera FOV delta persists");
+
+    // Out-of-range values are clamped, not rejected: the ROM-authored defaults
+    // (900 / 200 / +0) must round-trip exactly so stock presentation is stable.
+    lambo::config::set_camera_distance_scale(99.0);
+    lambo::config::set_camera_height_scale(-5.0);
+    lambo::config::set_camera_fov_add(500.0);
+    expect(lambo::config::camera_distance_scale() == 3.0, "camera distance scale clamps high");
+    expect(lambo::config::camera_height_scale() == 0.2, "camera height scale clamps low");
+    expect(lambo::config::camera_fov_add() == 60.0, "camera FOV delta clamps high");
 
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
     return failures == 0 ? 0 : 1;
 }
+
+
