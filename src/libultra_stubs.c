@@ -505,8 +505,9 @@ void func_8006A7A0(uint8_t* rdram, recomp_context* ctx) {
 void func_8006A8B4(uint8_t* rdram, recomp_context* ctx) {
     uint32_t channel = (uint32_t)ctx->r4;
     uint32_t intensity = (uint32_t)ctx->r5;
+    // ROM body clamps unsigned request to max 0x50 (sltiu at, a1, 0x51).
+    // (A subsequent `and at, a1, 0x08000000` in the ROM is unreachable dead code after the clamp).
     if (intensity >= 0x51u) intensity = 0x50u;
-    if ((intensity & 0x08000000u) != 0) intensity = 0;
     ctx->r5 = intensity;
     if (channel < 4)
         MEM_W(0, (gpr)(int32_t)(0x80110F28u + channel * 4u)) = intensity;

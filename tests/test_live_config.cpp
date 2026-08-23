@@ -101,6 +101,10 @@ int main() {
     expect(lambo::config::camera_height_scale() == 0.2, "camera height scale clamps low");
     expect(lambo::config::camera_fov_add() == 60.0, "camera FOV delta clamps high");
 
+    lambo::config::set_show_launcher(true);
+    expect(lambo::config::show_launcher() == true, "show_launcher toggle updates snapshot");
+    expect(read_json(path).at("show_launcher") == true, "show_launcher persists to json");
+
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
     return failures == 0 ? 0 : 1;

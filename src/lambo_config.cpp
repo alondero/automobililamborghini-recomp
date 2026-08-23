@@ -48,6 +48,7 @@ std::atomic_bool g_widescreen_sky_match{true};
 // lose the far scenery entirely. Default-on; the emit still self-gates on the
 // record pointer being non-null, so segments without a scenery DL are unaffected.
 std::atomic_bool g_no_lod{true};
+std::atomic_bool g_show_launcher{false};
 
 // Per-circuit refinement of the global no_lod. Rationale + JSON key in
 // lambo_config.h; see that header for the ship-safe default and the
@@ -130,6 +131,7 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"camera_distance_scale", g_camera_distance_scale.load()},
         {"camera_height_scale", g_camera_height_scale.load()},
         {"camera_fov_add", g_camera_fov_add.load()},
+        {"show_launcher", g_show_launcher.load()},
     };
 }
 
@@ -161,6 +163,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     double camera_distance_scale = g_camera_distance_scale.load();
     double camera_height_scale = g_camera_height_scale.load();
     double camera_fov_add = g_camera_fov_add.load();
+    bool show_launcher = g_show_launcher.load();
     from_or_default(j, "widescreen_fog_match", widescreen_fog_match);
     from_or_default(j, "widescreen_sky_match", widescreen_sky_match);
     from_or_default(j, "no_lod", no_lod);
@@ -172,6 +175,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "camera_distance_scale", camera_distance_scale);
     from_or_default(j, "camera_height_scale", camera_height_scale);
     from_or_default(j, "camera_fov_add", camera_fov_add);
+    from_or_default(j, "show_launcher", show_launcher);
     g_widescreen_fog_match.store(widescreen_fog_match);
     g_widescreen_sky_match.store(widescreen_sky_match);
     g_no_lod.store(no_lod);
@@ -183,6 +187,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     g_camera_distance_scale.store(camera_distance_scale);
     g_camera_height_scale.store(camera_height_scale);
     g_camera_fov_add.store(camera_fov_add);
+    g_show_launcher.store(show_launcher);
     // Sanity-bound the window size: below the N64 framebuffer is useless, above 8K
     // is a typo -- either way SDL_CreateWindow would fail and the port would run
     // permanently headless, so reset to defaults instead.
@@ -531,8 +536,14 @@ void set_camera_fov_add(double v) {
     save_graphics(g_current_graphics);
 }
 
+bool show_launcher() {
+    return g_show_launcher.load();
+}
+
+void set_show_launcher(bool enabled) {
+    g_show_launcher.store(enabled);
+    save_graphics(g_current_graphics);
+}
+
 } // namespace config
 } // namespace lambo
-
-
-

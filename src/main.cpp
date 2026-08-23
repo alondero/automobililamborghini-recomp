@@ -42,6 +42,10 @@
 #include "lambo_gpu_advisory.h"  // issue #109: outdated-driver popup handoff
 #include "lambo_log.h"   
 #include "lambo_menu.h"
+#include "lambo_input_gate.h"
+#include "lambo_startup.h"
+#include "controls/lambo_controls_sdl.h"
+#include "ui/lambo_ui.h"
 // ultramodern's native VI API (events.cpp), used by the promote_vi_context RT64 bridge.
 extern "C" void osViSwapBuffer(uint8_t* rdram, int32_t frameBufPtr);
 extern "C" void osViSetMode(uint8_t* rdram, int32_t mode_);
@@ -112,6 +116,13 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
                  g_swaps.load());
     std::fflush(nullptr);
     std::_Exit(g_first_vi.load() ? 0 : 2);
+}
+
+[[noreturn]] static void application_exit_success() {
+    LAMBO_LOG("probe", "application exit requested; status=success\n");
+    lambo::ui::shutdown();
+    std::fflush(nullptr);
+    std::_Exit(0);
 }
 
 // Set by headless::create_render_context (stub_renderer.cpp) so this retrace hook can reach RDRAM.
@@ -304,13 +315,13 @@ static void message_box_stub(const char* msg) {
 
 // Input (#68) — defined below in the input section; used by the window/pump callbacks above them.
 static void input_sample();
-static void input_open_controller(int joystick_index);
-static void input_close_controller(SDL_JoystickID which);
 static void rumble_apply();  // rumble-pak sink (#69); defined in the input section below
+static std::unique_ptr<lambo::controls::SdlAdapter> g_controls;
 
 // The SDL window, kept for main-thread window ops (fullscreen toggle). SDL window
 // state is owned by THIS thread; the renderer only ever sees the raw handle.
 static SDL_Window* g_sdl_window = nullptr;
+static lambo::StartupController* g_startup_controller = nullptr;
 
 // F11 / Alt+Enter fullscreen toggle (main thread, called from the SDL event loop).
 // SDL owns the window state; the new mode is persisted to graphics.json so the next
@@ -346,7 +357,7 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
         }
         // Open any controller already connected at launch (ADDED events are also queued, but this
         // covers pads present before the event pump starts).
-        for (int i = 0; i < SDL_NumJoysticks(); i++) input_open_controller(i);
+        if (g_controls != nullptr) g_controls->open_existing();
         uint32_t flags = SDL_WINDOW_RESIZABLE;
 #if defined(__linux__)
         flags |= SDL_WINDOW_VULKAN;
@@ -369,6 +380,7 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
         }
         g_sdl_window = window;
         lambo::menu::attach(window);
+        lambo::ui::set_window(window);
 #if defined(__linux__)
         LAMBO_LOG("rt64", "SDL window created (%dx%d, Vulkan surface)\n",
                      win_size.width, win_size.height);
@@ -398,31 +410,74 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
 }
 
 static void update_gfx_stub(void* /*gfx_data*/) {
+    static bool runtime_ready_announced = false;
+    if (!runtime_ready_announced && g_startup_controller != nullptr) {
+        const bool render_ready = lambo::ui::is_initialized();
+        const bool runtime_ready = !lambo_rt64::enabled() || render_ready;
+        if (runtime_ready &&
+            (g_startup_controller->mode() == lambo::StartupMode::Automatic || render_ready)) {
+            runtime_ready_announced = true;
+            g_startup_controller->runtime_ready();
+            const char* page_env = std::getenv("LAMBO_UI_PAGE");
+            if (page_env != nullptr) {
+                const std::string page(page_env);
+                if (page == "settings") lambo::ui::open_settings();
+                else if (page == "controls") lambo::ui::open_controls();
+                else if (page == "graphics") lambo::ui::open_graphics();
+                else if (page == "enhancements") lambo::ui::open_enhancements();
+                else if (page == "haptics") lambo::ui::open_haptics();
+                else if (page == "launcher") lambo::ui::open_launcher();
+            } else if (g_startup_controller->mode() == lambo::StartupMode::InteractiveLauncher) {
+                lambo::ui::open_launcher();
+            }
+        }
+    }
+
     // Pump SDL events on the main thread so the RT64 window stays responsive under WSLg.
     if (lambo_rt64::enabled()) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
-            if (lambo::menu::handle_event(event)) {
-                continue;
-            }
-            // Play mode has no VI cap (see quit_after_vis), so closing the window is the
-            // quit path: reuse the summary+_Exit teardown (game threads are torn down by
-            // process exit; see boot_summary_and_exit's rationale).
+            // Quit/window-close is handled before any UI or guest dispatch. In particular,
+            // a launcher close before the first VI is a successful application exit, not a
+            // failed boot probe.
             if (event.type == SDL_QUIT ||
                 (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE)) {
-                LAMBO_LOG("probe", "window closed; quitting\n");
-                boot_summary_and_exit();
+                if (g_startup_controller != nullptr) g_startup_controller->request_exit();
+                application_exit_success();
             }
-            else if (event.type == SDL_KEYDOWN && !event.key.repeat &&
-                     (event.key.keysym.sym == SDLK_F11 ||
-                      (event.key.keysym.sym == SDLK_RETURN && (event.key.keysym.mod & KMOD_ALT)))) {
+
+            // Hotplug is always consumed, even while the launcher owns input.
+            if (event.type == SDL_CONTROLLERDEVICEADDED) {
+                if (g_controls != nullptr) g_controls->device_added(event.cdevice.which);
+                continue;
+            }
+            if (event.type == SDL_CONTROLLERDEVICEREMOVED) {
+                if (g_controls != nullptr) g_controls->device_removed(event.cdevice.which);
+                lambo::ui::handle_event(event);
+                continue;
+            }
+
+            if (g_controls != nullptr && g_controls->handle_capture_event(event)) continue;
+            if (lambo::menu::handle_event(event)) continue;
+            if (lambo::ui::handle_event(event)) continue;
+
+            // Once the launcher/overlay captures input, guest and developer shortcuts are
+            // suppressed. F11 and Alt+Enter remain application-level shortcuts otherwise.
+            const bool settings_shortcut =
+                (event.type == SDL_KEYDOWN && !event.key.repeat &&
+                 (event.key.keysym.sym == SDLK_ESCAPE || event.key.keysym.sym == SDLK_F1)) ||
+                (g_controls != nullptr && g_controls->selected_back_pressed(event));
+            if (settings_shortcut &&
+                g_startup_controller != nullptr &&
+                g_startup_controller->state() == lambo::StartupState::Started &&
+                !lambo::ui::is_visible()) {
+                lambo::ui::open_settings();
+                continue;
+            }
+            if (event.type == SDL_KEYDOWN && !event.key.repeat &&
+                (event.key.keysym.sym == SDLK_F11 ||
+                 (event.key.keysym.sym == SDLK_RETURN && (event.key.keysym.mod & KMOD_ALT)))) {
                 toggle_fullscreen();
-            }
-            else if (event.type == SDL_CONTROLLERDEVICEADDED) {
-                input_open_controller(event.cdevice.which);   // which = joystick index (ADDED)
-            }
-            else if (event.type == SDL_CONTROLLERDEVICEREMOVED) {
-                input_close_controller(event.cdevice.which);  // which = instance id (REMOVED)
             }
         }
         // Severe GPU-driver advisory posted by renderer setup (issue #109): the affected
@@ -433,8 +488,10 @@ static void update_gfx_stub(void* /*gfx_data*/) {
                                      "Lamborghini Recomp - outdated graphics driver",
                                      advisory, g_sdl_window);
         }
-        // SDL_PollEvent pumped events above (implicitly SDL_GameControllerUpdate); sample the
-        // fresh keyboard+pad state into the atomic snapshot the game thread reads via get_input.
+        // Update the cross-thread capture gate before sampling physical state. The guest reads a
+        // neutral snapshot while the UI owns input, plus one neutral frame after release.
+        if (g_controls != nullptr) g_controls->process_commands();
+        lambo::input_gate::set_ui_capture(lambo::ui::captures_input());
         input_sample();
         // Apply the game thread's latest rumble-pak motor state to the physical pad (#69).
         rumble_apply();
@@ -470,10 +527,6 @@ enum {
 // N64 hardware stick maxes at roughly +-80 after calibration; games are tuned for that range,
 // so we scale full deflection to +-80 (faithfulness) rather than the full int8 +-127.
 static constexpr int   N64_STICK_MAX   = 80;
-static constexpr int   PAD_AXIS_DEADZONE = 8000;   // ~24% of int16 range (SDL recommended ~8000)
-static constexpr int   PAD_TRIG_THRESH   = 8000;   // analog trigger -> digital
-static constexpr int   PAD_CSTICK_THRESH = 12000;  // right-stick -> C-buttons
-
 static uint16_t g_held_buttons = 0;                 // LAMBO_MODERN_INPUT env override, OR'd in
 static int8_t   g_held_sx = 0, g_held_sy = 0;       // LAMBO_MODERN_INPUT stick override (harness)
 // LAMBO_INPUT_PULSE=BTNHEX:PERIOD:DUTY[:STARTVI] -- periodic button pulse for headless menu
@@ -482,14 +535,12 @@ static int8_t   g_held_sx = 0, g_held_sy = 0;       // LAMBO_MODERN_INPUT stick 
 static uint16_t g_pulse_buttons = 0;
 static int      g_pulse_period = 0, g_pulse_duty = 0, g_pulse_start = 0;
 static int      g_pulse_count = 0;   // optional 5th field: stop after N pulses (0 = unlimited)
-static std::atomic<uint32_t> g_input_snapshot{0};   // main-thread sampled, game-thread read
-static SDL_GameController* g_pad = nullptr;          // first opened controller (port 0)
 
 // --- rumble-pak sink (#69) ----------------------------------------------------------------
 // The game's SI/PIF bridge (func_8007F780 -> lambo_joybus_answer, recomp/src/libultra_stubs.c)
 // runs on the GAME thread and decodes the ROM's motor-control pak writes (joybus cmd 0x03 to
 // pak block 0xC000: payload 0x01 = motor on, 0x00 = off). SDL rumble must be driven from the
-// MAIN thread (that owns g_pad open/close), so -- exactly like input -- the game thread only
+// MAIN thread (that owns the controller registry), so -- exactly like input -- the game thread only
 // PUBLISHES an atomic request and the main-thread pump (update_gfx_stub) applies it. Declared
 // extern "C" so the C responder in libultra_stubs.c can call lambo_pak_set_rumble().
 static std::atomic<int> g_rumble_on{0};              // game-thread write, main-thread read
@@ -510,23 +561,8 @@ extern "C" void lambo_savestate_request_load(void);
 // lets it lapse. Idempotent-ish: we only issue an SDL call on an on/off EDGE plus periodic
 // refresh while on, to avoid hammering the HID layer every frame.
 static void rumble_apply() {
-    static int last = 0;
     int on = g_rumble_on.load(std::memory_order_relaxed);
-    if (g_pad == nullptr || !SDL_GameControllerGetAttached(g_pad)) { last = 0; return; }
-    if (on) {
-        SDL_GameControllerRumble(g_pad, 0xFFFF, 0xFFFF, 150);   // refresh; expiry > frame time
-    } else if (last) {
-        SDL_GameControllerRumble(g_pad, 0, 0, 0);               // off edge: stop immediately
-    }
-    last = on;
-}
-
-static int8_t pad_axis_to_n64(int v) {              // int16 SDL axis -> int8 N64 stick (deadzoned)
-    if (v > -PAD_AXIS_DEADZONE && v < PAD_AXIS_DEADZONE) return 0;
-    float f = v / 32767.0f;
-    if (f >  1.0f) f =  1.0f;
-    if (f < -1.0f) f = -1.0f;
-    return (int8_t)(f * N64_STICK_MAX);
+    if (g_controls != nullptr) g_controls->apply_rumble(on != 0);
 }
 
 // Sample SDL keyboard + gamepad on the MAIN thread and publish the atomic snapshot.
@@ -534,42 +570,11 @@ static void input_sample() {
     uint16_t b = 0;
     int sx = 0, sy = 0;
 
-    if (g_pad != nullptr && SDL_GameControllerGetAttached(g_pad)) {
-        auto down = [](SDL_GameControllerButton g) { return SDL_GameControllerGetButton(g_pad, g) != 0; };
-        // Mapping is tuned to THIS game's VERIFIED menu control scheme (not the generic
-        // Zelda64Recomp default): the ROM's menu driver (func_800030F8) confirms on A|START
-        // (andi 0x9000), cancels on B (0x4000), and moves the cursor with the ANALOG STICK only
-        // -- it tests no C-button or D-pad bit for menu nav. So the face buttons follow Xbox-native
-        // intent: A=confirm, B=cancel. The C-buttons live on X/Y + the right stick, where this
-        // game's menus never look at them, so they can't produce phantom menu input.
-        // NOTE: the *in-race* meaning of each N64 bit (throttle/brake/camera) is NOT yet ROM-verified
-        // -- the race-overlay input consumer hasn't been read. This is a physical Xbox->N64 binding,
-        // not a claim about race behaviour; revisit when state 8 becomes playable (see race.md).
-        if (down(SDL_CONTROLLER_BUTTON_A))             b |= N64_A;      // confirm (menu)
-        if (down(SDL_CONTROLLER_BUTTON_B))             b |= N64_B;      // cancel (menu)
-        if (down(SDL_CONTROLLER_BUTTON_X))             b |= N64_CL;     // West  -> C-left
-        if (down(SDL_CONTROLLER_BUTTON_Y))             b |= N64_CU;     // North -> C-up
-        if (down(SDL_CONTROLLER_BUTTON_START))         b |= N64_START;  // advance / pause
-        if (down(SDL_CONTROLLER_BUTTON_LEFTSHOULDER))  b |= N64_L;
-        if (down(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) b |= N64_R;
-        if (down(SDL_CONTROLLER_BUTTON_DPAD_UP))        b |= N64_DU;
-        if (down(SDL_CONTROLLER_BUTTON_DPAD_DOWN))      b |= N64_DD;
-        if (down(SDL_CONTROLLER_BUTTON_DPAD_LEFT))      b |= N64_DL;
-        if (down(SDL_CONTROLLER_BUTTON_DPAD_RIGHT))     b |= N64_DR;
-        // N64 Z on the left analog trigger (LT); N64 R also on the right trigger (RT) for racing feel.
-        if (SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT)  > PAD_TRIG_THRESH) b |= N64_Z;
-        if (SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > PAD_TRIG_THRESH) b |= N64_R;
-        // Remaining C directions: right-stick click -> C-down; the right stick itself -> all four C's.
-        if (down(SDL_CONTROLLER_BUTTON_RIGHTSTICK))     b |= N64_CD;    // right-stick click
-        int rx = SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_RIGHTX);
-        int ry = SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_RIGHTY);
-        if (rx >  PAD_CSTICK_THRESH) b |= N64_CR;
-        if (rx < -PAD_CSTICK_THRESH) b |= N64_CL;
-        if (ry >  PAD_CSTICK_THRESH) b |= N64_CD;
-        if (ry < -PAD_CSTICK_THRESH) b |= N64_CU;
-        // Left analog stick -> N64 stick (SDL Y is +down, N64 stick_y is +up -> negate).
-        sx =  pad_axis_to_n64(SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_LEFTX));
-        sy = -pad_axis_to_n64(SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_LEFTY));
+    if (g_controls != nullptr) {
+        const lambo::controls::EvaluatedState controller = g_controls->sample();
+        b = controller.buttons;
+        sx = controller.stick_x;
+        sy = controller.stick_y;
     }
 
     // Keyboard fallback (always sampled; OR'd with the pad). Arrow keys steer; racing essentials
@@ -593,58 +598,42 @@ static void input_sample() {
         if (sx == 0 && kx != 0) sx = kx;               // pad stick wins if deflected
         if (sy == 0 && ky != 0) sy = ky;
 
-        // Developer warp menu (#12): F1..F6 warp straight to that circuit as a
-        // 1-player single race. Edge-detected here (main thread); consumed by
-        // lambo_warp_tick on the game thread (src/lambo_warp.c).
-        static Uint8 warp_prev[6] = {};
-        for (int i = 0; i < 6; i++) {
-            Uint8 down = ks[SDL_SCANCODE_F1 + i];
-            if (down && !warp_prev[i]) lambo_warp_request(i);
-            warp_prev[i] = down;
-        }
+        if (!lambo::input_gate::guest_input_suppressed()) {
+            // Developer warp menu (#12): F1..F6 warp straight to that circuit as a
+            // 1-player single race. Edge-detected here (main thread); consumed by
+            // lambo_warp_tick on the game thread (src/lambo_warp.c).
+            static Uint8 warp_prev[6] = {};
+            for (int i = 0; i < 6; i++) {
+                Uint8 down = ks[SDL_SCANCODE_F1 + i];
+                if (down && !warp_prev[i]) lambo_warp_request(i);
+                warp_prev[i] = down;
+            }
 
-        // Developer save-state (#22): F7 saves the current guest RAM to the state slot,
-        // F8 restores it. (F1-F6 are the warp keys above and F11 is fullscreen, so save-state
-        // uses the free F7/F8 pair.) Edge-detected here (main thread); the copy runs on the
-        // game thread at the next frame boundary (src/lambo_savestate.c).
-        static Uint8 f7_prev = 0, f8_prev = 0;
-        Uint8 f7 = ks[SDL_SCANCODE_F7], f8 = ks[SDL_SCANCODE_F8];
-        if (f7 && !f7_prev) lambo_savestate_request_save();
-        if (f8 && !f8_prev) lambo_savestate_request_load();
-        f7_prev = f7; f8_prev = f8;
+            // Developer save-state (#22): F7 saves the current guest RAM to the state slot,
+            // F8 restores it. Edge-detected here (main thread); the copy runs on the game
+            // thread at the next frame boundary (src/lambo_savestate.c).
+            static Uint8 f7_prev = 0, f8_prev = 0;
+            Uint8 f7 = ks[SDL_SCANCODE_F7], f8 = ks[SDL_SCANCODE_F8];
+            if (f7 && !f7_prev) lambo_savestate_request_save();
+            if (f8 && !f8_prev) lambo_savestate_request_load();
+            f7_prev = f7; f8_prev = f8;
+        }
     }
 
     uint32_t snap = (uint16_t)b
                   | ((uint32_t)(uint8_t)(int8_t)sx << 16)
                   | ((uint32_t)(uint8_t)(int8_t)sy << 24);
-    g_input_snapshot.store(snap, std::memory_order_relaxed);
-}
-
-// Open the first connected game controller into port 0 (idempotent; called at init + on hotplug).
-static void input_open_controller(int joystick_index) {
-    if (g_pad != nullptr) return;
-    if (!SDL_IsGameController(joystick_index)) return;
-    g_pad = SDL_GameControllerOpen(joystick_index);
-    if (g_pad != nullptr)
-        LAMBO_LOG("input", "controller connected: %s\n",
-                     SDL_GameControllerName(g_pad) ? SDL_GameControllerName(g_pad) : "(unknown)");
-}
-static void input_close_controller(SDL_JoystickID which) {
-    if (g_pad == nullptr) return;
-    SDL_Joystick* js = SDL_GameControllerGetJoystick(g_pad);
-    if (js != nullptr && SDL_JoystickInstanceID(js) == which) {
-        SDL_GameControllerClose(g_pad);
-        g_pad = nullptr;
-        LAMBO_LOG("input", "controller disconnected\n");
-    }
+    lambo::input_gate::publish_physical_snapshot(snap);
 }
 
 static void input_poll_stub() {}
 static bool input_get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     if (controller_num != 0) return false;
-    uint32_t snap = g_input_snapshot.load(std::memory_order_relaxed);
-    uint16_t b  = (uint16_t)(snap & 0xFFFF) | g_held_buttons;   // env mask always OR'd (harness knob)
-    if (g_pulse_period > 0) {                                   // scripted pulse (harness knob)
+    const bool suppressed = lambo::input_gate::guest_input_suppressed();
+    uint32_t snap = lambo::input_gate::guest_snapshot();
+    uint16_t b = suppressed ? 0 : (uint16_t)(snap & 0xFFFF);
+    if (!suppressed) b |= g_held_buttons;                       // env mask is a guest input source
+    if (!suppressed && g_pulse_period > 0) {                    // scripted pulse (harness knob)
         int vi = g_vis.load(std::memory_order_relaxed);
         if (vi >= g_pulse_start && ((vi - g_pulse_start) % g_pulse_period) < g_pulse_duty
             && (g_pulse_count == 0 || (vi - g_pulse_start) / g_pulse_period < g_pulse_count))
@@ -652,8 +641,8 @@ static bool input_get_input(int controller_num, uint16_t* buttons, float* x, flo
     }
     int8_t   sx = (int8_t)((snap >> 16) & 0xFF);
     int8_t   sy = (int8_t)((snap >> 24) & 0xFF);
-    if (sx == 0) sx = g_held_sx;                                // env stick fills in when live stick idle
-    if (sy == 0) sy = g_held_sy;
+    if (!suppressed && sx == 0) sx = g_held_sx;                  // env stick fills in when live stick idle
+    if (!suppressed && sy == 0) sy = g_held_sy;
     if (buttons) *buttons = b;
     // ultramodern does stick_x = (int8_t)(127 * x), so divide by 127 (NOT N64_STICK_MAX) to
     // preserve our authentic +-80 range through that re-scale instead of re-expanding to +-127.
@@ -717,6 +706,7 @@ int main(int argc, char** argv) {
     std::filesystem::path config_dir = lambo::config::app_config_dir();
     std::filesystem::create_directories(config_dir);
     recomp::register_config_path(config_dir);
+    g_controls = std::make_unique<lambo::controls::SdlAdapter>();
 
     recomp::GameEntry game{};
     game.rom_hash          = 0x525201d7279f34e3ULL; // XXH3_64(big-endian .z64, padded to /4)
@@ -737,30 +727,44 @@ int main(int argc, char** argv) {
     }
     LAMBO_LOG("probe", "ROM validated; rom_hash matches\n");
 
-    // recomp::start() blocks the calling thread until ultramodern::quit(), so
-    // kick the game off from a side thread once the runtime has set up.
-    std::thread starter([game_id]() {
-        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    lambo::StartupMode startup_mode = lambo::startup_mode_from_environment();
+    if (startup_mode == lambo::StartupMode::Automatic && lambo::config::show_launcher()) {
+        startup_mode = lambo::StartupMode::InteractiveLauncher;
+    }
+    lambo::StartupController startup_controller(startup_mode, []() {
         LAMBO_LOG("probe", "calling start_game\n");
-        std::u8string gid = game_id;
-        recomp::start_game(gid);
+        recomp::start_game(u8"lamborghini.us");
     });
-    starter.detach();
+    g_startup_controller = &startup_controller;
+    lambo::ui::set_startup_controller(&startup_controller);
+    lambo::ui::install_render_hooks();
+    LAMBO_LOG("probe", "startup mode: %s\n",
+              startup_mode == lambo::StartupMode::Automatic ? "automatic" : "interactive");
 
-    // Watchdog: guarantee the probe terminates and reports, even on a stall.
-    const int wd_sec = watchdog_seconds();
-    std::thread watchdog([wd_sec]() {
-        std::this_thread::sleep_for(std::chrono::seconds(wd_sec));
-        LAMBO_LOG("probe", "WATCHDOG %ds: threads=%d vis=%d first_vi=%d\n",
-                     wd_sec, g_threads.load(), g_vis.load(), (int)g_first_vi.load());
-        // Exit deterministically (same as the VI-cap path) rather than ultramodern::quit(),
-        // whose teardown munmaps RDRAM out from under the live game threads (SIGSEGV race).
-        boot_summary_and_exit();
-    });
-    watchdog.detach();
+    // Watchdog: guarantee automatic probes terminate and report. Only started for
+    // capped test probes (kQuitAfterVis != INT_MAX). Normal play mode runs unwatched.
+    if (kQuitAfterVis != INT_MAX) {
+        const int wd_sec = watchdog_seconds();
+        std::thread watchdog([&startup_controller, wd_sec]() {
+            while (!startup_controller.watchdog_armed() &&
+                   startup_controller.state() != lambo::StartupState::Exiting) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+            if (startup_controller.state() == lambo::StartupState::Exiting) return;
+            std::this_thread::sleep_for(std::chrono::seconds(wd_sec));
+            if (startup_controller.state() == lambo::StartupState::Exiting) return;
+            LAMBO_LOG("probe", "WATCHDOG %ds: threads=%d vis=%d first_vi=%d\n",
+                         wd_sec, g_threads.load(), g_vis.load(), (int)g_first_vi.load());
+            // Exit deterministically (same as the VI-cap path) rather than ultramodern::quit(),
+            // whose teardown munmaps RDRAM out from under the live game threads (SIGSEGV race).
+            boot_summary_and_exit();
+        });
+        watchdog.detach();
+    }
 
     recomp::Configuration cfg{};
-    cfg.project_version = recomp::Version{1, 0, 0, std::string{}};
+    cfg.project_version = recomp::Version{
+        LAMBO_VERSION_MAJOR, LAMBO_VERSION_MINOR, LAMBO_VERSION_PATCH, std::string{}};
     cfg.rsp_callbacks.get_rsp_microcode = get_rsp_microcode_stub;
     cfg.renderer_callbacks.create_render_context = headless::create_render_context;
     cfg.gfx_callbacks.create_window = create_window_stub; // avoids start()'s no-window assert
