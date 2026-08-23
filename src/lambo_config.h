@@ -50,6 +50,12 @@ void update_saved_window_mode(ultramodern::renderer::WindowMode wm);
 struct WindowSize { int width; int height; };
 WindowSize window_size();
 
+// Startup launcher gate: false = auto-boot directly into game with in-game
+// configuration overlay available via Menu/Back/Guide/Esc; true = show launcher.
+// graphics.json key "show_launcher" (default false), overridable by LAMBO_LAUNCHER=1/0.
+bool show_launcher();
+void set_show_launcher(bool enabled);
+
 // RT64 texture-replacement paths (issue #9). Both are extra graphics.json string keys
 // (empty = feature off), overridable by env var for headless capture/testing:
 //   texture_pack  / LAMBO_TEXTURE_PACK  -- directory or .rtz to auto-load at startup.

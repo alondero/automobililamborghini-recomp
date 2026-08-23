@@ -115,6 +115,8 @@ Run from the repository root so the ROM path resolves:
 ./build/lamborghini_modern
 ```
 
+The game auto-boots directly into gameplay. Press the **Menu / Back / Guide** button on your controller, or press <kbd>Esc</kbd> / <kbd>F1</kbd> on your keyboard to open the in-game configuration overlay and controls mapper. To launch into the standalone launcher shell instead, set `LAMBO_LAUNCHER=1` in your environment or set `"show_launcher": true` in `graphics.json`.
+
 ## Notes
 
 - `lib/N64ModernRuntime`'s root CMake deliberately omits RT64; it is pulled in only by

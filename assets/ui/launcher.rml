@@ -1,0 +1,51 @@
+<rml>
+  <head>
+    <title>Automobili Lamborghini</title>
+    <link type="text/rcss" href="lambo.rcss"/>
+  </head>
+  <body>
+    <div id="window">
+      <div class="panel">
+        <div class="header-brand">
+          <div class="brand-title-row">
+            <h1>AUTOMOBILI LAMBORGHINI</h1>
+            <span class="badge-pill">RECOMPILED</span>
+          </div>
+        </div>
+
+        <div class="grid-2x2">
+          <div class="grid-row">
+            <button id="autofocus" class="primary hero-card" onclick="play:game">
+              <span class="btn-main-label">PLAY GAME</span>
+              <span class="btn-sub-label">Launch with saved configuration</span>
+            </button>
+            <button class="menu-card" onclick="page:settings">
+              <span class="btn-main-label">Settings</span>
+              <span class="btn-sub-label">Graphics resolution, visual enhancements and display</span>
+            </button>
+          </div>
+
+          <div class="grid-row">
+            <button class="menu-card" onclick="page:controls">
+              <span class="btn-main-label">Controls Mapper</span>
+              <span class="btn-sub-label">N64 controller and keyboard bindings</span>
+            </button>
+            <button class="secondary menu-card" onclick="quit">
+              <span class="btn-main-label">Exit to Desktop</span>
+              <span class="btn-sub-label">Quit and return to Windows</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="footer-bar">
+          <div id="version" class="footer-version">Loading version...</div>
+          <div class="controller-guide">
+            <span class="guide-item"><span class="guide-key">A / Enter</span> Select</span>
+            <span class="guide-item"><span class="guide-key">B / Esc</span> Back</span>
+            <span class="guide-item"><span class="guide-key">D-Pad / Stick</span> Navigate</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</rml>
