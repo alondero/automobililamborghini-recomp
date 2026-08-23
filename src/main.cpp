@@ -420,7 +420,16 @@ static void update_gfx_stub(void* /*gfx_data*/) {
             (g_startup_controller->mode() == lambo::StartupMode::Automatic || render_ready)) {
             runtime_ready_announced = true;
             g_startup_controller->runtime_ready();
-            if (g_startup_controller->mode() == lambo::StartupMode::InteractiveLauncher) {
+            const char* page_env = std::getenv("LAMBO_UI_PAGE");
+            if (page_env != nullptr) {
+                const std::string page(page_env);
+                if (page == "settings") lambo::ui::open_settings();
+                else if (page == "controls") lambo::ui::open_controls();
+                else if (page == "graphics") lambo::ui::open_graphics();
+                else if (page == "enhancements") lambo::ui::open_enhancements();
+                else if (page == "haptics") lambo::ui::open_haptics();
+                else if (page == "launcher") lambo::ui::open_launcher();
+            } else if (g_startup_controller->mode() == lambo::StartupMode::InteractiveLauncher) {
                 lambo::ui::open_launcher();
             }
         }
@@ -458,7 +467,7 @@ static void update_gfx_stub(void* /*gfx_data*/) {
             // suppressed. F11 and Alt+Enter remain application-level shortcuts otherwise.
             const bool settings_shortcut =
                 (event.type == SDL_KEYDOWN && !event.key.repeat &&
-                 event.key.keysym.sym == SDLK_ESCAPE) ||
+                 (event.key.keysym.sym == SDLK_ESCAPE || event.key.keysym.sym == SDLK_F1)) ||
                 (g_controls != nullptr && g_controls->selected_back_pressed(event));
             if (settings_shortcut &&
                 g_startup_controller != nullptr &&

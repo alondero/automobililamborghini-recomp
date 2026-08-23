@@ -48,6 +48,7 @@ std::atomic_bool g_widescreen_sky_match{true};
 // lose the far scenery entirely. Default-on; the emit still self-gates on the
 // record pointer being non-null, so segments without a scenery DL are unaffected.
 std::atomic_bool g_no_lod{true};
+std::atomic_bool g_show_launcher{false};
 
 // Per-circuit refinement of the global no_lod. Rationale + JSON key in
 // lambo_config.h; see that header for the ship-safe default and the
@@ -64,6 +65,13 @@ std::array<double, 6> g_fog_scale_circuit{1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
 // without reaching the cross-track geometry an unlimited radius exposes.
 std::atomic<double> g_draw_distance{1.5};
 std::array<double, 6> g_draw_distance_circuit{1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+
+// Chase-camera + FOV sense-of-speed knobs (see lambo_config.h). Defaults are the
+// ROM's authored constants: camera at its authored distance, 300 above the track
+// anchor, no FOV delta.
+std::atomic<double> g_camera_distance_scale{1.0};
+std::atomic<double> g_camera_height_scale{1.0};
+std::atomic<double> g_camera_fov_add{0.0};
 
 // Main-thread-owned snapshot used by native menu actions. It avoids reading the
 // runtime's reference-returning getter while another thread may be applying a change.
@@ -120,6 +128,10 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"fog_scale_circuit", g_fog_scale_circuit},
         {"draw_distance", g_draw_distance.load()},
         {"draw_distance_circuit", g_draw_distance_circuit},
+        {"camera_distance_scale", g_camera_distance_scale.load()},
+        {"camera_height_scale", g_camera_height_scale.load()},
+        {"camera_fov_add", g_camera_fov_add.load()},
+        {"show_launcher", g_show_launcher.load()},
     };
 }
 
@@ -148,6 +160,10 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     }
     double fog_scale = g_fog_scale.load();
     double draw_distance = g_draw_distance.load();
+    double camera_distance_scale = g_camera_distance_scale.load();
+    double camera_height_scale = g_camera_height_scale.load();
+    double camera_fov_add = g_camera_fov_add.load();
+    bool show_launcher = g_show_launcher.load();
     from_or_default(j, "widescreen_fog_match", widescreen_fog_match);
     from_or_default(j, "widescreen_sky_match", widescreen_sky_match);
     from_or_default(j, "no_lod", no_lod);
@@ -156,6 +172,10 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "fog_scale_circuit", g_fog_scale_circuit);
     from_or_default(j, "draw_distance", draw_distance);
     from_or_default(j, "draw_distance_circuit", g_draw_distance_circuit);
+    from_or_default(j, "camera_distance_scale", camera_distance_scale);
+    from_or_default(j, "camera_height_scale", camera_height_scale);
+    from_or_default(j, "camera_fov_add", camera_fov_add);
+    from_or_default(j, "show_launcher", show_launcher);
     g_widescreen_fog_match.store(widescreen_fog_match);
     g_widescreen_sky_match.store(widescreen_sky_match);
     g_no_lod.store(no_lod);
@@ -164,6 +184,10 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     }
     g_fog_scale.store(fog_scale);
     g_draw_distance.store(draw_distance);
+    g_camera_distance_scale.store(camera_distance_scale);
+    g_camera_height_scale.store(camera_height_scale);
+    g_camera_fov_add.store(camera_fov_add);
+    g_show_launcher.store(show_launcher);
     // Sanity-bound the window size: below the N64 framebuffer is useless, above 8K
     // is a typo -- either way SDL_CreateWindow would fail and the port would run
     // permanently headless, so reset to defaults instead.
@@ -445,6 +469,79 @@ void set_global_draw_distance(double scale) {
     if (scale > 0.0 && scale < 0.1) scale = 0.1;
     if (scale > 100.0) scale = 100.0;
     g_draw_distance.store(scale <= 0.0 ? 0.0 : scale);
+    save_graphics(g_current_graphics);
+}
+
+// LAMBO_CAMERA_DISTANCE_SCALE=<float> overrides the JSON key for capture/testing.
+// Multiplier on the authored camera distance; 1.0 = stock, 0.5 = half as far.
+double camera_distance_scale() {
+    double v;
+    if (const char* s = std::getenv("LAMBO_CAMERA_DISTANCE_SCALE")) {
+        v = std::atof(s);
+    } else {
+        v = g_camera_distance_scale.load();
+    }
+    if (v < 0.2) v = 0.2;
+    if (v > 3.0) v = 3.0;
+    return v;
+}
+
+void set_camera_distance_scale(double v) {
+    if (v < 0.2) v = 0.2;
+    if (v > 3.0) v = 3.0;
+    g_camera_distance_scale.store(v);
+    save_graphics(g_current_graphics);
+}
+
+// LAMBO_CAMERA_HEIGHT_SCALE=<float> overrides the JSON key for capture/testing.
+// Multiplier on the authored eye-height offset; 1.0 = stock.
+double camera_height_scale() {
+    double v;
+    if (const char* s = std::getenv("LAMBO_CAMERA_HEIGHT_SCALE")) {
+        v = std::atof(s);
+    } else {
+        v = g_camera_height_scale.load();
+    }
+    if (v < 0.2) v = 0.2;
+    if (v > 3.0) v = 3.0;
+    return v;
+}
+
+void set_camera_height_scale(double v) {
+    if (v < 0.2) v = 0.2;
+    if (v > 3.0) v = 3.0;
+    g_camera_height_scale.store(v);
+    save_graphics(g_current_graphics);
+}
+
+// LAMBO_CAMERA_FOV_ADD=<float> overrides the JSON key for capture/testing.
+// Delta degrees on top of each layout's authored FOV; bounded so a typo can't
+// produce a degenerate projection (guPerspective cot(fovy/2) blows up near 0).
+double camera_fov_add() {
+    double v;
+    if (const char* s = std::getenv("LAMBO_CAMERA_FOV_ADD")) {
+        v = std::atof(s);
+    } else {
+        v = g_camera_fov_add.load();
+    }
+    if (v < -20.0) v = -20.0;
+    if (v > 60.0) v = 60.0;
+    return v;
+}
+
+void set_camera_fov_add(double v) {
+    if (v < -20.0) v = -20.0;
+    if (v > 60.0) v = 60.0;
+    g_camera_fov_add.store(v);
+    save_graphics(g_current_graphics);
+}
+
+bool show_launcher() {
+    return g_show_launcher.load();
+}
+
+void set_show_launcher(bool enabled) {
+    g_show_launcher.store(enabled);
     save_graphics(g_current_graphics);
 }
 

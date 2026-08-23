@@ -1,6 +1,7 @@
 #include "lambo_ui_controls.h"
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <cmath>
 #include <cstdio>
@@ -45,8 +46,7 @@ std::string source_label(const DigitalSource& source) {
     }
     const auto& half = std::get<AxisHalfSource>(source);
     return std::string(axis_name(half.axis)) +
-        (half.direction == AxisDirection::Positive ? " +" : " -") +
-        " @ " + std::to_string(half.threshold);
+        (half.direction == AxisDirection::Positive ? " +" : " -");
 }
 
 } // namespace
@@ -68,6 +68,81 @@ std::string escape_rml(std::string_view text) {
     }
     return result;
 }
+
+namespace {
+
+struct TargetMeta {
+    Target target;
+    const char* badge_class;
+    const char* badge_text;
+    const char* name;
+};
+
+constexpr std::array<TargetMeta, 6> buttons_targets{{
+    {Target::A, "n64-badge-a", "A", "A Button"},
+    {Target::B, "n64-badge-b", "B", "B Button"},
+    {Target::Start, "n64-badge-start", "START", "Start"},
+    {Target::Z, "n64-badge-z", "Z", "Z Trigger"},
+    {Target::L, "n64-badge-shoulder", "L", "L Shoulder"},
+    {Target::R, "n64-badge-shoulder", "R", "R Shoulder"},
+}};
+
+constexpr std::array<TargetMeta, 4> cbuttons_targets{{
+    {Target::CUp, "n64-badge-c", "C-U", "C-Up"},
+    {Target::CDown, "n64-badge-c", "C-D", "C-Down"},
+    {Target::CLeft, "n64-badge-c", "C-L", "C-Left"},
+    {Target::CRight, "n64-badge-c", "C-R", "C-Right"},
+}};
+
+constexpr std::array<TargetMeta, 4> dpad_targets{{
+    {Target::DpadUp, "n64-badge-dpad", "D-U", "D-Pad Up"},
+    {Target::DpadDown, "n64-badge-dpad", "D-D", "D-Pad Down"},
+    {Target::DpadLeft, "n64-badge-dpad", "D-L", "D-Pad Left"},
+    {Target::DpadRight, "n64-badge-dpad", "D-R", "D-Pad Right"},
+}};
+
+constexpr std::array<TargetMeta, 2> stick_targets{{
+    {Target::StickX, "n64-badge-stick", "X", "N64 Stick X"},
+    {Target::StickY, "n64-badge-stick", "Y", "N64 Stick Y"},
+}};
+
+// Target::Throttle is rendered by the dedicated DRIVING column below, not a mapper row.
+static_assert(buttons_targets.size() + cbuttons_targets.size() + dpad_targets.size() + stick_targets.size() + 1 ==
+              static_cast<std::size_t>(Target::Count));
+
+void render_mapper_row(std::ostringstream& out, const TargetMeta& meta,
+                       const UiSnapshot& snapshot, const char* disabled) {
+    const Target target = meta.target;
+    const std::size_t index = static_cast<std::size_t>(target);
+    const std::string_view tname = target_name(target);
+
+    out << "<div class=\"mapper-row\">"
+        << "<div class=\"mapper-label-col\">"
+        << "<span class=\"n64-badge " << meta.badge_class << "\">" << meta.badge_text << "</span>"
+        << "<span class=\"mapper-target-name\">" << meta.name << "</span>"
+        << "</div>";
+
+    if (index < digital_target_count) {
+        const auto& sources = snapshot.profile.digital[index];
+        out << "<button" << disabled << " class=\"mapper-slot-btn\" onclick=\"control:add:" << tname << "\">";
+        if (sources.empty()) {
+            out << "<span class=\"mapper-slot-val slot-empty\">None (Click)</span>";
+        } else {
+            out << "<span class=\"mapper-slot-val\">" << escape_rml(source_label(sources[0])) << "</span>";
+        }
+        out << "</button>";
+    } else {
+        const auto& source = snapshot.profile.analog[index - digital_target_count];
+        out << "<button" << disabled << " class=\"mapper-slot-btn\" onclick=\"control:add:" << tname << "\">"
+            << "<span class=\"mapper-slot-val\">";
+        if (source) out << "Axis " << axis_name(source->axis);
+        else out << "<span class=\"slot-empty\">None (Click)</span>";
+        out << "</span></button>";
+    }
+    out << "</div>";
+}
+
+} // namespace
 
 std::optional<Command> control_action_from_name(std::string_view action) {
     if (action.starts_with("control:")) action.remove_prefix(8);
@@ -163,10 +238,48 @@ ControlsView controls_view(const UiSnapshot& snapshot) {
 
     std::ostringstream bindings;
     const char* disabled = snapshot.read_only || !snapshot.selected_instance ? " disabled=\"disabled\"" : "";
+
+    bindings << "<div class=\"mapper-grid columns\">";
+
+    // Column 1: BUTTONS & TRIGGERS
+    bindings << "<div class=\"column mapper-section\">"
+             << "<span class=\"mapper-section-title\">BUTTONS &amp; TRIGGERS</span>";
+    for (const auto& meta : buttons_targets) {
+        render_mapper_row(bindings, meta, snapshot, disabled);
+    }
+    bindings << "</div>";
+
+    // Column 2: C-BUTTONS
+    bindings << "<div class=\"column mapper-section\">"
+             << "<span class=\"mapper-section-title\">C-BUTTONS</span>";
+    for (const auto& meta : cbuttons_targets) {
+        render_mapper_row(bindings, meta, snapshot, disabled);
+    }
+    bindings << "</div>";
+
+    // Column 3: DIGITAL PAD
+    bindings << "<div class=\"column mapper-section\">"
+             << "<span class=\"mapper-section-title\">DIGITAL PAD</span>";
+    for (const auto& meta : dpad_targets) {
+        render_mapper_row(bindings, meta, snapshot, disabled);
+    }
+    bindings << "</div>";
+
+    // Column 4: ANALOG STICK
+    bindings << "<div class=\"column mapper-section\">"
+             << "<span class=\"mapper-section-title\">ANALOG STICK</span>";
+    for (const auto& meta : stick_targets) {
+        render_mapper_row(bindings, meta, snapshot, disabled);
+    }
+    bindings << "</div>";
+
+    // Column 5: DRIVING (issue #128 analog throttle)
     const auto& throttle = snapshot.profile.throttle;
     const int deadzone = std::clamp(static_cast<int>(std::lround(throttle.deadzone * 1000.0f)), 0, 500);
     const int saturation = std::clamp(static_cast<int>(std::lround(throttle.saturation * 1000.0f)), deadzone, 1000);
-    bindings << "<div class=\"binding-target driving-target\"><div class=\"binding-heading\"><h2>Driving</h2>"
+    bindings << "<div class=\"column mapper-section driving-target\">"
+             << "<span class=\"mapper-section-title\">DRIVING</span>"
+             << "<div class=\"binding-target\"><div class=\"binding-heading\"><h2>Driving</h2>"
              << "<button" << disabled << " onclick=\"control:reset-target:throttle\">Reset</button></div>"
              << "<h3>Throttle</h3><div class=\"binding-row\"><span class=\"binding-chip\">Mode</span>"
              << "<button" << disabled << " class=\"" << (throttle.mode == ThrottleMode::Digital ? "active" : "")
@@ -198,49 +311,9 @@ ControlsView controls_view(const UiSnapshot& snapshot) {
              << std::min(1000, saturation + 10) << "\">+</button></div>"
              << "<div id=\"controls-throttle-preview\" class=\"throttle-preview\"></div>"
              << "<p class=\"help\">A and keyboard X always provide full throttle. The larger of the analog and digital inputs wins; menus still use digital A.</p></div>";
-    for (std::size_t index = 0; index < static_cast<std::size_t>(Target::Count); ++index) {
-        const Target target = static_cast<Target>(index);
-        if (target == Target::Throttle) continue;
-        bindings << "<div class=\"binding-target\"><div class=\"binding-heading\"><strong>"
-                 << target_label(target) << "</strong><span>"
-                 << "<button" << disabled << " onclick=\"control:reset-target:" << target_name(target)
-                 << "\">Reset</button></span></div>";
-        if (index < digital_target_count) {
-            const auto& sources = snapshot.profile.digital[index];
-            if (sources.empty()) bindings << "<span class=\"unbound\">Unbound</span>";
-            for (std::size_t source_index = 0; source_index < sources.size(); ++source_index) {
-                bindings << "<div class=\"binding-row\"><span class=\"binding-chip\">"
-                         << escape_rml(source_label(sources[source_index])) << "</span>";
-                if (const auto* half = std::get_if<AxisHalfSource>(&sources[source_index])) {
-                    bindings << "<button" << disabled << " onclick=\"control:threshold:" << target_name(target) << ':'
-                             << source_index << ':' << std::max(0, int(half->threshold) - 1000)
-                             << "\">-</button><button" << disabled << " onclick=\"control:threshold:" << target_name(target)
-                             << ':' << source_index << ':' << std::min(32767, int(half->threshold) + 1000)
-                             << "\">+</button>";
-                }
-                bindings << "<button" << disabled << " class=\"remove\" onclick=\"control:remove:" << target_name(target)
-                         << ':' << source_index << "\">Remove</button></div>";
-            }
-            bindings << "<button" << disabled << " class=\"add-binding\" onclick=\"control:add:" << target_name(target)
-                     << "\">Add binding</button>";
-        } else {
-            const auto& source = snapshot.profile.analog[index - digital_target_count];
-            if (source) {
-                bindings << "<div class=\"binding-row\"><span class=\"binding-chip\">Axis "
-                         << axis_name(source->axis) << "</span><button" << disabled << " onclick=\"control:invert:"
-                         << target_name(target) << "\">Inverted: " << (source->invert ? "Yes" : "No")
-                         << "</button><button" << disabled << " onclick=\"control:deadzone:" << target_name(target) << ':'
-                         << std::max(0, int(source->deadzone) - 1000) << "\">Deadzone -</button>"
-                         << "<button" << disabled << " onclick=\"control:deadzone:" << target_name(target) << ':'
-                         << std::min(32767, int(source->deadzone) + 1000) << "\">Deadzone +</button></div>";
-            } else {
-                bindings << "<span class=\"unbound\">Unbound</span>";
-            }
-            bindings << "<button" << disabled << " class=\"add-binding\" onclick=\"control:add:" << target_name(target)
-                     << "\">Choose axis</button>";
-        }
-        bindings << "</div>";
-    }
+    bindings << "</div>";
+
+    bindings << "</div>";
     view.bindings = bindings.str();
 
     std::ostringstream raw;
@@ -274,7 +347,7 @@ ControlsView controls_view(const UiSnapshot& snapshot) {
         std::to_string(effective_throttle) +
         "%</span><div class=\"throttle-meter\"><div class=\"throttle-meter-fill effective\" style=\"width: " +
         std::to_string(effective_throttle) + "%\"></div></div>";
-    view.persistence_status = escape_rml(snapshot.status + " — " + snapshot.config_path.string());
+    view.persistence_status = escape_rml(snapshot.status + " - " + snapshot.config_path.string());
     for (const auto& warning : snapshot.warnings) view.warnings += "<p>" + escape_rml(warning) + "</p>";
     view.capture_visible = snapshot.capture_phase != CapturePhase::Idle &&
                            snapshot.capture_phase != CapturePhase::Conflict;

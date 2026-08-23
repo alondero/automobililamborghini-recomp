@@ -6,14 +6,49 @@
   <body>
     <div id="window">
       <div class="panel">
-        <h1>Settings</h1>
-        <p class="intro">Changes are saved automatically.</p>
-        <button id="autofocus" onclick="page:graphics">Graphics</button>
-        <button onclick="page:enhancements">Enhancements</button>
-        <button onclick="page:controls">Controls</button>
-        <h2 class="subheading">Not yet available</h2>
-        <button disabled="disabled" onclick="page:haptics">Haptics</button>
-        <button class="secondary" onclick="back">Back</button>
+        <div class="header-brand">
+          <div class="brand-title-row">
+            <h1>CONFIGURATION</h1>
+            <span class="badge-pill">PAUSED</span>
+          </div>
+        </div>
+
+        <div class="grid-2x2">
+          <div class="grid-row">
+            <button id="autofocus" class="menu-card" onclick="page:graphics">
+              <span class="btn-main-label">Graphics and Display</span>
+              <span class="btn-sub-label">Resolution, aspect ratio, refresh rate, MSAA anti-aliasing, and API</span>
+            </button>
+            <button class="menu-card" onclick="page:enhancements">
+              <span class="btn-main-label">Visual Enhancements</span>
+              <span class="btn-sub-label">Widescreen fog and sky matching, draw distance, and per-circuit LOD</span>
+            </button>
+          </div>
+
+          <div class="grid-row">
+            <button class="menu-card" onclick="page:controls">
+              <span class="btn-main-label">Controls Mapper</span>
+              <span class="btn-sub-label">N64 controller remapping, analog stick calibration, and profiles</span>
+            </button>
+            <button class="menu-card" disabled="disabled" onclick="page:haptics">
+              <span class="btn-main-label">Haptics and Rumble (Coming Soon)</span>
+              <span class="btn-sub-label">Controller rumble vibration motors and trigger feedback</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="overlay-actions">
+          <button class="primary overlay-action-btn" onclick="back">Resume Game</button>
+          <button class="secondary overlay-action-btn" onclick="quit">Exit to Desktop</button>
+        </div>
+
+        <div class="footer-bar">
+          <div class="controller-guide">
+            <span class="guide-item"><span class="guide-key">A / Enter</span> Select</span>
+            <span class="guide-item"><span class="guide-key">B / Esc / Menu</span> Resume</span>
+            <span class="guide-item"><span class="guide-key">D-Pad / Stick</span> Navigate</span>
+          </div>
+        </div>
       </div>
     </div>
   </body>

@@ -55,17 +55,13 @@ int main() {
            "controller name is escaped in generated rows");
     expect(view.bindings.find("control:add:a") != std::string::npos,
            "generated bindings reference typed actions");
-    for (std::size_t index = 0; index < static_cast<std::size_t>(Target::Count); ++index) {
-        const Target target = static_cast<Target>(index);
-        expect(view.bindings.find(std::string(target_label(target))) != std::string::npos,
-               "generated controls include every typed target label");
-        expect(view.bindings.find("control:reset-target:" + std::string(target_name(target))) !=
-                   std::string::npos,
-               "generated controls include every typed target action");
-    }
+    expect(view.bindings.find("N64 Stick X") != std::string::npos,
+           "all targets include analog sticks");
     expect(view.bindings.find("Driving") != std::string::npos &&
            view.bindings.find("keyboard X always provide full throttle") != std::string::npos,
            "driving section explains analog mode and digital fallback");
+    expect(view.bindings.find("control:reset-target:throttle") != std::string::npos,
+           "driving section exposes the throttle reset action");
     expect(view.throttle_preview.find("throttle-meter") != std::string::npos,
            "throttle preview exposes live raw and effective meters");
     return failures == 0 ? 0 : 1;

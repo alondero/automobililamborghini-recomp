@@ -72,6 +72,10 @@ typedef struct { uint16_t button; signed char stick_x; signed char stick_y; unsi
 void osContGetReadData(void* pads);                                  /* ultramodern (fills OSContPad[4]) */
 int  osContSetCh(uint8_t* rdram, unsigned char ch);                  /* ultramodern: sets max_controllers */
 void osContStartReadData_recomp(uint8_t* rdram, recomp_context* ctx); /* librecomp native */
+void osSetEventMesg_recomp(uint8_t* rdram, recomp_context* ctx);     /* librecomp native */
+void func_8007AF60(uint8_t* rdram, recomp_context* ctx);             /* ROM osMotorInit (emitted real) */
+void func_8006A7A0(uint8_t* rdram, recomp_context* ctx);             /* rumble start wrapper override */
+void func_8006A82C(uint8_t* rdram, recomp_context* ctx);             /* rumble stop wrapper override */
 
 // Joybus data CRC (the N64 pak-block CRC, poly 0x85) over the 32-byte payload at `addr`.
 // Same algorithm as libultra's __osContDataCrc; the PIF returns it INVERTED (crc ^ 0xFF)
@@ -240,27 +244,17 @@ extern void lambo_pak_set_rumble(int on);
 //                                   MOTOR block 0xC000 -> drive SDL rumble; + REAL CRC
 //   pak read/write on empty sockets -> INVERTED CRC ("no pak"), the empty-socket convention.
 //
-// One virtual socket answers BOTH accessory probes on ch0. The game runs two independent
-// detections during its pak scan (func_80069710): osPfsInitPak (func_8007A8A0) reads the
-// formatted ID area -> memory pak present (records/best-times save to blocks 0-6); osMotorInit
-// (func_8007AF60) writes bank 0x80 to block 0x400 (addr 0x8000) and requires read-back byte31 ==
-// 0x80 -> rumble pak present. A real controller can hold only one accessory, but the emulator can
-// satisfy both because their probe regions are disjoint (RAM < 0x8000 vs bank/detect >= 0x8000),
-// which is exactly how the legacy HLE (src/recomp) presented the pak. The MOTOR write to block
-// 0x600 (addr 0xC000) is answered here and forwarded to SDL rumble -- it fires ONLY when the ROM
-// itself issues an osMotorStart-style write, so rumble is faithful (never synthesised by us).
+// The virtual socket reports a Controller Pak to the guest. The game therefore skips osMotorInit,
+// as real hardware must when that accessory occupies the socket. Native rumble remains available
+// through the game's actual start/stop request wrappers below, without setting the guest's Rumble
+// Pak-present flag and confusing its Controller Pak swap/save state machine.
 //
 // FAITHFULNESS NOTE (#105, corrected 2026-07-11): Contrary to the prior note, the game DOES drive
 // the motor during gameplay (e.g. collisions, off-road) via its custom start/stop wrappers
 // (func_8006A7A0/func_8006A82C). These wrappers call libultra's osMotorStart (func_8007AC78) and
-// osMotorStop (func_8007AB10). However, the ROM's pak scan (func_80069710) runs osPfsInitPak first
-// and skips osMotorInit if it succeeds. Because our virtual socket satisfies both, the game would
-// normally think a Controller Pak is present and skip rumble initialization. While we force the
-// present flag (0x80110F08) to 1 every frame inside func_8007F780 to enable the wrappers, skipping
-// osMotorInit leaves the OSPfs struct uninitialized (e.g. null queue), which would crash or submit
-// all-zero buffers during raw PIF DMA. To prevent this and achieve clean dual-pak coexistence, we
-// stub out osMotorStart and osMotorStop, directly intercepting the start/stop requests and natively
-// driving the SDL rumble.
+// osMotorStop (func_8007AB10). The wrapper overrides below preserve the ROM's motor-active flag
+// while bypassing its Rumble Pak-present gate and the uninitialized OSPfs structs. The lower-level
+// overrides remain as a defensive boundary, although these wrappers are their only live callers.
 static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
     int pos = 0, channel = 0;
     int pak_ch0 = lambo_pak_enabled();  /* ch0 carries a formatted pak (#69) */
@@ -438,8 +432,9 @@ void func_8007F780(uint8_t* rdram, recomp_context* ctx) {
     buf = ctx->r5;                          /* a1 = game controller read buffer (D_8011C6D0) */
     osContStartReadData_recomp(rdram, ctx); /* native: poll_input + send_si (unblocks osRecvMesg) */
 
-    /* Force the rumble pak present flag to 1 on controller 0 every frame, coexisting with Controller Pak */
-    MEM_W(0, (gpr)(int32_t)0x80110F08u) = 1;
+    /* A Controller Pak occupies the guest accessory socket. Keep this truthful even after loading
+     * a developer state captured by a build that incorrectly forced the Rumble Pak flag. */
+    if (lambo_pak_enabled()) MEM_W(0, (gpr)(int32_t)0x80110F08u) = 0;
 
     /* Zero ALL fields (incl. stick_x/y): osContGetReadData only fills pads[c] for
      * c < max_controllers, which is 0 until osContInit runs. Early boot reads (vi~51)
@@ -496,6 +491,95 @@ void func_8007F780(uint8_t* rdram, recomp_context* ctx) {
         }
     }
     ctx->r2 = 0; /* osContStartReadData returns 0 on success */
+}
+
+void func_8006A7A0(uint8_t* rdram, recomp_context* ctx) {
+    int channel = (int32_t)ctx->r4;
+    (void)rdram;
+    if (channel == 0) lambo_pak_set_rumble(1);
+    if (channel >= 0 && channel < 4)
+        MEM_W(0, (gpr)(int32_t)(0x80110F18u + (uint32_t)channel * 4u)) = 1;
+    ctx->r2 = 0;
+}
+
+void func_8006A8B4(uint8_t* rdram, recomp_context* ctx) {
+    uint32_t channel = (uint32_t)ctx->r4;
+    uint32_t intensity = (uint32_t)ctx->r5;
+    // ROM body clamps unsigned request to max 0x50 (sltiu at, a1, 0x51).
+    // (A subsequent `and at, a1, 0x08000000` in the ROM is unreachable dead code after the clamp).
+    if (intensity >= 0x51u) intensity = 0x50u;
+    ctx->r5 = intensity;
+    if (channel < 4)
+        MEM_W(0, (gpr)(int32_t)(0x80110F28u + channel * 4u)) = intensity;
+}
+
+// func_8006A910 (runtime 0x80069D10): the per-frame rumble PWM engine. NATIVE OVERRIDE of the
+// emitted ROM body with ONE deviation: the per-channel `if (rumble-present == 0) continue` gate
+// is dropped. On hardware the same word gates both this engine and the Controller Pak save flow,
+// which is sound only because one physical accessory occupies the socket; the port presents a
+// Controller Pak while also driving rumble natively, so gating here would disable rumble entirely
+// (regression found in playtesting after the #105 flag-forcing revert). Everything else is the
+// verbatim algorithm: re-register the SI event message (head), then per channel read the request:
+//   >= 0x47  hard on: start if motor off            (< 6    stop sentinel: osMotorInit re-probe,
+//                                                    stop wrapper, clear request)
+//   else     PWM: accumulator F38[ch] += req^3 >> 9 + 4 while off; when it wraps past 0x100 the
+//            next tick subtracts 0x100 and starts; while on, stop. Motor state lives in F18[ch].
+// Tail re-points the SI event to the scheduler queue exactly like the ROM epilogue.
+static void lambo_rumble_engine_step(uint8_t* rdram, recomp_context* ctx, int ch,
+                                     gpr present, gpr request, gpr active, gpr accum) {
+    uint32_t req = MEM_W(0, request);
+    uint32_t motor = MEM_W(0, active);
+    (void)present;
+    if (req == 0) return;
+    if (req >= 0x47u) {
+        if (!motor) { ctx->r4 = ch; func_8006A7A0(rdram, ctx); }
+    } else if (req < 6u) {
+        ctx->r4 = MEM_W(0, (gpr)(int32_t)0x80110D60u);
+        ctx->r5 = (gpr)(int32_t)(0x80110D68u + (uint32_t)ch * 104u);
+        ctx->r6 = ch;
+        func_8007AF60(rdram, ctx);
+        ctx->r4 = ch;
+        func_8006A82C(rdram, ctx);
+        MEM_W(0, request) = 0;
+    } else {
+        uint32_t acc = MEM_W(0, accum);
+        if (acc >= 0x100u) {
+            MEM_W(0, accum) = acc - 0x100u;
+            if (!motor) { ctx->r4 = ch; func_8006A7A0(rdram, ctx); }
+        } else {
+            uint32_t cube = (req * req) * req;
+            MEM_W(0, accum) = acc + (cube >> 9) + 4u;
+            if (motor) { ctx->r4 = ch; func_8006A82C(rdram, ctx); }
+        }
+    }
+}
+
+void func_8006A910(uint8_t* rdram, recomp_context* ctx) {
+    int ch;
+    ctx->r4 = 5;
+    ctx->r5 = (gpr)(int32_t)0x80112658u;
+    ctx->r6 = MEM_W(0, (gpr)(int32_t)0x80112670u);
+    osSetEventMesg_recomp(rdram, ctx);
+    for (ch = 0; ch < 4; ch++) {
+        lambo_rumble_engine_step(rdram, ctx, ch,
+            (gpr)(int32_t)(0x80110F08u + (uint32_t)ch * 4u),
+            (gpr)(int32_t)(0x80110F28u + (uint32_t)ch * 4u),
+            (gpr)(int32_t)(0x80110F18u + (uint32_t)ch * 4u),
+            (gpr)(int32_t)(0x80110F38u + (uint32_t)ch * 4u));
+    }
+    ctx->r4 = 5;
+    ctx->r5 = (gpr)(int32_t)0x80098278u; /* 0x800A0000 - 0x7D88 */
+    ctx->r6 = 0x10E1;
+    osSetEventMesg_recomp(rdram, ctx);
+}
+
+void func_8006A82C(uint8_t* rdram, recomp_context* ctx) {
+    int channel = (int32_t)ctx->r4;
+    (void)rdram;
+    if (channel == 0) lambo_pak_set_rumble(0);
+    if (channel >= 0 && channel < 4)
+        MEM_W(0, (gpr)(int32_t)(0x80110F18u + (uint32_t)channel * 4u)) = 0;
+    ctx->r2 = 0;
 }
 
 void func_8007AC78(uint8_t* rdram, recomp_context* ctx) {

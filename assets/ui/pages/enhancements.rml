@@ -6,12 +6,18 @@
   <body>
     <div id="window">
       <div class="panel">
-        <h1>Enhancements</h1>
-        <p class="intro">Optional visual changes. Select a row to change it; settings save automatically.</p>
+        <div class="header-brand">
+          <div class="brand-title-row">
+            <h1>VISUAL ENHANCEMENTS</h1>
+          </div>
+          <p class="brand-subtitle">Optional visual polish and draw distance extensions. Settings save automatically.</p>
+        </div>
+
         <p class="help">Full-track visibility reduces distant pop-in per circuit when LOD limits are removed. Pro circuits may reveal unfinished scenery.</p>
+
         <div class="columns">
           <div class="column">
-            <h2>Visuals</h2>
+            <h2>Visual Polish</h2>
             <button id="autofocus" onclick="setting:fog:toggle"><span class="setting-label">Match 3P/4P fog</span><span id="enhancement-fog" class="setting-value">Loading...</span></button>
             <button onclick="setting:sky:toggle"><span class="setting-label">Match 3P/4P sky</span><span id="enhancement-sky" class="setting-value">Loading...</span></button>
             <button onclick="setting:lod:toggle"><span class="setting-label">Remove original LOD limits</span><span id="enhancement-lod" class="setting-value">Loading...</span></button>
@@ -28,7 +34,16 @@
             <button onclick="setting:circuit:6"><span class="setting-label">Circuit 6 (Pro)</span><span id="enhancement-circuit-6" class="setting-value">Loading...</span></button>
           </div>
         </div>
-        <button class="secondary" onclick="back">Back</button>
+
+        <button class="secondary exit-btn" onclick="back">Back to Settings</button>
+
+        <div class="footer-bar">
+          <div class="controller-guide">
+            <span class="guide-item"><span class="guide-key">A / Enter</span> Toggle / Cycle</span>
+            <span class="guide-item"><span class="guide-key">B / Esc</span> Back</span>
+            <span class="guide-item"><span class="guide-key">D-Pad / Stick</span> Navigate</span>
+          </div>
+        </div>
       </div>
     </div>
   </body>

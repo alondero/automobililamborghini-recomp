@@ -50,6 +50,12 @@ void update_saved_window_mode(ultramodern::renderer::WindowMode wm);
 struct WindowSize { int width; int height; };
 WindowSize window_size();
 
+// Startup launcher gate: false = auto-boot directly into game with in-game
+// configuration overlay available via Menu/Back/Guide/Esc; true = show launcher.
+// graphics.json key "show_launcher" (default false), overridable by LAMBO_LAUNCHER=1/0.
+bool show_launcher();
+void set_show_launcher(bool enabled);
+
 // RT64 texture-replacement paths (issue #9). Both are extra graphics.json string keys
 // (empty = feature off), overridable by env var for headless capture/testing:
 //   texture_pack  / LAMBO_TEXTURE_PACK  -- directory or .rtz to auto-load at startup.
@@ -100,6 +106,34 @@ double fog_scale(int circuit);
 double global_fog_scale();
 void set_global_fog_scale(double scale);
 
+// Chase-camera + FOV sense-of-speed knobs (opt-in: every default is the ROM's
+// authored value, so stock presentation needs no configuration).
+//
+//   camera_distance_scale -- multiplier on the race camera's authored distance
+//       from the car. The ROM keeps that distance as a per-player s16 (900 for
+//       the standard chase cam, written by the game's own camera logic) and
+//       multiplies it by a unit view vector every frame (consumers are the mul.s
+//       at 0x80033E5C / 0x80033ED8 in func_80032450, verified live). 0.6 = 40%
+//       closer; applies equally to the demo/attract cameras (absolute 900).
+//   camera_height_scale   -- multiplier on the authored eye-height offset. The ROM
+//       adds a per-camera-mode table value (s16) to the car's Y every frame
+//       (consumer add.s at 0x80034A08 in func_80032450); 0.5 = half as high, so
+//       the ground plane streaks past faster.
+//   camera_fov_add        -- degrees added to each layout's authored perspective
+//       FOV (1P races 40, 2P halves 20, 3P/4P 32, special cameras 52). Applied
+//       uniformly at all five guPerspective call sites in func_800030F8.
+//
+// graphics.json keys "camera_distance_scale" / "camera_height_scale" /
+// "camera_fov_add", overridable by LAMBO_CAMERA_DISTANCE_SCALE /
+// LAMBO_CAMERA_HEIGHT_SCALE / LAMBO_CAMERA_FOV_ADD for capture/testing. The float-bit
+// helpers the recompiled hook text calls live in src/lambo_camera.cpp.
+double camera_distance_scale();
+void set_camera_distance_scale(double v);
+double camera_height_scale();
+void set_camera_height_scale(double v);
+double camera_fov_add();
+void set_camera_fov_add(double v);
+
 // Draw-distance multiplier applied (while no_lod is on) to the authored per-circuit
 // segment-cull radii the scene builder tests visibility-list entries against.
 // 1.0 = the N64 radii, larger = see further, 0 (or negative) = unlimited: the whole
@@ -117,3 +151,4 @@ void set_global_draw_distance(double scale);
 } // namespace lambo
 
 #endif
+

@@ -6,9 +6,24 @@
   <body>
     <div id="window">
       <div class="panel">
-        <h1>Haptics</h1>
-        <p>Rumble strength controls will be available here when their follow-up issue lands.</p>
-        <button id="autofocus" onclick="back">Back</button>
+        <div class="header-brand">
+          <div class="brand-title-row">
+            <h1>HAPTICS AND RUMBLE</h1>
+            <span class="badge-pill">COMING SOON</span>
+          </div>
+          <p class="brand-subtitle">Controller rumble vibration motors and trigger feedback.</p>
+        </div>
+
+        <p class="help">Rumble strength calibration and trigger vibration controls will be available here in an upcoming release.</p>
+        <button id="autofocus" class="secondary exit-btn" onclick="back">Back to Settings</button>
+
+        <div class="footer-bar">
+          <div class="controller-guide">
+            <span class="guide-item"><span class="guide-key">A / Enter</span> Select</span>
+            <span class="guide-item"><span class="guide-key">B / Esc</span> Back</span>
+            <span class="guide-item"><span class="guide-key">D-Pad / Stick</span> Navigate</span>
+          </div>
+        </div>
       </div>
     </div>
   </body>

@@ -6,41 +6,71 @@
   <body>
     <div id="window">
       <div class="panel controls-panel">
-        <h1>Controls</h1>
-        <p class="help">Remap the selected controller for N64 port 0. Keyboard controls and menu navigation remain fixed.</p>
-
-        <div class="controls-device-card">
-          <h2>Controller</h2>
-          <div id="controls-controller-list" class="controller-selector"></div>
-          <p><strong id="controls-selected-name">No controller</strong> — <span id="controls-selected-status">Keyboard remains available</span></p>
-          <p class="device-detail">Layout: <span id="controls-selected-layout">-</span> | GUID: <span id="controls-selected-guid">-</span></p>
+        <div class="header-brand">
+          <div class="brand-title-row">
+            <h1>N64 CONTROLLER MAPPER</h1>
+            <span class="badge-pill">PORT 0</span>
+          </div>
+          <p class="brand-subtitle">Select a button slot to remap. Press any controller button or keyboard key to assign.</p>
         </div>
 
-        <div class="controls-previews columns">
-          <div class="column preview-card"><h2>Raw SDL preview</h2><p id="controls-raw-preview">Axes: neutral</p></div>
-          <div class="column preview-card"><h2>Evaluated N64 preview</h2><p id="controls-evaluated-preview">Buttons 0x0000 / Stick (0, 0)</p></div>
+        <div class="controls-device-card">
+          <div class="device-card-header">
+            <span class="device-card-title">ACTIVE CONTROLLER</span>
+            <div id="controls-controller-list" class="controller-selector"></div>
+          </div>
+          <div class="device-card-details">
+            <p class="device-name-line"><strong id="controls-selected-name">No controller</strong> - <span id="controls-selected-status">Keyboard remains available</span></p>
+            <p class="device-detail">Layout Profile: <span id="controls-selected-layout" class="highlight-val">-</span> | Device GUID: <span id="controls-selected-guid" class="highlight-val">-</span></p>
+          </div>
         </div>
 
         <div id="controls-warnings" class="controls-warnings"></div>
         <div id="controls-bindings" class="controls-bindings"></div>
-        <button id="controls-reset-profile" onclick="control:reset-profile">Reset entire profile</button>
-        <p id="controls-persistence-status" class="controls-save-status">Defaults (not saved yet)</p>
-        <button id="autofocus" class="secondary" onclick="back">Back</button>
+
+        <div class="controls-previews columns">
+          <div class="column preview-card">
+            <h3>LIVE RAW INPUT</h3>
+            <p id="controls-raw-preview">Axes: neutral</p>
+          </div>
+          <div class="column preview-card">
+            <h3>EVALUATED N64 STATE</h3>
+            <p id="controls-evaluated-preview">Buttons 0x0000 / Stick (0, 0)</p>
+          </div>
+        </div>
+
+        <div class="controls-bottom-bar">
+          <button id="controls-reset-profile" class="btn-reset-profile" onclick="control:reset-profile">Reset Profile to Defaults</button>
+          <p id="controls-persistence-status" class="controls-save-status">Defaults (not saved yet)</p>
+        </div>
+
+        <button id="autofocus" class="secondary exit-btn" onclick="back">Back to Settings</button>
+
+        <div class="footer-bar">
+          <div class="controller-guide">
+            <span class="guide-item"><span class="guide-key">A / Enter</span> Remap Slot</span>
+            <span class="guide-item"><span class="guide-key">B / Esc</span> Back / Cancel</span>
+            <span class="guide-item"><span class="guide-key">D-Pad / Stick</span> Navigate</span>
+          </div>
+        </div>
 
         <div id="controls-capture-modal" class="controls-modal">
           <div class="modal-card">
-            <h2>Capture binding</h2>
+            <h2>CAPTURE INPUT BINDING</h2>
             <p id="controls-capture-message">Release all controls</p>
-            <button id="controls-capture-cancel" onclick="control:capture-cancel">Cancel</button>
+            <p class="modal-hint">Press any button or move an analog axis on your controller.</p>
+            <button id="controls-capture-cancel" class="secondary" onclick="control:capture-cancel">Cancel (Esc / B)</button>
           </div>
         </div>
+
         <div id="controls-conflict-modal" class="controls-modal">
           <div class="modal-card">
-            <h2>Binding already used</h2>
-            <p>This source is assigned to another N64 target. Keep both assignments?</p>
-            <button id="controls-conflict-accept" onclick="control:conflict-accept">Keep both</button>
-            <button id="controls-conflict-move" onclick="control:conflict-move">Move binding</button>
-            <button onclick="control:capture-cancel">Cancel</button>
+            <h2>BINDING CONFLICT</h2>
+            <p>This button or axis is already assigned to another N64 control. Keep both assignments?</p>
+            <div class="modal-actions">
+              <button id="controls-conflict-accept" class="primary" onclick="control:conflict-accept">Keep Both</button>
+              <button class="secondary" onclick="control:capture-cancel">Cancel (Esc / B)</button>
+            </div>
           </div>
         </div>
       </div>

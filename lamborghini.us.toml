@@ -312,6 +312,10 @@ ignored = [
     "func_80085C50",
     "func_8007FFF0",
     "func_80079720",
+    "func_8006A7A0",
+    "func_8006A82C",
+    "func_8006A8B4",
+    "func_8006A910",
     "func_8007AC78",
     "func_8007AB10",
 ]
@@ -554,20 +558,6 @@ text = "extern void lambo_warp_tick(uint8_t*, recomp_context*); lambo_warp_tick(
 func = "func_800028D0"
 before_vram = 0x80001CD4
 text = "extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_savestate_tick(rdram, ctx);"
-
-# Issue #128 — true analog throttle. Capture the pedal demand immediately before the
-# stock human-driver A/Z branch, then apply the selected native port's continuous target
-# at the common merge. The two hooks preserve the ROM's +/-10 pedal ramp, including exact
-# released/full-A behavior. Digital mode is a no-op. The natives read atomics and RDRAM only.
-[[patches.hook]]
-func = "func_80019D20"
-before_vram = 0x80019FBC
-text = "extern void lambo_analog_throttle_begin(uint8_t*); lambo_analog_throttle_begin(rdram);"
-
-[[patches.hook]]
-func = "func_80019D20"
-before_vram = 0x8001A120
-text = "extern void lambo_analog_throttle_apply(uint8_t*); lambo_analog_throttle_apply(rdram);"
 
 # Issue #40 — widescreen lens flare. The sun flare emitter func_80036854 draws a chain of
 # 10 translucent "ghost" texrects. Under ar_option Expand RT64 squishes each small untagged
@@ -920,3 +910,136 @@ text = "lambo_ws_quad_panel_bg_stretch(rdram);"
 func = "func_800030F8"
 before_vram = 0x80005208
 text = "lambo_ws_quad_panel_bg_reset(rdram);"
+
+# Sense of speed -- opt-in chase-camera + FOV knobs (graphics.json keys
+# "camera_distance_scale" / "camera_height" / "camera_fov_add"; defaults are exactly
+# the ROM's values, so stock presentation is unchanged unless configured). Natives in
+# src/lambo_camera.cpp return IEEE float bits; hooks overwrite the register holding an
+# authored value just before its consuming instruction.
+#
+# The LIVE race camera is func_80032450's L_800324C8 path (verified live: the classic
+# chase math at L_800320xx and the view-matrix builder at 0x800323CC never run in a
+# warped race -- a LAMBO_CAM_TRACE probe there never fires):
+#   eye.x/z = car + viewdir * (per-player s16 distance, e.g. 900)
+#             -- distance consumer mul.s at 0x80032708 -> scale site R
+#   eye.y   = track-anchor table entry + 300.0
+#             -- height adder add.s at 0x80032780 -> height site 1
+# DISTANCE is therefore a SCALE knob: every site that multiplies an authored camera
+# distance into an eye offset rescales it in place (ctx->fX already holds the authored
+# value when the hook runs). Sites:
+#   R   0x80032708 mul.s f8 = dist * dirX     (the live race path)
+#   1-3 0x800320E4/0x80032124/0x800321F8      (func_80032450 chase paths; dormant in
+#                                              races but kept consistent for any mode
+#                                              that wakes them)
+#   4   0x80031E80 c.lt.s follow-dist compare (mode-transition key; scaled to match)
+#   5/6 boot_pad_apply_calibration 0x80007CF4/0x80007D4C (demo/attract camera,
+#                                              absolute eye = car - dir*900)
+[[patches.hook]]
+func = "func_80032450"
+before_vram = 0x80032708
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f6.u32l = lambo_camera_scale_bits((uint32_t)ctx->f6.u32l); }"
+
+[[patches.hook]]
+func = "func_80032450"
+before_vram = 0x800320E4
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f6.u32l = lambo_camera_scale_bits((uint32_t)ctx->f6.u32l); }"
+
+[[patches.hook]]
+func = "func_80032450"
+before_vram = 0x80032124
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f16.u32l = lambo_camera_scale_bits((uint32_t)ctx->f16.u32l); }"
+
+[[patches.hook]]
+func = "func_80032450"
+before_vram = 0x800321F8
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f18.u32l = lambo_camera_scale_bits((uint32_t)ctx->f18.u32l); }"
+
+[[patches.hook]]
+func = "func_80032450"
+before_vram = 0x80031E80
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f6.u32l = lambo_camera_scale_bits((uint32_t)ctx->f6.u32l); }"
+
+[[patches.hook]]
+func = "boot_pad_apply_calibration"
+before_vram = 0x80007CF4
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f18.u32l = lambo_camera_scale_bits((uint32_t)ctx->f18.u32l); }"
+
+[[patches.hook]]
+func = "boot_pad_apply_calibration"
+before_vram = 0x80007D4C
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f4.u32l = lambo_camera_scale_bits((uint32_t)ctx->f4.u32l); }"
+
+# Race-camera HEIGHT: replaces the authored +300 constant (mtc1 $at,$f6 at
+# 0x80032774) right before its add.s consumer.
+# Sense of speed -- opt-in chase-camera + FOV knobs (graphics.json keys
+# "camera_distance_scale" / "camera_height_scale" / "camera_fov_add"; defaults are
+# exactly the ROM's behaviour, so stock presentation is unchanged unless configured).
+# Natives in src/lambo_camera.cpp rescale an authored value in place just before its
+# consuming instruction.
+#
+# The LIVE race camera is func_80032450's gate==0 body (verified empirically with
+# first-arrival route tracing; the flag!=0 table path and the legacy chase math never
+# run during gameplay):
+#   eye.x   = carX - dirX * dist   -- dist consumer mul.s at 0x80033E5C
+#   eye.z   = carZ - dirZ * dist   -- dist consumer mul.s at 0x80033ED8
+#             (dist = per-player s16 at 0x800A2D28[i], e.g. 900)
+#   eye.y   = carY + heightParam   -- consumer add.s at 0x80034A08
+#             (heightParam = per-camera-mode table s16, float-converted in $f4)
+# The demo/attract camera (boot_pad_apply_calibration) uses an absolute eye =
+# car - dir*900; its mul.s consumers take the same distance scale so both camera
+# families respond consistently, as do func_80032450's dormant chase paths and its
+# follow-distance compare keyed on the same 900.
+[[patches.hook]]
+func = "func_80032450"
+before_vram = 0x80033E5C
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f16.u32l = lambo_camera_scale_bits((uint32_t)ctx->f16.u32l); }"
+
+[[patches.hook]]
+func = "func_80032450"
+before_vram = 0x80033ED8
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f16.u32l = lambo_camera_scale_bits((uint32_t)ctx->f16.u32l); }"
+
+[[patches.hook]]
+func = "func_80032450"
+before_vram = 0x80034A08
+text = "{ extern unsigned int lambo_camera_height_bits(unsigned int); ctx->f4.u32l = lambo_camera_height_bits((uint32_t)ctx->f4.u32l); }"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x800041AC
+text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6); }"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x80004248
+text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6); }"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x800042A4
+text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6); }"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x80004300
+text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6); }"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x80004374
+text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6); }"
+
+
+# Issue #128 � true analog throttle. Capture the pedal demand immediately before the
+# stock human-driver A/Z branch, then apply the selected native port's continuous target
+# at the common merge. The two hooks preserve the ROM's +/-10 pedal ramp, including exact
+# released/full-A behavior. Digital mode is a no-op. The natives read atomics and RDRAM only.
+[[patches.hook]]
+func = "func_80019D20"
+before_vram = 0x80019FBC
+text = "extern void lambo_analog_throttle_begin(uint8_t*); lambo_analog_throttle_begin(rdram);"
+
+[[patches.hook]]
+func = "func_80019D20"
+before_vram = 0x8001A120
+text = "extern void lambo_analog_throttle_apply(uint8_t*); lambo_analog_throttle_apply(rdram);"

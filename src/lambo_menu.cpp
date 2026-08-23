@@ -32,6 +32,9 @@ HMENU g_enhancements_menu = nullptr;
 HMENU g_pvs_menu = nullptr;
 HMENU g_draw_menu = nullptr;
 HMENU g_fog_menu = nullptr;
+HMENU g_cam_dist_menu = nullptr;
+HMENU g_cam_height_menu = nullptr;
+HMENU g_fov_menu = nullptr;
 
 enum Command : UINT {
     CMD_FULLSCREEN = 1000,
@@ -91,6 +94,19 @@ enum Command : UINT {
     CMD_FOG_100,
     CMD_FOG_150,
     CMD_FOG_200,
+
+    CMD_CAM_DIST_ORIG = 1300,
+    CMD_CAM_DIST_80,
+    CMD_CAM_DIST_65,
+    CMD_CAM_DIST_50,
+    CMD_CAM_HEIGHT_ORIG,
+    CMD_CAM_HEIGHT_LOWER,
+    CMD_CAM_HEIGHT_LOWEST,
+    CMD_FOV_ORIG,
+    CMD_FOV_PLUS5,
+    CMD_FOV_PLUS10,
+    CMD_FOV_PLUS15,
+    CMD_FOV_PLUS20,
 };
 
 void append_item(HMENU menu, UINT id, const char* label) {
@@ -168,6 +184,19 @@ void refresh() {
           close(fog, 2.0) ? CMD_FOG_200 : close(fog, 1.5) ? CMD_FOG_150 :
           close(fog, 1.0) ? CMD_FOG_100 : close(fog, 0.75) ? CMD_FOG_75 :
           close(fog, 0.5) ? CMD_FOG_50 : close(fog, 0.0) ? CMD_FOG_OFF : 0);
+    const double dist = lambo::config::camera_distance_scale();
+    radio(g_cam_dist_menu, CMD_CAM_DIST_ORIG, CMD_CAM_DIST_50,
+          close(dist, 0.5) ? CMD_CAM_DIST_50 : close(dist, 0.65) ? CMD_CAM_DIST_65 :
+          close(dist, 0.8) ? CMD_CAM_DIST_80 : close(dist, 1.0) ? CMD_CAM_DIST_ORIG : 0);
+    const double height = lambo::config::camera_height_scale();
+    radio(g_cam_height_menu, CMD_CAM_HEIGHT_ORIG, CMD_CAM_HEIGHT_LOWEST,
+          close(height, 0.4) ? CMD_CAM_HEIGHT_LOWEST : close(height, 0.66) ? CMD_CAM_HEIGHT_LOWER :
+          close(height, 1.0) ? CMD_CAM_HEIGHT_ORIG : 0);
+    const double fov = lambo::config::camera_fov_add();
+    radio(g_fov_menu, CMD_FOV_ORIG, CMD_FOV_PLUS20,
+          close(fov, 20.0) ? CMD_FOV_PLUS20 : close(fov, 15.0) ? CMD_FOV_PLUS15 :
+          close(fov, 10.0) ? CMD_FOV_PLUS10 : close(fov, 5.0) ? CMD_FOV_PLUS5 :
+          close(fov, 0.0) ? CMD_FOV_ORIG : 0);
     if (g_hwnd != nullptr) DrawMenuBar(g_hwnd);
 }
 
@@ -242,6 +271,18 @@ void dispatch(UINT command) {
         case CMD_FOG_100: lambo::config::set_global_fog_scale(1.0); break;
         case CMD_FOG_150: lambo::config::set_global_fog_scale(1.5); break;
         case CMD_FOG_200: lambo::config::set_global_fog_scale(2.0); break;
+        case CMD_CAM_DIST_ORIG: lambo::config::set_camera_distance_scale(1.0); break;
+        case CMD_CAM_DIST_80: lambo::config::set_camera_distance_scale(0.8); break;
+        case CMD_CAM_DIST_65: lambo::config::set_camera_distance_scale(0.65); break;
+        case CMD_CAM_DIST_50: lambo::config::set_camera_distance_scale(0.5); break;
+        case CMD_CAM_HEIGHT_ORIG: lambo::config::set_camera_height_scale(1.0); break;
+        case CMD_CAM_HEIGHT_LOWER: lambo::config::set_camera_height_scale(0.66); break;
+        case CMD_CAM_HEIGHT_LOWEST: lambo::config::set_camera_height_scale(0.4); break;
+        case CMD_FOV_ORIG: lambo::config::set_camera_fov_add(0.0); break;
+        case CMD_FOV_PLUS5: lambo::config::set_camera_fov_add(5.0); break;
+        case CMD_FOV_PLUS10: lambo::config::set_camera_fov_add(10.0); break;
+        case CMD_FOV_PLUS15: lambo::config::set_camera_fov_add(15.0); break;
+        case CMD_FOV_PLUS20: lambo::config::set_camera_fov_add(20.0); break;
         default: apply_graphics_command(command); break;
     }
     refresh();
@@ -315,6 +356,16 @@ void attach(SDL_Window* window) {
     append_item(fog, CMD_FOG_OFF, "Off"); append_item(fog, CMD_FOG_50, "50%");
     append_item(fog, CMD_FOG_75, "75%"); append_item(fog, CMD_FOG_100, "Original (100%)");
     append_item(fog, CMD_FOG_150, "150%"); append_item(fog, CMD_FOG_200, "200%");
+    HMENU cam_dist = g_cam_dist_menu = append_submenu(enhancements, "Chase camera distance (sense of speed)");
+    append_item(cam_dist, CMD_CAM_DIST_ORIG, "Original"); append_item(cam_dist, CMD_CAM_DIST_80, "Closer");
+    append_item(cam_dist, CMD_CAM_DIST_65, "Closer still"); append_item(cam_dist, CMD_CAM_DIST_50, "Bumper-ish");
+    HMENU cam_height = g_cam_height_menu = append_submenu(enhancements, "Chase camera height (sense of speed)");
+    append_item(cam_height, CMD_CAM_HEIGHT_ORIG, "Original"); append_item(cam_height, CMD_CAM_HEIGHT_LOWER, "Lower");
+    append_item(cam_height, CMD_CAM_HEIGHT_LOWEST, "Ground-hugging");
+    HMENU fov = g_fov_menu = append_submenu(enhancements, "Field of view boost (sense of speed)");
+    append_item(fov, CMD_FOV_ORIG, "Original"); append_item(fov, CMD_FOV_PLUS5, "+5 degrees");
+    append_item(fov, CMD_FOV_PLUS10, "+10 degrees"); append_item(fov, CMD_FOV_PLUS15, "+15 degrees");
+    append_item(fov, CMD_FOV_PLUS20, "+20 degrees");
 
     if ((SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == 0) {
         SetMenu(g_hwnd, g_menu_bar);

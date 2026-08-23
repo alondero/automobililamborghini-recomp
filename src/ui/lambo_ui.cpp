@@ -159,8 +159,6 @@ struct UiState {
             context = nullptr;
         }
         render_interface.reset();
-        Rml::Debugger::Shutdown();
-        Rml::Shutdown();
     }
 };
 
@@ -285,7 +283,6 @@ void UiState::refresh_controls_values() {
         controls_sample_revision = snapshot.sample_revision;
         set_text("controls-raw-preview", view.raw_preview);
         set_text("controls-evaluated-preview", view.evaluated_preview);
-        set_text("controls-throttle-preview", view.throttle_preview);
     }
 }
 
@@ -345,6 +342,13 @@ void UiState::hide_pages() {
 }
 
 void UiState::back() {
+    if (current_page == lambo::ui::Page::Controls) {
+        const auto snapshot = lambo::controls::ui_snapshot();
+        if (snapshot.capture_phase != lambo::controls::CapturePhase::Idle) {
+            lambo::controls::enqueue_command({lambo::controls::CommandKind::CaptureCancel});
+            return;
+        }
+    }
     if (pages.empty()) return;
     if (pages.size() > 1) {
         pages.pop_back();
@@ -486,6 +490,9 @@ int sdl_key_from_navigation(lambo::ui::NavigationKey key) {
 void UiState::process_key_down(int key, bool repeat) {
     if (context == nullptr) return;
     set_input_mode(InputMode::KeyboardOrController);
+    if (context->GetFocusElement() == nullptr && current_page.has_value()) {
+        restore_focus(*current_page);
+    }
     if (key == SDLK_ESCAPE) {
         if (!repeat) back();
         return;
@@ -500,6 +507,9 @@ void UiState::process_navigation_events(
     for (const auto& event : events) {
         if (event.type == NavigationEventType::Press) {
             set_input_mode(InputMode::KeyboardOrController);
+            if (context != nullptr && context->GetFocusElement() == nullptr && current_page.has_value()) {
+                restore_focus(*current_page);
+            }
         }
         if (event.key == NavigationKey::Back) {
             if (event.type == NavigationEventType::Press) back();
@@ -697,6 +707,30 @@ void open_controls() {
     g_requested_page.store(static_cast<int>(Page::Controls), std::memory_order_release);
 }
 
+void open_graphics() {
+    g_requested_entry_point.store(static_cast<int>(EntryPoint::Startup), std::memory_order_release);
+    SDL_ShowCursor(SDL_ENABLE);
+    g_capture.store(true, std::memory_order_release);
+    g_requested_controls_route.store(false, std::memory_order_release);
+    g_requested_page.store(static_cast<int>(Page::Graphics), std::memory_order_release);
+}
+
+void open_enhancements() {
+    g_requested_entry_point.store(static_cast<int>(EntryPoint::Startup), std::memory_order_release);
+    SDL_ShowCursor(SDL_ENABLE);
+    g_capture.store(true, std::memory_order_release);
+    g_requested_controls_route.store(false, std::memory_order_release);
+    g_requested_page.store(static_cast<int>(Page::Enhancements), std::memory_order_release);
+}
+
+void open_haptics() {
+    g_requested_entry_point.store(static_cast<int>(EntryPoint::Startup), std::memory_order_release);
+    SDL_ShowCursor(SDL_ENABLE);
+    g_capture.store(true, std::memory_order_release);
+    g_requested_controls_route.store(false, std::memory_order_release);
+    g_requested_page.store(static_cast<int>(Page::Haptics), std::memory_order_release);
+}
+
 void close_top_page() {
     g_requested_back.store(true, std::memory_order_release);
 }
@@ -711,6 +745,8 @@ bool captures_input() { return g_capture.load(std::memory_order_acquire); }
 void shutdown() {
     RT64::SetRenderHooks(nullptr, nullptr, nullptr);
     deinit_hook();
+    Rml::Debugger::Shutdown();
+    Rml::Shutdown();
 }
 
 } // namespace lambo::ui

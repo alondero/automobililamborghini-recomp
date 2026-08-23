@@ -93,6 +93,7 @@ struct SdlAdapter::Impl {
     std::string status;
     bool rumble_on{};
     ThrottleMode disconnected_throttle_mode{ThrottleMode::Digital};
+    Profile fallback_profile{default_profile()};
 
     Device* selected_device() {
         if (!selected) return nullptr;
@@ -105,8 +106,7 @@ struct SdlAdapter::Impl {
     }
     Profile& selected_profile() {
         Device* device = selected_device();
-        static Profile fallback = default_profile();
-        return device ? profile_for_guid(config, device->guid) : fallback;
+        return device ? profile_for_guid(config, device->guid) : fallback_profile;
     }
     void stop_rumble() {
         if (Device* device = selected_device(); device && device->handle) {
@@ -411,7 +411,10 @@ EvaluatedState SdlAdapter::sample() {
         impl_->evaluated.throttle_mode = impl_->disconnected_throttle_mode;
     }
     ++impl_->sample_revision;
-    impl_->publish();
+    if (impl_->capture.phase() != CapturePhase::Idle ||
+        (impl_->selected && impl_->config_revision != 0)) {
+        impl_->publish();
+    }
     return impl_->evaluated;
 }
 
@@ -424,9 +427,14 @@ void SdlAdapter::apply_rumble(bool on) {
 }
 
 bool SdlAdapter::selected_back_pressed(const SDL_Event& event) const {
-    return event.type == SDL_CONTROLLERBUTTONDOWN && event.cbutton.state == SDL_PRESSED &&
-           event.cbutton.button == SDL_CONTROLLER_BUTTON_BACK && impl_->selected &&
-           event.cbutton.which == *impl_->selected;
+    if (event.type != SDL_CONTROLLERBUTTONDOWN || event.cbutton.state != SDL_PRESSED ||
+        !impl_->selected || event.cbutton.which != *impl_->selected) {
+        return false;
+    }
+    const auto btn = event.cbutton.button;
+    return btn == SDL_CONTROLLER_BUTTON_BACK ||
+           btn == SDL_CONTROLLER_BUTTON_START ||
+           btn == SDL_CONTROLLER_BUTTON_GUIDE;
 }
 
 void SdlAdapter::cancel_capture() { impl_->capture.cancel(); ++impl_->config_revision; impl_->publish(); }

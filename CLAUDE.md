@@ -59,7 +59,7 @@ Same approach as [Snowboard Kids 2 Recompiled](https://github.com/cdlewis/snowbo
   un-swizzle; `get_frames_remaining` must report AI-rate (22050) frames, not device-rate (48000),
   or music plays ~2.2× slow. State 6 = music; state 8 = quiet music + SFX.
 - **Input map:** A = confirm, B = cancel; menu input buffer `D_8011C640` (mind byte order).
-- **Rumble:** game uses custom start/stop wrappers (func_8006A7A0 / func_8006A82C) that call libultra's osMotorStart (func_8007AC78) and osMotorStop (func_8007AB10). The scan (func_80069710) runs osPfsInitPak first and skips osMotorInit if it succeeds. We force the rumble present flag (0x80110F08) to 1 in func_8007F780 so the wrappers tick. To avoid crashes/silent failures from uninitialized OSPfs structs (since osMotorInit was skipped), we stub out osMotorStart and osMotorStop, directly intercepting the requests and driving SDL rumble natively.
+- **Rumble:** game uses custom start/stop wrappers (func_8006A7A0 / func_8006A82C) that call libultra's osMotorStart (func_8007AC78) and osMotorStop (func_8007AB10). The scan (func_80069710) runs osPfsInitPak first and skips osMotorInit when the Controller Pak succeeds. Keep the guest Rumble Pak flag (0x80110F08) truthful or the Championship save flow loops through the accessory-swap messages. Native overrides of the request function (func_8006A8B4) and the per-frame PWM engine (func_8006A910, gate-only deviation from the ROM body) plus the game-level wrappers preserve 0x80110F28/0x80110F18 state and drive SDL rumble without touching guest accessory detection; lower osMotorStart/osMotorStop overrides remain defensive.
 
 ## Test discipline
 

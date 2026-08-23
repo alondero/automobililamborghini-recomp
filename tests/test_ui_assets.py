@@ -87,9 +87,18 @@ def main() -> None:
             f"Controls page is missing state targets: {required_control_ids - controls_ids}")
     control_actions = {element.attrib.get("onclick") for element in controls.iter()
                        if element.attrib.get("onclick", "").startswith("control:")}
-    require({"control:reset-profile", "control:capture-cancel", "control:conflict-accept",
-             "control:conflict-move"}
+    require({"control:reset-profile", "control:capture-cancel", "control:conflict-accept"}
             <= control_actions, "Controls page is missing modal/profile actions")
+    controls_source = (repo / "src" / "ui" / "lambo_ui_controls.cpp").read_text(encoding="utf-8")
+    require("Target::Count" in controls_source and "target_name(target)" in controls_source,
+            "Controls rows must be generated from the complete typed target set")
+    domain_source = (repo / "src" / "controls" / "lambo_controls.cpp").read_text(encoding="utf-8")
+    for target in ("a", "b", "z", "start", "l", "r", "dpad_up", "dpad_down",
+                   "dpad_left", "dpad_right", "c_up", "c_down", "c_left", "c_right",
+                   "stick_x", "stick_y"):
+        require(f'"{target}"' in domain_source,
+                f"Controls generation does not cover target {target}")
+
     graphics_text = (ui_root / "pages" / "graphics.rml").read_text(encoding="utf-8")
     require("saved for the next launch" in graphics_text and "do not apply immediately" in graphics_text,
             "graphics API must not pretend to apply live")

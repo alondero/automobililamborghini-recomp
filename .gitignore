@@ -36,6 +36,7 @@ dma_validation/
 # --- Logs / scratch --------------------------------------------------------
 *.log
 *.stackdump
+scratch/
 # gdb batch backtrace/logging dumps from native port debugging
 gdb_bt*.txt
 # framebuffer / display-list render captures from the port

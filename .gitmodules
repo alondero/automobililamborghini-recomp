@@ -7,4 +7,4 @@
 
 [submodule "lib/RmlUi"]
 	path = lib/RmlUi
-	url = https://github.com/mikke89/RmlUi/
+	url = https://github.com/mikke89/RmlUi.git

@@ -55,6 +55,15 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_config_live_updates COMMAND lambo_config_tests)
 
+    add_executable(lambo_controller_pak_tests
+        tests/test_controller_pak.c
+        src/libultra_stubs.c
+    )
+    target_include_directories(lambo_controller_pak_tests PRIVATE
+        ${N64MR}/N64Recomp/include
+    )
+    add_test(NAME lambo_controller_pak_identity COMMAND lambo_controller_pak_tests)
+
     add_executable(lambo_startup_tests
         tests/test_startup.cpp
         src/lambo_startup.cpp
@@ -327,6 +336,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_fog_widescreen.cpp  # issue #83: widen dense 3P/4P fog to the 1P window/colour (DL rewrite, players>=3)
         src/lambo_sky_widescreen.cpp  # issue #84: draw the 1P/2P sky panorama in 3P/4P (patches.hook branch guard)
         src/lambo_no_lod.cpp   # issues #87/#91: emit the per-segment scenery layer in 2P-4P like 1P (patches.hook branch guards)
+        src/lambo_camera.cpp   # sense of speed: chase-camera distance/height + FOV delta float-bit shims for the hooks
         src/lambo_gpu_advisory.cpp  # issue #109: outdated-Intel-driver detection + user-facing fix advisory
         src/lambo_warp.c       # issue #12: developer warp menu (F1-F6 / LAMBO_WARP race-track warp)
         src/lambo_savestate.c  # issue #22: developer save-state (F7/F8 / LAMBO_STATE_LOAD RDRAM snapshot)

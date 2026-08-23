@@ -6,26 +6,40 @@
   <body>
     <div id="window">
       <div class="panel">
-        <h1>Graphics</h1>
-        <p class="intro">Activate a row to cycle its value. Live-safe changes apply and save immediately.</p>
+        <div class="header-brand">
+          <div class="brand-title-row">
+            <h1>GRAPHICS AND DISPLAY</h1>
+          </div>
+          <p class="brand-subtitle">Activate a row to cycle its value. Live-safe changes apply and save immediately.</p>
+        </div>
+
         <div class="columns">
           <div class="column">
-            <h2>Display</h2>
+            <h2>Display Settings</h2>
             <button id="autofocus" onclick="setting:res:next"><span class="setting-label">Internal resolution</span><span id="graphics-resolution" class="setting-value">Loading...</span></button>
             <button onclick="setting:ss:next"><span class="setting-label">Supersampling</span><span id="graphics-supersampling" class="setting-value">Loading...</span></button>
             <button onclick="setting:aspect:next"><span class="setting-label">Aspect ratio</span><span id="graphics-aspect" class="setting-value">Loading...</span></button>
             <button onclick="setting:hud:next"><span class="setting-label">HUD layout</span><span id="graphics-hud" class="setting-value">Loading...</span></button>
           </div>
           <div class="column">
-            <h2>Rendering</h2>
+            <h2>Rendering Options</h2>
             <button onclick="setting:rate:next"><span class="setting-label">Refresh rate</span><span id="graphics-refresh" class="setting-value">Loading...</span></button>
             <button onclick="setting:msaa:next"><span class="setting-label">Anti-aliasing</span><span id="graphics-msaa" class="setting-value">Loading...</span></button>
             <button onclick="setting:hpfb:next"><span class="setting-label">Framebuffer precision</span><span id="graphics-hpfb" class="setting-value">Loading...</span></button>
             <button onclick="setting:api:next"><span class="setting-label">Graphics API *</span><span id="graphics-api" class="setting-value">Loading...</span></button>
           </div>
         </div>
+
         <p class="note">* Graphics API changes are saved for the next launch and do not apply immediately.</p>
-        <button class="secondary" onclick="back">Back</button>
+        <button class="secondary exit-btn" onclick="back">Back to Settings</button>
+
+        <div class="footer-bar">
+          <div class="controller-guide">
+            <span class="guide-item"><span class="guide-key">A / Enter</span> Change Value</span>
+            <span class="guide-item"><span class="guide-key">B / Esc</span> Back</span>
+            <span class="guide-item"><span class="guide-key">D-Pad / Stick</span> Navigate</span>
+          </div>
+        </div>
       </div>
     </div>
   </body>
