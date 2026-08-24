@@ -210,7 +210,9 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/RmlUi ${CMAKE_BINARY_DIR}/RmlUi
 # "Unsupported bitness" at the SIZE_MAX check (see release flow notes).
 # Force-include the standard integer header for every RmlUi target so we
 # don't have to keep patching robin_hood.h on every toolchain bump.
-foreach(_rmlui_target rmlui rmlui_core rmlui_debugger)
+# The `rmlui` aggregate is INTERFACE-only (no compile options allowed);
+# rmlui_core / rmlui_debugger are the actual static libraries to flag.
+foreach(_rmlui_target rmlui_core rmlui_debugger)
     if(TARGET ${_rmlui_target})
         target_compile_options(${_rmlui_target} PRIVATE -include cstdint)
     endif()
