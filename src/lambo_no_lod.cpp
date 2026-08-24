@@ -18,6 +18,8 @@
 
 #include "lambo_config.h"
 
+extern "C" unsigned long long lambo_camera_view_cone_cos_bits();
+
 extern "C" uint32_t lambo_no_lod_scenery_guard(uint8_t* rdram, uint32_t at) {
     (void)rdram;
     return lambo::config::no_lod() ? 1u : at;
@@ -33,8 +35,9 @@ extern "C" uint32_t lambo_no_lod_scenery_guard(uint8_t* rdram, uint32_t at) {
 // values back. The radii are scaled by the draw_distance config (0 = unlimited) from
 // a compiled-in copy of the authored table: the live table can't be trusted as the
 // baseline because this hook rewrites it every frame and a savestate captured while
-// it ran would restore the rewritten values. The forward-cone/half-plane tests and
-// the per-frame visibility walk still decide what is drawn.
+// it ran would restore the rewritten values. The half-plane tests and the
+// per-frame visibility walk still decide what is drawn; the forward-cone constant
+// is rewritten in this hook so it tracks camera_fov_add (see the cone block below).
 extern "C" void lambo_no_lod_draw_distance(uint8_t* rdram) {
     // ROM copy of the float[6][5] at 0x80088FD0 ([circuit][player-count column]),
     // extracted from the .z64 at 0x89BD0 (= vram - 0x80000000 + 0xC00).
@@ -65,6 +68,32 @@ extern "C" void lambo_no_lod_draw_distance(uint8_t* rdram) {
             std::memcpy(&bits, &r, sizeof(bits));
             MEM_W((c * 5 + p) * 4, (gpr)(int32_t)kTableAddr) = bits;
         }
+    }
+
+    // Forward-view-cone rewrite (the FOV-boost pop-in axis): both cull paths above
+    // are AND-ed with a forward-cone cosine stored as a ROM double at 0x8008D8C0
+    // (coarse, read at 0x8000D38C) and 0x8008D8C8 (fine sub-point test, read at
+    // 0x8000D588) -- authored 0.886, a ~27.6-degree half-angle matched to the N64
+    // frustum. These two loads are the constants' only readers in the ROM. With
+    // camera_fov_add the rendered frustum widens past the cone, so peripheral
+    // segments stay culled until they cross the authored boundary -- visible
+    // pop-in at the screen edges regardless of draw distance. The bits are
+    // computed from each guPerspective call's authored/adjusted FOV pair
+    // (lambo_camera.cpp) and rewritten here per frame, same savestate rationale
+    // as the radii: a restore brings the ROM doubles back.
+    //
+    // Deliberately NOT gated on no_lod(): the cone is an FOV-frustum coupling,
+    // not an LOD reduction -- it must track camera_fov_add even for users who
+    // keep the ROM's authored radii and PVS rows. At camera_fov_add == 0 the
+    // stored bits are the exact ROM double, so this is a byte-stable no-op then.
+    {
+        const unsigned long long dbits = lambo_camera_view_cone_cos_bits();
+        const int32_t hi = (int32_t)(uint32_t)(dbits >> 32);
+        const int32_t lo = (int32_t)(uint32_t)dbits;
+        MEM_W(0, (gpr)(int32_t)0x8008D8C0u) = hi;
+        MEM_W(4, (gpr)(int32_t)0x8008D8C0u) = lo;
+        MEM_W(0, (gpr)(int32_t)0x8008D8C8u) = hi;
+        MEM_W(4, (gpr)(int32_t)0x8008D8C8u) = lo;
     }
 }
 

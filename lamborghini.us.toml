@@ -674,7 +674,11 @@ text = "{ extern uint32_t lambo_no_lod_scenery_guard(uint8_t*, uint32_t); ctx->r
 # sits on the world-draw path (0x8000CD3C, after the 0x200 state gate, before the first
 # table read) and rewrites the radii when no_lod() to authored * draw_distance config
 # (0 = unlimited 1e9): per frame, not once at load, because a savestate restore brings
-# the ROM values back. Cone/half-plane tests are untouched, so nothing is synthesised --
+# the ROM values back. The same hook also rewrites the forward-cone cosine doubles at
+# 0x8008D8C0/C8 (authored 0.886, the constants' only readers are this builder's cull
+# tests) so the view cone tracks camera_fov_add -- without that, a widened projection
+# renders past the authored cone and peripheral segments pop in as they cross it.
+# Half-plane tests stay untouched, so nothing is synthesised --
 # the game just stops hiding segments it already streamed. Native in src/lambo_no_lod.cpp.
 [[patches.hook]]
 func = "func_8000A6C0"

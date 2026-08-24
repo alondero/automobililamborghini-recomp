@@ -121,7 +121,10 @@ void set_global_fog_scale(double scale);
 //       the ground plane streaks past faster.
 //   camera_fov_add        -- degrees added to each layout's authored perspective
 //       FOV (1P races 40, 2P halves 20, 3P/4P 32, special cameras 52). Applied
-//       uniformly at all five guPerspective call sites in func_800030F8.
+//       uniformly at all five guPerspective call sites in func_800030F8. The
+//       scene builder's forward view-cone cull constant (ROM double 0.886,
+//       0x8008D8C0/C8) is widened to match, so peripheral geometry does not
+//       pop in when the rendered frustum outgrows the authored cone.
 //
 // graphics.json keys "camera_distance_scale" / "camera_height_scale" /
 // "camera_fov_add", overridable by LAMBO_CAMERA_DISTANCE_SCALE /
