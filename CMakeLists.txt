@@ -55,6 +55,14 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_config_live_updates COMMAND lambo_config_tests)
 
+    add_executable(lambo_camera_projection_tests
+        tests/test_camera_projection.cpp
+    )
+    target_include_directories(lambo_camera_projection_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    add_test(NAME lambo_camera_projection_policy COMMAND lambo_camera_projection_tests)
+
     add_executable(lambo_controller_pak_tests
         tests/test_controller_pak.c
         src/libultra_stubs.c

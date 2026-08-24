@@ -55,8 +55,8 @@ void dummy_check_interrupts() {}
 // Live swapchain handle for the widescreen HUD rect-aspect helper (issue #67): the
 // game-space 2D HUD geometry shifts key off the effective rect-pin aspect, which depends
 // on the live output size and hr_option -- see lambo_ws_get_hud_rect_aspect_bits() below.
-// (The issue #3 skybox no longer uses this: it is handled entirely in the renderer by
-// stretching parallax-free perspective backdrops -- patches/0008-rt64-skybox-stretch-parallaxless-backdrop.patch.)
+// (The issue #3 skybox no longer uses this: renderer patches 0008 and 0011 identify,
+// restore, and stretch the explicitly tagged finite backdrop independently of camera FOV.)
 //
 // Written on the gfx thread (RT64Context ctor/dtor), read every frame on the CPU/
 // game-logic thread inside lambo_ws_get_hud_rect_aspect_bits() below -- unlike

@@ -58,6 +58,9 @@ git -C lib/rt64 apply "$(pwd)/patches/0009-rt64-widescreen-split-subviewport.pat
 # RT64 renderer — all platforms (explicit-D3D12 adapter escape hatch for Intel GPUs):
 git -C lib/rt64 apply "$(pwd)/patches/0010-rt64-intel-explicit-d3d12-escape-hatch.patch"
 
+# RT64 renderer — all platforms (finite backdrops independent of camera FOV):
+git -C lib/rt64 apply "$(pwd)/patches/0011-rt64-fov-independent-backdrop.patch"
+
 # RT64 renderer — Windows / MinGW only (absolute paths avoid depth confusion):
 git -C lib/rt64 apply "$(pwd)/patches/0005-rt64-mingw-gcc-compat.patch"
 git -C lib/rt64/src/contrib/plume apply "$(pwd)/patches/0004-plume-d3d12-mingw-com-abi-struct-return.patch"
