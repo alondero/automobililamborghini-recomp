@@ -63,6 +63,11 @@ Same approach as [Snowboard Kids 2 Recompiled](https://github.com/cdlewis/snowbo
   un-swizzle; `get_frames_remaining` must report AI-rate (22050) frames, not device-rate (48000),
   or music plays ~2.2× slow. State 6 = music; state 8 = quiet music + SFX.
 - **Input map:** A = confirm, B = cancel; menu input buffer `D_8011C640` (mind byte order).
+- **View-cone cull is FOV-coupled:** the scene builder (func_8000A6C0) ANDs both segment
+  cull paths with an authored forward-cone cosine double `0.886` at 0x8008D8C0/C8 — the
+  only readers. It was authored for the N64 frustum, so any FOV change must rewrite it
+  per frame or geometry pops in at the screen edges regardless of draw distance
+  (`lambo_view_cone_cos` + the world-draw hook; docs/no_lod_audit.md §11).
 - **Pedals:** throttle = s16 at vehicle+0xAA (±10/update toward a per-channel limit); brake demand
   = float at vehicle+0xA0 (+1/update to 16 while B held, snapped to 0 on release), consumed by
   the physics pass only while s16[vehicle+0xAC] > 0. The ROM's brake handlers rewrite both fields

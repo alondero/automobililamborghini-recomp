@@ -67,6 +67,16 @@ unsigned int scaled_bits(unsigned int authored_bits, double scale, const char* t
 double g_dist_last = -1.0;
 double g_height_last = -1.0;
 std::atomic<unsigned int> g_backdrop_projection_scale_bits{0x3F800000u};
+// Bits of the scene-builder forward-view-cone cosine (a full double, NOT a
+// float round-trip: stock must restore the ROM double bit-for-bit), recomputed
+// alongside each guPerspective FOV so the cull cone tracks the rendered frustum
+// (see lambo_view_cone_cos in lambo_camera_projection.h).
+//
+// Last-writer-wins across the five guPerspective call sites, same accepted
+// assumption as g_backdrop_projection_scale_bits: within a frame the camera
+// layout's projection is computed immediately before its scene build, so the
+// bits read by the per-frame RDRAM rewrite belong to that viewport.
+std::atomic<unsigned long long> g_view_cone_cos_bits{0x3FEC5A1CAC083127ull};
 
 } // namespace
 
@@ -92,6 +102,15 @@ extern "C" unsigned int lambo_camera_fov_bits(unsigned int authored_bits) {
         lambo_backdrop_fov_restore_scale(static_cast<double>(authored), out));
     g_backdrop_projection_scale_bits.store(float_bits(backdrop_scale),
                                             std::memory_order_release);
+    // Keep the scene builder's view-cone cosine in step with the rendered FOV
+    // (see lambo_no_lod.cpp for where the bits land in RDRAM). Stored as full
+    // double bits: at stock the identity path returns kAuthoredViewConeCos and
+    // the ROM constant lands back in RDRAM bit-for-bit.
+    const double cone_cos = lambo_view_cone_cos(
+        kAuthoredViewConeCos, static_cast<double>(authored), out);
+    unsigned long long dbits;
+    std::memcpy(&dbits, &cone_cos, sizeof(dbits));
+    g_view_cone_cos_bits.store(dbits, std::memory_order_release);
     if (out != (double)authored) {
         static int remaining = 5;
         if (cam_trace() && remaining > 0) {
@@ -113,6 +132,20 @@ extern "C" unsigned int lambo_camera_backdrop_projection_scale_bits() {
         float scale;
         std::memcpy(&scale, &bits, sizeof(scale));
         LAMBO_LOG("camera", "backdrop projection restore %.4f\n", (double)scale);
+    }
+    return bits;
+}
+
+// Double bits of the widened forward-view-cone cosine for the scene builder's
+// segment cull (consumed by the per-frame RDRAM rewrite in lambo_no_lod.cpp).
+extern "C" unsigned long long lambo_camera_view_cone_cos_bits() {
+    const unsigned long long bits = g_view_cone_cos_bits.load(std::memory_order_acquire);
+    static int remaining = 5;
+    if (cam_trace() && remaining > 0) {
+        --remaining;
+        double v;
+        std::memcpy(&v, &bits, sizeof(v));
+        LAMBO_LOG("camera", "view cone cos %.6f\n", v);
     }
     return bits;
 }

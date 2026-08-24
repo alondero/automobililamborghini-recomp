@@ -46,6 +46,7 @@ N64Recomp ports (Zelda 64: Recompiled et al.):
 | `fog_scale_circuit` | array of 6 numbers | `[1,1,1,1,1,1]` | Per-circuit fog multipliers (multiplied with `fog_scale`), e.g. clear a single hazy track by lowering its entry. |
 | `draw_distance` | `0` or `0.1`–`100` | `1.5` | Multiplier on the authored per-circuit draw-distance radii (needs `no_lod`). `1.0` = the N64 distances, higher = see further, `0` = unlimited — note that unlimited draws distant track pieces the artists never meant to be visible (they float with nothing in between). |
 | `draw_distance_circuit` | array of 6 numbers | `[1,1,1,1,1,1]` | Per-circuit draw-distance multipliers (multiplied with `draw_distance`), e.g. extend just one short-sighted city track. |
+| `camera_fov_add` | `-20`–`60` degrees | `0` | Degrees added to each camera layout's authored field of view (sense-of-speed effect). The scene builder's view-cone cull widens to match, so higher values do not cause peripheral pop-in. Also settable live from the Enhancements menu. |
 | `show_launcher` | `true`, `false` | `false` | When `false`, the game auto-boots directly into gameplay with the in-game configuration overlay available during play. When `true`, presents the standalone launcher shell at boot. Overridable via `LAMBO_LAUNCHER=1/0`. |
 
 ## In-Game Configuration & Controls

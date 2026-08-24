@@ -325,6 +325,31 @@ at ~51k units vs its 35000 radius) needs ≥1.46x, so 1.5 fixes every measured p
 while staying close to authored reach. With the multiplier the per-mode budget
 *ratios* (multiplayer columns 20000–27500) are preserved rather than flattened.
 
+## 11. Addendum (2026-08-24): the forward-cone cull is FOV-coupled (camera_fov_add pop-in)
+
+A user report of peripheral pop-in with `camera_fov_add > 0` — persisting with
+unlimited draw distance and the full-track walk on — surfaced the one cull gate this
+audit had classified as "frame-coherent view culling, not pop-in" and left untouched:
+
+- **Both §8/§9 cull paths are AND-ed with an authored forward-view cone**, stored as
+  a double `0.886` (~27.6° half-angle) at `0x8008D8C0` (coarse entry-level test, read
+  at `0x8000D38C`) and `0x8008D8C8` (per-sub-point fine test, read at `0x8000D588`).
+  A whole-RecompiledFuncs scan confirms these loads are the constants' only readers.
+  The width matches the authored N64 frustum (1P vFOV 40° → ~26° horizontal half-angle
+  at 4:3), so it was invisible until the projection widened.
+- **Why unlimited radii don't help:** with radius = 1e9 every distance test passes and
+  the *cone* becomes the effective gate. Geometry outside ~27.6° off the view axis is
+  culled while already rendered once `camera_fov_add` pushes the frustum past it, and
+  pops in as it crosses the authored boundary — exactly "appears from nowhere at the
+  periphery".
+- **Fix (independent of `no_lod`, shipped with the camera knobs):** each guPerspective
+  call's authored/adjusted FOV pair computes a widened cosine (`lambo_view_cone_cos`,
+  src/lambo_camera_projection.h — tan-space scaling that keeps the cull boundary in
+  lockstep with the screen edge) and the existing world-draw hook rewrites both doubles
+  per frame (same savestate rationale as §8). At `camera_fov_add == 0` the stored bits
+  are bit-identical to the ROM double (C literal `0.886` == ROM bytes,
+  `0x3FEC5A1CAC083127`), pinned by test.
+
 ---
 *Method note: MIPS classification used `tools/scan_lod_patterns.py` output cross-read
 against the recompiled C (per-instruction VRAM comments) rather than raw disassembly;
