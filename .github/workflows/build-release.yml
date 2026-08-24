@@ -80,6 +80,7 @@ jobs:
           git -C lib/N64ModernRuntime checkout -- .
           git -C lib/rt64 checkout -- .
           git -C lib/rt64/src/contrib/plume checkout -- .
+          git -C lib/RmlUi checkout -- .
 
       - name: Build via shared script
         # Delegate to build.sh — the single source of truth for the build
@@ -176,6 +177,7 @@ jobs:
           git -C lib/N64ModernRuntime checkout -- .
           git -C lib/rt64 checkout -- .
           git -C lib/rt64/src/contrib/plume checkout -- .
+          git -C lib/RmlUi checkout -- .
 
       - name: Build via shared script
         shell: pwsh

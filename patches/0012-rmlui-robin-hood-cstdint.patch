@@ -1,0 +1,13 @@
+diff --git a/Include/RmlUi/Core/Containers/robin_hood.h b/Include/RmlUi/Core/Containers/robin_hood.h
+index 3992be14..6d15696e 100644
+--- a/Include/RmlUi/Core/Containers/robin_hood.h
++++ b/Include/RmlUi/Core/Containers/robin_hood.h
+@@ -40,6 +40,8 @@
+
+ #include <limits>
+ #include <algorithm>
++#include <cstdint>
++#include <cstddef>
+ #include <cstdlib>
+ #include <cstring>
+ #include <functional>

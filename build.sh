@@ -96,13 +96,15 @@ git -C lib/N64ModernRuntime checkout -- .
 git -C lib/rt64 checkout -- .
 git -C lib/rt64/src/contrib/plume checkout -- . 2>/dev/null || true
 
-# --- 6. Apply Lamborghini patches (Linux: 0001, 0007, 0006, 0008, 0009, 0010, 0011) ----------------
+# --- 6. Apply Lamborghini patches (Linux: 0001, 0007, 0006, 0008, 0009, 0010, 0011, 0012) ----------------
 # Mirrors CI's Linux job exactly (workflow lines 93-95). 0001 then 0007 both
 # patch N64ModernRuntime with disjoint hunks (verified to apply sequentially
 # on the pinned commit). 0007 adds the save-state thread-context registry +
 # `ultramodern_relink_thread_contexts` (issue #22, all platforms). Without it,
 # src/lambo_savestate.c fails to link with "undefined reference to
-# `ultramodern_relink_thread_contexts`".
+# `ultramodern_relink_thread_contexts`". 0012 adds <cstdint>/<cstddef> to
+# RmlUi's robin_hood.h — gcc 16 on windows-latest no longer pulls them in
+# transitively, so the bitness check fails with "Unsupported bitness".
 log "[2/5] Applying Lamborghini submodule patches..."
 PATCHES=(
     "lib/N64ModernRuntime:0001-lamborghini-runtime-scheduler-audio-vi.patch"
@@ -112,6 +114,7 @@ PATCHES=(
     "lib/rt64:0009-rt64-widescreen-split-subviewport.patch"
     "lib/rt64:0010-rt64-intel-explicit-d3d12-escape-hatch.patch"
     "lib/rt64:0011-rt64-fov-independent-backdrop.patch"
+    "lib/RmlUi:0012-rmlui-robin-hood-cstdint.patch"
 )
 for entry in "${PATCHES[@]}"; do
     sub="${entry%%:*}"
