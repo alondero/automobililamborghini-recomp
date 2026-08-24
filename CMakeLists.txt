@@ -205,6 +205,16 @@ if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/RmlUi/CMakeLists.txt)
         "  git submodule update --init --recursive")
 endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/RmlUi ${CMAKE_BINARY_DIR}/RmlUi)
+# GCC 16+ stopped pulling <cstdint> into <limits>/<algorithm>/<cstdlib>
+# transitively; RmlUi's vendored robin_hood.h relies on that and fails with
+# "Unsupported bitness" at the SIZE_MAX check (see release flow notes).
+# Force-include the standard integer header for every RmlUi target so we
+# don't have to keep patching robin_hood.h on every toolchain bump.
+foreach(_rmlui_target rmlui rmlui_core rmlui_debugger)
+    if(TARGET ${_rmlui_target})
+        target_compile_options(${_rmlui_target} PRIVATE -include cstdint)
+    endif()
+endforeach()
 
 set(RT64_STATIC TRUE)
 if(WIN32)

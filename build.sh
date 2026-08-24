@@ -114,7 +114,6 @@ PATCHES=(
     "lib/rt64:0009-rt64-widescreen-split-subviewport.patch"
     "lib/rt64:0010-rt64-intel-explicit-d3d12-escape-hatch.patch"
     "lib/rt64:0011-rt64-fov-independent-backdrop.patch"
-    "lib/RmlUi:0012-rmlui-robin-hood-cstdint.patch"
 )
 for entry in "${PATCHES[@]}"; do
     sub="${entry%%:*}"
