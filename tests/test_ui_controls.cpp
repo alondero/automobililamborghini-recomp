@@ -25,6 +25,18 @@ int main() {
     expect(control_action_from_name("threshold:z:0:9000")->value == 9000, "threshold parses");
     expect(control_action_from_name("deadzone:stick_x:7000")->value == 7000, "deadzone parses");
     expect(control_action_from_name("invert:stick_y")->kind == CommandKind::Invert, "invert parses");
+    expect(control_action_from_name("mode:throttle:1")->kind == CommandKind::ThrottleMode,
+           "analog throttle mode parses");
+    expect(control_action_from_name("deadzone:throttle:250")->value == 250,
+           "bounded throttle deadzone parses");
+    expect(control_action_from_name("saturation:throttle:900")->kind == CommandKind::Saturation,
+           "throttle saturation parses");
+    expect(control_action_from_name("clear-source:throttle")->kind == CommandKind::ClearThrottleSource,
+           "explicit unassigned throttle source parses");
+    expect(control_action_from_name("conflict-move")->kind == CommandKind::ConflictMove,
+           "move-binding conflict action parses");
+    expect(!control_action_from_name("deadzone:throttle:501"),
+           "throttle deadzone above 50 percent is rejected");
     expect(!control_action_from_name("select:not-a-number"), "malformed number is rejected");
     expect(!control_action_from_name("invert:a"), "digital invert is rejected");
     expect(!control_action_from_name("remove:a:2:extra"), "extra fields are rejected");
@@ -45,5 +57,13 @@ int main() {
            "generated bindings reference typed actions");
     expect(view.bindings.find("N64 Stick X") != std::string::npos,
            "all targets include analog sticks");
+    expect((view.bindings.find("DRIVING") != std::string::npos ||
+            view.bindings.find("Driving") != std::string::npos) &&
+           view.bindings.find("keyboard X always provide full throttle") != std::string::npos,
+           "driving section explains analog mode and digital fallback");
+    expect(view.bindings.find("control:reset-target:throttle") != std::string::npos,
+           "driving section exposes the throttle reset action");
+    expect(view.throttle_preview.find("throttle-meter") != std::string::npos,
+           "throttle preview exposes live raw and effective meters");
     return failures == 0 ? 0 : 1;
 }

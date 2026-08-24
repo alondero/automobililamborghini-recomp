@@ -122,6 +122,16 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_ui_controls_actions COMMAND lambo_ui_controls_tests)
 
+    add_executable(lambo_analog_throttle_tests
+        tests/test_analog_throttle.cpp
+        src/lambo_analog_throttle.cpp
+    )
+    target_include_directories(lambo_analog_throttle_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/N64Recomp/include
+    )
+    add_test(NAME lambo_analog_throttle_bridge COMMAND lambo_analog_throttle_tests)
+
     add_executable(lambo_ui_input_tests
         tests/test_ui_input.cpp
         src/ui/lambo_ui_input.cpp
@@ -307,6 +317,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_menu.cpp     # lightweight native Win32 menu bar; live config actions + persistence
         src/lambo_startup.cpp  # runtime-ready -> Play startup state machine (issue #126)
         src/lambo_input_gate.cpp # controller capture/neutral-release barrier (issue #126)
+        src/lambo_analog_throttle.cpp # issue #128: atomic native-port throttle bridge + race hook
         src/controls/lambo_controls.cpp
         src/controls/lambo_controls_sdl.cpp
         src/ui/lambo_ui.cpp

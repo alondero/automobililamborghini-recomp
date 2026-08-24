@@ -924,6 +924,20 @@ func = "func_800028D0"
 before_vram = 0x80001CD4
 text = "extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_savestate_tick(rdram, ctx);"
 
+# Issue #128 — true analog throttle. Capture the pedal demand immediately before the
+# stock human-driver A/Z branch, then apply the selected native port's continuous target
+# at the common merge. The two hooks preserve the ROM's +/-10 pedal ramp, including exact
+# released/full-A behavior. Digital mode is a no-op. The natives read atomics and RDRAM only.
+[[patches.hook]]
+func = "func_80019D20"
+before_vram = 0x80019FBC
+text = "extern void lambo_analog_throttle_begin(uint8_t*); lambo_analog_throttle_begin(rdram);"
+
+[[patches.hook]]
+func = "func_80019D20"
+before_vram = 0x8001A120
+text = "extern void lambo_analog_throttle_apply(uint8_t*); lambo_analog_throttle_apply(rdram);"
+
 # Issue #40 — widescreen lens flare. The sun flare emitter func_80036854 draws a chain of
 # 10 translucent "ghost" texrects. Under ar_option Expand RT64 squishes each small untagged
 # texrect into the central 4:3 band (invRatioScale = 1/aspectRatioScale) and collapses its

@@ -20,6 +20,7 @@ enum class Target {
     DpadUp, DpadDown, DpadLeft, DpadRight,
     CUp, CDown, CLeft, CRight,
     StickX, StickY,
+    Throttle,
     Count,
 };
 
@@ -34,6 +35,7 @@ enum class LogicalAxis {
 };
 
 enum class AxisDirection { Negative, Positive };
+enum class ThrottleMode { Digital, Analog };
 
 struct ButtonSource {
     LogicalButton button{};
@@ -54,6 +56,20 @@ struct AnalogSource {
     bool operator==(const AnalogSource&) const = default;
 };
 
+struct ThrottleSource {
+    LogicalAxis axis{};
+    AxisDirection direction{AxisDirection::Positive};
+    bool operator==(const ThrottleSource&) const = default;
+};
+
+struct ThrottleConfig {
+    ThrottleMode mode{ThrottleMode::Digital};
+    std::optional<ThrottleSource> source;
+    float deadzone{0.05f};
+    float saturation{1.0f};
+    bool operator==(const ThrottleConfig&) const = default;
+};
+
 using DigitalSource = std::variant<ButtonSource, AxisHalfSource>;
 using DigitalBindings = std::vector<DigitalSource>;
 
@@ -62,7 +78,8 @@ constexpr std::size_t analog_target_count = 2;
 
 struct Profile {
     std::array<DigitalBindings, digital_target_count> digital;
-    std::array<AnalogSource, analog_target_count> analog;
+    std::array<std::optional<AnalogSource>, analog_target_count> analog;
+    ThrottleConfig throttle;
     bool operator==(const Profile&) const = default;
 };
 
@@ -75,11 +92,15 @@ struct EvaluatedState {
     std::uint16_t buttons{};
     std::int8_t stick_x{};
     std::int8_t stick_y{};
+    ThrottleMode throttle_mode{ThrottleMode::Digital};
+    float throttle{};
     bool operator==(const EvaluatedState&) const = default;
 };
 
 Profile default_profile();
 EvaluatedState evaluate(const Profile& profile, const RawState& state);
+float throttle_source_magnitude(const ThrottleConfig& throttle, const RawState& state);
+float evaluate_throttle_source(const ThrottleConfig& throttle, const RawState& state);
 std::uint32_t pack(const EvaluatedState& state);
 
 std::string_view target_name(Target target);
@@ -145,12 +166,13 @@ public:
                              std::int16_t value);
     CaptureResult sample(const RawState& selected_controller_state, Profile& profile);
     CaptureResult accept_conflict(Profile& profile);
+    CaptureResult move_conflict(Profile& profile);
     CaptureResult reject_conflict();
 
     bool active() const { return phase_ != CapturePhase::Idle; }
     CapturePhase phase() const { return phase_; }
     std::optional<Target> target() const { return target_; }
-    const std::optional<std::variant<DigitalSource, AnalogSource>>& candidate() const {
+    const std::optional<std::variant<DigitalSource, AnalogSource, ThrottleSource>>& candidate() const {
         return candidate_;
     }
 
@@ -164,7 +186,7 @@ private:
     std::optional<Target> target_;
     std::int32_t controller_instance_{};
     int neutral_samples_{};
-    std::optional<std::variant<DigitalSource, AnalogSource>> candidate_;
+    std::optional<std::variant<DigitalSource, AnalogSource, ThrottleSource>> candidate_;
 };
 
 enum class ControllerLayout { Xbox, PlayStation, Nintendo, Generic };
@@ -179,7 +201,8 @@ struct ControllerInfo {
 
 enum class CommandKind {
     Select, Add, Remove, Threshold, Deadzone, Invert, ResetTarget,
-    ResetProfile, ConflictAccept, CaptureCancel,
+    Saturation, ThrottleMode, ClearThrottleSource,
+    ResetProfile, ConflictAccept, ConflictMove, CaptureCancel,
 };
 
 struct Command {

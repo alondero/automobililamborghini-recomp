@@ -18,6 +18,7 @@ struct ControlsView {
     std::string bindings;
     std::string raw_preview;
     std::string evaluated_preview;
+    std::string throttle_preview;
     std::string persistence_status;
     std::string warnings;
     std::string capture_message;

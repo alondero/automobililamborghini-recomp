@@ -1,3 +1,4 @@
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -29,6 +30,8 @@ std::filesystem::path temporary_path(const char* name) {
 int main() {
     using namespace lambo::controls;
     Profile profile = default_profile();
+    expect(profile.throttle.mode == ThrottleMode::Digital && !profile.throttle.source,
+           "default throttle is digital with an unassigned analog source");
     RawState raw{};
 
     const std::array button_cases{
@@ -77,11 +80,60 @@ int main() {
     raw.axes[static_cast<std::size_t>(LogicalAxis::TriggerRight)] = 8001;
     expect(evaluate(profile, raw).buttons == 0x0010, "right trigger is the second R source");
 
+    Profile analog_throttle = profile;
+    analog_throttle.throttle = {ThrottleMode::Analog,
+        ThrottleSource{LogicalAxis::TriggerRight, AxisDirection::Positive}, 0.1f, 0.9f};
+    raw = {};
+    raw.axes[static_cast<std::size_t>(LogicalAxis::TriggerRight)] = 3277;
+    expect(evaluate_throttle_source(analog_throttle.throttle, raw) < 0.001f,
+           "throttle is neutral at the deadzone boundary");
+    raw.axes[static_cast<std::size_t>(LogicalAxis::TriggerRight)] = 16384;
+    expect(std::abs(throttle_source_magnitude(analog_throttle.throttle, raw) - 0.5f) < 0.001f,
+           "raw throttle magnitude is available before shaping");
+    expect(std::abs(evaluate(analog_throttle, raw).throttle - 0.5f) < 0.001f,
+           "throttle rescales linearly between deadzone and saturation");
+    raw.axes[static_cast<std::size_t>(LogicalAxis::TriggerRight)] = 29491;
+    expect(evaluate(analog_throttle, raw).throttle == 1.0f,
+           "throttle reaches full output at saturation");
+    raw = {};
+    raw.buttons[static_cast<std::size_t>(LogicalButton::A)] = true;
+    expect(evaluate(analog_throttle, raw).throttle == 1.0f,
+           "digital A is a full fallback in analog mode");
+    raw = {};
+    raw.axes[static_cast<std::size_t>(LogicalAxis::TriggerLeft)] = 8001;
+    expect(evaluate(analog_throttle, raw).throttle == 1.0f,
+           "the ROM's digital Z accelerator path is reflected in the effective meter");
+    analog_throttle.throttle.source.reset();
+    raw = {};
+    expect(evaluate(analog_throttle, raw).throttle == 0.0f,
+           "an explicitly unassigned continuous source is neutral");
+    analog_throttle.throttle.source = ThrottleSource{
+        LogicalAxis::LeftY, AxisDirection::Negative};
+    raw.axes[static_cast<std::size_t>(LogicalAxis::LeftY)] =
+        std::numeric_limits<std::int16_t>::min();
+    expect(evaluate(analog_throttle, raw).throttle == 1.0f,
+           "negative axis direction safely reaches full throttle");
+    analog_throttle.throttle = {ThrottleMode::Analog,
+        ThrottleSource{LogicalAxis::TriggerRight, AxisDirection::Positive}, 0.25f, 0.25f};
+    raw = {};
+    expect(evaluate(analog_throttle, raw).throttle == 0.0f,
+           "zero input stays neutral for an equal deadzone and saturation");
+    raw.axes[static_cast<std::size_t>(LogicalAxis::TriggerRight)] = 8192;
+    expect(evaluate(analog_throttle, raw).throttle == 1.0f,
+           "equal positive deadzone and saturation form a deterministic step");
+
     raw = {};
     raw.axes[static_cast<std::size_t>(LogicalAxis::LeftX)] = 7999;
     raw.axes[static_cast<std::size_t>(LogicalAxis::LeftY)] = 7999;
     expect(evaluate(profile, raw).stick_x == 0 && evaluate(profile, raw).stick_y == 0,
            "values strictly inside deadzone are neutral");
+
+    Profile identity = default_profile();
+    const DigitalSource retuned_rt = AxisHalfSource{
+        LogicalAxis::TriggerRight, AxisDirection::Positive, 12000};
+    identity.digital[0].push_back(retuned_rt);
+    expect(has_cross_target_duplicate(identity, Target::A, retuned_rt),
+           "physical half-axis identity ignores per-binding threshold tuning");
     raw.axes[static_cast<std::size_t>(LogicalAxis::LeftX)] = 8000;
     expect(evaluate(profile, raw).stick_x == 19, "deadzone boundary is not rescaled");
     raw.axes[static_cast<std::size_t>(LogicalAxis::LeftX)] = 32767;
@@ -108,13 +160,18 @@ int main() {
 
     ControlsConfig config{};
     config.preferred_controller_guid = "030000005e0400008e02000014010000";
-    profile_for_guid(config, config.preferred_controller_guid).digital[0].clear();
+    Profile& saved_profile = profile_for_guid(config, config.preferred_controller_guid);
+    saved_profile.digital[0].clear();
+    saved_profile.throttle = {ThrottleMode::Analog,
+        ThrottleSource{LogicalAxis::LeftY, AxisDirection::Negative}, 0.12f, 0.88f};
     config.preserved_document = R"({"version":1,"unknown_root":{"keep":true},"profiles":{"030000005e0400008e02000014010000":{"unknown_profile":7,"digital":{"b":[{"type":"button","button":"b","vendor_note":"keep"}]}}}})";
     expect(save_config(config, path).saved, "controls config saves atomically");
     auto loaded = load_config(path);
     expect(loaded.status == LoadStatus::Loaded, "saved config reloads");
     expect(profile_for_guid(loaded.config, config.preferred_controller_guid).digital[0].empty(),
            "explicit empty binding remains unbound");
+    expect(profile_for_guid(loaded.config, config.preferred_controller_guid).throttle ==
+           saved_profile.throttle, "analog throttle settings persist per controller GUID");
     std::ifstream saved_file(path);
     nlohmann::json saved; saved_file >> saved;
     expect(saved["unknown_root"]["keep"] == true, "unknown root fields survive rewrite");
@@ -136,6 +193,14 @@ int main() {
     expect(partial_profile.analog[0] == default_profile().analog[0],
            "invalid analog binding falls back only that stick");
     expect(!partial.warnings.empty(), "invalid and cross-target bindings produce warnings");
+
+    { std::ofstream invalid_throttle(path, std::ios::trunc); invalid_throttle <<
+        R"({"version":1,"profiles":{"030000005e0400008e02000014010000":{"throttle":{"mode":"analog","source":null,"deadzone":0.51,"saturation":0.5}}}})"; }
+    auto invalid_throttle = load_config(path);
+    expect(profile_for_guid(invalid_throttle.config, guid).throttle == default_profile().throttle,
+           "out-of-range throttle shaping falls back to the digital default");
+    expect(!invalid_throttle.warnings.empty(),
+           "invalid throttle shaping produces a profile warning");
 
     ControlsConfig shared{};
     Profile& first_identical = profile_for_guid(shared, guid);

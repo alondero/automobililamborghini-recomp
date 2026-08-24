@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -43,6 +44,7 @@
 #include "lambo_log.h"   
 #include "lambo_menu.h"
 #include "lambo_input_gate.h"
+#include "lambo_analog_throttle.h"
 #include "lambo_startup.h"
 #include "controls/lambo_controls_sdl.h"
 #include "ui/lambo_ui.h"
@@ -529,6 +531,7 @@ enum {
 static constexpr int   N64_STICK_MAX   = 80;
 static uint16_t g_held_buttons = 0;                 // LAMBO_MODERN_INPUT env override, OR'd in
 static int8_t   g_held_sx = 0, g_held_sy = 0;       // LAMBO_MODERN_INPUT stick override (harness)
+static float    g_held_throttle = -1.0f;             // LAMBO_ANALOG_THROTTLE=[0,1] override
 // LAMBO_INPUT_PULSE=BTNHEX:PERIOD:DUTY[:STARTVI] -- periodic button pulse for headless menu
 // navigation (a held LAMBO_MODERN_INPUT mask is one EDGE forever, so it can advance at most one
 // menu; a pulse presses/releases every PERIOD VIs for DUTY VIs, walking a whole menu chain).
@@ -569,9 +572,10 @@ static void rumble_apply() {
 static void input_sample() {
     uint16_t b = 0;
     int sx = 0, sy = 0;
+    lambo::controls::EvaluatedState controller{};
 
     if (g_controls != nullptr) {
-        const lambo::controls::EvaluatedState controller = g_controls->sample();
+        controller = g_controls->sample();
         b = controller.buttons;
         sx = controller.stick_x;
         sy = controller.stick_y;
@@ -620,10 +624,22 @@ static void input_sample() {
         }
     }
 
+    const bool forced_analog = g_held_throttle >= 0.0f;
+    const bool analog_mode = forced_analog ||
+        controller.throttle_mode == lambo::controls::ThrottleMode::Analog;
+    const float physical_throttle = forced_analog ? g_held_throttle : controller.throttle;
     uint32_t snap = (uint16_t)b
                   | ((uint32_t)(uint8_t)(int8_t)sx << 16)
                   | ((uint32_t)(uint8_t)(int8_t)sy << 24);
-    lambo::input_gate::publish_physical_snapshot(snap);
+    // A throttle-only source must also hold the UI release barrier. The sentinel is
+    // observed only while suppression is already active, so it can never reach the ROM.
+    const bool suppressed_before_publish = lambo::input_gate::guest_input_suppressed();
+    const uint32_t gated_snap = suppressed_before_publish && analog_mode && physical_throttle > 0.0f
+        ? (snap | 1u) : snap;
+    lambo::input_gate::publish_physical_snapshot(gated_snap);
+    const float throttle = lambo::input_gate::guest_input_suppressed()
+        ? 0.0f : physical_throttle;
+    lambo::analog_throttle::publish(0, analog_mode, throttle);
 }
 
 static void input_poll_stub() {}
@@ -792,6 +808,18 @@ int main(int argc, char** argv) {
             }
         }
     }
+    if (const char* analog = std::getenv("LAMBO_ANALOG_THROTTLE")) {
+        char* end = nullptr;
+        const float parsed = std::strtof(analog, &end);
+        if (end != analog && end != nullptr && *end == '\0' && std::isfinite(parsed)) {
+            g_held_throttle = std::clamp(parsed, 0.0f, 1.0f);
+            // Headless mode has no SDL event pump, so publish the deterministic
+            // harness value here as well as from input_sample's normal main-thread path.
+            lambo::analog_throttle::publish(0, true, g_held_throttle);
+            LAMBO_LOG("probe", "analog throttle override: %.3f\n", g_held_throttle);
+        }
+    }
+    lambo::analog_throttle::set_probe(std::getenv("LAMBO_ANALOG_THROTTLE_PROBE") != nullptr);
     if (const char* pu = std::getenv("LAMBO_INPUT_PULSE")) {
         // BTNHEX:PERIOD:DUTY[:STARTVI[:COUNT]], VI units. e.g. 1000:150:4:300 taps START for 4 VIs
         // every 150 VIs starting at VI 300 -- enough edges to walk the whole menu chain headless.

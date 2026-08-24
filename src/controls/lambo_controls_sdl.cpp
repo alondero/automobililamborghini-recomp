@@ -92,8 +92,9 @@ struct SdlAdapter::Impl {
     bool saved{};
     std::string status;
     bool rumble_on{};
-
+    ThrottleMode disconnected_throttle_mode{ThrottleMode::Digital};
     Profile fallback_profile{default_profile()};
+
     Device* selected_device() {
         if (!selected) return nullptr;
         auto found = std::find_if(devices.begin(), devices.end(),
@@ -169,7 +170,14 @@ struct SdlAdapter::Impl {
                 }
             }
         }
-        duplicate = duplicate || snapshot.profile.analog[0].axis == snapshot.profile.analog[1].axis;
+        duplicate = duplicate || (snapshot.profile.analog[0] && snapshot.profile.analog[1] &&
+            snapshot.profile.analog[0]->axis == snapshot.profile.analog[1]->axis);
+        if (snapshot.profile.throttle.source) {
+            duplicate = duplicate || std::any_of(snapshot.profile.analog.begin(),
+                snapshot.profile.analog.end(), [&](const std::optional<AnalogSource>& analog) {
+                    return analog && snapshot.profile.throttle.source->axis == analog->axis;
+                });
+        }
         if (duplicate) snapshot.warnings.emplace_back(
             "One or more controller sources are intentionally assigned to multiple N64 targets.");
         for (const auto& device : devices) {
@@ -233,7 +241,12 @@ void SdlAdapter::device_removed(std::int32_t instance) {
         [&](const Impl::Device& device) { return device.instance == instance; });
     if (found == impl_->devices.end()) return;
     const bool was_selected = impl_->selected && *impl_->selected == instance;
-    if (was_selected) { impl_->stop_rumble(); impl_->capture.cancel(); impl_->selected.reset(); }
+    if (was_selected) {
+        impl_->disconnected_throttle_mode = impl_->selected_profile().throttle.mode;
+        impl_->stop_rumble();
+        impl_->capture.cancel();
+        impl_->selected.reset();
+    }
     SDL_GameControllerClose(found->handle);
     impl_->devices.erase(found);
     if (was_selected && !impl_->devices.empty()) impl_->choose(impl_->devices.front().instance, false);
@@ -307,23 +320,56 @@ void SdlAdapter::process_commands() {
                     }
                 } break;
             case CommandKind::Deadzone:
-                if (target >= digital_target_count && target < static_cast<std::size_t>(Target::Count)) {
-                    profile.analog[target - digital_target_count].deadzone =
+                if (command.target == Target::Throttle) {
+                    profile.throttle.deadzone = std::clamp(command.value / 1000.0f, 0.0f, 0.5f);
+                    profile.throttle.saturation = std::max(
+                        profile.throttle.saturation, profile.throttle.deadzone);
+                    changed = true;
+                } else if (target >= digital_target_count && target < digital_target_count + analog_target_count) {
+                    if (!profile.analog[target - digital_target_count]) break;
+                    profile.analog[target - digital_target_count]->deadzone =
                         static_cast<std::int16_t>(std::clamp(command.value, 0, 32767)); changed = true;
                 } break;
             case CommandKind::Invert:
-                if (target >= digital_target_count && target < static_cast<std::size_t>(Target::Count)) {
-                    auto& source = profile.analog[target - digital_target_count]; source.invert = !source.invert; changed = true;
+                if (command.target == Target::Throttle && profile.throttle.source) {
+                    profile.throttle.source->direction =
+                        profile.throttle.source->direction == AxisDirection::Positive
+                            ? AxisDirection::Negative : AxisDirection::Positive;
+                    changed = true;
+                } else if (target >= digital_target_count && target < digital_target_count + analog_target_count) {
+                    auto& source = profile.analog[target - digital_target_count];
+                    if (source) { source->invert = !source->invert; changed = true; }
+                } break;
+            case CommandKind::Saturation:
+                if (command.target == Target::Throttle) {
+                    profile.throttle.saturation = std::clamp(
+                        command.value / 1000.0f, profile.throttle.deadzone, 1.0f);
+                    changed = true;
+                } break;
+            case CommandKind::ThrottleMode:
+                if (command.target == Target::Throttle) {
+                    profile.throttle.mode = command.value != 0
+                        ? ThrottleMode::Analog : ThrottleMode::Digital;
+                    changed = true;
+                } break;
+            case CommandKind::ClearThrottleSource:
+                if (command.target == Target::Throttle && profile.throttle.source) {
+                    profile.throttle.source.reset();
+                    changed = true;
                 } break;
             case CommandKind::ResetTarget: {
                 const Profile defaults = default_profile();
                 if (target < digital_target_count) profile.digital[target] = defaults.digital[target];
-                else if (target < static_cast<std::size_t>(Target::Count)) profile.analog[target - digital_target_count] = defaults.analog[target - digital_target_count];
+                else if (command.target == Target::Throttle) profile.throttle = defaults.throttle;
+                else if (target < digital_target_count + analog_target_count)
+                    profile.analog[target - digital_target_count] = defaults.analog[target - digital_target_count];
                 changed = true; break;
             }
             case CommandKind::ResetProfile: profile = default_profile(); changed = true; break;
             case CommandKind::ConflictAccept:
                 changed = impl_->capture.accept_conflict(profile) == CaptureResult::Committed; break;
+            case CommandKind::ConflictMove:
+                changed = impl_->capture.move_conflict(profile) == CaptureResult::Committed; break;
             case CommandKind::Select: case CommandKind::CaptureCancel: break;
         }
         if (changed) impl_->mutation_finished();
@@ -333,7 +379,8 @@ void SdlAdapter::process_commands() {
 
 EvaluatedState SdlAdapter::sample() {
     impl_->raw = {};
-    if (Impl::Device* device = impl_->selected_device(); device &&
+    Impl::Device* device = impl_->selected_device();
+    if (device &&
         SDL_GameControllerGetAttached(device->handle)) {
         for (int button = 0; button < SDL_CONTROLLER_BUTTON_MAX; ++button) {
             if (const auto logical = logical_button(static_cast<std::uint8_t>(button))) {
@@ -353,8 +400,15 @@ EvaluatedState SdlAdapter::sample() {
         else if (result == CaptureResult::Noop || result == CaptureResult::Conflict) ++impl_->config_revision;
         else if (impl_->capture.phase() != before) ++impl_->config_revision;
         impl_->evaluated = evaluate(impl_->selected_profile(), impl_->raw);
+        impl_->disconnected_throttle_mode = impl_->evaluated.throttle_mode;
     } else {
         impl_->evaluated = {};
+        if (device) {
+            impl_->disconnected_throttle_mode = impl_->selected_profile().throttle.mode;
+        }
+        // Preserve the selected profile's mode while publishing a neutral sample.
+        // Analog disconnect must write 0 now, rather than re-enable the ROM's ramp-down.
+        impl_->evaluated.throttle_mode = impl_->disconnected_throttle_mode;
     }
     ++impl_->sample_revision;
     if (impl_->capture.phase() != CapturePhase::Idle ||
@@ -379,7 +433,6 @@ bool SdlAdapter::selected_back_pressed(const SDL_Event& event) const {
     }
     const auto btn = event.cbutton.button;
     return btn == SDL_CONTROLLER_BUTTON_BACK ||
-           btn == SDL_CONTROLLER_BUTTON_START ||
            btn == SDL_CONTROLLER_BUTTON_GUIDE;
 }
 

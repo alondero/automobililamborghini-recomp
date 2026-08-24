@@ -32,15 +32,15 @@ std::deque<Command> command_queue;
 std::mutex snapshot_mutex;
 UiSnapshot published_snapshot;
 
-constexpr std::array<std::string_view, 16> target_names{
+constexpr std::array<std::string_view, 17> target_names{
     "a", "b", "z", "start", "l", "r", "dpad_up", "dpad_down",
     "dpad_left", "dpad_right", "c_up", "c_down", "c_left", "c_right",
-    "stick_x", "stick_y",
+    "stick_x", "stick_y", "throttle",
 };
-constexpr std::array<std::string_view, 16> target_labels{
+constexpr std::array<std::string_view, 17> target_labels{
     "A", "B", "Z", "Start", "L", "R", "D-pad Up", "D-pad Down",
     "D-pad Left", "D-pad Right", "C Up", "C Down", "C Left", "C Right",
-    "N64 Stick X", "N64 Stick Y",
+    "N64 Stick X", "N64 Stick Y", "Throttle",
 };
 constexpr std::array<std::string_view, 15> button_names{
     "a", "b", "x", "y", "back", "guide", "start", "left_stick", "right_stick",
@@ -64,9 +64,6 @@ std::optional<Enum> enum_from_name(std::string_view name,
 }
 
 std::size_t digital_index(Target target) { return static_cast<std::size_t>(target); }
-std::size_t analog_index(Target target) {
-    return static_cast<std::size_t>(target) - digital_target_count;
-}
 
 bool active(const DigitalSource& source, const RawState& state) {
     if (const auto* button = std::get_if<ButtonSource>(&source)) {
@@ -155,6 +152,46 @@ std::optional<AnalogSource> parse_analog(const json& value) {
     return AnalogSource{*axis, invert_field->get<bool>(), static_cast<std::int16_t>(deadzone)};
 }
 
+std::optional<ThrottleConfig> parse_throttle(const json& value) {
+    if (!value.is_object()) return std::nullopt;
+    const auto mode_field = value.find("mode");
+    const auto source_field = value.find("source");
+    const auto deadzone_field = value.find("deadzone");
+    const auto saturation_field = value.find("saturation");
+    if (mode_field == value.end() || !mode_field->is_string() ||
+        source_field == value.end() ||
+        deadzone_field == value.end() || !deadzone_field->is_number() ||
+        saturation_field == value.end() || !saturation_field->is_number()) return std::nullopt;
+
+    ThrottleConfig result{};
+    const std::string mode = mode_field->get<std::string>();
+    if (mode == "digital") result.mode = ThrottleMode::Digital;
+    else if (mode == "analog") result.mode = ThrottleMode::Analog;
+    else return std::nullopt;
+    try {
+        result.deadzone = deadzone_field->get<float>();
+        result.saturation = saturation_field->get<float>();
+    } catch (const json::exception&) {
+        return std::nullopt;
+    }
+    if (!std::isfinite(result.deadzone) || !std::isfinite(result.saturation) ||
+        result.deadzone < 0.0f || result.deadzone > 0.5f ||
+        result.saturation < result.deadzone || result.saturation > 1.0f) return std::nullopt;
+
+    if (source_field->is_null()) return result;
+    if (!source_field->is_object()) return std::nullopt;
+    const auto axis_field = source_field->find("axis");
+    const auto direction_field = source_field->find("direction");
+    if (axis_field == source_field->end() || !axis_field->is_string() ||
+        direction_field == source_field->end() || !direction_field->is_string()) return std::nullopt;
+    const auto axis = axis_from_name(axis_field->get<std::string>());
+    const std::string direction = direction_field->get<std::string>();
+    if (!axis || (direction != "positive" && direction != "negative")) return std::nullopt;
+    result.source = ThrottleSource{
+        *axis, direction == "positive" ? AxisDirection::Positive : AxisDirection::Negative};
+    return result;
+}
+
 void merge_profile(json& destination, const Profile& profile) {
     if (!destination.is_object()) destination = json::object();
     json& digital = destination["digital"];
@@ -186,11 +223,30 @@ void merge_profile(json& destination, const Profile& profile) {
     for (std::size_t i = 0; i < analog_target_count; ++i) {
         const auto& source = profile.analog[i];
         const std::string name(target_names[digital_target_count + i]);
+        if (!source) {
+            analog[name] = nullptr;
+            continue;
+        }
         json binding = analog.contains(name) && analog[name].is_object() ? analog[name] : json::object();
-        binding["axis"] = axis_name(source.axis);
-        binding["invert"] = source.invert;
-        binding["deadzone"] = source.deadzone;
+        binding["axis"] = axis_name(source->axis);
+        binding["invert"] = source->invert;
+        binding["deadzone"] = source->deadzone;
         analog[name] = std::move(binding);
+    }
+    json& throttle = destination["throttle"];
+    if (!throttle.is_object()) throttle = json::object();
+    throttle["mode"] = profile.throttle.mode == ThrottleMode::Analog ? "analog" : "digital";
+    throttle["deadzone"] = profile.throttle.deadzone;
+    throttle["saturation"] = profile.throttle.saturation;
+    if (profile.throttle.source) {
+        json source = throttle.contains("source") && throttle["source"].is_object()
+            ? throttle["source"] : json::object();
+        source["axis"] = axis_name(profile.throttle.source->axis);
+        source["direction"] = profile.throttle.source->direction == AxisDirection::Positive
+            ? "positive" : "negative";
+        throttle["source"] = std::move(source);
+    } else {
+        throttle["source"] = nullptr;
     }
 }
 
@@ -238,9 +294,29 @@ Profile default_profile() {
     button(Target::CLeft, LogicalButton::X);
     half(Target::CLeft, LogicalAxis::RightX, AxisDirection::Negative, 12000);
     half(Target::CRight, LogicalAxis::RightX, AxisDirection::Positive, 12000);
-    profile.analog[0] = {LogicalAxis::LeftX, false, 8000};
-    profile.analog[1] = {LogicalAxis::LeftY, true, 8000};
+    profile.analog[0] = AnalogSource{LogicalAxis::LeftX, false, 8000};
+    profile.analog[1] = AnalogSource{LogicalAxis::LeftY, true, 8000};
+    profile.throttle = {ThrottleMode::Digital, std::nullopt, 0.05f, 1.0f};
     return profile;
+}
+
+float throttle_source_magnitude(const ThrottleConfig& throttle, const RawState& state) {
+    if (!throttle.source) return 0.0f;
+    const std::int16_t raw = state.axes[static_cast<std::size_t>(throttle.source->axis)];
+    return throttle.source->direction == AxisDirection::Positive
+        ? std::max(0.0f, static_cast<float>(raw) / 32767.0f)
+        : std::max(0.0f, -static_cast<float>(raw) / 32768.0f);
+}
+
+float evaluate_throttle_source(const ThrottleConfig& throttle, const RawState& state) {
+    const float magnitude = throttle_source_magnitude(throttle, state);
+    // Neutral remains neutral even for the valid zero-width shape dz=saturation=0.
+    // Otherwise saturation owns its endpoint; equal positive dz/saturation is a step.
+    if (magnitude <= 0.0f) return 0.0f;
+    if (magnitude >= throttle.saturation) return 1.0f;
+    if (magnitude <= throttle.deadzone) return 0.0f;
+    const float span = throttle.saturation - throttle.deadzone;
+    return span > 0.0f ? (magnitude - throttle.deadzone) / span : 1.0f;
 }
 
 EvaluatedState evaluate(const Profile& profile, const RawState& state) {
@@ -251,8 +327,15 @@ EvaluatedState evaluate(const Profile& profile, const RawState& state) {
             result.buttons |= n64_bits[target];
         }
     }
-    result.stick_x = evaluate_axis(profile.analog[0], state);
-    result.stick_y = evaluate_axis(profile.analog[1], state);
+    result.stick_x = profile.analog[0] ? evaluate_axis(*profile.analog[0], state) : 0;
+    result.stick_y = profile.analog[1] ? evaluate_axis(*profile.analog[1], state) : 0;
+    result.throttle_mode = profile.throttle.mode;
+    if (profile.throttle.mode == ThrottleMode::Analog) {
+        result.throttle = evaluate_throttle_source(profile.throttle, state);
+        if ((result.buttons & 0xA000u) != 0) result.throttle = 1.0f;
+    } else {
+        result.throttle = (result.buttons & 0xA000u) != 0 ? 1.0f : 0.0f;
+    }
     return result;
 }
 
@@ -359,10 +442,15 @@ LoadResult load_config(const std::filesystem::path& path) {
             for (std::size_t target = 0; target < analog_target_count; ++target) {
                 const auto binding = analog->find(std::string(target_names[digital_target_count + target]));
                 if (binding == analog->end()) continue;
-                if (const auto parsed = parse_analog(*binding)) profile.analog[target] = *parsed;
+                if (binding->is_null()) profile.analog[target].reset();
+                else if (const auto parsed = parse_analog(*binding)) profile.analog[target] = *parsed;
                 else result.warnings.emplace_back("invalid analog target " +
                                                   std::string(target_names[digital_target_count + target]));
             }
+        }
+        if (const auto throttle = value.find("throttle"); throttle != value.end()) {
+            if (const auto parsed = parse_throttle(*throttle)) profile.throttle = *parsed;
+            else result.warnings.emplace_back("invalid throttle configuration");
         }
         for (std::size_t target = 0; target < digital_target_count; ++target) {
             for (const auto& source : profile.digital[target]) {
@@ -372,8 +460,15 @@ LoadResult load_config(const std::filesystem::path& path) {
                 }
             }
         }
-        if (profile.analog[0].axis == profile.analog[1].axis) {
+        if (profile.analog[0] && profile.analog[1] &&
+            profile.analog[0]->axis == profile.analog[1]->axis) {
             result.warnings.emplace_back("analog axis is shared by stick_x and stick_y");
+        }
+        if (profile.throttle.source && std::any_of(profile.analog.begin(), profile.analog.end(),
+            [&](const std::optional<AnalogSource>& analog) {
+                return analog && profile.throttle.source->axis == analog->axis;
+            })) {
+            result.warnings.emplace_back("throttle axis is also used by an N64 stick target");
         }
         result.config.profiles[*guid] = std::move(profile);
     }
@@ -440,8 +535,10 @@ bool has_cross_target_duplicate(const Profile& profile, Target target,
                                 const DigitalSource& source) {
     for (std::size_t index = 0; index < digital_target_count; ++index) {
         if (index == digital_index(target)) continue;
-        if (std::find(profile.digital[index].begin(), profile.digital[index].end(), source) !=
-            profile.digital[index].end()) return true;
+        if (std::any_of(profile.digital[index].begin(), profile.digital[index].end(),
+            [&](const DigitalSource& binding) { return same_source_identity(binding, source); })) {
+            return true;
+        }
     }
     return false;
 }
@@ -486,6 +583,9 @@ CaptureResult Capture::axis_event(std::int32_t controller_instance,
             ? 8000 : 12000;
         candidate_ = DigitalSource{AxisHalfSource{
             axis, value > 0 ? AxisDirection::Positive : AxisDirection::Negative, threshold}};
+    } else if (*target_ == Target::Throttle) {
+        candidate_ = ThrottleSource{
+            axis, value > 0 ? AxisDirection::Positive : AxisDirection::Negative};
     } else {
         candidate_ = AnalogSource{axis, *target_ == Target::StickY, 8000};
     }
@@ -524,7 +624,8 @@ CaptureResult Capture::finish_candidate(Profile& profile) {
     if (index < digital_target_count) {
         const auto& source = std::get<DigitalSource>(*candidate_);
         const auto& target_bindings = profile.digital[index];
-        if (std::find(target_bindings.begin(), target_bindings.end(), source) != target_bindings.end()) {
+        if (std::any_of(target_bindings.begin(), target_bindings.end(),
+            [&](const DigitalSource& binding) { return same_source_identity(binding, source); })) {
             reset();
             return CaptureResult::Noop;
         }
@@ -532,18 +633,69 @@ CaptureResult Capture::finish_candidate(Profile& profile) {
             phase_ = CapturePhase::Conflict;
             return CaptureResult::Conflict;
         }
+        if (const auto* half = std::get_if<AxisHalfSource>(&source)) {
+            const bool throttle_conflict = profile.throttle.source &&
+                profile.throttle.source->axis == half->axis &&
+                profile.throttle.source->direction == half->direction;
+            const bool analog_conflict = std::any_of(profile.analog.begin(), profile.analog.end(),
+                [&](const std::optional<AnalogSource>& analog) {
+                    return analog && analog->axis == half->axis;
+                });
+            if (throttle_conflict || analog_conflict) {
+                phase_ = CapturePhase::Conflict;
+                return CaptureResult::Conflict;
+            }
+        }
+    } else if (*target_ == Target::Throttle) {
+        const auto& source = std::get<ThrottleSource>(*candidate_);
+        if (profile.throttle.source == source) {
+            reset();
+            return CaptureResult::Noop;
+        }
+        bool conflict = std::any_of(profile.analog.begin(), profile.analog.end(),
+            [&](const std::optional<AnalogSource>& analog) {
+                return analog && analog->axis == source.axis;
+            });
+        for (std::size_t target = 0; target < digital_target_count && !conflict; ++target) {
+            for (const auto& binding : profile.digital[target]) {
+                if (const auto* half = std::get_if<AxisHalfSource>(&binding);
+                    half && half->axis == source.axis && half->direction == source.direction) {
+                    conflict = true;
+                    break;
+                }
+            }
+        }
+        if (conflict) {
+            phase_ = CapturePhase::Conflict;
+            return CaptureResult::Conflict;
+        }
     } else {
         const auto& source = std::get<AnalogSource>(*candidate_);
         const std::size_t analog = index - digital_target_count;
-        if (profile.analog[analog] == source) {
+        if (profile.analog[analog] && *profile.analog[analog] == source) {
             reset();
             return CaptureResult::Noop;
         }
         for (std::size_t other = 0; other < analog_target_count; ++other) {
-            if (other != analog && profile.analog[other].axis == source.axis) {
+            if (other != analog && profile.analog[other] &&
+                profile.analog[other]->axis == source.axis) {
                 phase_ = CapturePhase::Conflict;
                 return CaptureResult::Conflict;
             }
+        }
+        const bool throttle_conflict = profile.throttle.source &&
+            profile.throttle.source->axis == source.axis;
+        bool digital_conflict = false;
+        for (const auto& bindings : profile.digital) {
+            digital_conflict = digital_conflict || std::any_of(bindings.begin(), bindings.end(),
+                [&](const DigitalSource& binding) {
+                    const auto* half = std::get_if<AxisHalfSource>(&binding);
+                    return half && half->axis == source.axis;
+                });
+        }
+        if (throttle_conflict || digital_conflict) {
+            phase_ = CapturePhase::Conflict;
+            return CaptureResult::Conflict;
         }
     }
     return commit(profile);
@@ -553,6 +705,8 @@ CaptureResult Capture::commit(Profile& profile) {
     const std::size_t index = static_cast<std::size_t>(*target_);
     if (index < digital_target_count) {
         profile.digital[index].push_back(std::get<DigitalSource>(*candidate_));
+    } else if (*target_ == Target::Throttle) {
+        profile.throttle.source = std::get<ThrottleSource>(*candidate_);
     } else {
         profile.analog[index - digital_target_count] = std::get<AnalogSource>(*candidate_);
     }
@@ -562,6 +716,59 @@ CaptureResult Capture::commit(Profile& profile) {
 
 CaptureResult Capture::accept_conflict(Profile& profile) {
     if (phase_ != CapturePhase::Conflict || !candidate_ || !target_) return CaptureResult::None;
+    return commit(profile);
+}
+
+CaptureResult Capture::move_conflict(Profile& profile) {
+    if (phase_ != CapturePhase::Conflict || !candidate_ || !target_) return CaptureResult::None;
+
+    const std::size_t target_index = static_cast<std::size_t>(*target_);
+    if (*target_ == Target::Throttle) {
+        const auto& source = std::get<ThrottleSource>(*candidate_);
+        for (auto& bindings : profile.digital) {
+            std::erase_if(bindings, [&](const DigitalSource& binding) {
+                const auto* half = std::get_if<AxisHalfSource>(&binding);
+                return half && half->axis == source.axis && half->direction == source.direction;
+            });
+        }
+        for (auto& analog : profile.analog) {
+            if (analog && analog->axis == source.axis) analog.reset();
+        }
+    } else if (target_index < digital_target_count) {
+        const auto& source = std::get<DigitalSource>(*candidate_);
+        for (std::size_t index = 0; index < digital_target_count; ++index) {
+            if (index == target_index) continue;
+            std::erase_if(profile.digital[index], [&](const DigitalSource& binding) {
+                return same_source_identity(binding, source);
+            });
+        }
+        if (const auto* half = std::get_if<AxisHalfSource>(&source)) {
+            if (profile.throttle.source && profile.throttle.source->axis == half->axis &&
+                profile.throttle.source->direction == half->direction) {
+                profile.throttle.source.reset();
+            }
+            for (auto& analog : profile.analog) {
+                if (analog && analog->axis == half->axis) analog.reset();
+            }
+        }
+    } else {
+        const auto& source = std::get<AnalogSource>(*candidate_);
+        for (std::size_t index = 0; index < analog_target_count; ++index) {
+            if (index != target_index - digital_target_count && profile.analog[index] &&
+                profile.analog[index]->axis == source.axis) {
+                profile.analog[index].reset();
+            }
+        }
+        for (auto& bindings : profile.digital) {
+            std::erase_if(bindings, [&](const DigitalSource& binding) {
+                const auto* half = std::get_if<AxisHalfSource>(&binding);
+                return half && half->axis == source.axis;
+            });
+        }
+        if (profile.throttle.source && profile.throttle.source->axis == source.axis) {
+            profile.throttle.source.reset();
+        }
+    }
     return commit(profile);
 }
 

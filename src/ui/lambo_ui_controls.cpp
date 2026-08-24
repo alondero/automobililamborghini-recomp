@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <cstdio>
 #include <sstream>
 #include <vector>
@@ -105,7 +106,8 @@ constexpr std::array<TargetMeta, 2> stick_targets{{
     {Target::StickY, "n64-badge-stick", "Y", "N64 Stick Y"},
 }};
 
-static_assert(buttons_targets.size() + cbuttons_targets.size() + dpad_targets.size() + stick_targets.size() ==
+// Target::Throttle is rendered by the dedicated DRIVING column below, not a mapper row.
+static_assert(buttons_targets.size() + cbuttons_targets.size() + dpad_targets.size() + stick_targets.size() + 1 ==
               static_cast<std::size_t>(Target::Count));
 
 void render_mapper_row(std::ostringstream& out, const TargetMeta& meta,
@@ -132,8 +134,10 @@ void render_mapper_row(std::ostringstream& out, const TargetMeta& meta,
     } else {
         const auto& source = snapshot.profile.analog[index - digital_target_count];
         out << "<button" << disabled << " class=\"mapper-slot-btn\" onclick=\"control:add:" << tname << "\">"
-            << "<span class=\"mapper-slot-val\">Axis " << axis_name(source.axis) << "</span>"
-            << "</button>";
+            << "<span class=\"mapper-slot-val\">";
+        if (source) out << "Axis " << axis_name(source->axis);
+        else out << "<span class=\"slot-empty\">None (Click)</span>";
+        out << "</span></button>";
     }
     out << "</div>";
 }
@@ -156,6 +160,9 @@ std::optional<Command> control_action_from_name(std::string_view action) {
     if (fields[0] == "conflict-accept" && fields.size() == 1) {
         command.kind = CommandKind::ConflictAccept; return command;
     }
+    if (fields[0] == "conflict-move" && fields.size() == 1) {
+        command.kind = CommandKind::ConflictMove; return command;
+    }
     if (fields[0] == "capture-cancel" && fields.size() == 1) {
         command.kind = CommandKind::CaptureCancel; return command;
     }
@@ -166,8 +173,16 @@ std::optional<Command> control_action_from_name(std::string_view action) {
     if (fields[0] == "add" && fields.size() == 2) command.kind = CommandKind::Add;
     else if (fields[0] == "reset-target" && fields.size() == 2) command.kind = CommandKind::ResetTarget;
     else if (fields[0] == "invert" && fields.size() == 2 &&
-             (*target == Target::StickX || *target == Target::StickY)) command.kind = CommandKind::Invert;
-    else if (fields[0] == "remove" && fields.size() == 3) {
+             (*target == Target::StickX || *target == Target::StickY ||
+              *target == Target::Throttle)) command.kind = CommandKind::Invert;
+    else if (fields[0] == "mode" && fields.size() == 3 && *target == Target::Throttle) {
+        const auto value = number<int>(fields[2]);
+        if (!value || (*value != 0 && *value != 1)) return std::nullopt;
+        command.kind = CommandKind::ThrottleMode; command.value = *value;
+    } else if (fields[0] == "clear-source" && fields.size() == 2 &&
+               *target == Target::Throttle) {
+        command.kind = CommandKind::ClearThrottleSource;
+    } else if (fields[0] == "remove" && fields.size() == 3) {
         if (static_cast<std::size_t>(*target) >= digital_target_count) return std::nullopt;
         const auto index = number<std::size_t>(fields[2]); if (!index) return std::nullopt;
         command.kind = CommandKind::Remove; command.binding_index = *index;
@@ -177,10 +192,17 @@ std::optional<Command> control_action_from_name(std::string_view action) {
         if (!index || !value || *value < 0 || *value > 32767) return std::nullopt;
         command.kind = CommandKind::Threshold; command.binding_index = *index; command.value = *value;
     } else if (fields[0] == "deadzone" && fields.size() == 3 &&
-               (*target == Target::StickX || *target == Target::StickY)) {
+               (*target == Target::StickX || *target == Target::StickY ||
+                *target == Target::Throttle)) {
         const auto value = number<int>(fields[2]);
-        if (!value || *value < 0 || *value > 32767) return std::nullopt;
+        const int maximum = *target == Target::Throttle ? 500 : 32767;
+        if (!value || *value < 0 || *value > maximum) return std::nullopt;
         command.kind = CommandKind::Deadzone; command.value = *value;
+    } else if (fields[0] == "saturation" && fields.size() == 3 &&
+               *target == Target::Throttle) {
+        const auto value = number<int>(fields[2]);
+        if (!value || *value < 0 || *value > 1000) return std::nullopt;
+        command.kind = CommandKind::Saturation; command.value = *value;
     } else return std::nullopt;
     return command;
 }
@@ -251,6 +273,122 @@ ControlsView controls_view(const UiSnapshot& snapshot) {
     }
     bindings << "</div>";
 
+    // Column 5: DRIVING (issue #128 analog throttle)
+    const auto& throttle = snapshot.profile.throttle;
+    const int deadzone = std::clamp(static_cast<int>(std::lround(throttle.deadzone * 1000.0f)), 0, 500);
+    const int saturation = std::clamp(static_cast<int>(std::lround(throttle.saturation * 1000.0f)), deadzone, 1000);
+    bindings << "<div class=\"column mapper-section driving-section\">"
+             << "<span class=\"mapper-section-title\">DRIVING</span>";
+
+    // Row 1: Mode (Digital vs Analog)
+    bindings << "<div class=\"mapper-row\">"
+             << "<div class=\"mapper-label-col\">"
+             << "<span class=\"n64-badge n64-badge-mode\">MODE</span>"
+             << "<span class=\"mapper-target-name\">Throttle</span>"
+             << "</div>"
+             << "<div class=\"segmented-control\">"
+             << "<button" << disabled << " class=\"segment-btn"
+             << (throttle.mode == ThrottleMode::Digital ? " active" : "")
+             << "\" onclick=\"control:mode:throttle:0\">Digital</button>"
+             << "<button" << disabled << " class=\"segment-btn"
+             << (throttle.mode == ThrottleMode::Analog ? " active" : "")
+             << "\" onclick=\"control:mode:throttle:1\">Analog</button>"
+             << "</div>"
+             << "</div>";
+
+    // Row 2: Throttle Axis Slot
+    bindings << "<div class=\"mapper-row\">"
+             << "<div class=\"mapper-label-col\">"
+             << "<span class=\"n64-badge n64-badge-throttle\">GAS</span>"
+             << "<span class=\"mapper-target-name\">Pedal Axis</span>"
+             << "</div>"
+             << "<button" << disabled << " class=\"mapper-slot-btn\" onclick=\"control:add:throttle\">";
+    if (throttle.source) {
+        bindings << "<span class=\"mapper-slot-val\">Axis " << axis_name(throttle.source->axis)
+                 << (throttle.source->direction == AxisDirection::Positive ? " +" : " -")
+                 << "</span>";
+    } else {
+        bindings << "<span class=\"mapper-slot-val slot-empty\">None (Click)</span>";
+    }
+    bindings << "</button></div>";
+
+    // Row 3: Direction & Clear (when assigned)
+    if (throttle.source) {
+        bindings << "<div class=\"mapper-row\">"
+                 << "<div class=\"mapper-label-col\">"
+                 << "<span class=\"mapper-sub-label\">Direction</span>"
+                 << "</div>"
+                 << "<div class=\"driving-inline-actions\">"
+                 << "<button" << disabled << " class=\"mapper-slot-btn\" onclick=\"control:invert:throttle\">"
+                 << "<span class=\"mapper-slot-val\">"
+                 << (throttle.source->direction == AxisDirection::Positive ? "Normal (+)" : "Inverted (-)")
+                 << "</span></button>"
+                 << "<button" << disabled << " class=\"btn-unassign\" onclick=\"control:clear-source:throttle\">Clear</button>"
+                 << "</div>"
+                 << "</div>";
+    }
+
+    // Row 4: Deadzone Stepper
+    char dz_str[16];
+    std::snprintf(dz_str, sizeof(dz_str), "%.1f%%", deadzone / 10.0f);
+    bindings << "<div class=\"mapper-row\">"
+             << "<div class=\"mapper-label-col\">"
+             << "<span class=\"mapper-sub-label\">Deadzone</span>"
+             << "</div>"
+             << "<div class=\"stepper-control\">"
+             << "<button" << disabled << " class=\"stepper-btn\" onclick=\"control:deadzone:throttle:"
+             << std::max(0, deadzone - 10) << "\">-</button>"
+             << "<span class=\"stepper-value\">" << dz_str << "</span>"
+             << "<button" << disabled << " class=\"stepper-btn\" onclick=\"control:deadzone:throttle:"
+             << std::min(500, deadzone + 10) << "\">+</button>"
+             << "</div>"
+             << "</div>";
+
+    // Row 5: Saturation Stepper
+    char sat_str[16];
+    std::snprintf(sat_str, sizeof(sat_str), "%.1f%%", saturation / 10.0f);
+    bindings << "<div class=\"mapper-row\">"
+             << "<div class=\"mapper-label-col\">"
+             << "<span class=\"mapper-sub-label\">Saturation</span>"
+             << "</div>"
+             << "<div class=\"stepper-control\">"
+             << "<button" << disabled << " class=\"stepper-btn\" onclick=\"control:saturation:throttle:"
+             << std::max(deadzone, saturation - 10) << "\">-</button>"
+             << "<span class=\"stepper-value\">" << sat_str << "</span>"
+             << "<button" << disabled << " class=\"stepper-btn\" onclick=\"control:saturation:throttle:"
+             << std::min(1000, saturation + 10) << "\">+</button>"
+             << "</div>"
+             << "</div>";
+
+    const int raw_throttle = std::clamp(static_cast<int>(std::lround(
+        throttle_source_magnitude(snapshot.profile.throttle, snapshot.raw) * 100.0f)), 0, 100);
+    const int effective_throttle = std::clamp(static_cast<int>(std::lround(
+        snapshot.evaluated.throttle * 100.0f)), 0, 100);
+    view.throttle_preview =
+        "<div class=\"driving-meter-box\">"
+        "<div class=\"meter-row\"><span class=\"meter-label\">Raw</span>"
+        "<div class=\"throttle-meter\"><div class=\"throttle-meter-fill raw-fill\" style=\"width: " +
+        std::to_string(raw_throttle) + "%;\"></div></div>"
+        "<span class=\"meter-value\">" + std::to_string(raw_throttle) + "%</span></div>"
+        "<div class=\"meter-row\"><span class=\"meter-label\">Effective</span>"
+        "<div class=\"throttle-meter\"><div class=\"throttle-meter-fill effective-fill\" style=\"width: " +
+        std::to_string(effective_throttle) + "%;\"></div></div>"
+        "<span class=\"meter-value\">" + std::to_string(effective_throttle) + "%</span></div>"
+        "</div>";
+
+    // Row 6: Live Meter Container (updated dynamically on sample)
+    bindings << "<div id=\"controls-throttle-preview\" class=\"throttle-preview\">"
+             << view.throttle_preview
+             << "</div>";
+
+    // Row 7: Reset Throttle
+    bindings << "<button" << disabled << " class=\"btn-reset-throttle secondary\" onclick=\"control:reset-target:throttle\">Reset Throttle</button>";
+
+    // Row 8: Fallback Guidance Hint
+    bindings << "<p class=\"driving-hint\">A and keyboard X always provide full throttle fallback.</p>";
+
+    bindings << "</div>"; // mapper-section
+
     bindings << "</div>";
     view.bindings = bindings.str();
 
@@ -266,7 +404,8 @@ ControlsView controls_view(const UiSnapshot& snapshot) {
     if (!any_button) raw << "none";
     raw << " | Axes: ";
     for (std::size_t i = 0; i < static_cast<std::size_t>(LogicalAxis::Count); ++i) {
-        if (i) raw << " | "; raw << axis_name(static_cast<LogicalAxis>(i)) << '=' << snapshot.raw.axes[i];
+        if (i) raw << " | ";
+        raw << axis_name(static_cast<LogicalAxis>(i)) << '=' << snapshot.raw.axes[i];
     }
     view.raw_preview = raw.str();
     view.evaluated_preview = "Buttons 0x";

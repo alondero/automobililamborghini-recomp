@@ -23,7 +23,7 @@ int main() {
     RawState raw{};
 
     capture.begin(Target::A, selected);
-    capture.button_event(selected, LogicalButton::A, true); // activation event
+    capture.button_event(selected, LogicalButton::A, true); // The press that opened capture cannot bind itself.
     expect(capture.phase() == CapturePhase::WaitingForNeutral,
            "activation event cannot self-bind");
     raw.buttons[static_cast<std::size_t>(LogicalButton::A)] = true;
@@ -72,8 +72,10 @@ int main() {
     capture.sample(raw, profile);
     raw = {};
     capture.sample(raw, profile);
-    expect(capture.sample(raw, profile) == CaptureResult::Committed,
-           "negative signed half commits after release");
+    expect(capture.sample(raw, profile) == CaptureResult::Conflict,
+           "digital half-axis conflicts with a full stick binding on the same axis");
+    expect(capture.accept_conflict(profile) == CaptureResult::Committed,
+           "keep-both confirmation commits the negative signed half");
     expect(std::get<AxisHalfSource>(profile.digital[2].back()).direction == AxisDirection::Negative,
            "captured negative half retains its direction");
 
@@ -89,10 +91,61 @@ int main() {
     capture.sample(raw, profile);
     raw = {};
     capture.sample(raw, profile);
-    expect(capture.sample(raw, profile) == CaptureResult::Committed,
-           "analog candidate commits after release");
+    expect(capture.sample(raw, profile) == CaptureResult::Conflict,
+           "full-axis capture conflicts with digital halves on the same physical axis");
+    expect(capture.accept_conflict(profile) == CaptureResult::Committed,
+           "keep-both confirmation commits the analog candidate");
     expect(profile.analog[0] == AnalogSource{LogicalAxis::RightY, false, 8000},
            "stick X capture stores its orientation and deadzone separately");
+
+    capture.begin(Target::Throttle, selected);
+    capture.sample(raw, profile); capture.sample(raw, profile);
+    capture.axis_event(selected, LogicalAxis::TriggerLeft, 20000);
+    raw.axes[static_cast<std::size_t>(LogicalAxis::TriggerLeft)] = 20000;
+    capture.sample(raw, profile);
+    raw = {};
+    capture.sample(raw, profile);
+    expect(capture.sample(raw, profile) == CaptureResult::Conflict,
+           "continuous throttle capture uses the existing source-conflict flow");
+    expect(capture.accept_conflict(profile) == CaptureResult::Committed,
+           "confirmed throttle source commits after release");
+    expect(profile.throttle.source == ThrottleSource{
+               LogicalAxis::TriggerLeft, AxisDirection::Positive},
+           "throttle capture retains continuous axis direction");
+
+    capture.begin(Target::Throttle, selected);
+    capture.sample(raw, profile); capture.sample(raw, profile);
+    capture.axis_event(selected, LogicalAxis::TriggerRight, 20000);
+    raw.axes[static_cast<std::size_t>(LogicalAxis::TriggerRight)] = 20000;
+    capture.sample(raw, profile);
+    raw = {};
+    capture.sample(raw, profile);
+    expect(capture.sample(raw, profile) == CaptureResult::Conflict,
+           "default RT-to-R assignment conflicts with analog throttle capture");
+    expect(capture.move_conflict(profile) == CaptureResult::Committed,
+           "move-binding confirmation commits the throttle source");
+    expect(profile.throttle.source == ThrottleSource{
+               LogicalAxis::TriggerRight, AxisDirection::Positive},
+           "move binding assigns RT to throttle");
+    expect(profile.digital[5].size() == 1 &&
+           std::get<ButtonSource>(profile.digital[5][0]).button == LogicalButton::RightShoulder,
+           "move binding removes only the conflicting RT half-axis from N64 R");
+
+    capture.begin(Target::R, selected);
+    capture.sample(raw, profile); capture.sample(raw, profile);
+    capture.axis_event(selected, LogicalAxis::TriggerRight, 20000);
+    raw.axes[static_cast<std::size_t>(LogicalAxis::TriggerRight)] = 20000;
+    capture.sample(raw, profile);
+    raw = {};
+    capture.sample(raw, profile);
+    expect(capture.sample(raw, profile) == CaptureResult::Conflict,
+           "moving RT back to a digital target detects the existing throttle assignment");
+    expect(capture.move_conflict(profile) == CaptureResult::Committed,
+           "move binding transfers RT back out of throttle");
+    expect(!profile.throttle.source,
+           "reverse move unassigns the conflicting throttle source");
+    expect(profile.digital[5].size() == 2,
+           "reverse move appends RT alongside the existing R shoulder binding");
 
     capture.begin(Target::A, selected);
     expect(capture.cancel() == CaptureResult::Cancelled && !capture.active(),
