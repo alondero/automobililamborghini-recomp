@@ -45,6 +45,7 @@
 #include "lambo_menu.h"
 #include "lambo_input_gate.h"
 #include "lambo_analog_throttle.h"
+#include "lambo_analog_brake.h"
 #include "lambo_startup.h"
 #include "controls/lambo_controls_sdl.h"
 #include "ui/lambo_ui.h"
@@ -532,6 +533,7 @@ static constexpr int   N64_STICK_MAX   = 80;
 static uint16_t g_held_buttons = 0;                 // LAMBO_MODERN_INPUT env override, OR'd in
 static int8_t   g_held_sx = 0, g_held_sy = 0;       // LAMBO_MODERN_INPUT stick override (harness)
 static float    g_held_throttle = -1.0f;             // LAMBO_ANALOG_THROTTLE=[0,1] override
+static float    g_held_brake = -1.0f;                // LAMBO_ANALOG_BRAKE=[0,1] override
 // LAMBO_INPUT_PULSE=BTNHEX:PERIOD:DUTY[:STARTVI] -- periodic button pulse for headless menu
 // navigation (a held LAMBO_MODERN_INPUT mask is one EDGE forever, so it can advance at most one
 // menu; a pulse presses/releases every PERIOD VIs for DUTY VIs, walking a whole menu chain).
@@ -628,6 +630,10 @@ static void input_sample() {
     const bool analog_mode = forced_analog ||
         controller.throttle_mode == lambo::controls::ThrottleMode::Analog;
     const float physical_throttle = forced_analog ? g_held_throttle : controller.throttle;
+    const bool forced_brake = g_held_brake >= 0.0f;
+    const bool brake_analog_mode = forced_brake ||
+        controller.brake_mode == lambo::controls::BrakeMode::Analog;
+    const float physical_brake = forced_brake ? g_held_brake : controller.brake;
     uint32_t snap = (uint16_t)b
                   | ((uint32_t)(uint8_t)(int8_t)sx << 16)
                   | ((uint32_t)(uint8_t)(int8_t)sy << 24);
@@ -640,6 +646,9 @@ static void input_sample() {
     const float throttle = lambo::input_gate::guest_input_suppressed()
         ? 0.0f : physical_throttle;
     lambo::analog_throttle::publish(0, analog_mode, throttle);
+    const float brake = lambo::input_gate::guest_input_suppressed()
+        ? 0.0f : physical_brake;
+    lambo::analog_brake::publish(0, brake_analog_mode, brake);
 }
 
 static void input_poll_stub() {}
@@ -820,6 +829,18 @@ int main(int argc, char** argv) {
         }
     }
     lambo::analog_throttle::set_probe(std::getenv("LAMBO_ANALOG_THROTTLE_PROBE") != nullptr);
+    if (const char* analog = std::getenv("LAMBO_ANALOG_BRAKE")) {
+        char* end = nullptr;
+        const float parsed = std::strtof(analog, &end);
+        if (end != analog && end != nullptr && *end == '\0' && std::isfinite(parsed)) {
+            g_held_brake = std::clamp(parsed, 0.0f, 1.0f);
+            // Headless mode has no SDL event pump, so publish the deterministic
+            // harness value here as well as from input_sample's normal main-thread path.
+            lambo::analog_brake::publish(0, true, g_held_brake);
+            LAMBO_LOG("probe", "analog brake override: %.3f\n", g_held_brake);
+        }
+    }
+    lambo::analog_brake::set_probe(std::getenv("LAMBO_ANALOG_BRAKE_PROBE") != nullptr);
     if (const char* pu = std::getenv("LAMBO_INPUT_PULSE")) {
         // BTNHEX:PERIOD:DUTY[:STARTVI[:COUNT]], VI units. e.g. 1000:150:4:300 taps START for 4 VIs
         // every 150 VIs starting at VI 300 -- enough edges to walk the whole menu chain headless.

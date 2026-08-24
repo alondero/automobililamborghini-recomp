@@ -559,6 +559,34 @@ func = "func_800028D0"
 before_vram = 0x80001CD4
 text = "extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_savestate_tick(rdram, ctx);"
 
+# Issue #128 — true analog throttle. Capture the pedal demand immediately before the
+# stock human-driver A/Z branch, then apply the selected native port's continuous target
+# at the common merge. The two hooks preserve the ROM's +/-10 pedal ramp, including exact
+# released/full-A behavior. Digital mode is a no-op. The natives read atomics and RDRAM only.
+[[patches.hook]]
+func = "func_80019D20"
+before_vram = 0x80019FBC
+text = "extern void lambo_analog_throttle_begin(uint8_t*); lambo_analog_throttle_begin(rdram);"
+
+[[patches.hook]]
+func = "func_80019D20"
+before_vram = 0x8001A120
+text = "extern void lambo_analog_throttle_apply(uint8_t*); lambo_analog_throttle_apply(rdram);"
+
+# Analog brake. The stock brake block sits LATER in the same updater (0x8001A690-
+# 0x8001A990): its not-B release handler (func_8002A070, vram tail 0x800295D8)
+# zeroes the float demand at vehicle offset 0xA0 and strips bit0 of the 0xAC
+# braking latch every frame, so a capture/apply pair around the throttle sites
+# would be undone before the physics pass (func_8001EC1C, decel = demand*10 while
+# s16[0xAC] > 0) ever reads them. One apply-only hook at the brake block's own
+# merge (0x8001A9A0, reached from both the pressed and released paths) writes the
+# host-ramped demand + latch after the stock handlers are done with them. Digital
+# mode is a no-op; digital B keeps the full-stock path. See docs/analog-brake.md.
+[[patches.hook]]
+func = "func_80019D20"
+before_vram = 0x8001A9A0
+text = "extern void lambo_analog_brake_apply(uint8_t*); lambo_analog_brake_apply(rdram);"
+
 # Issue #40 — widescreen lens flare. The sun flare emitter func_80036854 draws a chain of
 # 10 translucent "ghost" texrects. Under ar_option Expand RT64 squishes each small untagged
 # texrect into the central 4:3 band (invRatioScale = 1/aspectRatioScale) and collapses its
@@ -1059,18 +1087,3 @@ text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gp
 func = "func_800030F8"
 before_vram = 0x80004374
 text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6); }"
-
-
-# Issue #128 - true analog throttle. Capture the pedal demand immediately before the
-# stock human-driver A/Z branch, then apply the selected native port's continuous target
-# at the common merge. The two hooks preserve the ROM's +/-10 pedal ramp, including exact
-# released/full-A behavior. Digital mode is a no-op. The natives read atomics and RDRAM only.
-[[patches.hook]]
-func = "func_80019D20"
-before_vram = 0x80019FBC
-text = "extern void lambo_analog_throttle_begin(uint8_t*); lambo_analog_throttle_begin(rdram);"
-
-[[patches.hook]]
-func = "func_80019D20"
-before_vram = 0x8001A120
-text = "extern void lambo_analog_throttle_apply(uint8_t*); lambo_analog_throttle_apply(rdram);"
