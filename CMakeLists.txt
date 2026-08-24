@@ -132,6 +132,16 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_analog_throttle_bridge COMMAND lambo_analog_throttle_tests)
 
+    add_executable(lambo_analog_brake_tests
+        tests/test_analog_brake.cpp
+        src/lambo_analog_brake.cpp
+    )
+    target_include_directories(lambo_analog_brake_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/N64Recomp/include
+    )
+    add_test(NAME lambo_analog_brake_bridge COMMAND lambo_analog_brake_tests)
+
     add_executable(lambo_ui_input_tests
         tests/test_ui_input.cpp
         src/ui/lambo_ui_input.cpp
@@ -318,6 +328,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_startup.cpp  # runtime-ready -> Play startup state machine (issue #126)
         src/lambo_input_gate.cpp # controller capture/neutral-release barrier (issue #126)
         src/lambo_analog_throttle.cpp # issue #128: atomic native-port throttle bridge + race hook
+        src/lambo_analog_brake.cpp    # issue #152: atomic native-port brake bridge + race hook
         src/controls/lambo_controls.cpp
         src/controls/lambo_controls_sdl.cpp
         src/ui/lambo_ui.cpp

@@ -83,6 +83,8 @@ int main() {
     Profile analog_throttle = profile;
     analog_throttle.throttle = {ThrottleMode::Analog,
         ThrottleSource{LogicalAxis::TriggerRight, AxisDirection::Positive}, 0.1f, 0.9f};
+    expect(profile.brake.mode == BrakeMode::Digital && !profile.brake.source,
+           "default brake is digital with an unassigned analog source");
     raw = {};
     raw.axes[static_cast<std::size_t>(LogicalAxis::TriggerRight)] = 3277;
     expect(evaluate_throttle_source(analog_throttle.throttle, raw) < 0.001f,
@@ -121,6 +123,50 @@ int main() {
     raw.axes[static_cast<std::size_t>(LogicalAxis::TriggerRight)] = 8192;
     expect(evaluate(analog_throttle, raw).throttle == 1.0f,
            "equal positive deadzone and saturation form a deterministic step");
+
+    Profile analog_brake = profile;
+    analog_brake.brake = {BrakeMode::Analog,
+        BrakeSource{LogicalAxis::TriggerLeft, AxisDirection::Positive}, 0.1f, 0.9f};
+    raw = {};
+    raw.axes[static_cast<std::size_t>(LogicalAxis::TriggerLeft)] = 3277;
+    expect(evaluate_brake_source(analog_brake.brake, raw) < 0.001f,
+           "brake is neutral at the deadzone boundary");
+    raw.axes[static_cast<std::size_t>(LogicalAxis::TriggerLeft)] = 16384;
+    expect(std::abs(brake_source_magnitude(analog_brake.brake, raw) - 0.5f) < 0.001f,
+           "raw brake magnitude is available before shaping");
+    expect(std::abs(evaluate(analog_brake, raw).brake - 0.5f) < 0.001f,
+           "brake rescales linearly between deadzone and saturation");
+    raw.axes[static_cast<std::size_t>(LogicalAxis::TriggerLeft)] = 29491;
+    expect(evaluate(analog_brake, raw).brake == 1.0f,
+           "brake reaches full output at saturation");
+    raw = {};
+    raw.buttons[static_cast<std::size_t>(LogicalButton::B)] = true;
+    expect(evaluate(analog_brake, raw).brake == 1.0f,
+           "digital B is a full fallback in analog brake mode");
+    raw = {};
+    expect(evaluate(profile, raw).brake_mode == BrakeMode::Digital &&
+           evaluate(profile, raw).brake == 0.0f,
+           "digital brake mode mirrors the B button state");
+    raw.buttons[static_cast<std::size_t>(LogicalButton::B)] = true;
+    expect(evaluate(profile, raw).brake == 1.0f, "digital brake mode reports held B");
+    // Split-axis pedals: throttle and brake may share one physical axis if their
+    // directions differ; capturing a brake on the throttle's exact half is a conflict.
+    {
+        Profile split = profile;
+        split.throttle = {ThrottleMode::Analog,
+            ThrottleSource{LogicalAxis::RightY, AxisDirection::Negative}, 0.05f, 1.0f};
+        Capture capture;
+        capture.begin(Target::Brake, 0);
+        RawState neutral{};
+        for (int i = 0; i < 8 && capture.phase() != CapturePhase::Listening; ++i)
+            capture.sample(neutral, split);
+        expect(capture.axis_event(0, LogicalAxis::RightY, -20000) == CaptureResult::None &&
+               capture.phase() == CapturePhase::WaitingForRelease,
+               "brake capture accepts an axis event");
+        for (int i = 0; i < 8; ++i) capture.sample(neutral, split);
+        expect(capture.phase() == CapturePhase::Conflict,
+               "brake cannot take the exact half-axis the throttle already owns");
+    }
 
     raw = {};
     raw.axes[static_cast<std::size_t>(LogicalAxis::LeftX)] = 7999;
@@ -172,6 +218,12 @@ int main() {
            "explicit empty binding remains unbound");
     expect(profile_for_guid(loaded.config, config.preferred_controller_guid).throttle ==
            saved_profile.throttle, "analog throttle settings persist per controller GUID");
+    saved_profile.brake = {BrakeMode::Analog,
+        BrakeSource{LogicalAxis::TriggerLeft, AxisDirection::Positive}, 0.2f, 0.95f};
+    expect(save_config(config, path).saved, "controls config saves atomically (brake)");
+    loaded = load_config(path);
+    expect(profile_for_guid(loaded.config, config.preferred_controller_guid).brake ==
+           saved_profile.brake, "analog brake settings persist per controller GUID");
     std::ifstream saved_file(path);
     nlohmann::json saved; saved_file >> saved;
     expect(saved["unknown_root"]["keep"] == true, "unknown root fields survive rewrite");
