@@ -32,6 +32,7 @@ void clear_startup_environment() {
         "LAMBO_MODERN_MAX_VIS",
         "LAMBO_CRASH_TEST",
         "LAMBO_SELFTEST",
+        "LAMBO_LAUNCHER",
     };
     for (const char* variable : variables) set_environment(variable, nullptr);
 }
@@ -39,28 +40,13 @@ void clear_startup_environment() {
 
 int main() {
     clear_startup_environment();
+    expect(lambo::startup_mode_from_environment() == lambo::StartupMode::Automatic,
+           "ordinary graphical startup uses automatic boot");
+
+    set_environment("LAMBO_LAUNCHER", "1");
     expect(lambo::startup_mode_from_environment() == lambo::StartupMode::InteractiveLauncher,
-           "ordinary graphical startup uses the launcher");
-
-    set_environment("LAMBO_MODERN_INPUT", "0:53:0");
-    expect(lambo::startup_mode_from_environment() == lambo::StartupMode::Automatic,
-           "structured input beginning with zero still bypasses the launcher");
-    set_environment("LAMBO_MODERN_INPUT", nullptr);
-
-    set_environment("CI", "true");
-    expect(lambo::startup_mode_from_environment() == lambo::StartupMode::Automatic,
-           "CI runs bypass the launcher");
-    set_environment("CI", nullptr);
-
-    set_environment("LAMBO_CRASH_TEST", "fault");
-    expect(lambo::startup_mode_from_environment() == lambo::StartupMode::Automatic,
-           "named crash probes bypass the launcher");
-    set_environment("LAMBO_CRASH_TEST", nullptr);
-
-    set_environment("LAMBO_SELFTEST", "false");
-    expect(lambo::startup_mode_from_environment() == lambo::StartupMode::InteractiveLauncher,
-           "exact false boolean values do not bypass the launcher");
-    set_environment("LAMBO_SELFTEST", nullptr);
+           "LAMBO_LAUNCHER selects interactive launcher mode");
+    set_environment("LAMBO_LAUNCHER", nullptr);
 
     int starts = 0;
     lambo::StartupController interactive(lambo::StartupMode::InteractiveLauncher,

@@ -277,41 +277,117 @@ ControlsView controls_view(const UiSnapshot& snapshot) {
     const auto& throttle = snapshot.profile.throttle;
     const int deadzone = std::clamp(static_cast<int>(std::lround(throttle.deadzone * 1000.0f)), 0, 500);
     const int saturation = std::clamp(static_cast<int>(std::lround(throttle.saturation * 1000.0f)), deadzone, 1000);
-    bindings << "<div class=\"column mapper-section driving-target\">"
-             << "<span class=\"mapper-section-title\">DRIVING</span>"
-             << "<div class=\"binding-target\"><div class=\"binding-heading\"><h2>Driving</h2>"
-             << "<button" << disabled << " onclick=\"control:reset-target:throttle\">Reset</button></div>"
-             << "<h3>Throttle</h3><div class=\"binding-row\"><span class=\"binding-chip\">Mode</span>"
-             << "<button" << disabled << " class=\"" << (throttle.mode == ThrottleMode::Digital ? "active" : "")
+    bindings << "<div class=\"column mapper-section driving-section\">"
+             << "<span class=\"mapper-section-title\">DRIVING</span>";
+
+    // Row 1: Mode (Digital vs Analog)
+    bindings << "<div class=\"mapper-row\">"
+             << "<div class=\"mapper-label-col\">"
+             << "<span class=\"n64-badge n64-badge-mode\">MODE</span>"
+             << "<span class=\"mapper-target-name\">Throttle</span>"
+             << "</div>"
+             << "<div class=\"segmented-control\">"
+             << "<button" << disabled << " class=\"segment-btn"
+             << (throttle.mode == ThrottleMode::Digital ? " active" : "")
              << "\" onclick=\"control:mode:throttle:0\">Digital</button>"
-             << "<button" << disabled << " class=\"" << (throttle.mode == ThrottleMode::Analog ? "active" : "")
-             << "\" onclick=\"control:mode:throttle:1\">Analog</button></div>"
-             << "<div class=\"binding-row\"><span class=\"binding-chip\">";
+             << "<button" << disabled << " class=\"segment-btn"
+             << (throttle.mode == ThrottleMode::Analog ? " active" : "")
+             << "\" onclick=\"control:mode:throttle:1\">Analog</button>"
+             << "</div>"
+             << "</div>";
+
+    // Row 2: Throttle Axis Slot
+    bindings << "<div class=\"mapper-row\">"
+             << "<div class=\"mapper-label-col\">"
+             << "<span class=\"n64-badge n64-badge-throttle\">GAS</span>"
+             << "<span class=\"mapper-target-name\">Pedal Axis</span>"
+             << "</div>"
+             << "<button" << disabled << " class=\"mapper-slot-btn\" onclick=\"control:add:throttle\">";
     if (throttle.source) {
-        bindings << "Axis " << axis_name(throttle.source->axis)
-                 << (throttle.source->direction == AxisDirection::Positive ? " +" : " -");
+        bindings << "<span class=\"mapper-slot-val\">Axis " << axis_name(throttle.source->axis)
+                 << (throttle.source->direction == AxisDirection::Positive ? " +" : " -")
+                 << "</span>";
     } else {
-        bindings << "Unassigned continuous source";
+        bindings << "<span class=\"mapper-slot-val slot-empty\">None (Click)</span>";
     }
-    bindings << "</span>";
+    bindings << "</button></div>";
+
+    // Row 3: Direction & Clear (when assigned)
     if (throttle.source) {
-        bindings << "<button" << disabled << " onclick=\"control:invert:throttle\">Direction: "
-                 << (throttle.source->direction == AxisDirection::Positive ? "Positive" : "Negative")
-                 << "</button><button" << disabled
-                 << " class=\"remove\" onclick=\"control:clear-source:throttle\">Unassign</button>";
+        bindings << "<div class=\"mapper-row\">"
+                 << "<div class=\"mapper-label-col\">"
+                 << "<span class=\"mapper-sub-label\">Direction</span>"
+                 << "</div>"
+                 << "<div class=\"driving-inline-actions\">"
+                 << "<button" << disabled << " class=\"mapper-slot-btn\" onclick=\"control:invert:throttle\">"
+                 << "<span class=\"mapper-slot-val\">"
+                 << (throttle.source->direction == AxisDirection::Positive ? "Normal (+)" : "Inverted (-)")
+                 << "</span></button>"
+                 << "<button" << disabled << " class=\"btn-unassign\" onclick=\"control:clear-source:throttle\">Clear</button>"
+                 << "</div>"
+                 << "</div>";
     }
-    bindings << "<button" << disabled << " class=\"add-binding\" onclick=\"control:add:throttle\">Choose axis</button></div>"
-             << "<div class=\"binding-row\"><span class=\"binding-chip\">Deadzone " << deadzone / 10.0f
-             << "%</span><button" << disabled << " onclick=\"control:deadzone:throttle:"
-             << std::max(0, deadzone - 10) << "\">-</button><button" << disabled
-             << " onclick=\"control:deadzone:throttle:" << std::min(500, deadzone + 10) << "\">+</button>"
-             << "<span class=\"binding-chip\">Saturation " << saturation / 10.0f << "%</span><button"
-             << disabled << " onclick=\"control:saturation:throttle:" << std::max(deadzone, saturation - 10)
-             << "\">-</button><button" << disabled << " onclick=\"control:saturation:throttle:"
-             << std::min(1000, saturation + 10) << "\">+</button></div>"
-             << "<div id=\"controls-throttle-preview\" class=\"throttle-preview\"></div>"
-             << "<p class=\"help\">A and keyboard X always provide full throttle. The larger of the analog and digital inputs wins; menus still use digital A.</p></div>";
-    bindings << "</div>";
+
+    // Row 4: Deadzone Stepper
+    char dz_str[16];
+    std::snprintf(dz_str, sizeof(dz_str), "%.1f%%", deadzone / 10.0f);
+    bindings << "<div class=\"mapper-row\">"
+             << "<div class=\"mapper-label-col\">"
+             << "<span class=\"mapper-sub-label\">Deadzone</span>"
+             << "</div>"
+             << "<div class=\"stepper-control\">"
+             << "<button" << disabled << " class=\"stepper-btn\" onclick=\"control:deadzone:throttle:"
+             << std::max(0, deadzone - 10) << "\">-</button>"
+             << "<span class=\"stepper-value\">" << dz_str << "</span>"
+             << "<button" << disabled << " class=\"stepper-btn\" onclick=\"control:deadzone:throttle:"
+             << std::min(500, deadzone + 10) << "\">+</button>"
+             << "</div>"
+             << "</div>";
+
+    // Row 5: Saturation Stepper
+    char sat_str[16];
+    std::snprintf(sat_str, sizeof(sat_str), "%.1f%%", saturation / 10.0f);
+    bindings << "<div class=\"mapper-row\">"
+             << "<div class=\"mapper-label-col\">"
+             << "<span class=\"mapper-sub-label\">Saturation</span>"
+             << "</div>"
+             << "<div class=\"stepper-control\">"
+             << "<button" << disabled << " class=\"stepper-btn\" onclick=\"control:saturation:throttle:"
+             << std::max(deadzone, saturation - 10) << "\">-</button>"
+             << "<span class=\"stepper-value\">" << sat_str << "</span>"
+             << "<button" << disabled << " class=\"stepper-btn\" onclick=\"control:saturation:throttle:"
+             << std::min(1000, saturation + 10) << "\">+</button>"
+             << "</div>"
+             << "</div>";
+
+    const int raw_throttle = std::clamp(static_cast<int>(std::lround(
+        throttle_source_magnitude(snapshot.profile.throttle, snapshot.raw) * 100.0f)), 0, 100);
+    const int effective_throttle = std::clamp(static_cast<int>(std::lround(
+        snapshot.evaluated.throttle * 100.0f)), 0, 100);
+    view.throttle_preview =
+        "<div class=\"driving-meter-box\">"
+        "<div class=\"meter-row\"><span class=\"meter-label\">Raw</span>"
+        "<div class=\"throttle-meter\"><div class=\"throttle-meter-fill raw-fill\" style=\"width: " +
+        std::to_string(raw_throttle) + "%;\"></div></div>"
+        "<span class=\"meter-value\">" + std::to_string(raw_throttle) + "%</span></div>"
+        "<div class=\"meter-row\"><span class=\"meter-label\">Effective</span>"
+        "<div class=\"throttle-meter\"><div class=\"throttle-meter-fill effective-fill\" style=\"width: " +
+        std::to_string(effective_throttle) + "%;\"></div></div>"
+        "<span class=\"meter-value\">" + std::to_string(effective_throttle) + "%</span></div>"
+        "</div>";
+
+    // Row 6: Live Meter Container (updated dynamically on sample)
+    bindings << "<div id=\"controls-throttle-preview\" class=\"throttle-preview\">"
+             << view.throttle_preview
+             << "</div>";
+
+    // Row 7: Reset Throttle
+    bindings << "<button" << disabled << " class=\"btn-reset-throttle secondary\" onclick=\"control:reset-target:throttle\">Reset Throttle</button>";
+
+    // Row 8: Fallback Guidance Hint
+    bindings << "<p class=\"driving-hint\">A and keyboard X always provide full throttle fallback.</p>";
+
+    bindings << "</div>"; // mapper-section
 
     bindings << "</div>";
     view.bindings = bindings.str();
@@ -337,16 +413,6 @@ ControlsView controls_view(const UiSnapshot& snapshot) {
     view.evaluated_preview += mask;
     view.evaluated_preview += " / Stick (" + std::to_string(snapshot.evaluated.stick_x) + ", " +
                               std::to_string(snapshot.evaluated.stick_y) + ")";
-    const int raw_throttle = std::clamp(static_cast<int>(std::lround(
-        throttle_source_magnitude(snapshot.profile.throttle, snapshot.raw) * 100.0f)), 0, 100);
-    const int effective_throttle = std::clamp(static_cast<int>(std::lround(
-        snapshot.evaluated.throttle * 100.0f)), 0, 100);
-    view.throttle_preview = "<span>Raw " + std::to_string(raw_throttle) +
-        "%</span><div class=\"throttle-meter\"><div class=\"throttle-meter-fill\" style=\"width: " +
-        std::to_string(raw_throttle) + "%\"></div></div><span>Effective " +
-        std::to_string(effective_throttle) +
-        "%</span><div class=\"throttle-meter\"><div class=\"throttle-meter-fill effective\" style=\"width: " +
-        std::to_string(effective_throttle) + "%\"></div></div>";
     view.persistence_status = escape_rml(snapshot.status + " - " + snapshot.config_path.string());
     for (const auto& warning : snapshot.warnings) view.warnings += "<p>" + escape_rml(warning) + "</p>";
     view.capture_visible = snapshot.capture_phase != CapturePhase::Idle &&

@@ -57,7 +57,8 @@ int main() {
            "generated bindings reference typed actions");
     expect(view.bindings.find("N64 Stick X") != std::string::npos,
            "all targets include analog sticks");
-    expect(view.bindings.find("Driving") != std::string::npos &&
+    expect((view.bindings.find("DRIVING") != std::string::npos ||
+            view.bindings.find("Driving") != std::string::npos) &&
            view.bindings.find("keyboard X always provide full throttle") != std::string::npos,
            "driving section explains analog mode and digital fallback");
     expect(view.bindings.find("control:reset-target:throttle") != std::string::npos,

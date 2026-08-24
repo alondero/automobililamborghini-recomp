@@ -28,33 +28,12 @@ bool env_enabled(const char* name) {
 namespace lambo {
 
 StartupMode startup_mode_from_environment() {
-    // These knobs drive a deterministic harness/probe run and must never wait
-    // for a human to press Play. Keep this list as the single bypass policy.
-    constexpr const char* boolean_variables[] = {
-        "CI",
-        "LAMBO_HEADLESS",
-        "LAMBO_LIGHTING_SELFTEST",
-        "LAMBO_CRASH_TEST",
-        "LAMBO_SELFTEST",
-    };
-    for (const char* variable : boolean_variables) {
-        if (env_enabled(variable)) return StartupMode::Automatic;
+    // 1. Explicit env var override wins (for tests / CLI).
+    if (std::getenv("LAMBO_LAUNCHER") != nullptr) {
+        return env_enabled("LAMBO_LAUNCHER") ? StartupMode::InteractiveLauncher : StartupMode::Automatic;
     }
-
-    // These variables carry structured or numeric values. Zero can be a valid
-    // first field (for example, a neutral button mask with a scripted stick),
-    // so any non-empty value selects deterministic automatic startup.
-    constexpr const char* scripted_variables[] = {
-        "LAMBO_WARP",
-        "LAMBO_MODERN_INPUT",
-        "LAMBO_INPUT_PULSE",
-        "LAMBO_ANALOG_THROTTLE",
-        "LAMBO_MODERN_MAX_VIS",
-    };
-    for (const char* variable : scripted_variables) {
-        if (env_has_value(variable)) return StartupMode::Automatic;
-    }
-    return StartupMode::InteractiveLauncher;
+    // 2. Default is direct auto-boot straight into gameplay.
+    return StartupMode::Automatic;
 }
 
 StartupController::StartupController(StartupMode mode, StartGameAction start_game)
@@ -100,20 +79,13 @@ bool StartupController::begin_start() {
 }
 
 bool StartupController::request_exit() {
-    StartupState current = state_.load(std::memory_order_acquire);
-    while (current != StartupState::Exiting) {
-        if (state_.compare_exchange_weak(current, StartupState::Exiting,
-                                         std::memory_order_acq_rel)) {
-            return true;
-        }
-    }
-    return false;
+    state_.store(StartupState::Exiting, std::memory_order_release);
+    return true;
 }
 
 bool StartupController::watchdog_armed() const {
-    if (mode_ == StartupMode::Automatic) return true;
-    const StartupState current = state_.load(std::memory_order_acquire);
-    return current == StartupState::Starting || current == StartupState::Started;
+    return mode_ == StartupMode::Automatic &&
+           state_.load(std::memory_order_acquire) != StartupState::Started;
 }
 
 } // namespace lambo

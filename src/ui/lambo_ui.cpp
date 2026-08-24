@@ -278,6 +278,7 @@ void UiState::refresh_controls_values() {
             if (Rml::Element* accept = document->GetElementById("controls-conflict-accept"))
                 accept->Focus();
         }
+        set_text("controls-throttle-preview", view.throttle_preview);
     }
     if (snapshot.sample_revision != controls_sample_revision) {
         controls_sample_revision = snapshot.sample_revision;

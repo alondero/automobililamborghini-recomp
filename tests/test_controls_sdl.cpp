@@ -68,6 +68,31 @@ int main() {
         if (!analog_connected) std::cerr << "FAIL: virtual controller did not load its analog profile\n";
         ok = ok && analog_connected;
 
+        SDL_Event event{};
+        event.type = SDL_CONTROLLERBUTTONDOWN;
+        event.cbutton.state = SDL_PRESSED;
+        event.cbutton.which = instance;
+
+        event.cbutton.button = SDL_CONTROLLER_BUTTON_BACK;
+        const bool back_ok = adapter.selected_back_pressed(event);
+        if (!back_ok) std::cerr << "FAIL: selected_back_pressed did not recognize Back/Select\n";
+        ok = ok && back_ok;
+
+        event.cbutton.button = SDL_CONTROLLER_BUTTON_GUIDE;
+        const bool guide_ok = adapter.selected_back_pressed(event);
+        if (!guide_ok) std::cerr << "FAIL: selected_back_pressed did not recognize Guide\n";
+        ok = ok && guide_ok;
+
+        event.cbutton.button = SDL_CONTROLLER_BUTTON_START;
+        const bool start_not_overlay = !adapter.selected_back_pressed(event);
+        if (!start_not_overlay) std::cerr << "FAIL: selected_back_pressed intercepted Start button\n";
+        ok = ok && start_not_overlay;
+
+        event.cbutton.button = SDL_CONTROLLER_BUTTON_A;
+        const bool a_not_overlay = !adapter.selected_back_pressed(event);
+        if (!a_not_overlay) std::cerr << "FAIL: selected_back_pressed intercepted A button\n";
+        ok = ok && a_not_overlay;
+
         SDL_JoystickDetachVirtual(device_index);
         adapter.device_removed(instance);
         const auto disconnected = adapter.sample();

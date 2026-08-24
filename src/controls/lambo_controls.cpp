@@ -333,6 +333,8 @@ EvaluatedState evaluate(const Profile& profile, const RawState& state) {
     if (profile.throttle.mode == ThrottleMode::Analog) {
         result.throttle = evaluate_throttle_source(profile.throttle, state);
         if ((result.buttons & 0xA000u) != 0) result.throttle = 1.0f;
+    } else {
+        result.throttle = (result.buttons & 0xA000u) != 0 ? 1.0f : 0.0f;
     }
     return result;
 }

@@ -743,7 +743,10 @@ int main(int argc, char** argv) {
     }
     LAMBO_LOG("probe", "ROM validated; rom_hash matches\n");
 
-    const lambo::StartupMode startup_mode = lambo::startup_mode_from_environment();
+    lambo::StartupMode startup_mode = lambo::startup_mode_from_environment();
+    if (startup_mode == lambo::StartupMode::Automatic && lambo::config::show_launcher()) {
+        startup_mode = lambo::StartupMode::InteractiveLauncher;
+    }
     lambo::StartupController startup_controller(startup_mode, []() {
         LAMBO_LOG("probe", "calling start_game\n");
         recomp::start_game(u8"lamborghini.us");
@@ -754,24 +757,26 @@ int main(int argc, char** argv) {
     LAMBO_LOG("probe", "startup mode: %s\n",
               startup_mode == lambo::StartupMode::Automatic ? "automatic" : "interactive");
 
-    // Watchdog: guarantee automatic probes terminate and report, while leaving an idle
-    // graphical launcher unwatched until the user presses Play.
-    const int wd_sec = watchdog_seconds();
-    std::thread watchdog([&startup_controller, wd_sec]() {
-        while (!startup_controller.watchdog_armed() &&
-               startup_controller.state() != lambo::StartupState::Exiting) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-        if (startup_controller.state() == lambo::StartupState::Exiting) return;
-        std::this_thread::sleep_for(std::chrono::seconds(wd_sec));
-        if (startup_controller.state() == lambo::StartupState::Exiting) return;
-        LAMBO_LOG("probe", "WATCHDOG %ds: threads=%d vis=%d first_vi=%d\n",
-                     wd_sec, g_threads.load(), g_vis.load(), (int)g_first_vi.load());
-        // Exit deterministically (same as the VI-cap path) rather than ultramodern::quit(),
-        // whose teardown munmaps RDRAM out from under the live game threads (SIGSEGV race).
-        boot_summary_and_exit();
-    });
-    watchdog.detach();
+    // Watchdog: guarantee automatic probes terminate and report. Only started for
+    // capped test probes (kQuitAfterVis != INT_MAX). Normal play mode runs unwatched.
+    if (kQuitAfterVis != INT_MAX) {
+        const int wd_sec = watchdog_seconds();
+        std::thread watchdog([&startup_controller, wd_sec]() {
+            while (!startup_controller.watchdog_armed() &&
+                   startup_controller.state() != lambo::StartupState::Exiting) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+            if (startup_controller.state() == lambo::StartupState::Exiting) return;
+            std::this_thread::sleep_for(std::chrono::seconds(wd_sec));
+            if (startup_controller.state() == lambo::StartupState::Exiting) return;
+            LAMBO_LOG("probe", "WATCHDOG %ds: threads=%d vis=%d first_vi=%d\n",
+                         wd_sec, g_threads.load(), g_vis.load(), (int)g_first_vi.load());
+            // Exit deterministically (same as the VI-cap path) rather than ultramodern::quit(),
+            // whose teardown munmaps RDRAM out from under the live game threads (SIGSEGV race).
+            boot_summary_and_exit();
+        });
+        watchdog.detach();
+    }
 
     recomp::Configuration cfg{};
     cfg.project_version = recomp::Version{

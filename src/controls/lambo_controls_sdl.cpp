@@ -433,7 +433,6 @@ bool SdlAdapter::selected_back_pressed(const SDL_Event& event) const {
     }
     const auto btn = event.cbutton.button;
     return btn == SDL_CONTROLLER_BUTTON_BACK ||
-           btn == SDL_CONTROLLER_BUTTON_START ||
            btn == SDL_CONTROLLER_BUTTON_GUIDE;
 }
 
