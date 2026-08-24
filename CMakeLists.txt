@@ -208,15 +208,14 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/RmlUi ${CMAKE_BINARY_DIR}/RmlUi
 # GCC 16+ stopped pulling <cstdint> into <limits>/<algorithm>/<cstdlib>
 # transitively; RmlUi's vendored robin_hood.h relies on that and fails with
 # "Unsupported bitness" at the SIZE_MAX check (see release flow notes).
-# Force-include the standard integer header for every RmlUi target so we
-# don't have to keep patching robin_hood.h on every toolchain bump.
-# The `rmlui` aggregate is INTERFACE-only (no compile options allowed);
-# rmlui_core / rmlui_debugger are the actual static libraries to flag.
-foreach(_rmlui_target rmlui_core rmlui_debugger)
-    if(TARGET ${_rmlui_target})
-        target_compile_options(${_rmlui_target} PRIVATE -include cstdint)
-    endif()
-endforeach()
+# Force-include the standard integer header for every C++ translation unit
+# that includes an RmlUi header. We use CMAKE_CXX_FLAGS rather than
+# add_compile_options(target) because RmlUi headers are included by:
+#   * rmlui_core (STATIC) and rmlui_debugger (STATIC)
+#   * the SDL backend file compiled DIRECTLY into lamborghini_modern
+# Targeting each library would miss the latter; targeting via CXX flags
+# scopes to C++ only (C uses <stdint.h>, not <cstdint>).
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include cstdint")
 
 set(RT64_STATIC TRUE)
 if(WIN32)
