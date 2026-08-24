@@ -566,6 +566,12 @@ button:disabled {
   border: 1dp solid #ff922b;
 }
 
+.n64-badge-brake {
+  background-color: #c92a2a;
+  color: #ffffff;
+  border: 1dp solid #ff8787;
+}
+
 .n64-badge-mode {
   background-color: #1c2e4a;
   color: #ffd43b;

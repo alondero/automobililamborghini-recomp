@@ -93,6 +93,7 @@ struct SdlAdapter::Impl {
     std::string status;
     bool rumble_on{};
     ThrottleMode disconnected_throttle_mode{ThrottleMode::Digital};
+    BrakeMode disconnected_brake_mode{BrakeMode::Digital};
     Profile fallback_profile{default_profile()};
 
     Device* selected_device() {
@@ -178,6 +179,12 @@ struct SdlAdapter::Impl {
                     return analog && snapshot.profile.throttle.source->axis == analog->axis;
                 });
         }
+        if (snapshot.profile.brake.source) {
+            duplicate = duplicate || std::any_of(snapshot.profile.analog.begin(),
+                snapshot.profile.analog.end(), [&](const std::optional<AnalogSource>& analog) {
+                    return analog && snapshot.profile.brake.source->axis == analog->axis;
+                });
+        }
         if (duplicate) snapshot.warnings.emplace_back(
             "One or more controller sources are intentionally assigned to multiple N64 targets.");
         for (const auto& device : devices) {
@@ -243,6 +250,7 @@ void SdlAdapter::device_removed(std::int32_t instance) {
     const bool was_selected = impl_->selected && *impl_->selected == instance;
     if (was_selected) {
         impl_->disconnected_throttle_mode = impl_->selected_profile().throttle.mode;
+        impl_->disconnected_brake_mode = impl_->selected_profile().brake.mode;
         impl_->stop_rumble();
         impl_->capture.cancel();
         impl_->selected.reset();
@@ -325,6 +333,11 @@ void SdlAdapter::process_commands() {
                     profile.throttle.saturation = std::max(
                         profile.throttle.saturation, profile.throttle.deadzone);
                     changed = true;
+                } else if (command.target == Target::Brake) {
+                    profile.brake.deadzone = std::clamp(command.value / 1000.0f, 0.0f, 0.5f);
+                    profile.brake.saturation = std::max(
+                        profile.brake.saturation, profile.brake.deadzone);
+                    changed = true;
                 } else if (target >= digital_target_count && target < digital_target_count + analog_target_count) {
                     if (!profile.analog[target - digital_target_count]) break;
                     profile.analog[target - digital_target_count]->deadzone =
@@ -336,6 +349,11 @@ void SdlAdapter::process_commands() {
                         profile.throttle.source->direction == AxisDirection::Positive
                             ? AxisDirection::Negative : AxisDirection::Positive;
                     changed = true;
+                } else if (command.target == Target::Brake && profile.brake.source) {
+                    profile.brake.source->direction =
+                        profile.brake.source->direction == AxisDirection::Positive
+                            ? AxisDirection::Negative : AxisDirection::Positive;
+                    changed = true;
                 } else if (target >= digital_target_count && target < digital_target_count + analog_target_count) {
                     auto& source = profile.analog[target - digital_target_count];
                     if (source) { source->invert = !source->invert; changed = true; }
@@ -344,6 +362,10 @@ void SdlAdapter::process_commands() {
                 if (command.target == Target::Throttle) {
                     profile.throttle.saturation = std::clamp(
                         command.value / 1000.0f, profile.throttle.deadzone, 1.0f);
+                    changed = true;
+                } else if (command.target == Target::Brake) {
+                    profile.brake.saturation = std::clamp(
+                        command.value / 1000.0f, profile.brake.deadzone, 1.0f);
                     changed = true;
                 } break;
             case CommandKind::ThrottleMode:
@@ -357,10 +379,22 @@ void SdlAdapter::process_commands() {
                     profile.throttle.source.reset();
                     changed = true;
                 } break;
+            case CommandKind::BrakeMode:
+                if (command.target == Target::Brake) {
+                    profile.brake.mode = command.value != 0
+                        ? BrakeMode::Analog : BrakeMode::Digital;
+                    changed = true;
+                } break;
+            case CommandKind::ClearBrakeSource:
+                if (command.target == Target::Brake && profile.brake.source) {
+                    profile.brake.source.reset();
+                    changed = true;
+                } break;
             case CommandKind::ResetTarget: {
                 const Profile defaults = default_profile();
                 if (target < digital_target_count) profile.digital[target] = defaults.digital[target];
                 else if (command.target == Target::Throttle) profile.throttle = defaults.throttle;
+                else if (command.target == Target::Brake) profile.brake = defaults.brake;
                 else if (target < digital_target_count + analog_target_count)
                     profile.analog[target - digital_target_count] = defaults.analog[target - digital_target_count];
                 changed = true; break;
@@ -401,14 +435,17 @@ EvaluatedState SdlAdapter::sample() {
         else if (impl_->capture.phase() != before) ++impl_->config_revision;
         impl_->evaluated = evaluate(impl_->selected_profile(), impl_->raw);
         impl_->disconnected_throttle_mode = impl_->evaluated.throttle_mode;
+        impl_->disconnected_brake_mode = impl_->evaluated.brake_mode;
     } else {
         impl_->evaluated = {};
         if (device) {
             impl_->disconnected_throttle_mode = impl_->selected_profile().throttle.mode;
+            impl_->disconnected_brake_mode = impl_->selected_profile().brake.mode;
         }
         // Preserve the selected profile's mode while publishing a neutral sample.
         // Analog disconnect must write 0 now, rather than re-enable the ROM's ramp-down.
         impl_->evaluated.throttle_mode = impl_->disconnected_throttle_mode;
+        impl_->evaluated.brake_mode = impl_->disconnected_brake_mode;
     }
     ++impl_->sample_revision;
     if (impl_->capture.phase() != CapturePhase::Idle ||

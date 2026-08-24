@@ -50,6 +50,10 @@ Same approach as [Snowboard Kids 2 Recompiled](https://github.com/cdlewis/snowbo
   explicitly when configuring, or `project()` fails with "C compiler is broken".
 - If a rebuild links stale recompiled code, delete stale archives under `build/` named
   `libRecompiledFuncs.a`.
+- **EOL trap:** `scripts/gen_syms_toml.py` has *mixed* line endings at HEAD and
+  `assets/ui/lambo.rcss` is LF-only — whole-file rewrites that normalise EOLs produce
+  thousands of diff-noise lines. Edit in place; never round-trip these files through a
+  text-mode script that rewrites every line.
 
 ## Game facts (verify from source / live-ares before building on them)
 
@@ -64,6 +68,11 @@ Same approach as [Snowboard Kids 2 Recompiled](https://github.com/cdlewis/snowbo
   only readers. It was authored for the N64 frustum, so any FOV change must rewrite it
   per frame or geometry pops in at the screen edges regardless of draw distance
   (`lambo_view_cone_cos` + the world-draw hook; docs/no_lod_audit.md §11).
+- **Pedals:** throttle = s16 at vehicle+0xAA (±10/update toward a per-channel limit); brake demand
+  = float at vehicle+0xA0 (+1/update to 16 while B held, snapped to 0 on release), consumed by
+  the physics pass only while s16[vehicle+0xAC] > 0. The ROM's brake handlers rewrite both fields
+  every frame — analog-brake hooks must write AFTER them (vram 0x8001A9A0 merge), not at the
+  throttle sites. See docs/analog-throttle.md and docs/analog-brake.md.
 - **Rumble:** game uses custom start/stop wrappers (func_8006A7A0 / func_8006A82C) that call libultra's osMotorStart (func_8007AC78) and osMotorStop (func_8007AB10). The scan (func_80069710) runs osPfsInitPak first and skips osMotorInit when the Controller Pak succeeds. Keep the guest Rumble Pak flag (0x80110F08) truthful or the Championship save flow loops through the accessory-swap messages. Native overrides of the request function (func_8006A8B4) and the per-frame PWM engine (func_8006A910, gate-only deviation from the ROM body) plus the game-level wrappers preserve 0x80110F28/0x80110F18 state and drive SDL rumble without touching guest accessory detection; lower osMotorStart/osMotorStop overrides remain defensive.
 
 ## Test discipline
