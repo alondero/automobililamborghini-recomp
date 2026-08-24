@@ -615,6 +615,37 @@ func = "func_800030F8"
 before_vram = 0x80004E94
 text = "{ extern uint32_t lambo_sky_match_1p_guard(uint8_t*, uint32_t); ctx->r1 = lambo_sky_match_1p_guard(rdram, (uint32_t)ctx->r1); }"
 
+# Both calls assemble the finite sky panorama with a rotation-only view and the
+# current race projection. Tag the projection load as well as the emitted draw
+# so RT64 allocates a backdrop-only transform; tagging after the load would also
+# modify later world/HUD draws that reuse its transform index. The first load has
+# two mutually-exclusive branches. The first end hook sits on the sky guard's
+# merge label, so the native ignores an unmatched end.
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x80004DEC
+text = "{ extern void lambo_sky_backdrop_begin(uint8_t*); lambo_sky_backdrop_begin(rdram); }"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x80004E34
+text = "{ extern void lambo_sky_backdrop_begin(uint8_t*); lambo_sky_backdrop_begin(rdram); }"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x80004EA4
+text = "{ extern void lambo_sky_backdrop_end(uint8_t*); lambo_sky_backdrop_end(rdram); }"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x800052C0
+text = "{ extern void lambo_sky_backdrop_begin(uint8_t*); lambo_sky_backdrop_begin(rdram); }"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x80005308
+text = "{ extern void lambo_sky_backdrop_end(uint8_t*); lambo_sky_backdrop_end(rdram); }"
+
 # Issues #87/#91 -- no_lod: emit the per-segment scenery layer in 2P-4P like 1P. The scene
 # builder func_8000A6C0 draws each track segment as up to three sub-DLs from the 64-byte
 # segment record (+0x4 road, +0x8 walls, +0xC far scenery) but gates the scenery emit on

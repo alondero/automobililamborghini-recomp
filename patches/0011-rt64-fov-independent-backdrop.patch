@@ -1,0 +1,312 @@
+diff --git a/include/rt64_extended_gbi.h b/include/rt64_extended_gbi.h
+index a370cbe..8762d65 100644
+--- a/include/rt64_extended_gbi.h
++++ b/include/rt64_extended_gbi.h
+@@ -120,6 +120,7 @@
+ #define G_EX_ASPECT_AUTO            0x0
+ #define G_EX_ASPECT_STRETCH         0x1
+ #define G_EX_ASPECT_ADJUST          0x2
++#define G_EX_ASPECT_BACKDROP        0x3
+ 
+ #define G_EX_VERTEX_POSITION        0x0
+ #define G_EX_VERTEX_VELOCITY        0x1
+@@ -329,6 +330,14 @@ typedef union {
+         0 \
+     )
+ 
++// The second command's word 1 was reserved by matrix-group V1. Backdrop groups
++// use it to carry the IEEE-754 projection multiplier computed alongside the
++// exact game FOV, keeping live configuration changes frame-consistent.
++#define gEXSetMatrixGroupProjectionFovScale(cmd, scale_bits) \
++    DOWHILE( \
++        (((GfxCommand *)(cmd)) + 1)->values.word1 = (unsigned)(scale_bits); \
++    )
++
+ #define gEXMatrixGroupSimple(cmd, id, push, proj, pos, rot, persp, vert, tile, order, edit, tc, lookat) \
+     gEXMatrixGroup(cmd, id, G_EX_INTERPOLATE_SIMPLE, push, proj, pos, rot, G_EX_COMPONENT_SKIP, G_EX_COMPONENT_SKIP, persp, vert, tile, order, edit, G_EX_ASPECT_AUTO, tc, lookat)
+ 
+diff --git a/src/gbi/rt64_gbi_extended.cpp b/src/gbi/rt64_gbi_extended.cpp
+index 20c0d4d..13fc6ea 100644
+--- a/src/gbi/rt64_gbi_extended.cpp
++++ b/src/gbi/rt64_gbi_extended.cpp
+@@ -4,6 +4,9 @@
+ 
+ #include "rt64_gbi_extended.h"
+ 
++#include <cmath>
++#include <cstring>
++
+ #include "../include/rt64_extended_gbi.h"
+ 
+ namespace RT64 {
+@@ -147,7 +150,16 @@ namespace RT64 {
+             const uint8_t editable = (*dl)->p0(19, 1);
+             const uint8_t aspect = (*dl)->p0(20, 2);
+             const uint8_t lookat = (*dl)->p0(24, 2);
+-            state->rsp->matrixId(id, push, proj, mode, pos, rot, scale, skew, persp, vpos, vtc, tile, lookat, order, aspect, editable, idIsAddress, editGroup);
++            float projectionFovScale = 1.0f;
++            const uint32_t projectionFovScaleBits = (*dl)->w1;
++            if (projectionFovScaleBits != 0) {
++                std::memcpy(&projectionFovScale, &projectionFovScaleBits,
++                            sizeof(projectionFovScale));
++                if (!std::isfinite(projectionFovScale) || (projectionFovScale <= 0.0f)) {
++                    projectionFovScale = 1.0f;
++                }
++            }
++            state->rsp->matrixId(id, push, proj, mode, pos, rot, scale, skew, persp, vpos, vtc, tile, lookat, order, aspect, editable, projectionFovScale, idIsAddress, editGroup);
+         }
+ 
+         void matrixGroupV1(State *state, DisplayList **dl) {
+@@ -156,7 +168,10 @@ namespace RT64 {
+ 
+         void popMatrixGroupV1(State *state, DisplayList **dl) {
+             const uint8_t popCount = (*dl)->p1(0, 8);
+-            const uint8_t proj = (*dl)->p0(8, 1);
++            // gEXPopMatrixGroup encodes both fields in word 1. Reading the
++            // projection selector from word 0 silently pops the model stack and
++            // leaks scoped projection metadata into every later draw.
++            const uint8_t proj = (*dl)->p1(8, 1);
+             state->rsp->popMatrixId(popCount, proj);
+         }
+ 
+diff --git a/src/hle/rt64_rsp.cpp b/src/hle/rt64_rsp.cpp
+index ee2030b..8a62045 100644
+--- a/src/hle/rt64_rsp.cpp
++++ b/src/hle/rt64_rsp.cpp
+@@ -1190,7 +1190,7 @@ namespace RT64 {
+         state->updateDrawStatusAttribute(DrawAttribute::ExtendedType);
+     }
+ 
+-    void RSP::matrixId(uint32_t id, bool push, bool proj, bool decompose, uint8_t pos, uint8_t rot, uint8_t scale, uint8_t skew, uint8_t persp, uint8_t vpos, uint8_t vtc, uint8_t tile, uint8_t lookat, uint8_t order, uint8_t aspect, uint8_t editable, bool idIsAddress, bool editGroup) {
++    void RSP::matrixId(uint32_t id, bool push, bool proj, bool decompose, uint8_t pos, uint8_t rot, uint8_t scale, uint8_t skew, uint8_t persp, uint8_t vpos, uint8_t vtc, uint8_t tile, uint8_t lookat, uint8_t order, uint8_t aspect, uint8_t editable, float projectionFovScale, bool idIsAddress, bool editGroup) {
+         assert((idIsAddress == editGroup) && "This case is not supported yet.");
+ 
+         auto setGroupProperties = [=](TransformGroup* dstGroup, bool newGroup) {
+@@ -1208,6 +1208,7 @@ namespace RT64 {
+                 dstGroup->ordering = order;
+                 dstGroup->aspectMode = aspect;
+                 dstGroup->editable = editable;
++                dstGroup->projectionFovScale = projectionFovScale;
+             }
+         };
+ 
+@@ -1247,6 +1248,13 @@ namespace RT64 {
+             dstGroup->matrixId = id;
+             setGroupProperties(dstGroup, true);
+             stackChanged = true;
++            // Projection metadata (not only matrix contents) affects processing
++            // and viewport mapping. Split subsequent draws into a new projection
++            // so a scoped aspect mode cannot leak into later calls that reuse the
++            // same N64 projection matrix.
++            if (proj) {
++                projectionMatrixChanged = true;
++            }
+         }
+     }
+ 
+@@ -1258,6 +1266,9 @@ namespace RT64 {
+             count--;
+             stackSize--;
+             stackChanged = true;
++            if (proj) {
++                projectionMatrixChanged = true;
++            }
+         }
+     }
+ 
+diff --git a/src/hle/rt64_rsp.h b/src/hle/rt64_rsp.h
+index 61bb3b1..0a6f761 100644
+--- a/src/hle/rt64_rsp.h
++++ b/src/hle/rt64_rsp.h
+@@ -296,7 +296,7 @@ namespace RT64 {
+         void setViewportAlign(uint16_t ori, int16_t offx, int16_t offy);
+         void vertexTestZ(uint8_t vtxIndex);
+         void endVertexTestZ();
+-        void matrixId(uint32_t id, bool push, bool proj, bool decompose, uint8_t pos, uint8_t rot, uint8_t scale, uint8_t skew, uint8_t persp, uint8_t vpos, uint8_t vtc, uint8_t tile, uint8_t lookat, uint8_t order, uint8_t aspect, uint8_t editable, bool idIsAddress, bool editGroup);
++        void matrixId(uint32_t id, bool push, bool proj, bool decompose, uint8_t pos, uint8_t rot, uint8_t scale, uint8_t skew, uint8_t persp, uint8_t vpos, uint8_t vtc, uint8_t tile, uint8_t lookat, uint8_t order, uint8_t aspect, uint8_t editable, float projectionFovScale, bool idIsAddress, bool editGroup);
+         void popMatrixId(uint8_t count, bool proj);
+         void forceBranch(bool force);
+         void extendRDRAM(bool isExtended);
+@@ -304,4 +304,4 @@ namespace RT64 {
+         void setGBI(GBI *gbi);
+         void setNoN(bool NoN);
+     };
+-};
+\ No newline at end of file
++};
+diff --git a/src/hle/rt64_transform_group.h b/src/hle/rt64_transform_group.h
+index 399e665..ddf1e11 100644
+--- a/src/hle/rt64_transform_group.h
++++ b/src/hle/rt64_transform_group.h
+@@ -24,5 +24,6 @@ namespace RT64 {
+         uint8_t ordering = G_EX_ORDER_AUTO;
+         uint8_t aspectMode = G_EX_ASPECT_AUTO;
+         uint8_t editable = G_EX_EDIT_NONE;
++        float projectionFovScale = 1.0f;
+     };
+-};
+\ No newline at end of file
++};
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+index 6b2b974..2765b55 100644
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -14,6 +14,7 @@
+ #include "shared/rt64_raster_params.h"
+ 
+ #include "rt64_descriptor_sets.h"
++#include "rt64_projection_processor.h"
+ #include "rt64_render_worker.h"
+ 
+ // TODO: Move to shared.
+@@ -1495,7 +1496,18 @@ namespace RT64 {
+                 // so taking the wide branch (screenScale.x stays 1.0) lets it fill that half
+                 // instead of being squeezed to the 4:3 centre. computeOrigin() treats WIDE (>= NONE)
+                 // as centre, so convertViewportRect still produces the correct half-width scissor.
+-                bool useWideViewport = ((viewportOrigin == G_EX_ORIGIN_NONE) && coversWholeWidth && horizontalRatio) || (viewportOrigin == G_EX_ORIGIN_WIDE);
++                const uint32_t projGroupIndex = drawData.viewProjTransformGroups[proj.transformsIndex];
++                const TransformGroup &projGroup = drawData.transformGroups[projGroupIndex];
++                const auto &viewTransform = drawData.viewTransforms[proj.transformsIndex];
++                const bool fovIndependentBackdrop = isFovIndependentBackdrop(
++                    proj.type, projGroup.aspectMode, viewTransform);
++                // A finite backdrop is rendered as a complete source-aspect image. Once
++                // its authored FOV has been restored by ProjectionProcessor, map that
++                // image over the entire destination viewport instead of centering it in
++                // the original-width band. This is what makes coverage independent of
++                // the destination aspect ratio rather than merely "wide enough" at 16:9.
++                bool useWideViewport = ((viewportOrigin == G_EX_ORIGIN_NONE) && coversWholeWidth && horizontalRatio) ||
++                                       (viewportOrigin == G_EX_ORIGIN_WIDE) || fovIndependentBackdrop;
+                 if (useWideViewport) {
+                     projInvRatioScale = 1.0f;
+                 }
+@@ -1922,4 +1934,4 @@ namespace RT64 {
+         unsigned int im3dVertexCount;
+     };
+ };
+-*/
+\ No newline at end of file
++*/
+diff --git a/src/render/rt64_projection_processor.cpp b/src/render/rt64_projection_processor.cpp
+index c5dd321..fd17720 100644
+--- a/src/render/rt64_projection_processor.cpp
++++ b/src/render/rt64_projection_processor.cpp
+@@ -16,6 +16,13 @@ namespace RT64 {
+         matrix[2][0] *= aspectRatioScale;
+         matrix[3][0] *= aspectRatioScale;
+     }
++
++    inline void adjustProjectionFov(interop::float4x4 &matrix, const float fovScale) {
++        for (int row = 0; row < 4; row++) {
++            matrix[row][0] *= fovScale;
++            matrix[row][1] *= fovScale;
++        }
++    }
+     
+     // ProjectionProcessor
+ 
+@@ -90,7 +97,14 @@ namespace RT64 {
+             // is exactly right -- without it the quadrant, stretched to fill its output quarter,
+             // would be horizontally distorted.
+             const bool wideSubViewport = (viewportOrigin == G_EX_ORIGIN_WIDE);
++            const interop::float4x4 &viewTransform = drawData.viewTransforms[proj.transformsIndex];
++            const bool parallaxlessView = isParallaxlessView(viewTransform);
++            const bool fovIndependentBackdrop = isFovIndependentBackdrop(
++                proj.type, curProjGroup.aspectMode, viewTransform);
+             bool adjustAspectRatio = (curProjGroup.aspectMode == G_EX_ASPECT_ADJUST) || wideSubViewport;
++            if (fovIndependentBackdrop) {
++                adjustAspectRatio = false;
++            }
+             if ((curProjGroup.aspectMode == G_EX_ASPECT_AUTO) && !wideSubViewport) {
+                 FixedRect intersectionRect = proj.scissorRect;
+                 if (proj.usesViewport()) {
+@@ -119,12 +133,8 @@ namespace RT64 {
+             // float noise, kept well below any real scene's camera offset. This runs in the
+             // render thread every presented frame, so it also covers the paused state where the
+             // game's own per-frame frustum builder (func_8004384C) is frozen.
+-            if (adjustAspectRatio && (proj.type == Projection::Type::Perspective)) {
+-                const interop::float4x4 &vT = drawData.viewTransforms[proj.transformsIndex];
+-                const float translationEpsilon = 0.5f;
+-                if ((fabsf((float)vT[3][0]) < translationEpsilon) &&
+-                    (fabsf((float)vT[3][1]) < translationEpsilon) &&
+-                    (fabsf((float)vT[3][2]) < translationEpsilon)) {
++            if (!fovIndependentBackdrop && adjustAspectRatio && (proj.type == Projection::Type::Perspective)) {
++                if (parallaxlessView) {
+                     adjustAspectRatio = false;
+                 }
+             }
+@@ -143,7 +153,14 @@ namespace RT64 {
+                 projMatrix = workload.debuggerCamera.projMatrix;
+             }
+ 
++            float backdropFovScale = 1.0f;
++            if (fovIndependentBackdrop) {
++                backdropFovScale = curProjGroup.projectionFovScale;
++            }
++            const float restoredVerticalScale =
++                std::abs((float)projMatrix[1][1]) * backdropFovScale;
+             adjustProjectionMatrix(projMatrix, projRatioScale);
++            adjustProjectionFov(projMatrix, backdropFovScale);
+ 
+             interop::float4x4 &prevViewTransform = drawData.prevViewTransforms[proj.transformsIndex];
+             interop::float4x4 &prevProjTransform = drawData.prevProjTransforms[proj.transformsIndex];
+@@ -152,6 +169,12 @@ namespace RT64 {
+                 const interop::float4x4 curProjTransform = projMatrix;
+                 interop::float4x4 adjustedPrevProj = *prevProjMatrix;
+                 adjustProjectionMatrix(adjustedPrevProj, projRatioScale);
++                if (fovIndependentBackdrop) {
++                    const float prevVerticalScale = std::abs((float)adjustedPrevProj[1][1]);
++                    const float prevBackdropFovScale = (prevVerticalScale > 1.0e-8f)
++                        ? (restoredVerticalScale / prevVerticalScale) : 1.0f;
++                    adjustProjectionFov(adjustedPrevProj, prevBackdropFovScale);
++                }
+                 viewMatrix = rigidBody->lerp(p.curFrameWeight, *prevViewMatrix, curViewTransform, true);
+                 prevViewTransform = rigidBody->lerp(p.prevFrameWeight, *prevViewMatrix, curViewTransform, true);
+ 
+@@ -191,4 +214,4 @@ namespace RT64 {
+ 
+         bufferUploader->submit(p.worker, uploads);
+     }
+-};
+\ No newline at end of file
++};
+diff --git a/src/render/rt64_projection_processor.h b/src/render/rt64_projection_processor.h
+index 5bc3a2a..1a6c9af 100644
+--- a/src/render/rt64_projection_processor.h
++++ b/src/render/rt64_projection_processor.h
+@@ -4,11 +4,29 @@
+ 
+ #pragma once
+ 
++#include <cmath>
++
++#include "../include/rt64_extended_gbi.h"
++
+ #include "hle/rt64_game_frame.h"
+ 
+ #include "rt64_buffer_uploader.h"
+ 
+ namespace RT64 {
++    inline bool isParallaxlessView(const interop::float4x4 &viewTransform) {
++        constexpr float translationEpsilon = 0.5f;
++        return (std::abs((float)viewTransform[3][0]) < translationEpsilon) &&
++            (std::abs((float)viewTransform[3][1]) < translationEpsilon) &&
++            (std::abs((float)viewTransform[3][2]) < translationEpsilon);
++    }
++
++    inline bool isFovIndependentBackdrop(Projection::Type type, uint8_t aspectMode,
++                                         const interop::float4x4 &viewTransform) {
++        return (type == Projection::Type::Perspective) &&
++            (aspectMode == G_EX_ASPECT_BACKDROP) &&
++            isParallaxlessView(viewTransform);
++    }
++
+     struct ProjectionProcessor {
+         std::unique_ptr<BufferUploader> bufferUploader;
+         std::vector<BufferUploader::Upload> uploads;
+@@ -30,4 +48,4 @@ namespace RT64 {
+         void processScene(const ProcessParams &p, const GameScene &scene, size_t sceneIndex);
+         void upload(const ProcessParams &p);
+     };
+-};
+\ No newline at end of file
++};

@@ -17,8 +17,10 @@
 // any mode that does wake them stays self-consistent.
 //
 // With all knobs at their defaults (1.0 / 1.0 / +0) every shim returns exactly`r`n// what the ROM computed, so stock presentation is untouched.
+#include <atomic>
 #include <cstring>
 
+#include "lambo_camera_projection.h"
 #include "lambo_config.h"
 #include "lambo_log.h"
 
@@ -64,6 +66,7 @@ unsigned int scaled_bits(unsigned int authored_bits, double scale, const char* t
 
 double g_dist_last = -1.0;
 double g_height_last = -1.0;
+std::atomic<unsigned int> g_backdrop_projection_scale_bits{0x3F800000u};
 
 } // namespace
 
@@ -83,7 +86,12 @@ extern "C" unsigned int lambo_camera_height_bits(unsigned int authored_bits) {
 extern "C" unsigned int lambo_camera_fov_bits(unsigned int authored_bits) {
     float authored;
     std::memcpy(&authored, &authored_bits, sizeof(authored));
-    const double out = static_cast<double>(authored) + lambo::config::camera_fov_add();
+    const double out = lambo_clamp_vertical_fov(
+        static_cast<double>(authored) + lambo::config::camera_fov_add());
+    const float backdrop_scale = static_cast<float>(
+        lambo_backdrop_fov_restore_scale(static_cast<double>(authored), out));
+    g_backdrop_projection_scale_bits.store(float_bits(backdrop_scale),
+                                            std::memory_order_release);
     if (out != (double)authored) {
         static int remaining = 5;
         if (cam_trace() && remaining > 0) {
@@ -92,6 +100,21 @@ extern "C" unsigned int lambo_camera_fov_bits(unsigned int authored_bits) {
         }
     }
     return float_bits(out);
+}
+
+// The display-list tag embeds the correction computed alongside the exact FOV
+// passed to guPerspective. RT64 therefore never re-reads live configuration for
+// an older workload when a menu change lands between game and render threads.
+extern "C" unsigned int lambo_camera_backdrop_projection_scale_bits() {
+    const unsigned int bits = g_backdrop_projection_scale_bits.load(std::memory_order_acquire);
+    static int remaining = 5;
+    if (cam_trace() && remaining > 0) {
+        --remaining;
+        float scale;
+        std::memcpy(&scale, &bits, sizeof(scale));
+        LAMBO_LOG("camera", "backdrop projection restore %.4f\n", (double)scale);
+    }
+    return bits;
 }
 
 // DIAGNOSTIC (LAMBO_CAM_TRACE): called from the func_80032450 race-camera body
