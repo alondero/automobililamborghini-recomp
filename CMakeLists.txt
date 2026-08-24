@@ -209,13 +209,18 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/RmlUi ${CMAKE_BINARY_DIR}/RmlUi
 # transitively; RmlUi's vendored robin_hood.h relies on that and fails with
 # "Unsupported bitness" at the SIZE_MAX check (see release flow notes).
 # Force-include the standard integer header for every C++ translation unit
-# that includes an RmlUi header. We use CMAKE_CXX_FLAGS rather than
-# add_compile_options(target) because RmlUi headers are included by:
-#   * rmlui_core (STATIC) and rmlui_debugger (STATIC)
-#   * the SDL backend file compiled DIRECTLY into lamborghini_modern
-# Targeting each library would miss the latter; targeting via CXX flags
-# scopes to C++ only (C uses <stdint.h>, not <cstdint>).
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include cstdint")
+# that includes an RmlUi header. Apply per-target so it covers:
+#   * rmlui_core / rmlui_debugger (STATIC libraries built by RmlUi's own CMakeLists
+#     whose target_compile_options already lock in -Wall -Wextra -pedantic — adding
+#     CMAKE_CXX_FLAGS at the parent level doesn't reach these targets because
+#     they're created before our parent CMakeLists resumes)
+#   * the SDL backend file compiled DIRECTLY into lamborghini_modern (we flag
+#     lamborghini_modern below in the target's own target_compile_options)
+foreach(_rmlui_target rmlui_core rmlui_debugger)
+    if(TARGET ${_rmlui_target})
+        target_compile_options(${_rmlui_target} PRIVATE -include cstdint)
+    endif()
+endforeach()
 
 set(RT64_STATIC TRUE)
 if(WIN32)
@@ -394,6 +399,16 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         -fno-strict-aliasing
         -fms-extensions
         -ggdb
+        # GCC 16+ stopped pulling <cstdint> into <limits>/<algorithm>/<cstdlib>
+        # transitively; RmlUi's vendored robin_hood.h relies on that and fails
+        # with "Unsupported bitness" at the SIZE_MAX check. RmlUi_Platform_SDL.cpp
+        # (compiled directly into lamborghini_modern, C++) pulls RmlUi headers.
+        # The flag is scoped to CXX via two-argument generator expressions
+        # because `-include` is a single compiler flag followed by a header
+        # name, not a `-flag,value` shorthand — passing both as bare strings
+        # inside $<COMPILE_LANGUAGE:CXX>:...> makes CMake emit them as two
+        # separate tokens for C++ TUs and empty strings for C TUs.
+        "$<$<COMPILE_LANGUAGE:CXX>:-include>" "$<$<COMPILE_LANGUAGE:CXX>:cstdint>"
     )
     if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
         target_compile_options(lamborghini_modern PRIVATE -march=nehalem)
