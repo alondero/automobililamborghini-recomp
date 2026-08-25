@@ -1,0 +1,7 @@
+// Embeds app.manifest into lamborghini_modern.exe as resource ID 1 of type
+// RT_MANIFEST (24) -- the ID Windows looks for in an exe. Compiled by windres
+// (see CMakeLists.txt WIN32 block); MinGW ld has no /MANIFEST switch.
+#ifndef RT_MANIFEST
+#define RT_MANIFEST 24
+#endif
+1 RT_MANIFEST "app.manifest"
