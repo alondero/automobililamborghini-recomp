@@ -505,6 +505,23 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     )
 
     if(WIN32)
+        # Per-Monitor V2 DPI awareness (issue #161): embed src/app.manifest so the
+        # process gets true physical pixel dimensions at >100% display scaling --
+        # without it DWM bitmap-stretches the window by the scale factor and a
+        # 1600x900 window overflows 1080p screens at 175% scaling. MinGW ld has no
+        # /MANIFEST switch, so compile the .rc (which references the manifest) with
+        # windres and link the object.
+        find_program(LAMBO_WINDRES_EXECUTABLE NAMES windres REQUIRED)
+        set(LAMBO_MANIFEST_OBJ ${CMAKE_CURRENT_BINARY_DIR}/lambo_manifest.rc.o)
+        add_custom_command(OUTPUT ${LAMBO_MANIFEST_OBJ}
+            COMMAND ${LAMBO_WINDRES_EXECUTABLE}
+                -I ${CMAKE_CURRENT_SOURCE_DIR}/src
+                -O coff -o ${LAMBO_MANIFEST_OBJ}
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/lambo_manifest.rc
+            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/lambo_manifest.rc
+                    ${CMAKE_CURRENT_SOURCE_DIR}/src/app.manifest
+            COMMENT "Embedding DPI-awareness manifest (windres)")
+        target_sources(lamborghini_modern PRIVATE ${LAMBO_MANIFEST_OBJ})
         # Native crash backtrace (#13 / A14): CaptureStackBackTrace lives in
         # dbghelp.dll. MinGW64 ships the import lib (libdbghelp.a) so an explicit
         # target_link_libraries entry is enough; we don't ship the DLL — the
