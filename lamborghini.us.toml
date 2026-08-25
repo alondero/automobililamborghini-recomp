@@ -1091,3 +1091,20 @@ text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gp
 func = "func_800030F8"
 before_vram = 0x80004374
 text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6); }"
+
+# Remember player one's name across launches. The name editor owns four one-based,
+# 13-byte buffers at 0x800A4819 + driver*13 (12 chars + NUL); player one is therefore
+# 0x800A4826. The setup hook runs after the screen selects its driver but before the
+# ROM scans the buffer to calculate its length, so a saved name is immediately reflected
+# by both the text and cursor. The Done hook captures the final buffer before the ROM
+# advances to the next player / pak flow. Native persistence is in player.json via
+# lambo_player_name.cpp, separate from the main-thread-owned graphics configuration.
+[[patches.hook]]
+func = "func_8003CD84"
+before_vram = 0x8003CE68
+text = "{ extern void lambo_player_name_seed(uint8_t*); lambo_player_name_seed(rdram); }"
+
+[[patches.hook]]
+func = "func_800400EC"
+before_vram = 0x8003F4EC
+text = "{ extern void lambo_player_name_save(uint8_t*); lambo_player_name_save(rdram); }"
