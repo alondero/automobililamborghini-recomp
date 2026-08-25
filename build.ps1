@@ -15,7 +15,7 @@
       3. ROM check (skippable via -RomPath; CI forwards its $env:ROM_FILENAME).
       4. Defensive submodule reset before patching (a half-applied patch from a
          prior run would otherwise break the next apply).
-      5. Apply Lamborghini patches (Windows: 0001, 0007, 0006, 0008, 0009, 0010, 0011, 0005, 0004) with
+      5. Apply Lamborghini patches (Windows: 0001, 0007, 0012, 0006, 0008, 0009, 0010, 0011, 0005, 0004) with
          --ignore-whitespace (CRLF mismatches on Windows git). 0007 adds the
          save-state thread-context registry; without it, src/lambo_savestate.c
          fails to link with "undefined reference to ultramodern_relink_thread_contexts".
@@ -27,7 +27,8 @@
       9. SECOND CMake configure — picks up the newly generated sources via
          CONFIGURE_DEPENDS / EXISTS checks. Without this, src/aspMain.cpp is
          silently excluded.
-     10. Build lamborghini_modern.exe.
+     10. Build lamborghini_modern.exe and run the Windows RDRAM allocation
+         regression test.
 
     The output binary lands at build\lamborghini_modern.exe (run from the repo
     root so the ROM path resolves).
@@ -174,16 +175,24 @@ try {
     # apply would otherwise leave patches failing with "patch failed: ... file:N".
     Write-Host "[2/5] Resetting submodules to clean state before patching..." -ForegroundColor Cyan
     git -C lib/N64ModernRuntime checkout -- . | Out-Null
+    # checkout does not remove untracked files added by patch 0012. Remove its
+    # two known targets so an incremental build returns to a genuinely clean
+    # pre-patch state instead of looking like a partial application.
+    Remove-Item -Force -ErrorAction SilentlyContinue `
+        'lib/N64ModernRuntime/librecomp/include/librecomp/rdram_memory.hpp', `
+        'lib/N64ModernRuntime/librecomp/src/rdram_memory.cpp'
     git -C lib/rt64 checkout -- . | Out-Null
     git -C lib/rt64/src/contrib/plume checkout -- . | Out-Null
 
-    # --- 6. Apply Lamborghini patches (Windows: 0001, 0007, 0006, 0008, 0009, 0010, 0011, 0005, 0004) -
+    # --- 6. Apply Lamborghini patches (Windows: 0001, 0007, 0012, 0006, 0008, 0009, 0010, 0011, 0005, 0004) -
     # Mirrors CI's Windows job exactly (workflow lines 210-214). 0001 then 0007
     # both patch N64ModernRuntime with disjoint hunks (verified to apply
     # sequentially on the pinned commit). 0007 adds the save-state thread-
     # context registry + `ultramodern_relink_thread_contexts` (issue #22, all
     # platforms). Without it, src/lambo_savestate.c fails to link with
     # "undefined reference to `ultramodern_relink_thread_contexts`".
+    # 0012 reserves the 4 GiB guest address range while committing only the
+    # accessible 512 MiB, avoiding false out-of-memory failures on Windows.
     # Patch paths MUST be absolute — `git -C $sub apply $relpath` runs from
     # inside the submodule, where the relative path doesn't resolve. CI uses
     # "$(pwd)/patches/..." for the same reason.
@@ -191,6 +200,7 @@ try {
     $patches = @(
         @{ Sub = 'lib/N64ModernRuntime';       Patch = 'patches/0001-lamborghini-runtime-scheduler-audio-vi.patch' },
         @{ Sub = 'lib/N64ModernRuntime';       Patch = 'patches/0007-ultramodern-savestate-thread-context-relink.patch' },
+        @{ Sub = 'lib/N64ModernRuntime';       Patch = 'patches/0012-n64modernruntime-lazy-rdram-commit.patch' },
         @{ Sub = 'lib/rt64';                   Patch = 'patches/0006-rt64-interp-angular-velocity-matching.patch' },
         @{ Sub = 'lib/rt64';                   Patch = 'patches/0008-rt64-skybox-stretch-parallaxless-backdrop.patch' },
         @{ Sub = 'lib/rt64';                   Patch = 'patches/0005-rt64-mingw-gcc-compat.patch' },
@@ -284,7 +294,17 @@ try {
     & $cmake --build build --target lamborghini_modern -j
     if ($LASTEXITCODE -ne 0) { throw 'lamborghini_modern build failed.' }
 
-    # --- 13. Done -------------------------------------------------------------
+    # --- 13. Run the startup-allocation regression ---------------------------
+    # This reproduces the old eager 4 GiB commit under a 1 GiB process limit,
+    # then proves the production allocator can reserve 4 GiB while committing
+    # only its accessible 512 MiB prefix.
+    Write-Host "[5/5] Testing Windows RDRAM allocation..." -ForegroundColor Cyan
+    & $cmake --build build --target lambo_rdram_allocation_tests -j
+    if ($LASTEXITCODE -ne 0) { throw 'RDRAM allocation test build failed.' }
+    & ctest.exe --test-dir build -R '^lambo_windows_rdram_reservation$' --output-on-failure
+    if ($LASTEXITCODE -ne 0) { throw 'RDRAM allocation regression test failed.' }
+
+    # --- 14. Done -------------------------------------------------------------
     $exe = Join-Path $RepoRoot 'build\lamborghini_modern.exe'
     if (Test-Path $exe) {
         $stamp = (Get-Item $exe).LastWriteTime
