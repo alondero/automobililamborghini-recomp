@@ -81,6 +81,18 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_startup_state_machine COMMAND lambo_startup_tests)
 
+    if(WIN32)
+        add_executable(lambo_rdram_allocation_tests
+            tests/test_rdram_allocation.cpp
+            ${N64MR}/librecomp/src/rdram_memory.cpp
+        )
+        target_include_directories(lambo_rdram_allocation_tests PRIVATE
+            ${N64MR}/librecomp/include
+        )
+        target_compile_definitions(lambo_rdram_allocation_tests PRIVATE NOMINMAX)
+        add_test(NAME lambo_windows_rdram_reservation COMMAND lambo_rdram_allocation_tests)
+    endif()
+
     add_executable(lambo_input_gate_tests
         tests/test_input_gate.cpp
         src/lambo_input_gate.cpp

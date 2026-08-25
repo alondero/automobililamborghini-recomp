@@ -14,7 +14,7 @@
 #   3. Submodule init (recursive; core.longpaths isn't needed on Linux).
 #   4. Defensive submodule reset before patching (half-applied patches from a
 #      prior run would otherwise break the next apply with "patch failed: ...").
-#   5. Apply Lamborghini patches (Linux: 0001, 0007, 0006, 0008, 0009, 0010, 0011 — no MinGW/D3D12
+#   5. Apply Lamborghini patches (Linux: 0001, 0007, 0012, 0006, 0008, 0009, 0010, 0011 — no MinGW/D3D12
 #      fixes needed; no plume patch). 0007 adds the save-state thread-context
 #      registry; without it, src/lambo_savestate.c fails to link with
 #      "undefined reference to ultramodern_relink_thread_contexts".
@@ -93,22 +93,27 @@ git submodule update --init --recursive
 # --- 5. Defensive submodule reset (mirrors CI) ------------------------------
 log "[2/5] Resetting submodules to clean state before patching..."
 git -C lib/N64ModernRuntime checkout -- .
+# checkout does not remove untracked files added by patch 0012. Remove its two
+# known targets so incremental builds return to a clean pre-patch state.
+rm -f \
+    lib/N64ModernRuntime/librecomp/include/librecomp/rdram_memory.hpp \
+    lib/N64ModernRuntime/librecomp/src/rdram_memory.cpp
 git -C lib/rt64 checkout -- .
 git -C lib/rt64/src/contrib/plume checkout -- . 2>/dev/null || true
 
-# --- 6. Apply Lamborghini patches (Linux: 0001, 0007, 0006, 0008, 0009, 0010, 0011, 0012) ----------------
+# --- 6. Apply Lamborghini patches (Linux: 0001, 0007, 0012, 0006, 0008, 0009, 0010, 0011) ----------------
 # Mirrors CI's Linux job exactly (workflow lines 93-95). 0001 then 0007 both
 # patch N64ModernRuntime with disjoint hunks (verified to apply sequentially
 # on the pinned commit). 0007 adds the save-state thread-context registry +
 # `ultramodern_relink_thread_contexts` (issue #22, all platforms). Without it,
 # src/lambo_savestate.c fails to link with "undefined reference to
-# `ultramodern_relink_thread_contexts`". 0012 adds <cstdint>/<cstddef> to
-# RmlUi's robin_hood.h — gcc 16 on windows-latest no longer pulls them in
-# transitively, so the bitness check fails with "Unsupported bitness".
+# `ultramodern_relink_thread_contexts`". 0012 reserves the 4 GiB guest address
+# range while committing only the accessible 512 MiB.
 log "[2/5] Applying Lamborghini submodule patches..."
 PATCHES=(
     "lib/N64ModernRuntime:0001-lamborghini-runtime-scheduler-audio-vi.patch"
     "lib/N64ModernRuntime:0007-ultramodern-savestate-thread-context-relink.patch"
+    "lib/N64ModernRuntime:0012-n64modernruntime-lazy-rdram-commit.patch"
     "lib/rt64:0006-rt64-interp-angular-velocity-matching.patch"
     "lib/rt64:0008-rt64-skybox-stretch-parallaxless-backdrop.patch"
     "lib/rt64:0009-rt64-widescreen-split-subviewport.patch"
