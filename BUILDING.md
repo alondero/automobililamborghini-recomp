@@ -45,6 +45,10 @@ git -C lib/N64ModernRuntime apply ../../patches/0001-lamborghini-runtime-schedul
 # ultramodern save-state thread-context relink (issue #22, all platforms):
 git -C lib/N64ModernRuntime apply ../../patches/0007-ultramodern-savestate-thread-context-relink.patch
 
+# lazy RDRAM commit + rdram_memory.cpp (issue #158; the port's CMakeLists links
+# librecomp/src/rdram_memory.cpp directly, so configure fails without this):
+git -C lib/N64ModernRuntime apply ../../patches/0012-n64modernruntime-lazy-rdram-commit.patch
+
 # RT64 renderer — all platforms (frame-interpolation transform matching, issue #30):
 git -C lib/rt64 apply "$(pwd)/patches/0006-rt64-interp-angular-velocity-matching.patch"
 

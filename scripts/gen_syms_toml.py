@@ -1076,6 +1076,24 @@ func = "func_8000A6C0"
 before_vram = 0x8000D920
 text = "{ extern uint32_t lambo_no_lod_seg_list_clamp(uint8_t*, uint32_t); ctx->r25 = lambo_no_lod_seg_list_clamp(rdram, (uint32_t)ctx->r25); }"
 
+# Issue #165 -- no_lod car-model detail (the last distance axis). The scene
+# builder also draws the cars and keeps a per-car scaled camera distance as a
+# halfword at 0x80098720 (sqrt at 0x8000C0A4, trunc + store at 0x8000C0AC/
+# 0x8000C0BC, 3P/4P x1.5 re-store at 0x8000C104). Every car-model choice reads
+# that one halfword: an 8-entry threshold ladder over the car-type struct
+# picks models[level] (0x8000C17C-0x8000C25C; structs are runtime asset data
+# like 0x8018F0C0 whose tail entries are the simplified far meshes), a second
+# overlay pass repeats the ladder at 0x8000E210-0x8000E2C4, and a >=150 check
+# gates the far path (0x8000C2C4) -- this is the mechanism behind car models
+# visibly swapping with distance. Hooked after both stores (0x8000C108, before
+# any reader): zeroing the halfword under no_lod() makes every consumer take
+# its closest/most-detailed branch. Per frame by construction; with no_lod()
+# off the native leaves RDRAM untouched. Native in src/lambo_no_lod.cpp.
+[[patches.hook]]
+func = "func_8000A6C0"
+before_vram = 0x8000C108
+text = "{ extern void lambo_no_lod_car_detail(uint8_t*); lambo_no_lod_car_detail(rdram); }"
+
 # Issue #78 — 3P/4P per-quadrant HUD text pinning. The quad section (L_800517A8) draws
 # each player's RANK (x=0x20/0x110), speed readout (x=0x14-0x46 / 0xEB-0x11D), lap-notify
 # glyph (x=0x19/0x118) and the inline per-player tag texrects in the outer columns, plus

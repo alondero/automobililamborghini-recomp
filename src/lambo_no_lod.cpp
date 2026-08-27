@@ -210,3 +210,36 @@ extern "C" uint32_t lambo_no_lod_seg_list_clamp(uint8_t* rdram, uint32_t count) 
     if (!lambo::config::no_lod()) return count;
     return (int32_t)count > 20 ? 20u : count;
 }
+
+// Per-car model LOD (issue #165, the last distance axis -- a user report that car
+// models still swap with distance after the scenery work shipped). The same scene
+// builder draws the cars and keeps a per-car scaled camera distance as a halfword
+// at 0x80098720: each frame it computes sqrt of the scaled dx^2+dy^2+dz^2 between
+// the viewport position (indexed by 0x800CE6A6 into 0x800A2DD0) and the per-car
+// record at 0x800B69B0 + i*268 (the struct pointer -- a sibling field at
+// 0x800B69BC carries the position), truncs to int (0x8000C0AC) and stores it
+// there (0x8000C0BC; the 3P/4P pass multiplies by 1.5 and stores again at
+// 0x8000C104). Every car-model choice hangs off that one halfword, all inside
+// this builder: an 8-entry threshold ladder over the car-type struct's halfwords
+// (first index whose threshold exceeds the distance) selects a display list from
+// the struct's models[8] array (ladder at 0x8000C17C-0x8000C1DC, emit at
+// 0x8000C218-0x8000C25C), a second consumer repeats the pattern for its own
+// overlay pass (0x8000E210-0x8000E2C4), and a >=150 check gates the far path
+// (0x8000C2C4). The structs are runtime asset data (e.g. 0x8018F0C0:
+// thresholds [25,10,50,32,200,...], models [full, mid, mid, low...]) -- the low
+// entries are the simplified meshes that swap in with distance.
+//
+// Fix: zero the halfword after both stores (hooked at 0x8000C108, before any
+// reader -- 0x8000C0BC stores, 0x8000C104 re-stores in 3P/4P, first read at
+// 0x8000C160; verified in ares with a read-watchpoint on the struct threshold
+// table) when no_lod() is on, so every consumer takes its closest/most-detailed
+// branch: level 0 on both ladders (for typical positive-threshold structs;
+// structs with a zero or negative threshold[0] would still pick level 0 since
+// "dist<threshold" with dist=0 fails for any negative threshold) and the near
+// path on the 150 gate. Per frame, not once at load -- the builder recomputes
+// the value every car, every frame. With no_lod() off the native returns
+// without touching RDRAM and the ROM's authored LOD selection runs bit-for-bit.
+extern "C" void lambo_no_lod_car_detail(uint8_t* rdram) {
+    if (!lambo::config::no_lod()) return;
+    MEM_H(0, (gpr)(int32_t)0x80098720u) = 0;
+}
