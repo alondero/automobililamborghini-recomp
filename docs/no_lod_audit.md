@@ -351,6 +351,83 @@ audit had classified as "frame-coherent view culling, not pop-in" and left untou
   `0x3FEC5A1CAC083127`), pinned by test.
 
 ---
+## 12. Addendum (2026-08-27): the car-distance halfword (and the `func_80060464` reclassification)
+
+A user report that "car models still change with distance" after the scenery work
+shipped sent the camera back into `func_8000A6C0`. The same builder that draws
+the segments also draws the cars, and the chosen-car-model axis lived in a place
+none of the previous work touched.
+
+**The mechanism (issue #165).** Each frame the builder computes a per-car scaled
+camera distance (sqrt of scaled dx²+dy²+dz² between the viewport position and
+the per-car record at `0x800B69B0 + i*268`, indexed by the sp+0x1B2 car
+counter), truncates it to a halfword at guest `0x80098720` (sqrt at vram
+`0x8000C0A4`, store at `0x8000C0BC`, 3P/4P ×1.5 re-store at `0x8000C104`), and
+an 8-entry threshold ladder over each car-type struct's halfwords picks which
+model DL to emit from the struct's `models[8]` array (ladder at
+`0x8000C17C-0x8000C1DC`, emit at `0x8000C218-0x8000C25C`). A second overlay
+pass repeats the ladder at `0x8000E210-0x8000E2C4`. A `>=150` check at
+`0x8000C2C4` gates the far path. The structs are runtime asset data (e.g.
+`0x8018F0C0`: thresholds `[25,10,50,32,200,...]`, models
+`[full, mid, mid, low×5]`). The low-tail entries are the simplified meshes
+the user sees swap in with distance.
+
+Verified empirically (2026-08-27): read-watchpoint on the struct threshold
+table at `0x801AB3F0` (the function rom offset of the struct row for the
+near-detail family) fired with consistent `0x8000C0AC` and `0x8000C1B4` return-
+address candidates, both inside `func_8000A6C0` (the scene builder). DL-walk
+diff (`LAMBO_RACE_DL_DUMP_AT`) of the same send_dl count with stock vs. patched
+showed the level-varying model family (`0x801A9E68`) swapping to its
+near-detail entry (`0x801A9998`) under the fix.
+
+**The fix (issue #165, shipped in this branch).** Native
+`lambo_no_lod_car_detail(rdram)` in `src/lambo_no_lod.cpp` zeroes the
+halfword at `0x80098720` after both stores and before all readers (hooked
+at `before_vram = 0x8000C108`, `func_8000A6C0`). With `no_lod()` on, every
+consumer takes its closest/most-detailed branch. With `no_lod()` off, the
+native returns immediately and ROM behavior is bit-for-bit preserved. Native
+is gated on the existing `no_lod()` graphics.json key — no new toggle. Hook
+block lives in both `lamborghini.us.toml` and `scripts/gen_syms_toml.py`'s
+`PATCH_BLOCKS` per the repo's documented gotcha (gen must carry live blocks
+or a regen silently drops them).
+
+**Reclassification of `func_80060464` (issue #4, the "A4" patch).** The
+audit §1 Axis A classified `func_80060464` as "per-car geometry detail vs
+100.0u — the A4 patch; branch already NOP'd at recompile". On re-reading the
+disassembly this is wrong: the function is a nested pair loop over cars,
+computing `dist - (radius_i + radius_j)` and a separate threshold at 100.0,
+then dispatching to either a detailed OBB contact test (`func_80063D80`)
+and an impact handler (`func_8005EC74`) or a simple far-path collision
+update. It's car-*pair collision/proximity processing*, not render LOD. The
+patch (bc1f at `0x8005FA3C` NOP'd to always fall through) was therefore
+silently neutral — harmless, but it never addressed the user's visible
+symptom. The audit table entry should be read as "neutralised car-pair
+collision branch", not "geometry-LOD gate". Future readers: do not trust
+the original classification without re-reading the disassembly. The
+isometric pair-loop shape, the per-pair `-0x17D0` record-base computation
+(`lui $t9, 0x800D; addiu $t9, -0x17D0` = `0x800CE830`), and the calls to
+`func_800631F8`/`func_8006364C`/`func_80064364` are all characteristic of the
+collision system, not the render system.
+
+**Why `scan_lod_patterns.py` missed it.** The scan fingerprints
+single-precision FP compares against immediates; this mechanism uses (a) a
+truncated integer halfword (single-precision *output* of a sqrt, stored as
+`signed short`), (b) threshold values loaded from runtime asset data via
+`lhu $at, 0($t6)` (table load, no immediate), and (c) integer `slt`
+comparisons in a ladder. Two of the three primary blind spots this report
+already documents (§7: integer gates; §9: table-loaded thresholds), but the
+scan was never re-run to catch this on the runtime data because it's
+deployed during races from a non-ROM address. `tools/scan_lod_patterns.py`
+should grow an integer-ladder fingerprint if it's to catch future cases.
+
+**Makes #93 a partial no-op.** Issue #93 ("Per-mode car-mesh identity check")
+predicted a per-mode car-mesh axis gated under `no_lod() && players >= 3`. That
+prediction was wrong — the actual axis is per-frame and shared across player
+counts, so `no_lod()` alone is sufficient. The per-mode identity check (do
+3P/4P render simpler meshes?) is still worth running but no longer motivates
+its own hook ticket.
+
+---
 *Method note: MIPS classification used `tools/scan_lod_patterns.py` output cross-read
 against the recompiled C (per-instruction VRAM comments) rather than raw disassembly;
 extraction script preserved in the session scratchpad. ROM scans were byte-pattern
