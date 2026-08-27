@@ -192,8 +192,13 @@ if(BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui_assets.py
                 ${CMAKE_CURRENT_SOURCE_DIR}
         )
+        add_test(NAME lambo_quit_path
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_quit_path.py
+                ${CMAKE_CURRENT_SOURCE_DIR}
+        )
     else()
-        message(WARNING "Python not found; lambo_ui_asset_references will not be registered")
+        message(WARNING "Python not found; Python-based tests will not be registered")
     endif()
 endif()
 

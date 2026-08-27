@@ -123,7 +123,12 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
 
 [[noreturn]] static void application_exit_success() {
     LAMBO_LOG("probe", "application exit requested; status=success\n");
-    lambo::ui::shutdown();
+    // update_gfx_stub runs on librecomp's primary thread, while RT64 invokes the
+    // UI render hooks on its presentation thread. Calling ui::shutdown() here
+    // races that thread: it clears RT64's unsynchronised hook pointers and tears
+    // down RmlUi while a draw hook can still be using it. This path deliberately
+    // terminates the process below, so there is no cleanup benefit that can
+    // justify touching either subsystem first.
     std::fflush(nullptr);
     std::_Exit(0);
 }
