@@ -15,7 +15,8 @@ Each atlas hash is a distinct TMEM texture and they are packed DIFFERENTLY:
 - The **white** HUD/message font (`aec01187`, `2cc2b764`) uses 10-pixel cells, omits the
   `:;<=>?@` cells, and is **italic** in the original.
 - The **gold** menu font (`7c1ef5cc`) uses 8-pixel cells, includes every character from
-  `!` through `Z`, has a leading blank cell, and is **upright**.
+  `!` through `Z` and has a leading blank cell. This renderer gives it the same
+  forward-leaning treatment as the larger headings for a more coherent modern pack.
 
 So there is no single cell pitch or single style. Naively mapping both atlases to a fixed
 8px grid, or rendering upright into the italic atlas, JUMBLES the text (verified: the
@@ -30,16 +31,16 @@ atlases against an x-ruler and validated in-game.
 - Caps/digits are vertical-centred; punctuation ('.') is bottom-aligned to the baseline.
 - **Transparent base** -- paint ONLY the mapped glyphs. Any upscaled base (nearest or lanczos)
   leaves original-glyph slivers/ghosts between the crisp glyphs.
-- **Italic atlases** (the white font): pass a real italic/oblique face via `--ttf-italic` for
-  the cleanest result. Without one, the upright `--ttf` is sheared as a fallback (portable, but
-  the shear leaves faint edge ticks). `--shear 0` disables the fallback.
+- **Italic atlases**: pass a real italic/oblique face via `--ttf-italic` for the cleanest
+  result. A small additional shear keeps a modern face close to the original game's stronger
+  motorsport slant. Without an italic face, the upright `--ttf` is sheared as a fallback.
 
 Pack the result with `make_pack.py <dir> --shift none` (the output is grid-aligned; `half`
 over-shifts it -- see docs/TEXTURES.md). Ship with an OPEN font (e.g. Liberation/DejaVu Bold)
 to avoid embedding a proprietary face.
 
     python tools/render_font.py <decoded_atlas.png> <out.png> --ttf <bold.ttf> \
-        [--ttf-italic <bold-oblique.ttf>] [--shear 0.22]
+        [--ttf-italic <bold-oblique.ttf>] [--shear 0.28] [--extra-shear 0.08]
 
 The atlas profile (positions + italic flag) is auto-selected from the hash in the filename.
 
@@ -56,6 +57,9 @@ SCALE = 8
 OUTLINE = 4
 WHITE_CHARACTERS = "!\"#$%&'()*+,-./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 GOLD_CHARACTERS = "".join(chr(codepoint) for codepoint in range(ord("!"), ord("Z") + 1))
+# Stock pause repro: LAMBO_WARP=1, press Start. These two source slots draw the
+# opposing CONTINUE cursor arrows; treating them as ASCII produces literal `&` / `'`.
+WHITE_CUSTOM_GLYPHS = {"&": "right-arrow", "'": "left-arrow"}
 
 
 def boxes_from_cells(img, characters, pitch, first_cell=0):
@@ -83,19 +87,95 @@ def position_in_cell(ideal_x, tile_width, cell_x, cell_width, gutter):
     return min(max(round(ideal_x), left), right)
 
 
+def vertical_position(character, canvas_height, tile_height, punctuation_inset, top_inset=None):
+    """Place punctuation on a shared baseline and vertically centre normal glyphs."""
+    if character in ".,":
+        return canvas_height - tile_height - punctuation_inset
+    if character in "\"'":
+        return punctuation_inset if top_inset is None else top_inset
+    return round((canvas_height - tile_height) / 2)
+
+
+def tonal_gradient(colour, strength):
+    """Return a restrained highlight-to-shadow ramp derived from a sampled ink colour."""
+    top = tuple(round(channel + (255 - channel) * strength) for channel in colour)
+    bottom = tuple(round(channel * (1.0 - strength)) for channel in colour)
+    return top, bottom
+
+
+def apply_gradient(tile, mask, gradient):
+    """Paint a vertical colour ramp through a supplied coverage mask."""
+    if gradient is None:
+        return tile
+    ramp = Image.new("RGBA", tile.size, (0, 0, 0, 0))
+    ramp_draw = ImageDraw.Draw(ramp)
+    top, bottom = gradient
+    denominator = max(1, tile.height - 1)
+    for y in range(tile.height):
+        amount = y / denominator
+        row = tuple(round(top[i] * (1.0 - amount) + bottom[i] * amount)
+                    for i in range(3))
+        ramp_draw.line((0, y, tile.width, y), fill=row + (255,))
+    tile.paste(ramp, (0, 0), mask)
+    return tile
+
+
+@dataclass(frozen=True)
+class GlyphStyle:
+    colour: tuple
+    gradient: tuple | None = None
+    outline: int = OUTLINE
+    shadow_colour: tuple | None = None
+    shadow_offset: tuple = (0, 0)
+
+
+def arrow_tile(direction, style):
+    """Draw a modern vector replacement for a custom pause cursor slot."""
+    # Nearly fill the 10x8 source cell so the cursor retains a deliberate, chunky weight.
+    width, height = 9 * SCALE, 7 * SCALE
+    mid = height // 2
+    inset = style.outline + 1
+    head_x = round(width * 0.54)
+    upper = round(height * 0.31)
+    lower = height - upper
+    points = [
+        (inset, upper), (head_x, upper), (head_x, inset),
+        (width - inset, mid), (head_x, height - inset),
+        (head_x, lower), (inset, lower),
+    ]
+    if direction == "left-arrow":
+        points = [(width - x, y) for x, y in points]
+    elif direction != "right-arrow":
+        raise ValueError(f"unknown arrow direction: {direction}")
+
+    tile = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(tile)
+    draw.polygon(points, fill=style.colour + (255,), outline=(0, 0, 0, 255),
+                 width=style.outline)
+    mask = Image.new("L", tile.size, 0)
+    ImageDraw.Draw(mask).polygon(points, fill=255)
+    apply_gradient(tile, mask, style.gradient)
+    # Keep the keyline after applying the ramp to the polygon interior.
+    ImageDraw.Draw(tile).line(points + [points[0]], fill=(0, 0, 0, 255),
+                              width=style.outline, joint="curve")
+    return tile
+
+
 @dataclass(frozen=True)
 class AtlasProfile:
     italic: bool
     characters: str
     pitch: int
     first_cell: int = 0
+    gradient_strength: float = 0.0
 
     def boxes(self, image):
         return boxes_from_cells(image, self.characters, self.pitch, self.first_cell)
 
 
-WHITE_PROFILE = AtlasProfile(True, WHITE_CHARACTERS, 10)
-GOLD_PROFILE = AtlasProfile(False, GOLD_CHARACTERS, 8, first_cell=1)
+WHITE_PROFILE = AtlasProfile(True, WHITE_CHARACTERS, 10, gradient_strength=0.12)
+GOLD_PROFILE = AtlasProfile(True, GOLD_CHARACTERS, 8, first_cell=1,
+                            gradient_strength=0.24)
 PROFILES = {
     "aec01187": WHITE_PROFILE,
     "2cc2b764": WHITE_PROFILE,
@@ -119,14 +199,27 @@ def make_font(ttf, cap=None):
     return ImageFont.truetype(ttf, max(8, round(200 * cap / caph)))
 
 
-def glyph_tile(ch, font, colour, shear, outline=OUTLINE):
-    bb = font.getbbox(ch, stroke_width=outline)
+def glyph_tile(ch, font, shear, style):
+    bb = font.getbbox(ch, stroke_width=style.outline)
     gw, gh = bb[2] - bb[0], bb[3] - bb[1]
     if gw <= 0 or gh <= 0:
         return None
-    tile = Image.new("RGBA", (gw + 2, gh + 2), (0, 0, 0, 0))
-    ImageDraw.Draw(tile).text((1 - bb[0], 1 - bb[1]), ch, font=font, fill=colour + (255,),
-                              stroke_width=outline, stroke_fill=(0, 0, 0, 255))
+    shadow_x, shadow_y = style.shadow_offset
+    tile = Image.new("RGBA", (gw + 2 + abs(shadow_x), gh + 2 + abs(shadow_y)),
+                     (0, 0, 0, 0))
+    origin = (1 - bb[0] + max(0, -shadow_x), 1 - bb[1] + max(0, -shadow_y))
+    draw = ImageDraw.Draw(tile)
+    if style.shadow_colour is not None:
+        draw.text((origin[0] + shadow_x, origin[1] + shadow_y), ch, font=font,
+                  fill=style.shadow_colour + (255,), stroke_width=style.outline,
+                  stroke_fill=(0, 0, 0, 255))
+    draw.text(origin, ch, font=font, fill=style.colour + (255,),
+              stroke_width=style.outline,
+              stroke_fill=(0, 0, 0, 255))
+    if style.gradient is not None:
+        mask = Image.new("L", tile.size, 0)
+        ImageDraw.Draw(mask).text(origin, ch, font=font, fill=255)
+        apply_gradient(tile, mask, style.gradient)
     if shear:
         # slant right (italic): top edge shifts by +shear*height relative to the bottom
         pad = int(abs(shear) * tile.height) + 1
@@ -155,21 +248,28 @@ def ink_colour(ref, x0, x1):
     return tuple(sum(p[i] for p in top) // len(top) for i in (1, 2, 3))
 
 
-def render(ref_path, ttf, ttf_italic, shear_amt):
+def render(ref_path, ttf, ttf_italic, shear_amt, extra_shear=0.08):
     ref = Image.open(ref_path).convert("RGBA")
     w, h = ref.size
     profile = profile_for(Path(ref_path).name)
     boxes = profile.boxes(ref)
     italic = profile.italic
-    # italic atlas: prefer a real italic face (clean); else shear the upright font (fallback).
+    # Prefer a real italic face, then retain a little of the original's stronger slant.
     if italic and ttf_italic:
-        font, shear = make_font(ttf_italic), 0.0
+        font, shear = make_font(ttf_italic), extra_shear
     else:
         font, shear = make_font(ttf), (shear_amt if italic else 0.0)
 
     rendered = []
     for ch, (x0, x1) in boxes.items():
-        tile = glyph_tile(ch, font, ink_colour(ref, x0, x1), shear)
+        colour = ink_colour(ref, x0, x1)
+        gradient = tonal_gradient(colour, profile.gradient_strength)
+        style = GlyphStyle(colour, gradient)
+        custom_glyph = WHITE_CUSTOM_GLYPHS.get(ch) if profile is WHITE_PROFILE else None
+        if custom_glyph:
+            tile = arrow_tile(custom_glyph, style)
+        else:
+            tile = glyph_tile(ch, font, shear, style)
         if tile is None:
             continue
         rendered.append((ch, x0, x1, tile))
@@ -194,12 +294,9 @@ def render(ref_path, ttf, ttf_italic, shear_amt):
         px = position_in_cell(cx - tile.width / 2, tile.width,
                               cell_index * profile.pitch * SCALE,
                               profile.pitch * SCALE, gutter)
-        if ch in ".,":
-            py = h * SCALE - tile.height - round(0.4 * SCALE)
-        elif ch in "\"'":
-            py = round(0.4 * SCALE)
-        else:
-            py = round((h * SCALE - tile.height) / 2)
+        placement_character = "" if (profile is WHITE_PROFILE and ch in WHITE_CUSTOM_GLYPHS) else ch
+        py = vertical_position(placement_character, h * SCALE, tile.height,
+                               round(0.4 * SCALE))
         out.alpha_composite(tile, (px, max(0, py)))
     return out, italic, len(boxes)
 
@@ -211,10 +308,14 @@ def main():
     ap.add_argument("--ttf", required=True, help="a bold upright TTF (used for the gold atlas)")
     ap.add_argument("--ttf-italic", dest="ttf_italic", default=None,
                     help="a bold italic/oblique TTF for the white atlases (cleanest); else --ttf is sheared")
-    ap.add_argument("--shear", type=float, default=0.22, help="italic shear fallback for white atlases (0=off)")
+    ap.add_argument("--shear", type=float, default=0.28,
+                    help="italic shear when only the upright face is available (default 0.28)")
+    ap.add_argument("--extra-shear", type=float, default=0.08,
+                    help="additional slant applied to an italic face (default 0.08)")
     args = ap.parse_args()
 
-    img, italic, n = render(args.ref, args.ttf, args.ttf_italic, args.shear)
+    img, italic, n = render(args.ref, args.ttf, args.ttf_italic, args.shear,
+                            args.extra_shear)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     img.save(args.out)
     print(f"re-rendered {args.ref.name} ({'italic' if italic else 'upright'}, {n} glyphs) "

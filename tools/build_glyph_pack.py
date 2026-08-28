@@ -52,8 +52,9 @@ CHROME_GLYPHS = {
     "fb5243ac423b8aac": "7",
 }
 
-# 24x24 gold message/countdown glyphs encountered across the pack-message and race
-# startup states. The game only authors these words; this is the complete used set.
+# 24x24 gold message/countdown glyphs observed in driven menu and race captures. Keep
+# this map capture-backed: alternate screens add hashes even when the character already
+# exists in another font family.
 GOLD_GLYPHS = {
     "1ca0ebcef7bd9d17": "K", "1d1c418210eb8eb9": "G",
     "612ea5fbdcf2041e": "N", "69f496caa4a581b4": "E",
@@ -64,7 +65,19 @@ GOLD_GLYPHS = {
     "be528398b54d1001": "R", "c6c7989916f1c72c": "W",
     "d4aaa411f6499884": "S", "dfb262661f6e60f8": "M",
     "fc25c298a9daa547": "P",
+    # Decoded runtime captures, 2026-08-29: U from Start-held LAMBO_WARP=1;
+    # L from the last-lap state reached by a LAMBO_WARP=1:1 driven run.
+    "7112047fab42df0d": "U", "e56e844ba1d87442": "L",
 }
+
+CHROME_STYLE = render_font.GlyphStyle(
+    colour=(210, 228, 255), gradient=((250, 253, 255), (116, 153, 211)),
+    outline=6, shadow_colour=(36, 54, 91), shadow_offset=(3, 4),
+)
+GOLD_STYLE = render_font.GlyphStyle(
+    colour=(245, 211, 82), gradient=((255, 241, 105), (186, 132, 31)),
+    outline=7, shadow_colour=(78, 50, 12), shadow_offset=(3, 4),
+)
 
 
 def expected_hashes():
@@ -82,23 +95,23 @@ def fit_tile(tile, canvas_size, margin):
     return tile
 
 
-def render_single(character, ttf, source_size, colour, shear, outline):
+def render_single(character, ttf, source_size, shear, style):
     """Render one glyph into an 8x integer-scaled replacement canvas."""
     width, height = source_size
     canvas = Image.new("RGBA", (width * render_font.SCALE, height * render_font.SCALE),
                        (0, 0, 0, 0))
     cap = round(height * render_font.SCALE * 0.70)
     font = render_font.make_font(ttf, cap=cap)
-    tile = render_font.glyph_tile(character, font, colour, shear, outline=outline)
+    tile = render_font.glyph_tile(character, font, shear, style)
     if tile is None:
         raise ValueError(f"font did not render {character!r}")
     margin = render_font.SCALE
     tile = fit_tile(tile, canvas.size, margin)
     x = round((canvas.width - tile.width) / 2)
-    if character in ".,":
-        y = canvas.height - tile.height - round(height * 0.12 * render_font.SCALE)
-    else:
-        y = round((canvas.height - tile.height) / 2)
+    y = render_font.vertical_position(
+        character, canvas.height, tile.height,
+        round(height * 0.12 * render_font.SCALE),
+    )
     canvas.alpha_composite(tile, (max(0, x), max(0, y)))
     return canvas
 
@@ -119,18 +132,21 @@ def build(decoded_dir, pack_dir, ttf, ttf_italic=None):
 
     for atlas_hash in ATLAS_HASHES:
         reference = decoded_dir / f"{atlas_hash}.png"
-        image, _italic, _count = render_font.render(reference, ttf, ttf_italic, 0.22)
+        image, _italic, _count = render_font.render(reference, ttf, ttf_italic, 0.28)
         image.save(pack_dir / f"{atlas_hash}.png")
 
     chrome_ttf = ttf_italic or ttf
-    chrome_shear = 0.0 if ttf_italic else 0.14
+    chrome_shear = 0.08 if ttf_italic else 0.28
     for texture_hash, character in CHROME_GLYPHS.items():
-        image = render_single(character, chrome_ttf, (16, 16), (210, 228, 255),
-                              chrome_shear, outline=6)
+        image = render_single(character, chrome_ttf, (16, 16), chrome_shear,
+                              CHROME_STYLE)
         image.save(pack_dir / f"{texture_hash}.png")
 
     for texture_hash, character in GOLD_GLYPHS.items():
-        image = render_single(character, ttf, (24, 24), (245, 211, 82), 0.10, outline=7)
+        gold_ttf = ttf_italic or ttf
+        gold_shear = 0.08 if ttf_italic else 0.28
+        image = render_single(character, gold_ttf, (24, 24), gold_shear,
+                              GOLD_STYLE)
         image.save(pack_dir / f"{texture_hash}.png")
 
     database = make_pack.write_manifest(pack_dir, shift="none", operation="stream")
