@@ -52,20 +52,23 @@ def bleed_colour(rgba, iterations):
     left untouched; only RGB of transparent pixels is filled."""
     px = rgba.load()
     w, h = rgba.size
+    # Coverage and propagation are deliberately separate. A filled transparent pixel
+    # keeps alpha=0, but must become an RGB source on the next pass so the bleed can
+    # advance beyond the first ring around the glyph.
+    filled = [[px[x, y][3] > 0 for y in range(h)] for x in range(w)]
     for _ in range(iterations):
         changed = False
-        # snapshot alpha so a pixel filled this pass isn't treated as a source yet
-        opaque = [[px[x, y][3] > 0 for y in range(h)] for x in range(w)]
+        source = [column[:] for column in filled]
         for y in range(h):
             for x in range(w):
-                if opaque[x][y]:
+                if source[x][y]:
                     continue
                 acc = [0, 0, 0]
                 n = 0
                 for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1),
                                (-1, -1), (1, -1), (-1, 1), (1, 1)):
                     nx, ny = x + dx, y + dy
-                    if 0 <= nx < w and 0 <= ny < h and opaque[nx][ny]:
+                    if 0 <= nx < w and 0 <= ny < h and source[nx][ny]:
                         r, g, b, _ = px[nx, ny]
                         acc[0] += r
                         acc[1] += g
@@ -74,6 +77,7 @@ def bleed_colour(rgba, iterations):
                 if n:
                     r, g, b, a = px[x, y]
                     px[x, y] = (acc[0] // n, acc[1] // n, acc[2] // n, a)
+                    filled[x][y] = True
                     changed = True
         if not changed:
             break
@@ -91,7 +95,6 @@ def upscale(inp, scale, edge, sharpen):
     if sharpen:
         rgb = rgb.filter(ImageFilter.UnsharpMask(radius=scale / 2, percent=80, threshold=0))
 
-    # 2. alpha (coverage) plane
     alpha = src.getchannel("A")
     if edge == "crisp":
         # supersample high, blur lightly, then reharden the ramp so edges stay
@@ -100,7 +103,7 @@ def upscale(inp, scale, edge, sharpen):
         big = big.filter(ImageFilter.GaussianBlur(radius=scale / 4))
         big = big.point(lambda v: 0 if v < 96 else (255 if v > 160 else int((v - 96) * 255 / 64)))
         up_a = big.resize((tw, th), Image.LANCZOS)
-    else:  # soft
+    else:
         up_a = alpha.resize((tw, th), Image.LANCZOS)
 
     out = rgb.convert("RGBA")
