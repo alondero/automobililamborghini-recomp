@@ -16,9 +16,8 @@ cannot *see* a texture to decide whether it belongs in a replacement pack. This 
 that decode, emitting <hash>.png per texture plus an index.html contact sheet for eyeballing
 the whole dump at once.
 
-The PNG the tool emits is only for identification/upscaling reference -- the actual
-replacement texture is authored fresh at higher resolution, so a close-enough decode is
-fine. Byte-order/swizzle flags exist because the port hands RT64 its RDRAM in a
+The PNG the tool emits is a viewable reference for editing at native or higher resolution.
+Byte-order/swizzle flags exist because the port hands RT64 its RDRAM in a
 mupen/N64Recomp convention; calibrate once against an in-game screenshot, then leave the
 working flags as the defaults.
 

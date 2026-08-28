@@ -29,15 +29,13 @@ produce another hash for artwork that otherwise looks identical.
 
 ## Config keys (graphics.json)
 
-Extra string/bool keys alongside the standard `GraphicsConfig` fields, each overridable
-by an env var so a headless capture never has to touch the user's `graphics.json`:
+Two string keys alongside the standard `GraphicsConfig` fields, each overridable by an
+environment variable so a capture or test run never has to modify `graphics.json`:
 
 | Key | Type | Default | Env override | Effect |
 |---|---|---|---|---|
 | `texture_pack` | string | `""` | `LAMBO_TEXTURE_PACK` | Directory or `.rtz` auto-loaded at startup. |
 | `texture_dump` | string | `""` | `LAMBO_TEXTURE_DUMP` | Directory RT64 writes every used texture to. |
-| `widescreen_fog_match` | bool | `true` | `LAMBO_FOG_MATCH_1P=1/0` | Issue #83: widen the dense 3P/4P split-screen fog to the 1P window/colour (rewrite of `G_MW_FOG` + `gDPSetFogColor` on the shared RDRAM DL, gated `players >= 3`). 1P/2P stay faithful. |
-| `widescreen_sky_match` | bool | `true` | `LAMBO_SKY_MATCH_1P=1/0` | Issue #84: draw the sky panorama in 3P/4P split screen (a `patches.hook` routes the player-count guard on the game's per-viewport sky-emitter call through `src/lambo_sky_widescreen.cpp`). 1P/2P take that path natively. |
 
 Both are independent of `developer_mode`, so an end-user pack loads **without** the F1
 developer overlay. On success the log prints `[rt64] texture pack loaded: …` /
@@ -143,7 +141,6 @@ expect the warp keys to also trigger.
 ## Files
 
 - `src/rt64_renderer.cpp` — startup wiring (dump dir + `loadReplacementDirectory`).
-- `src/lambo_config.{h,cpp}` — `texture_pack` / `texture_dump` / `widescreen_fog_match` keys + env overrides.
-- `src/lambo_fog_widescreen.cpp` — issue #83 3P/4P fog-widening DL rewrite.
+- `src/lambo_config.{h,cpp}` — `texture_pack` / `texture_dump` keys + env overrides.
 - `tools/decode_dump.py` — dump → PNG (+ contact sheet).
 - `tools/make_pack.py` — replacement files → `rt64.json`.
