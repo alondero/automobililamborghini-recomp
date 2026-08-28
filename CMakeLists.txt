@@ -65,6 +65,21 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_camera_projection_policy COMMAND lambo_camera_projection_tests)
 
+    add_executable(lambo_rt64_angular_velocity_tests
+        tests/test_rt64_angular_velocity.cpp
+        lib/rt64/src/hle/rt64_rigid_body.cpp
+        lib/rt64/src/common/rt64_math.cpp
+    )
+    target_include_directories(lambo_rt64_angular_velocity_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/hlslpp/include
+    )
+    if(WIN32)
+        target_compile_definitions(lambo_rt64_angular_velocity_tests PRIVATE NOMINMAX)
+    endif()
+    add_test(NAME lambo_rt64_angular_velocity_finite COMMAND lambo_rt64_angular_velocity_tests)
+
     add_executable(lambo_controller_pak_tests
         tests/test_controller_pak.c
         src/libultra_stubs.c

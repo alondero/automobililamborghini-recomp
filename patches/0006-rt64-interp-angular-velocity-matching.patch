@@ -1,5 +1,5 @@
 diff --git a/src/hle/rt64_game_frame.cpp b/src/hle/rt64_game_frame.cpp
-index 87392d0..936f488 100644
+index 87392d0..99b9078 100644
 --- a/src/hle/rt64_game_frame.cpp
 +++ b/src/hle/rt64_game_frame.cpp
 @@ -2,6 +2,12 @@
@@ -15,7 +15,7 @@ index 87392d0..936f488 100644
  #include "common/rt64_math.h"
  
  #include "rt64_game_frame.h"
-@@ -236,11 +242,22 @@ namespace RT64 {
+@@ -236,11 +242,25 @@ namespace RT64 {
          matchResult.positionDifference = hlslpp::length(curPos - prevPos);
  
          // Compute the dot product difference between the normalized XYZ vectors of the 3x3 matrices.
@@ -30,7 +30,10 @@ index 87392d0..936f488 100644
 +        // Raw comparison makes fast-spinning meshes (car wheels) prefer a phase-aliased sibling over
 +        // their own previous transform, locking interpolation into a front/rear wheel swap.
 +        float expectedOrientationDifference = 0.0f;
-+        if (prevRigidBody != nullptr) {
++        if ((prevRigidBody != nullptr) && (!prevRigidBody->angularVelocityValid || !std::isfinite(prevRigidBody->angularVelocity))) {
++            return matchResult;
++        }
++        else if (prevRigidBody != nullptr) {
 +            expectedOrientationDifference = 2.0f * (1.0f - std::cos(prevRigidBody->angularVelocity));
 +        }
 +
@@ -39,7 +42,21 @@ index 87392d0..936f488 100644
          // Compute the difference between the screen-space position of both transforms on their respective projections.
          hlslpp::float4 prevScreenPos = hlslpp::mul(prevTransform[3], prevViewProj);
          hlslpp::float4 curScreenPos = hlslpp::mul(curTransform[3], curViewProj);
-@@ -606,6 +623,93 @@ namespace RT64 {
+@@ -248,7 +268,12 @@ namespace RT64 {
+         curScreenPos = (fabs(curScreenPos.w) < 1e-6f) ? curScreenPos : curScreenPos / curScreenPos.w;
+         matchResult.screenSpaceDifference = hlslpp::length(curScreenPos.xyz - prevScreenPos.xyz);
+         
+-        matchResult.valid = true;
++        // A non-finite score violates the strict weak ordering required by stable_sort and can make
++        // an unrelated car part win this anonymous transform match. Transitional or degenerate
++        // matrices are safer left unmatched for one frame than interpolated from the wrong object.
++        matchResult.valid = std::isfinite(matchResult.positionDifference) &&
++            std::isfinite(matchResult.orientationDifference) &&
++            std::isfinite(matchResult.screenSpaceDifference);
+         return matchResult;
+     }
+ 
+@@ -606,6 +631,93 @@ namespace RT64 {
              matchTransform(firstCurWorkload, firstPrevWorkload, firstCurWorkloadMap, firstPrevWorkloadMap, candidate.curIndex, candidate.prevIndex, modifiedBuffers);
          }
  
@@ -133,3 +150,52 @@ index 87392d0..936f488 100644
          if (!modifiedBuffers.empty()) {
              workloadsModified[firstCurProjIndices.workloadIndex].merge(modifiedBuffers);
          }
+diff --git a/src/hle/rt64_rigid_body.cpp b/src/hle/rt64_rigid_body.cpp
+index fd8b3eb..940823a 100644
+--- a/src/hle/rt64_rigid_body.cpp
++++ b/src/hle/rt64_rigid_body.cpp
+@@ -2,6 +2,9 @@
+ // RT64
+ //
+ 
++#include <algorithm>
++#include <cmath>
++
+ #include "rt64_rigid_body.h"
+ 
+ #include "../include/rt64_extended_gbi.h"
+@@ -48,9 +51,11 @@ namespace RT64 {
+             // Track angular velocity.
+             const hlslpp::float3x3 invPrevRotation = hlslpp::inverse(rotationFrom3x3(extract3x3(prevTransform)));
+             const hlslpp::float3x3 diffRotation = hlslpp::mul(invPrevRotation, rotationFrom3x3(extract3x3(curTransform)));
+-            float diffTrace = traceFrom3x3(diffRotation);
+-            float curAngularVelocity = std::acos((diffTrace - 1.0f) / 2.0f);
+-            angularVelocity = curAngularVelocity;
++            const float diffTrace = traceFrom3x3(diffRotation);
++            const float angularCosine = (diffTrace - 1.0f) / 2.0f;
++            angularVelocityValid = std::isfinite(angularCosine);
++            angularVelocity = angularVelocityValid
++                ? std::acos(std::clamp(angularCosine, -1.0f, 1.0f)) : 0.0f;
+ 
+             // FIXME: Defaults to always interpolate.
+             lerpRotation = true;
+@@ -67,6 +72,7 @@ namespace RT64 {
+         else {
+             lerpRotation = (rotInterpolation == G_EX_COMPONENT_INTERPOLATE);
+             angularVelocity = 0.0f;
++            angularVelocityValid = true;
+         }
+     }
+ 
+diff --git a/src/hle/rt64_rigid_body.h b/src/hle/rt64_rigid_body.h
+index 778e08b..3112abe 100644
+--- a/src/hle/rt64_rigid_body.h
++++ b/src/hle/rt64_rigid_body.h
+@@ -12,6 +12,7 @@ namespace RT64 {
+         DecomposedTransform transforms[2];
+         hlslpp::float3 linearVelocity = {};
+         float angularVelocity = 0.0f;
++        bool angularVelocityValid = true;
+         uint8_t transformIndex = 0;
+         bool lerpTranslation = false;
+         bool lerpRotation = false;
