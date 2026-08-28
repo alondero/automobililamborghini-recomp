@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate an RT64 texture-pack manifest (rt64.json) from replacement images (issue #9).
+"""Generate an RT64 texture-pack manifest (rt64.json) from replacement images.
 
 RT64 loads a texture pack by reading rt64.json from the pack directory (or .rtz) -- it
 does NOT auto-scan for hash-named files. RT64's own `texture_hasher` only *upgrades* an

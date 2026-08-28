@@ -1,17 +1,16 @@
-# Texture extraction & replacement (issue #9 foundation, 2026-07-06)
+# Texture packs
 
-Reference for anyone (human or LLM) adding replacement/HD textures — the first target
-being the game's hard-to-read text. Everything here was verified end-to-end on this port:
-a headless dump of the demo race, an offline decode, and a replacement texture visibly
-applied in-game (the speedometer's MPH digits and the title "COPYRIGHT 1997 TITUS" line
-turned solid magenta once their font-atlas texture was replaced).
+This is the end-to-end guide for creating native RT64 replacement packs for the port.
+Texture-pack support is content-agnostic: an HD-art pack, a readable-text pack, or a small
+one-texture experiment all use the same runtime facility, and the replacement artwork can
+live in a separate repository. Everything below was verified with a headless texture dump,
+an offline decode, a loose replacement directory, and a packaged `.rtz` loaded in-game.
 
 ## What RT64 already gives us (and what the port adds)
 
-RT64 (`lib/rt64`) ships the **entire** texture-replacement system — hashing, a dump mode,
-a pack database, DDS/PNG loading, `.rtz` packaging tools. The port previously wired **none**
-of it (`src/rt64_renderer.cpp` was "adapted from Zelda64Recomp minus the texture-pack
-plumbing"). Issue #9's foundation is just to *expose* it:
+RT64 (`lib/rt64`) ships the texture-replacement system: hashing, a dump mode, a pack
+database, DDS/PNG loading, and `.rtz` packaging tools. The port exposes those facilities
+through startup configuration and supplies the dump-decoding and manifest-generation tools:
 
 | Capability | Provided by | Where |
 |---|---|---|
@@ -24,9 +23,9 @@ plumbing"). Issue #9's foundation is just to *expose* it:
 | Generate `rt64.json` from replacement files | **port** | `tools/make_pack.py` |
 | Build `.rtz` (+ low-mip cache) | RT64 | `build/rt64/src/tools/texture_packer/texture_packer.exe` |
 
-Texture identity is the **TMEM content hash**, not an RDRAM address — so a replacement keyed
-by hash survives the asset moving in memory, but the *same on-screen text drawn at a
-different scale/palette is a different hash* (see the coverage gotcha below).
+Texture identity is the **TMEM content hash**, not an RDRAM address. A replacement keyed by
+hash survives the source asset moving in memory, but a different palette or tile state can
+produce another hash for artwork that otherwise looks identical.
 
 ## Config keys (graphics.json)
 
@@ -54,9 +53,9 @@ LAMBO_TEXTURE_DUMP=/path/to/dump  ./build/lamborghini_modern
 ```
 
 Coverage is **runtime-driven**: a texture is only dumped once the game uploads it to TMEM.
-Exercise every screen whose text you care about — attract intro, PRESS START title,
-menus (RACE / NAME / records), and the in-race HUD. The dev warp menu (`LAMBO_WARP`,
-F1–F6) reaches race screens quickly. Missed screen ⇒ missing texture in the pack.
+Exercise every screen and scene the pack should cover: attract/title, menus, every relevant
+HUD state, vehicles, rivals, and each track. The dev warp menu (`LAMBO_WARP`, F1–F6) reaches
+race screens quickly. A scene not visited can leave its textures out of the dump.
 
 Each unique texture writes `<hash>.v5.tmem`, `<hash>.v5.tile.json` (fmt/siz/dims/tlut),
 plus `.rice.rdram` / `.rice.palette.rdram` for CI textures. These are **raw data, not
@@ -86,13 +85,13 @@ Open `index.html` (a contact sheet) to eyeball the whole dump. **Decode fidelity
   `aec01187` 512×8 font atlas reads as legible characters and the sky/cloud CI4 tiles show
   clean blue/gold. RT64's live F1 inspector still gives a GPU-decoded cross-check.
 
-### 3. Identify the text
+### 3. Choose textures to replace
 
-The HUD/menu font atlases are **CI4/CI8 banner-shaped** textures (e.g. the small HUD font is
-`aec01187…`, a 512×8 CI4 strip of glyphs). Filter the dump for `fmt2` (CI) textures that are
-wide-and-short. There are **several** font atlases — replacing the small-HUD one changed the
-speedo digits and the title copyright line but **not** "LAP/TIME/RANK/GET READY", which use a
-different atlas. Expect to find and replace each.
+Browse the generated contact sheet and copy only the PNGs you want to change into a separate
+pack directory. Keep each 16-hex hash as the filename: it is the identity RT64 uses at runtime.
+Some artwork appears under several hashes because its palette or tile state changes, so verify
+all variants in-game. Fonts are commonly CI4/CI8 strips, while HUD art, logos, vehicles, and
+track textures may use unrelated formats and dimensions.
 
 ### 4. Author replacements
 
@@ -100,9 +99,12 @@ different atlas. Expect to find and replace each.
   dump filename prefix.
 - **PNG** loads directly and is fine for iteration. **DDS** (BC7 + mipmaps, e.g. via Texconv
   / Compressonator's *CPU* encoder) is what you ship — never ship PNG.
-- Keep `shift: half` for modern-tool exports.
-- Coverage gotcha restated: a CI font re-hashes when its palette changes (highlighted vs.
-  normal menu item), so the same glyphs can need replacing under several hashes.
+- The default `shift: half` is appropriate for modern-tool exports that bake a half-texel
+  origin offset. A grid-aligned integer upscale of the decoded PNG instead needs
+  `python tools/make_pack.py /path/to/pack --shift none`; test atlas and tiled textures
+  carefully because the wrong shift produces sampling offsets or neighbouring-texel bleed.
+- Paletted textures re-hash when their palette changes (for example, highlighted versus normal
+  menu art), so visually identical pixels can require replacements under several hashes.
 
 ### 5. Build the manifest + pack
 
