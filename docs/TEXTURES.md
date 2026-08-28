@@ -3,7 +3,7 @@
 This is the end-to-end guide for creating native RT64 replacement packs for the port.
 Texture-pack support is content-agnostic: an HD-art pack, a readable-text pack, or a small
 one-texture experiment all use the same runtime facility, and the replacement artwork can
-live in a separate repository. Everything below was verified with a headless texture dump,
+live in a separate repository. Everything below was verified with a config-driven texture dump,
 an offline decode, a loose replacement directory, and a packaged `.rtz` loaded in-game.
 
 ## What RT64 already gives us (and what the port adds)
@@ -46,7 +46,7 @@ developer overlay. On success the log prints `[rt64] texture pack loaded: …` /
 ### 1. Dump
 
 ```bash
-# headless: no dev overlay needed
+# config-driven: no developer overlay needed (do not set LAMBO_HEADLESS=1)
 LAMBO_TEXTURE_DUMP=/path/to/dump  ./build/lamborghini_modern
 ```
 
@@ -59,7 +59,7 @@ Each unique texture writes `<hash>.v5.tmem`, `<hash>.v5.tile.json` (fmt/siz/dims
 plus `.rice.rdram` / `.rice.palette.rdram` for CI textures. These are **raw data, not
 images**.
 
-> The in-repo `tools/drive_input.py` drives the window headlessly (PostMessage + PrintWindow)
+> The in-repo `tools/drive_input.py` drives the window automatically (PostMessage + PrintWindow)
 > and is how the captures for this doc were produced. It matches SDL's `SDL_app` window
 > class, so an editor/browser with the repo open in a tab won't be captured by mistake.
 
