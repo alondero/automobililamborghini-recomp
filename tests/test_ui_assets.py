@@ -45,7 +45,7 @@ def main() -> None:
     expected_settings = {
         "res:next", "ss:next", "aspect:next", "hud:next", "rate:next",
         "msaa:next", "hpfb:next", "api:next",
-        "fog:toggle", "sky:toggle", "lod:toggle",
+        "fog:toggle", "sky:toggle", "lod:toggle", "upscale:next",
         "circuit:1", "circuit:2", "circuit:3", "circuit:4", "circuit:5", "circuit:6",
         "distance:next", "fogdensity:next",
     }

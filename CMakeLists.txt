@@ -387,6 +387,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     add_executable(lamborghini_modern ${LAMBO_SOURCES})
     target_compile_definitions(lamborghini_modern PRIVATE
         HLSL_CPU
+        LAMBO_RT64_LINKED
         LAMBO_VERSION="${PROJECT_VERSION}"
         LAMBO_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
         LAMBO_VERSION_MINOR=${PROJECT_VERSION_MINOR}

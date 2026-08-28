@@ -42,6 +42,11 @@ bool is_visible();
 bool captures_input();
 void shutdown();
 
+// Applies the current `texture_upscaler` graphics.json/env value to the
+// running RT64 context. New texture uploads will use the new mode; textures
+// already in the cache keep their original samples until they are evicted.
+void refresh_texture_upscaler();
+
 } // namespace lambo::ui
 
 #endif

@@ -58,7 +58,7 @@ int main() {
     constexpr std::array binding_names{
         "res:next", "ss:next", "aspect:next", "hud:next", "rate:next",
         "msaa:next", "hpfb:next", "api:next",
-        "fog:toggle", "sky:toggle", "lod:toggle",
+        "fog:toggle", "sky:toggle", "lod:toggle", "upscale:next",
         "circuit:1", "circuit:2", "circuit:3", "circuit:4", "circuit:5", "circuit:6",
         "distance:next", "fogdensity:next",
     };
@@ -106,7 +106,8 @@ int main() {
 #endif
 
     expect(apply("fog:toggle") && apply("sky:toggle") && apply("lod:toggle") &&
-           apply("circuit:6") && apply("distance:next") && apply("fogdensity:next"),
+           apply("circuit:6") && apply("distance:next") && apply("fogdensity:next") &&
+           apply("upscale:next"),
            "enhancement bindings apply through the typed settings seam");
     expect(!lambo::config::widescreen_fog_match(), "fog match toggles live");
     expect(!lambo::config::widescreen_sky_match(), "sky match toggles live");
@@ -114,6 +115,14 @@ int main() {
     expect(lambo::config::no_lod_circuit(5), "per-circuit visibility toggles live");
     expect(lambo::config::global_draw_distance() == 2.0, "draw-distance cycle applies live");
     expect(lambo::config::global_fog_scale() == 1.5, "fog-density cycle applies live");
+    // The initial mode cycles from off to scalefx. A second cycle reaches xbrz.
+    lambo::config::set_texture_upscaler("off");
+    expect(apply("upscale:next"), "upscaler cycle 1: off -> scalefx");
+    expect(lambo::config::texture_upscaler() == "scalefx", "upscaler state after cycle 1");
+    expect(apply("upscale:next"), "upscaler cycle 2: scalefx -> xbrz");
+    expect(lambo::config::texture_upscaler() == "xbrz", "upscaler state after cycle 2");
+    expect(apply("upscale:next"), "upscaler cycle 3: xbrz -> off (wrap)");
+    expect(lambo::config::texture_upscaler() == "off", "upscaler state after cycle 3 (wraps to off)");
 
     const auto snapshot = lambo::ui::settings_snapshot();
     expect(snapshot.resolution == "Original", "settings snapshot presents resolution");
@@ -122,6 +131,7 @@ int main() {
     expect(snapshot.circuit_visibility[5] == "Enabled",
            "settings snapshot presents every circuit");
     expect(snapshot.draw_distance == "2x", "settings snapshot presents draw distance");
+    expect(snapshot.texture_upscaler == "Off", "settings snapshot presents texture upscaler mode (wrapped back to off)");
     expect(snapshot.fog_density == "150%", "settings snapshot presents fog density");
 
     using SnapshotStringMember = std::string lambo::ui::SettingsSnapshot::*;

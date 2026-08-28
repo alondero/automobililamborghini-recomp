@@ -349,6 +349,20 @@ public:
             LAMBO_LOG("rt64", "texture pack %s: %s\n",
                          ok ? "loaded" : "FAILED to load", pack.c_str());
         }
+
+        // Texture upscaler (opt-in). Runs in RT64's texture upload thread; must
+        // be set before the first uploads are queued.
+        if (app->textureCache) {
+            const std::string up = lambo::config::texture_upscaler();
+            if (up == "scalefx") {
+                app->textureCache->upscaler = RT64::TextureUpscaler::ScaleFX;
+                LAMBO_LOG("rt64", "ScaleFX texture upscaling enabled (3x)\n");
+            }
+            else if (up == "xbrz") {
+                app->textureCache->upscaler = RT64::TextureUpscaler::Xbrz;
+                LAMBO_LOG("rt64", "xBRZ texture upscaling enabled (4x)\n");
+            }
+        }
     }
 
     ~RT64Context() override {
@@ -519,6 +533,29 @@ namespace lambo_rt64 {
 bool enabled() {
     const char* v = std::getenv("LAMBO_HEADLESS");
     return !(v != nullptr && v[0] == '1');
+}
+
+// Applies the current `texture_upscaler` setting to the running RT64
+// context. New texture uploads will use the new mode; textures already in
+// the cache keep their original samples until they are evicted.
+void refresh_texture_upscaler() {
+    RT64::Application *app = g_lambo_active_app.load(std::memory_order_acquire);
+    if (app == nullptr || app->textureCache == nullptr) {
+        return;
+    }
+    const std::string up = lambo::config::texture_upscaler();
+    if (up == "scalefx") {
+        app->textureCache->upscaler = RT64::TextureUpscaler::ScaleFX;
+        LAMBO_LOG("rt64", "ScaleFX texture upscaling enabled (3x)\n");
+    }
+    else if (up == "xbrz") {
+        app->textureCache->upscaler = RT64::TextureUpscaler::Xbrz;
+        LAMBO_LOG("rt64", "xBRZ texture upscaling enabled (4x)\n");
+    }
+    else {
+        app->textureCache->upscaler = RT64::TextureUpscaler::Off;
+        LAMBO_LOG("rt64", "Texture upscaling disabled\n");
+    }
 }
 
 std::unique_ptr<ultramodern::renderer::RendererContext>

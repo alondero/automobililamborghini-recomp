@@ -1,4 +1,5 @@
 #include "lambo_ui_settings.h"
+#include "lambo_ui.h"
 
 #include <algorithm>
 #include <array>
@@ -25,6 +26,7 @@ constexpr auto setting_bindings = std::to_array<std::pair<std::string_view, Sett
     {"fog:toggle", SettingAction::FogMatchToggle},
     {"sky:toggle", SettingAction::SkyMatchToggle},
     {"lod:toggle", SettingAction::NoLodToggle},
+    {"upscale:next", SettingAction::UpscalerNext},
     {"circuit:1", SettingAction::Circuit1Toggle},
     {"circuit:2", SettingAction::Circuit2Toggle},
     {"circuit:3", SettingAction::Circuit3Toggle},
@@ -128,9 +130,19 @@ std::string multiplier_name(double value) {
     return std::to_string(tenths / 10) + "." + std::to_string(tenths % 10) + "x";
 }
 
+std::string upscale_pretty_name(const std::string& mode) {
+    if (mode == "scalefx") return "ScaleFX (3x)";
+    if (mode == "xbrz") return "xBRZ (4x)";
+    return "Off";
+}
+
 } // namespace
 
 namespace lambo::ui {
+
+// `lambo::ui::refresh_texture_upscaler` is defined in src/ui/lambo_ui.cpp
+// (game build). The test build does not link lambo_ui.cpp; the call site
+// is gated by LAMBO_RT64_LINKED so the test never needs the symbol.
 
 std::optional<SettingAction> setting_action_from_name(std::string_view name) {
     for (const auto& [binding, action] : setting_bindings) {
@@ -206,6 +218,19 @@ bool apply_setting_action(SettingAction action) {
         case SettingAction::FogDensityNext:
             lambo::config::set_global_fog_scale(next_number(
                 lambo::config::global_fog_scale(), std::array{0.0, 0.5, 0.75, 1.0, 1.5, 2.0})); return true;
+        case SettingAction::UpscalerNext: {
+            const std::string current = lambo::config::texture_upscaler();
+            const std::array<const char *, 3> modes{ "off", "scalefx", "xbrz" };
+            auto position = std::find(modes.begin(), modes.end(), current);
+            const char *next_mode = (position == modes.end() || std::next(position) == modes.end())
+                ? modes.front()
+                : *std::next(position);
+            lambo::config::set_texture_upscaler(next_mode);
+#if LAMBO_RT64_LINKED
+            refresh_texture_upscaler();
+#endif
+            return true;
+        }
     }
 
     lambo::config::apply_graphics(cfg);
@@ -226,6 +251,7 @@ SettingsSnapshot settings_snapshot() {
         lambo::config::widescreen_fog_match() ? "Enabled" : "Disabled",
         lambo::config::widescreen_sky_match() ? "Enabled" : "Disabled",
         lambo::config::no_lod() ? "Enabled" : "Disabled",
+        upscale_pretty_name(lambo::config::texture_upscaler()),
         multiplier_name(lambo::config::global_draw_distance()),
         {},
         {},
