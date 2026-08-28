@@ -39,6 +39,8 @@ N64Recomp ports (Zelda 64: Recompiled et al.):
 | `wm_option` | `Windowed`, `Fullscreen` | `Windowed` | Window mode. **F11** or **Alt+Enter** toggles at runtime (and is remembered). |
 | `window_width` / `window_height` | pixels | `1600`/`900` | Windowed-mode size. |
 | `api_option` | `Auto`, `D3D12`, `Vulkan`, `Metal` | `Auto` | Graphics API. |
+| `texture_pack` | path to a directory or `.rtz` | `""` | Loads one native RT64 texture pack at startup. An empty value keeps the original textures. |
+| `texture_dump` | directory path | `""` | Dumps each texture used during play as RT64 TMEM/RDRAM data for pack authors. |
 | `widescreen_fog_match` | `true`, `false` | `true` | Widens the dense 3P/4P split-screen fog to the open 1P fog window/colour so the extra draw distance shows. Only affects 3+ player races. |
 | `widescreen_sky_match` | `true`, `false` | `true` | Draws the sky panorama in 3P/4P split screen (the original skips it, leaving a flat dark backdrop above the horizon). Only affects 3+ player races. |
 | `no_lod` | `true`, `false` | `true` | Removes the ROM's draw-distance reductions: the per-mode scenery-layer skip and the trimmed per-segment visibility lists, with reach then governed by `draw_distance` instead of the N64 fill-rate budgets. `false` restores the N64-authored behaviour entirely. |
@@ -48,6 +50,31 @@ N64Recomp ports (Zelda 64: Recompiled et al.):
 | `draw_distance_circuit` | array of 6 numbers | `[1,1,1,1,1,1]` | Per-circuit draw-distance multipliers (multiplied with `draw_distance`), e.g. extend just one short-sighted city track. |
 | `camera_fov_add` | `-20`–`60` degrees | `0` | Degrees added to each camera layout's authored field of view (sense-of-speed effect). The scene builder's view-cone cull widens to match, so higher values do not cause peripheral pop-in. Also settable live from the Enhancements menu. |
 | `show_launcher` | `true`, `false` | `false` | When `false`, the game auto-boots directly into gameplay with the in-game configuration overlay available during play. When `true`, presents the standalone launcher shell at boot. Overridable via `LAMBO_LAUNCHER=1/0`. |
+
+## Texture packs
+
+The port supports native RT64 replacement packs as either a loose development directory
+or a packaged `.rtz` file. Set `texture_pack` in `graphics.json` to the pack path and
+restart the game. The pack is optional and layered over the original textures; removing
+the setting restores the stock artwork.
+
+Texture-pack support is deliberately separate from any particular replacement artwork.
+This repository does not ship an HD or readable-text pack, so those packs can be created,
+versioned, and distributed independently. `.o2r` and legacy Rice packs use different
+resource identities and are not directly interchangeable with this port's RT64 packs.
+
+Pack authors can dump the textures encountered during a run without changing the saved
+configuration:
+
+```powershell
+$env:LAMBO_TEXTURE_DUMP = 'C:\path\to\dump'
+.\lamborghini_modern.exe
+```
+
+On Linux, use `LAMBO_TEXTURE_DUMP=/path/to/dump ./lamborghini_modern`. Exercise every
+menu, HUD, vehicle, and track that the pack should cover because dumping is runtime-driven.
+See **[Texture packs](./docs/TEXTURES.md)** for decoding the dump, authoring replacements,
+generating `rt64.json`, testing a loose pack, and packaging it as `.rtz`.
 
 ## In-Game Configuration & Controls
 

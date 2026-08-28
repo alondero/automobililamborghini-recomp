@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Decode an RT64 texture dump into viewable PNGs (issue #9).
+"""Decode an RT64 texture dump into viewable PNGs.
 
 RT64's "Start dumping textures" (or this port's `texture_dump` config / LAMBO_TEXTURE_DUMP
 env) writes, per unique texture, a set of files named by the 64-bit texture hash:
@@ -12,13 +12,12 @@ env) writes, per unique texture, a set of files named by the 64-bit texture hash
     <hash>.v5.rice.palette.rdram  raw TLUT bytes, CI textures only -- the palette source
 
 Neither RT64 nor its texture_hasher/texture_packer tools turn these into an image, so you
-cannot *see* a texture to decide whether it is the hard-to-read text you want to replace.
-This tool does that decode, emitting <hash>.png per texture plus an index.html contact
-sheet for eyeballing the whole dump at once.
+cannot *see* a texture to decide whether it belongs in a replacement pack. This tool does
+that decode, emitting <hash>.png per texture plus an index.html contact sheet for eyeballing
+the whole dump at once.
 
-The PNG the tool emits is only for identification/upscaling reference -- the actual
-replacement texture is authored fresh at higher resolution, so a close-enough decode is
-fine. Byte-order/swizzle flags exist because the port hands RT64 its RDRAM in a
+The PNG the tool emits is a viewable reference for editing at native or higher resolution.
+Byte-order/swizzle flags exist because the port hands RT64 its RDRAM in a
 mupen/N64Recomp convention; calibrate once against an in-game screenshot, then leave the
 working flags as the defaults.
 
