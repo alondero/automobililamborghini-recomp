@@ -12,15 +12,15 @@ text the issue asks for.
 
 Each atlas hash is a distinct TMEM texture and they are packed DIFFERENTLY:
 
-- The **white** HUD/message font (`aec01187`, `2cc2b764`) is PROPORTIONALLY packed -- glyphs
-  sit at irregular atlas U-positions and some touch -- and it is **italic** in the original.
-- The **gold** menu font (`7c1ef5cc`) is cleanly separated on a regular pitch and **upright**.
+- The **white** HUD/message font (`aec01187`, `2cc2b764`) uses 10-pixel cells, omits the
+  `:;<=>?@` cells, and is **italic** in the original.
+- The **gold** menu font (`7c1ef5cc`) uses 8-pixel cells, includes every character from
+  `!` through `Z`, has a leading blank cell, and is **upright**.
 
-So there is no single position table and no single style: white needs a proportional table +
-an italic slant, gold needs an index-derived table + upright. Naively mapping glyphs to a
-fixed 8px grid, or rendering upright into the italic atlas, JUMBLES the text (verified: the
-copyright line came out as garbage). The per-atlas positions below were read off each decoded
-atlas against an x-ruler and validated in-game.
+So there is no single cell pitch or single style. Naively mapping both atlases to a fixed
+8px grid, or rendering upright into the italic atlas, JUMBLES the text (verified: the
+copyright line came out as garbage). The per-atlas layouts below were read off decoded
+atlases against an x-ruler and validated in-game.
 
 ## Rendering rules that matter
 
@@ -47,79 +47,59 @@ Requires Pillow. No numpy.
 """
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-SCALE = 8        # 512x8 -> 4096x64
-OUTLINE = 4      # dark outline width in output px (contrast on bright HUD backgrounds)
+SCALE = 8
+OUTLINE = 4
+WHITE_CHARACTERS = "!\"#$%&'()*+,-./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+GOLD_CHARACTERS = "".join(chr(codepoint) for codepoint in range(ord("!"), ord("Z") + 1))
 
 
-def ink_runs(img):
-    """Contiguous columns that contain any opaque texel -> [(x0, x1), ...]."""
+def boxes_from_cells(img, characters, pitch, first_cell=0):
+    """Return each character's opaque bounds within its authored atlas cell."""
     px = img.load()
     w, h = img.size
-    ink = [any(px[x, y][3] > 0 for y in range(h)) for x in range(w)]
-    runs = []
-    x = 0
-    while x < w:
-        if ink[x]:
-            s = x
-            while x < w and ink[x]:
-                x += 1
-            runs.append((s, x - 1))
-        else:
-            x += 1
-    return runs
+    boxes = {}
+    for index, character in enumerate(characters):
+        cell_x0 = (first_cell + index) * pitch
+        cell_x1 = min(w, cell_x0 + pitch) - 1
+        ink = [x for x in range(cell_x0, cell_x1 + 1)
+               if any(px[x, y][3] > 0 for y in range(h))]
+        if not ink:
+            raise ValueError(f"atlas cell for {character!r} at x={cell_x0} has no ink")
+        boxes[character] = (min(ink), max(ink))
+    return boxes
 
 
-def _split(a, b, n):
-    """Split a merged run [a, b] evenly into n glyph boxes."""
-    w = (b - a + 1) / n
-    return [(round(a + i * w), round(a + (i + 1) * w) - 1) for i in range(n)]
+def position_in_cell(ideal_x, tile_width, cell_x, cell_width, gutter):
+    """Clamp a tile's x position so its ink cannot leak into a neighbouring cell."""
+    left = cell_x + gutter
+    right = cell_x + cell_width - gutter - tile_width
+    if right < left:
+        raise ValueError("tile is wider than the atlas cell's usable area")
+    return min(max(round(ideal_x), left), right)
 
 
-def white_boxes(_img):
-    """Proportional white atlas (aec01187 / 2cc2b764): read vs an x-ruler; merged runs
-    (touching glyphs) split evenly across their glyph count."""
-    b = {'0': (150, 158), '1': (161, 167), '2': (170, 178), '3': (180, 188)}
-    for ch, box in zip("456", _split(190, 218, 3)):
-        b[ch] = box
-    for ch, box in zip("789", _split(220, 248, 3)):
-        b[ch] = box
-    b.update({'A': (250, 258), 'B': (260, 268), 'C': (270, 277), 'D': (280, 288),
-              'E': (290, 298), 'F': (300, 308), 'G': (310, 317), 'J': (340, 346),
-              'K': (350, 358), 'L': (360, 366), 'P': (400, 407), 'Q': (410, 418),
-              'R': (420, 428), 'S': (430, 437), 'T': (440, 447), 'U': (450, 458),
-              'V': (460, 467), 'Z': (500, 509)})
-    for ch, box in zip("HI", _split(320, 335, 2)):
-        b[ch] = box
-    for ch, box in zip("MNO", _split(370, 398, 3)):
-        b[ch] = box
-    for ch, box in zip("WXY", _split(470, 496, 3)):
-        b[ch] = box
-    b['.'] = (130, 135)   # period (bottom dot); also the ".....' deco
-    return b
+@dataclass(frozen=True)
+class AtlasProfile:
+    italic: bool
+    characters: str
+    pitch: int
+    first_cell: int = 0
+
+    def boxes(self, image):
+        return boxes_from_cells(image, self.characters, self.pitch, self.first_cell)
 
 
-def gold_boxes(img):
-    """Gold menu atlas (7c1ef5cc): cleanly separated (no merges), so derive from run
-    indices -- digits 0-9 = runs 16..25, letters A-Z = runs 33..58, period = run 14."""
-    r = ink_runs(img)
-    b = {}
-    for i, ch in enumerate("0123456789"):
-        b[ch] = r[16 + i]
-    for i in range(26):
-        b[chr(ord('A') + i)] = r[33 + i]
-    b['.'] = r[14]
-    return b
-
-
-# hash substring -> (box-table builder, italic?)
+WHITE_PROFILE = AtlasProfile(True, WHITE_CHARACTERS, 10)
+GOLD_PROFILE = AtlasProfile(False, GOLD_CHARACTERS, 8, first_cell=1)
 PROFILES = {
-    "aec01187": (white_boxes, True),
-    "2cc2b764": (white_boxes, True),
-    "7c1ef5cc": (gold_boxes, False),
+    "aec01187": WHITE_PROFILE,
+    "2cc2b764": WHITE_PROFILE,
+    "7c1ef5cc": GOLD_PROFILE,
 }
 
 
@@ -130,23 +110,23 @@ def profile_for(name):
     raise SystemExit(f"no atlas profile matches '{name}' (known: {list(PROFILES)})")
 
 
-def make_font(ttf):
-    """Font sized so cap height ~= 6.8 texels of the 8-texel-tall atlas."""
-    cap = round(6.8 * SCALE)
+def make_font(ttf, cap=None):
+    """Return a font sized to the requested cap height in output pixels."""
+    cap = round(6.8 * SCALE) if cap is None else cap
     probe = ImageFont.truetype(ttf, 200)
     pb = probe.getbbox("H")
     caph = max(1, pb[3] - pb[1])
     return ImageFont.truetype(ttf, max(8, round(200 * cap / caph)))
 
 
-def glyph_tile(ch, font, colour, shear):
-    bb = font.getbbox(ch, stroke_width=OUTLINE)
+def glyph_tile(ch, font, colour, shear, outline=OUTLINE):
+    bb = font.getbbox(ch, stroke_width=outline)
     gw, gh = bb[2] - bb[0], bb[3] - bb[1]
     if gw <= 0 or gh <= 0:
         return None
     tile = Image.new("RGBA", (gw + 2, gh + 2), (0, 0, 0, 0))
     ImageDraw.Draw(tile).text((1 - bb[0], 1 - bb[1]), ch, font=font, fill=colour + (255,),
-                              stroke_width=OUTLINE, stroke_fill=(0, 0, 0, 255))
+                              stroke_width=outline, stroke_fill=(0, 0, 0, 255))
     if shear:
         # slant right (italic): top edge shifts by +shear*height relative to the bottom
         pad = int(abs(shear) * tile.height) + 1
@@ -178,26 +158,49 @@ def ink_colour(ref, x0, x1):
 def render(ref_path, ttf, ttf_italic, shear_amt):
     ref = Image.open(ref_path).convert("RGBA")
     w, h = ref.size
-    boxes_fn, italic = profile_for(Path(ref_path).name)
-    boxes = boxes_fn(ref)
+    profile = profile_for(Path(ref_path).name)
+    boxes = profile.boxes(ref)
+    italic = profile.italic
     # italic atlas: prefer a real italic face (clean); else shear the upright font (fallback).
     if italic and ttf_italic:
         font, shear = make_font(ttf_italic), 0.0
     else:
         font, shear = make_font(ttf), (shear_amt if italic else 0.0)
 
-    out = Image.new("RGBA", (w * SCALE, h * SCALE), (0, 0, 0, 0))     # transparent base
+    rendered = []
     for ch, (x0, x1) in boxes.items():
         tile = glyph_tile(ch, font, ink_colour(ref, x0, x1), shear)
         if tile is None:
             continue
+        rendered.append((ch, x0, x1, tile))
+
+    # A replacement glyph must stay inside its source atlas cell. Otherwise the game's
+    # cell UV samples the edge of the next rendered glyph (e.g. `ARCADE|`). Scale the
+    # whole typeface uniformly when its widest glyph needs more than the available cell.
+    gutter = SCALE // 2
+    usable_width = profile.pitch * SCALE - gutter * 2
+    widest = max(tile.width for _ch, _x0, _x1, tile in rendered)
+    ratio = min(1.0, usable_width / widest)
+    if ratio < 1.0:
+        rendered = [(ch, x0, x1,
+                     tile.resize((max(1, round(tile.width * ratio)),
+                                  max(1, round(tile.height * ratio))), Image.Resampling.LANCZOS))
+                    for ch, x0, x1, tile in rendered]
+
+    out = Image.new("RGBA", (w * SCALE, h * SCALE), (0, 0, 0, 0))
+    for ch, x0, x1, tile in rendered:
         cx = (x0 + x1 + 1) / 2 * SCALE
-        px = round(cx - tile.width / 2)
+        cell_index = profile.first_cell + profile.characters.index(ch)
+        px = position_in_cell(cx - tile.width / 2, tile.width,
+                              cell_index * profile.pitch * SCALE,
+                              profile.pitch * SCALE, gutter)
         if ch in ".,":
-            py = h * SCALE - tile.height - round(0.4 * SCALE)    # punctuation on the baseline
+            py = h * SCALE - tile.height - round(0.4 * SCALE)
+        elif ch in "\"'":
+            py = round(0.4 * SCALE)
         else:
-            py = round((h * SCALE - tile.height) / 2)            # caps/digits centred
-        out.alpha_composite(tile, (max(0, px), max(0, py)))
+            py = round((h * SCALE - tile.height) / 2)
+        out.alpha_composite(tile, (px, max(0, py)))
     return out, italic, len(boxes)
 
 

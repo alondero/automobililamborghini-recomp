@@ -29,9 +29,9 @@ EXTENDED = {'up', 'down', 'left', 'right'}
 
 
 def find_window():
-    # Match SDL2's window class ('SDL_app'), NOT a title substring: an editor or
-    # browser with the repo ("...lamborghini-recomp...") open in a tab would
-    # otherwise match first and steal the screenshot/key events.
+    # Match both SDL2's window class and the game's exact title. Steam also uses
+    # SDL_app, while editors/browsers can contain the repo name in their title; either
+    # predicate alone can silently send input and screenshots to the wrong window.
     hwnds = []
     def cb(h, l):
         cls = ctypes.create_unicode_buffer(256)
@@ -39,7 +39,8 @@ def find_window():
         if cls.value == 'SDL_app' and user32.IsWindowVisible(h):
             buf = ctypes.create_unicode_buffer(256)
             user32.GetWindowTextW(h, buf, 256)
-            hwnds.append((h, buf.value))
+            if buf.value == 'Automobili Lamborghini':
+                hwnds.append((h, buf.value))
         return True
     user32.EnumWindows(ctypes.WINFUNCTYPE(ctypes.c_bool, wt.HWND, wt.LPARAM)(cb), 0)
     return hwnds[0] if hwnds else (None, None)
