@@ -117,21 +117,25 @@ The game has six integer-indexed circuits. The menu does not contain track
 names; it presents `CIRCUIT 1` through `CIRCUIT 6`. The port uses zero-based
 indices internally and in `graphics.json`; see `docs/TRACK_INDEX.md`.
 
-The authored 1-player scene radii, read from the `float[6][5]` table at runtime
-`0x80088FD0`, are:
+The authored scene radii, read from the `float[6][5]` table at runtime
+`0x80088FD0` (ROM offset `0x089BD0`), are selected by the runtime
+player-count value at `0x800CE6A4`:
 
-| Internal circuit | Menu circuit | 1P | 2P | 3P | 4P |
-|---:|---:|---:|---:|---:|---:|
-| 0 | 1 | 55000 | 55000 | 50000 | 25000 |
-| 1 | 2 | 50000 | 50000 | 40000 | 20000 |
-| 2 | 3 | 40000 | 40000 | 30000 | 20000 |
-| 3 | 4 | 45000 | 45000 | 30000 | 25000 |
-| 4 | 5 | 35000 | 35000 | 27500 | 25000 |
-| 5 | 6 | 35000 | 35000 | 27500 | 25000 |
+| Internal circuit | Menu circuit | selector 0 | selector 1 | selector 2 | selector 3 | selector 4 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 1 | 55000 | 55000 | 50000 | 25000 | 25000 |
+| 1 | 2 | 50000 | 50000 | 40000 | 20000 | 20000 |
+| 2 | 3 | 40000 | 40000 | 30000 | 20000 | 20000 |
+| 3 | 4 | 45000 | 45000 | 30000 | 25000 | 25000 |
+| 4 | 5 | 35000 | 35000 | 27500 | 25000 | 25000 |
+| 5 | 6 | 35000 | 35000 | 27500 | 25000 | 25000 |
 
-These are rendering budgets, not track dimensions. A new circuit needs an
-authored radius or a port-side default, but increasing it cannot repair a
-missing segment, PVS entry, display list, or collision surface.
+The five columns are the complete extracted table; the exact semantic mapping
+of selector 0 versus the four player-count modes should be retained from the
+runtime value rather than guessed from the duplicate first two values. These
+are rendering budgets, not track dimensions. A new circuit needs an authored
+radius or a port-side default, but increasing it cannot repair a missing
+segment, PVS entry, display list, or collision surface.
 
 ## 3. Visual geometry and scenery
 
@@ -224,12 +228,14 @@ but the cone tests remain meaningful and do not implement occlusion.
 
 ### 3.4 Draw-list capacity
 
-The widened walk appends segment entries to a shared per-frame list at
-`0x800B6758`. The observed list has 21 usable slots, with the next global at
-`0x800B6782`. The port clamps writes at the last slot in split-screen because
-the list accumulates across viewports. A new circuit with more visible
-segments, or a full-track audit on a large circuit, may require increasing this
-capacity rather than merely widening the PVS loop.
+The widened walk appends segment entries to a shared per-frame halfword list at
+`0x800B6758`. The observed allocation is 21 halfword slots through the slot
+before `0x800B6782`: at most 20 segment entries plus a slot for the `-1`
+terminator. The port clamps the data index to 20 in split-screen because the
+list accumulates across viewports and the terminator must not run past the
+allocation. A new circuit with more visible segments, or a full-track audit on
+a large circuit, may require increasing this capacity rather than merely
+widening the PVS loop.
 
 ### 3.5 What “missing geometry” means
 
@@ -567,8 +573,9 @@ Before calling a track playable, an extractor/loader should validate:
 * authored draw radii and per-circuit port settings are present;
 * texture/model/palette pointers land in loaded data and nested display lists
   terminate safely; and
-* collision/surface data is present, even if initially copied from a known
-  track, and does not overrun the runtime arena.
+* collision/surface data has a proven consumer and matches the new geometry;
+  an opaque copied table is only a temporary render-only scaffold and must not
+  be used to declare a new track playable.
 
 For visual regression, record camera segment, drawn segment IDs, display-list
 triangle counts, and car model IDs. Screenshots alone cannot distinguish a PVS
@@ -576,9 +583,11 @@ failure from a FOV-cone failure.
 
 ## 11. Highest-value unresolved investigations
 
-1. Put a read watchpoint on each of the six plane-like ROM ranges after track
-   setup and reproduce a wall/road departure. Identify the first reader and
-   its record-index source.
+1. Convert each of the six plane-like ROM ranges to its loaded runtime address
+   using the active asset/context pointers, then put a read watchpoint on the
+   corresponding RDRAM ranges in ares while reproducing a wall/road departure.
+   Identify the first reader and its record-index source; do not watch ROM
+   offsets as though they were live RDRAM addresses.
 2. Trace all writes/reads of the active context's `+0x0C` table and the
    `0x800BF1C0` test-point array to recover the fine-cull record layout.
 3. Cross-reference the six descriptor-table candidates from circuit selection;
