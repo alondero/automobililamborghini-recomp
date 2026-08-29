@@ -4,6 +4,9 @@
 #include <array>
 #include <cmath>
 #include <string>
+#include <string_view>
+#include <type_traits>
+#include <utility>
 
 #include <SDL.h>
 
@@ -109,13 +112,49 @@ enum Command : UINT {
     CMD_FOV_PLUS20,
 };
 
-void append_item(HMENU menu, UINT id, const char* label) {
-    AppendMenuA(menu, MF_STRING, id, label);
+constexpr std::array<UINT, 4> kSupersamplingCommands{
+    CMD_SS_1X, CMD_SS_2X, CMD_SS_3X, CMD_SS_4X};
+constexpr std::array<std::pair<int, UINT>, 7> kManualRefreshCommands{{
+    {30, CMD_RATE_30}, {60, CMD_RATE_60}, {90, CMD_RATE_90}, {120, CMD_RATE_120},
+    {144, CMD_RATE_144}, {165, CMD_RATE_165}, {240, CMD_RATE_240}}};
+constexpr std::array<UINT, 6> kPvsCircuitCommands{
+    CMD_PVS_CIRCUIT_1, CMD_PVS_CIRCUIT_2, CMD_PVS_CIRCUIT_3,
+    CMD_PVS_CIRCUIT_4, CMD_PVS_CIRCUIT_5, CMD_PVS_CIRCUIT_6};
+constexpr std::array<std::pair<double, UINT>, 5> kDrawDistanceCommands{{
+    {1.0, CMD_DRAW_1X}, {1.5, CMD_DRAW_1_5X}, {2.0, CMD_DRAW_2X},
+    {3.0, CMD_DRAW_3X}, {0.0, CMD_DRAW_UNLIMITED}}};
+constexpr std::array<std::pair<double, UINT>, 6> kFogDensityCommands{{
+    {0.0, CMD_FOG_OFF}, {0.5, CMD_FOG_50}, {0.75, CMD_FOG_75},
+    {1.0, CMD_FOG_100}, {1.5, CMD_FOG_150}, {2.0, CMD_FOG_200}}};
+constexpr std::array<std::pair<double, UINT>, 4> kCameraDistanceCommands{{
+    {1.0, CMD_CAM_DIST_ORIG}, {0.8, CMD_CAM_DIST_80},
+    {0.65, CMD_CAM_DIST_65}, {0.5, CMD_CAM_DIST_50}}};
+constexpr std::array<std::pair<double, UINT>, 3> kCameraHeightCommands{{
+    {1.0, CMD_CAM_HEIGHT_ORIG}, {0.66, CMD_CAM_HEIGHT_LOWER},
+    {0.4, CMD_CAM_HEIGHT_LOWEST}}};
+constexpr std::array<std::pair<double, UINT>, 5> kFovCommands{{
+    {0.0, CMD_FOV_ORIG}, {5.0, CMD_FOV_PLUS5}, {10.0, CMD_FOV_PLUS10},
+    {15.0, CMD_FOV_PLUS15}, {20.0, CMD_FOV_PLUS20}}};
+
+std::wstring utf8_to_wide(std::string_view text) {
+    const int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(),
+                                         static_cast<int>(text.size()), nullptr, 0);
+    if (size <= 0) return {};
+    std::wstring result(static_cast<size_t>(size), L'\0');
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(),
+                        static_cast<int>(text.size()), result.data(), size);
+    return result;
 }
 
-HMENU append_submenu(HMENU parent, const char* label) {
+void append_item(HMENU menu, UINT id, std::string_view label) {
+    const std::wstring wide_label = utf8_to_wide(label);
+    AppendMenuW(menu, MF_STRING, id, wide_label.c_str());
+}
+
+HMENU append_submenu(HMENU parent, std::string_view label) {
     HMENU child = CreatePopupMenu();
-    AppendMenuA(parent, MF_POPUP, reinterpret_cast<UINT_PTR>(child), label);
+    const std::wstring wide_label = utf8_to_wide(label);
+    AppendMenuW(parent, MF_POPUP, reinterpret_cast<UINT_PTR>(child), wide_label.c_str());
     return child;
 }
 
@@ -131,6 +170,32 @@ bool close(double a, double b) {
     return std::abs(a - b) < 0.0001;
 }
 
+template <typename T, size_t Size>
+UINT command_for_value(T value, const std::array<std::pair<T, UINT>, Size>& commands) {
+    const auto it = std::find_if(commands.begin(), commands.end(), [value](const auto& entry) {
+        if constexpr (std::is_floating_point_v<T>) return close(value, entry.first);
+        else return value == entry.first;
+    });
+    return it == commands.end() ? 0 : it->second;
+}
+
+template <typename T, size_t Size>
+bool value_for_command(UINT command, const std::array<std::pair<T, UINT>, Size>& commands,
+                       T& value) {
+    const auto it = std::find_if(commands.begin(), commands.end(), [command](const auto& entry) {
+        return entry.second == command;
+    });
+    if (it == commands.end()) return false;
+    value = it->first;
+    return true;
+}
+
+void set_window_menu(HMENU menu) {
+    SetMenu(g_hwnd, menu);
+    SetWindowPos(g_hwnd, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+}
+
 void refresh() {
     using namespace ultramodern::renderer;
     const GraphicsConfig cfg = lambo::config::current_graphics();
@@ -141,7 +206,8 @@ void refresh() {
           cfg.res_option == Resolution::Auto ? CMD_RES_AUTO :
           cfg.res_option == Resolution::Original2x ? CMD_RES_ORIGINAL_2X : CMD_RES_ORIGINAL);
     radio(g_supersampling_menu, CMD_SS_1X, CMD_SS_4X,
-          cfg.ds_option >= 1 && cfg.ds_option <= 4 ? CMD_SS_1X + cfg.ds_option - 1 : 0);
+          cfg.ds_option >= 1 && cfg.ds_option <= 4
+              ? kSupersamplingCommands[static_cast<size_t>(cfg.ds_option - 1)] : 0);
     radio(g_aspect_menu, CMD_ASPECT_ORIGINAL, CMD_ASPECT_EXPAND,
           cfg.ar_option == AspectRatio::Expand ? CMD_ASPECT_EXPAND :
           cfg.ar_option == AspectRatio::Original ? CMD_ASPECT_ORIGINAL : 0);
@@ -149,13 +215,10 @@ void refresh() {
           cfg.hr_option == HUDRatioMode::Full ? CMD_HUD_FULL :
           cfg.hr_option == HUDRatioMode::Clamp16x9 ? CMD_HUD_CLAMP_16X9 : CMD_HUD_ORIGINAL);
 
-    UINT rate = CMD_RATE_ORIGINAL;
-    if (cfg.rr_option == RefreshRate::Display) rate = CMD_RATE_DISPLAY;
-    else if (cfg.rr_option == RefreshRate::Manual) {
-        constexpr std::array<int, 7> values{30, 60, 90, 120, 144, 165, 240};
-        auto it = std::find(values.begin(), values.end(), cfg.rr_manual_value);
-        rate = it == values.end() ? 0 : CMD_RATE_30 + UINT(it - values.begin());
-    }
+    UINT rate = cfg.rr_option == RefreshRate::Display ? CMD_RATE_DISPLAY :
+                cfg.rr_option == RefreshRate::Manual
+                    ? command_for_value(cfg.rr_manual_value, kManualRefreshCommands)
+                    : CMD_RATE_ORIGINAL;
     radio(g_rate_menu, CMD_RATE_ORIGINAL, CMD_RATE_240, rate);
     radio(g_aa_menu, CMD_AA_NONE, CMD_AA_8X,
           cfg.msaa_option == Antialiasing::MSAA8X ? CMD_AA_8X :
@@ -172,43 +235,37 @@ void refresh() {
     check(g_enhancements_menu, CMD_FOG_MATCH, lambo::config::widescreen_fog_match());
     check(g_enhancements_menu, CMD_SKY_MATCH, lambo::config::widescreen_sky_match());
     check(g_enhancements_menu, CMD_NO_LOD, lambo::config::no_lod());
-    for (int i = 0; i < 6; ++i) check(g_pvs_menu, CMD_PVS_CIRCUIT_1 + i, lambo::config::no_lod_circuit(i));
+    for (size_t i = 0; i < kPvsCircuitCommands.size(); ++i) {
+        check(g_pvs_menu, kPvsCircuitCommands[i], lambo::config::no_lod_circuit(static_cast<int>(i)));
+    }
 
-    const double draw = lambo::config::global_draw_distance();
     radio(g_draw_menu, CMD_DRAW_1X, CMD_DRAW_UNLIMITED,
-          draw <= 0.0 ? CMD_DRAW_UNLIMITED : close(draw, 3.0) ? CMD_DRAW_3X :
-          close(draw, 2.0) ? CMD_DRAW_2X : close(draw, 1.5) ? CMD_DRAW_1_5X :
-          close(draw, 1.0) ? CMD_DRAW_1X : 0);
-    const double fog = lambo::config::global_fog_scale();
+          command_for_value(lambo::config::global_draw_distance(), kDrawDistanceCommands));
     radio(g_fog_menu, CMD_FOG_OFF, CMD_FOG_200,
-          close(fog, 2.0) ? CMD_FOG_200 : close(fog, 1.5) ? CMD_FOG_150 :
-          close(fog, 1.0) ? CMD_FOG_100 : close(fog, 0.75) ? CMD_FOG_75 :
-          close(fog, 0.5) ? CMD_FOG_50 : close(fog, 0.0) ? CMD_FOG_OFF : 0);
-    const double dist = lambo::config::camera_distance_scale();
+          command_for_value(lambo::config::global_fog_scale(), kFogDensityCommands));
     radio(g_cam_dist_menu, CMD_CAM_DIST_ORIG, CMD_CAM_DIST_50,
-          close(dist, 0.5) ? CMD_CAM_DIST_50 : close(dist, 0.65) ? CMD_CAM_DIST_65 :
-          close(dist, 0.8) ? CMD_CAM_DIST_80 : close(dist, 1.0) ? CMD_CAM_DIST_ORIG : 0);
-    const double height = lambo::config::camera_height_scale();
+          command_for_value(lambo::config::camera_distance_scale(), kCameraDistanceCommands));
     radio(g_cam_height_menu, CMD_CAM_HEIGHT_ORIG, CMD_CAM_HEIGHT_LOWEST,
-          close(height, 0.4) ? CMD_CAM_HEIGHT_LOWEST : close(height, 0.66) ? CMD_CAM_HEIGHT_LOWER :
-          close(height, 1.0) ? CMD_CAM_HEIGHT_ORIG : 0);
-    const double fov = lambo::config::camera_fov_add();
+          command_for_value(lambo::config::camera_height_scale(), kCameraHeightCommands));
     radio(g_fov_menu, CMD_FOV_ORIG, CMD_FOV_PLUS20,
-          close(fov, 20.0) ? CMD_FOV_PLUS20 : close(fov, 15.0) ? CMD_FOV_PLUS15 :
-          close(fov, 10.0) ? CMD_FOV_PLUS10 : close(fov, 5.0) ? CMD_FOV_PLUS5 :
-          close(fov, 0.0) ? CMD_FOV_ORIG : 0);
+          command_for_value(lambo::config::camera_fov_add(), kFovCommands));
     if (g_hwnd != nullptr) DrawMenuBar(g_hwnd);
 }
 
 void apply_graphics_command(UINT command) {
     using namespace ultramodern::renderer;
     GraphicsConfig cfg = lambo::config::current_graphics();
+    bool apply_live = true;
     switch (command) {
         case CMD_RES_AUTO: cfg.res_option = Resolution::Auto; break;
         case CMD_RES_ORIGINAL: cfg.res_option = Resolution::Original; break;
         case CMD_RES_ORIGINAL_2X: cfg.res_option = Resolution::Original2x; break;
-        case CMD_SS_1X: case CMD_SS_2X: case CMD_SS_3X: case CMD_SS_4X:
-            cfg.ds_option = int(command - CMD_SS_1X) + 1; break;
+        case CMD_SS_1X: case CMD_SS_2X: case CMD_SS_3X: case CMD_SS_4X: {
+            const auto it = std::find(kSupersamplingCommands.begin(), kSupersamplingCommands.end(), command);
+            if (it == kSupersamplingCommands.end()) return;
+            cfg.ds_option = static_cast<int>(std::distance(kSupersamplingCommands.begin(), it)) + 1;
+            break;
+        }
         case CMD_ASPECT_ORIGINAL: cfg.ar_option = AspectRatio::Original; break;
         case CMD_ASPECT_EXPAND: cfg.ar_option = AspectRatio::Expand; break;
         case CMD_HUD_ORIGINAL: cfg.hr_option = HUDRatioMode::Original; break;
@@ -218,9 +275,10 @@ void apply_graphics_command(UINT command) {
         case CMD_RATE_DISPLAY: cfg.rr_option = RefreshRate::Display; break;
         case CMD_RATE_30: case CMD_RATE_60: case CMD_RATE_90: case CMD_RATE_120:
         case CMD_RATE_144: case CMD_RATE_165: case CMD_RATE_240: {
-            constexpr std::array<int, 7> values{30, 60, 90, 120, 144, 165, 240};
+            int refresh_rate = 0;
+            if (!value_for_command(command, kManualRefreshCommands, refresh_rate)) return;
             cfg.rr_option = RefreshRate::Manual;
-            cfg.rr_manual_value = values[command - CMD_RATE_30];
+            cfg.rr_manual_value = refresh_rate;
             break;
         }
         case CMD_AA_NONE: cfg.msaa_option = Antialiasing::None; break;
@@ -232,12 +290,12 @@ void apply_graphics_command(UINT command) {
         case CMD_HPFB_OFF: cfg.hpfb_option = HighPrecisionFramebuffer::Off; break;
         // RT64 selects its backend while constructing the renderer. Persist this
         // immediately, but the menu label is explicit that activation is next launch.
-        case CMD_API_AUTO: cfg.api_option = GraphicsApi::Auto; break;
-        case CMD_API_D3D12: cfg.api_option = GraphicsApi::D3D12; break;
-        case CMD_API_VULKAN: cfg.api_option = GraphicsApi::Vulkan; break;
+        case CMD_API_AUTO: cfg.api_option = GraphicsApi::Auto; apply_live = false; break;
+        case CMD_API_D3D12: cfg.api_option = GraphicsApi::D3D12; apply_live = false; break;
+        case CMD_API_VULKAN: cfg.api_option = GraphicsApi::Vulkan; apply_live = false; break;
         default: return;
     }
-    lambo::config::apply_graphics(cfg);
+    lambo::config::apply_graphics(cfg, apply_live);
 }
 
 void dispatch(UINT command) {
@@ -256,8 +314,11 @@ void dispatch(UINT command) {
         case CMD_NO_LOD: lambo::config::set_no_lod(!lambo::config::no_lod()); break;
         case CMD_PVS_CIRCUIT_1: case CMD_PVS_CIRCUIT_2: case CMD_PVS_CIRCUIT_3:
         case CMD_PVS_CIRCUIT_4: case CMD_PVS_CIRCUIT_5: case CMD_PVS_CIRCUIT_6: {
-            int circuit = int(command - CMD_PVS_CIRCUIT_1);
-            lambo::config::set_no_lod_circuit(circuit, !lambo::config::no_lod_circuit(circuit));
+            const auto it = std::find(kPvsCircuitCommands.begin(), kPvsCircuitCommands.end(), command);
+            if (it == kPvsCircuitCommands.end()) return;
+            const int circuit = static_cast<int>(std::distance(kPvsCircuitCommands.begin(), it));
+            lambo::config::set_no_lod_circuit(circuit,
+                !lambo::config::no_lod_circuit(circuit));
             break;
         }
         case CMD_DRAW_1X: lambo::config::set_global_draw_distance(1.0); break;
@@ -304,7 +365,7 @@ void attach(SDL_Window* window) {
     append_item(game, CMD_FULLSCREEN, "&Fullscreen\tF11");
     append_item(game, CMD_SETTINGS, "&Settings...");
     append_item(game, CMD_CONTROLS, "&Controls...");
-    AppendMenuA(game, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(game, MF_SEPARATOR, 0, nullptr);
     append_item(game, CMD_QUIT, "E&xit");
 
     HMENU graphics = append_submenu(g_menu_bar, "&Graphics");
@@ -324,7 +385,7 @@ void attach(SDL_Window* window) {
     append_item(hud, CMD_HUD_FULL, "Full width");
     HMENU rate = g_rate_menu = append_submenu(graphics, "Frame rate");
     append_item(rate, CMD_RATE_ORIGINAL, "Original"); append_item(rate, CMD_RATE_DISPLAY, "Display refresh rate");
-    AppendMenuA(rate, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(rate, MF_SEPARATOR, 0, nullptr);
     append_item(rate, CMD_RATE_30, "30 FPS"); append_item(rate, CMD_RATE_60, "60 FPS");
     append_item(rate, CMD_RATE_90, "90 FPS"); append_item(rate, CMD_RATE_120, "120 FPS");
     append_item(rate, CMD_RATE_144, "144 FPS"); append_item(rate, CMD_RATE_165, "165 FPS");
@@ -344,9 +405,9 @@ void attach(SDL_Window* window) {
     append_item(enhancements, CMD_SKY_MATCH, "3P/4P widescreen sky");
     append_item(enhancements, CMD_NO_LOD, "Remove N64 LOD reductions");
     HMENU pvs = g_pvs_menu = append_submenu(enhancements, "Full-track visibility by circuit");
-    for (int i = 0; i < 6; ++i) {
+    for (size_t i = 0; i < kPvsCircuitCommands.size(); ++i) {
         std::string label = "Circuit " + std::to_string(i + 1);
-        append_item(pvs, CMD_PVS_CIRCUIT_1 + i, label.c_str());
+        append_item(pvs, kPvsCircuitCommands[i], label);
     }
     HMENU draw = g_draw_menu = append_submenu(enhancements, "Draw distance");
     append_item(draw, CMD_DRAW_1X, "Original (1x)"); append_item(draw, CMD_DRAW_1_5X, "1.5x");
@@ -368,7 +429,7 @@ void attach(SDL_Window* window) {
     append_item(fov, CMD_FOV_PLUS20, "+20 degrees");
 
     if ((SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == 0) {
-        SetMenu(g_hwnd, g_menu_bar);
+        set_window_menu(g_menu_bar);
     }
     SDL_EventState(SDL_SYSWMEVENT, SDL_ENABLE);
     refresh();
@@ -389,7 +450,7 @@ void toggle_fullscreen() {
         LAMBO_LOG("config", "fullscreen toggle FAILED: %s\n", SDL_GetError());
         return;
     }
-    SetMenu(g_hwnd, fullscreen ? nullptr : g_menu_bar);
+    set_window_menu(fullscreen ? nullptr : g_menu_bar);
     auto cfg = lambo::config::current_graphics();
     cfg.wm_option = fullscreen ? ultramodern::renderer::WindowMode::Fullscreen
                                : ultramodern::renderer::WindowMode::Windowed;
