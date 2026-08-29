@@ -38,7 +38,7 @@ N64Recomp ports (Zelda 64: Recompiled et al.):
 | `hpfb_option` | `Auto`, `On`, `Off` | `Auto` | High-precision framebuffer. |
 | `wm_option` | `Windowed`, `Fullscreen` | `Windowed` | Window mode. **F11** or **Alt+Enter** toggles at runtime (and is remembered). |
 | `window_width` / `window_height` | pixels | `1600`/`900` | Windowed-mode size. |
-| `api_option` | `Auto`, `D3D12`, `Vulkan`, `Metal` | `Auto` | Graphics API. |
+| `api_option` | `Auto`, `D3D12`, `Vulkan`, `Metal` | `Auto` | Graphics API; takes effect on the next launch. |
 | `texture_pack` | path to a directory or `.rtz` | `""` | Loads one native RT64 texture pack at startup. An empty value keeps the original textures. |
 | `texture_dump` | directory path | `""` | Dumps each texture used during play as RT64 TMEM/RDRAM data for pack authors. |
 | `widescreen_fog_match` | `true`, `false` | `true` | Widens the dense 3P/4P split-screen fog to the open 1P fog window/colour so the extra draw distance shows. Only affects 3+ player races. |

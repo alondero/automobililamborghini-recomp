@@ -8,9 +8,12 @@
 
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <mutex>
+#include <thread>
 
 #include "lambo_log.h"
 
@@ -32,6 +35,8 @@ lambo::config::WindowSize g_window_size{kDefaultWindowWidth, kDefaultWindowHeigh
 // keys alongside the GraphicsConfig fields (like the window size). Empty = feature off.
 std::string g_texture_pack;
 std::string g_texture_dump;
+std::mutex g_texture_mutex;
+std::mutex g_graphics_file_mutex;
 
 // Widen the dense 3P/4P split-screen fog to the open 1P window/colour (issue #83).
 // Enhancement default-on, consistent with the widescreen wave; 1P/2P are unaffected
@@ -77,6 +82,11 @@ std::atomic<double> g_camera_fov_add{0.0};
 // runtime's reference-returning getter while another thread may be applying a change.
 ultramodern::renderer::GraphicsConfig g_current_graphics{};
 
+// The renderer's API is selected when it is constructed. Keep its last applied
+// API separately so a later live-safe setting cannot smuggle a persisted,
+// restart-only API choice into RT64's update queue.
+ultramodern::renderer::GraphicsConfig g_live_graphics{};
+
 // Read a key into `out`, keeping the existing (default) value when the key is
 // missing or invalid. NLOHMANN_JSON_SERIALIZE_ENUM does NOT throw on an
 // unrecognised string -- it silently maps it to the FIRST enumerator, which for
@@ -100,7 +110,7 @@ void from_or_default(const nlohmann::json& j, const char* key, T& out) {
     }
 }
 
-nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
+nlohmann::json graphics_config_json(const ultramodern::renderer::GraphicsConfig& c) {
     return nlohmann::json{
         {"res_option", c.res_option},
         {"wm_option", c.wm_option},
@@ -113,6 +123,13 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"rr_manual_value", c.rr_manual_value},
         {"ds_option", c.ds_option},
         {"developer_mode", c.developer_mode},
+    };
+}
+
+nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
+    std::lock_guard<std::mutex> lock(g_texture_mutex);
+    nlohmann::json result = graphics_config_json(c);
+    result.update({
         {"window_width", g_window_size.width},
         {"window_height", g_window_size.height},
         {"texture_pack", g_texture_pack},
@@ -132,10 +149,12 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"camera_height_scale", g_camera_height_scale.load()},
         {"camera_fov_add", g_camera_fov_add.load()},
         {"show_launcher", g_show_launcher.load()},
-    };
+    });
+    return result;
 }
 
 void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c) {
+    std::lock_guard<std::mutex> lock(g_texture_mutex);
     from_or_default(j, "res_option", c.res_option);
     from_or_default(j, "wm_option", c.wm_option);
     from_or_default(j, "hr_option", c.hr_option);
@@ -228,6 +247,122 @@ std::filesystem::path graphics_json_path() {
     return lambo::config::app_config_dir() / kGraphicsFile;
 }
 
+bool write_graphics_json(const std::filesystem::path& path, const nlohmann::json& json) {
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    std::ofstream out{path};
+    if (!out.good()) {
+        LAMBO_LOG("config", "cannot write %s\n", path.string().c_str());
+        return false;
+    }
+    out << json.dump(4) << "\n";
+    out.flush();
+    if (!out.good()) {
+        LAMBO_LOG("config", "write to %s FAILED (disk full / permissions?)"
+                            " -- settings may not persist\n", path.string().c_str());
+        return false;
+    }
+    return true;
+}
+
+// Merge a narrow update over the current file so menu interaction never removes
+// hand-edited or forward-compatible graphics.json keys. A malformed file is left
+// untouched so it remains recoverable by the user.
+void save_graphics_updates_sync(const nlohmann::json& updates) {
+    if (updates.empty()) return;
+    std::lock_guard<std::mutex> file_lock(g_graphics_file_mutex);
+    const std::filesystem::path path = graphics_json_path();
+    nlohmann::json current;
+    std::ifstream in{path};
+    if (!in.good()) {
+        // Startup creates a complete file synchronously. If it is removed while
+        // the game is running, write the requested delta rather than reading the
+        // main-thread snapshot from this worker thread.
+        current = nlohmann::json::object();
+    } else {
+        try {
+            in >> current;
+            if (!current.is_object()) {
+                LAMBO_LOG("config", "%s is not a JSON object; leaving it untouched\n",
+                          path.string().c_str());
+                return;
+            }
+        } catch (const nlohmann::json::exception& e) {
+            LAMBO_LOG("config", "%s unparseable (%s); leaving it untouched\n",
+                      path.string().c_str(), e.what());
+            return;
+        }
+    }
+    current.update(updates);
+    write_graphics_json(path, current);
+}
+
+class GraphicsUpdateWriter {
+public:
+    GraphicsUpdateWriter() : worker_([this] { run(); }) {}
+
+    ~GraphicsUpdateWriter() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stopping_ = true;
+        }
+        wake_.notify_one();
+        worker_.join();
+    }
+
+    void enqueue(const nlohmann::json& updates) {
+        if (updates.empty()) return;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            pending_.update(updates);
+        }
+        wake_.notify_one();
+    }
+
+    void flush() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        wake_.notify_one();
+        drained_.wait(lock, [this] { return pending_.empty() && !writing_; });
+    }
+
+private:
+    void run() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        for (;;) {
+            wake_.wait(lock, [this] { return stopping_ || !pending_.empty(); });
+            if (stopping_ && pending_.empty()) break;
+            nlohmann::json updates = std::move(pending_);
+            pending_ = nlohmann::json::object();
+            writing_ = true;
+            lock.unlock();
+            save_graphics_updates_sync(updates);
+            lock.lock();
+            writing_ = false;
+            drained_.notify_all();
+        }
+        drained_.notify_all();
+    }
+
+    std::mutex mutex_;
+    std::condition_variable wake_;
+    std::condition_variable drained_;
+    nlohmann::json pending_ = nlohmann::json::object();
+    bool writing_ = false;
+    bool stopping_ = false;
+    std::thread worker_;
+};
+
+GraphicsUpdateWriter& graphics_update_writer() {
+    // Function-local lifetime ensures the worker is created only after startup has
+    // configured the graphics snapshot and is joined during ordinary process exit.
+    static GraphicsUpdateWriter writer;
+    return writer;
+}
+
+void save_graphics_updates(const nlohmann::json& updates) {
+    graphics_update_writer().enqueue(updates);
+}
+
 } // anonymous namespace
 
 namespace lambo {
@@ -293,6 +428,7 @@ ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
 
     ultramodern::renderer::set_graphics_config(cfg);
     g_current_graphics = cfg;
+    g_live_graphics = cfg;
     // Write the merged config back so the on-disk file is always complete and
     // editable (new keys appear with their defaults after an upgrade) -- but NEVER
     // overwrite a file that failed to parse: a hand-edit typo must stay recoverable,
@@ -308,10 +444,28 @@ ultramodern::renderer::GraphicsConfig current_graphics() {
     return g_current_graphics;
 }
 
-void apply_graphics(const ultramodern::renderer::GraphicsConfig& cfg) {
+void apply_graphics(const ultramodern::renderer::GraphicsConfig& cfg, bool apply_live) {
+    const auto before = g_current_graphics;
     g_current_graphics = cfg;
-    ultramodern::renderer::set_graphics_config(cfg);
-    save_graphics(cfg);
+    nlohmann::json updates = nlohmann::json::object();
+    if (before.res_option != cfg.res_option) updates["res_option"] = cfg.res_option;
+    if (before.wm_option != cfg.wm_option) updates["wm_option"] = cfg.wm_option;
+    if (before.hr_option != cfg.hr_option) updates["hr_option"] = cfg.hr_option;
+    if (before.api_option != cfg.api_option) updates["api_option"] = cfg.api_option;
+    if (before.ar_option != cfg.ar_option) updates["ar_option"] = cfg.ar_option;
+    if (before.msaa_option != cfg.msaa_option) updates["msaa_option"] = cfg.msaa_option;
+    if (before.rr_option != cfg.rr_option) updates["rr_option"] = cfg.rr_option;
+    if (before.hpfb_option != cfg.hpfb_option) updates["hpfb_option"] = cfg.hpfb_option;
+    if (before.rr_manual_value != cfg.rr_manual_value) updates["rr_manual_value"] = cfg.rr_manual_value;
+    if (before.ds_option != cfg.ds_option) updates["ds_option"] = cfg.ds_option;
+    if (before.developer_mode != cfg.developer_mode) updates["developer_mode"] = cfg.developer_mode;
+    if (apply_live) {
+        auto live_cfg = cfg;
+        live_cfg.api_option = g_live_graphics.api_option;
+        ultramodern::renderer::set_graphics_config(live_cfg);
+        g_live_graphics = live_cfg;
+    }
+    save_graphics_updates(updates);
 }
 
 void update_saved_window_mode(ultramodern::renderer::WindowMode wm) {
@@ -319,24 +473,15 @@ void update_saved_window_mode(ultramodern::renderer::WindowMode wm) {
     // from_json here: its enhancement fields are read by the game/render threads.
     // Mutating those arrays during an F11 press would introduce a data race.
     g_current_graphics.wm_option = wm;
-    save_graphics(g_current_graphics);
+    save_graphics_updates({{"wm_option", wm}});
 }
 
 void save_graphics(const ultramodern::renderer::GraphicsConfig& cfg) {
-    const std::filesystem::path path = graphics_json_path();
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-    std::ofstream out{path};
-    if (!out.good()) {
-        LAMBO_LOG("config", "cannot write %s\n", path.string().c_str());
-        return;
-    }
-    out << to_json(cfg).dump(4) << "\n";
-    out.flush();
-    if (!out.good()) {
-        LAMBO_LOG("config", "write to %s FAILED (disk full / permissions?)"
-                     " -- settings may not persist\n", path.string().c_str());
-    }
+    save_graphics_updates_sync(to_json(cfg));
+}
+
+void flush_pending_graphics_updates() {
+    graphics_update_writer().flush();
 }
 
 WindowSize window_size() {
@@ -353,10 +498,12 @@ static std::string path_from_env_or(const char* env, const std::string& fallback
 }
 
 std::string texture_pack_path() {
+    std::lock_guard<std::mutex> lock(g_texture_mutex);
     return path_from_env_or("LAMBO_TEXTURE_PACK", g_texture_pack);
 }
 
 std::string texture_dump_dir() {
+    std::lock_guard<std::mutex> lock(g_texture_mutex);
     return path_from_env_or("LAMBO_TEXTURE_DUMP", g_texture_dump);
 }
 
@@ -370,7 +517,7 @@ bool widescreen_fog_match() {
 
 void set_widescreen_fog_match(bool enabled) {
     g_widescreen_fog_match.store(enabled);
-    save_graphics(g_current_graphics);
+    save_graphics_updates({{"widescreen_fog_match", enabled}});
 }
 
 // LAMBO_SKY_MATCH_1P=1/0 overrides the JSON key for headless capture/testing.
@@ -383,7 +530,7 @@ bool widescreen_sky_match() {
 
 void set_widescreen_sky_match(bool enabled) {
     g_widescreen_sky_match.store(enabled);
-    save_graphics(g_current_graphics);
+    save_graphics_updates({{"widescreen_sky_match", enabled}});
 }
 
 // LAMBO_NO_LOD=1/0 overrides the JSON key for headless capture/testing.
@@ -396,7 +543,7 @@ bool no_lod() {
 
 void set_no_lod(bool enabled) {
     g_no_lod.store(enabled);
-    save_graphics(g_current_graphics);
+    save_graphics_updates({{"no_lod", enabled}});
 }
 
 // Per-circuit refinement of no_lod (see lambo_config.h). No env var: the JSON
@@ -412,7 +559,10 @@ bool no_lod_circuit(int circuit) {
 void set_no_lod_circuit(int circuit, bool enabled) {
     if (circuit < 0 || circuit >= (int)g_no_lod_circuit.size()) return;
     g_no_lod_circuit[(size_t)circuit].store(enabled);
-    save_graphics(g_current_graphics);
+    save_graphics_updates({{"no_lod_circuit", nlohmann::json::array({
+        g_no_lod_circuit[0].load(), g_no_lod_circuit[1].load(),
+        g_no_lod_circuit[2].load(), g_no_lod_circuit[3].load(),
+        g_no_lod_circuit[4].load(), g_no_lod_circuit[5].load()})}});
 }
 
 // LAMBO_FOG_SCALE=<float> overrides both JSON keys for headless capture/testing.
@@ -439,7 +589,7 @@ void set_global_fog_scale(double scale) {
     if (scale < 0.0) scale = 0.0;
     if (scale > 8.0) scale = 8.0;
     g_fog_scale.store(scale);
-    save_graphics(g_current_graphics);
+    save_graphics_updates({{"fog_scale", scale}});
 }
 
 // LAMBO_DRAW_DISTANCE=<float> overrides both JSON keys for capture/testing.
@@ -469,7 +619,7 @@ void set_global_draw_distance(double scale) {
     if (scale > 0.0 && scale < 0.1) scale = 0.1;
     if (scale > 100.0) scale = 100.0;
     g_draw_distance.store(scale <= 0.0 ? 0.0 : scale);
-    save_graphics(g_current_graphics);
+    save_graphics_updates({{"draw_distance", g_draw_distance.load()}});
 }
 
 // LAMBO_CAMERA_DISTANCE_SCALE=<float> overrides the JSON key for capture/testing.
@@ -490,7 +640,7 @@ void set_camera_distance_scale(double v) {
     if (v < 0.2) v = 0.2;
     if (v > 3.0) v = 3.0;
     g_camera_distance_scale.store(v);
-    save_graphics(g_current_graphics);
+    save_graphics_updates({{"camera_distance_scale", v}});
 }
 
 // LAMBO_CAMERA_HEIGHT_SCALE=<float> overrides the JSON key for capture/testing.
@@ -511,7 +661,7 @@ void set_camera_height_scale(double v) {
     if (v < 0.2) v = 0.2;
     if (v > 3.0) v = 3.0;
     g_camera_height_scale.store(v);
-    save_graphics(g_current_graphics);
+    save_graphics_updates({{"camera_height_scale", v}});
 }
 
 // LAMBO_CAMERA_FOV_ADD=<float> overrides the JSON key for capture/testing.
@@ -533,7 +683,7 @@ void set_camera_fov_add(double v) {
     if (v < -20.0) v = -20.0;
     if (v > 60.0) v = 60.0;
     g_camera_fov_add.store(v);
-    save_graphics(g_current_graphics);
+    save_graphics_updates({{"camera_fov_add", v}});
 }
 
 bool show_launcher() {
@@ -542,7 +692,7 @@ bool show_launcher() {
 
 void set_show_launcher(bool enabled) {
     g_show_launcher.store(enabled);
-    save_graphics(g_current_graphics);
+    save_graphics_updates({{"show_launcher", enabled}});
 }
 
 } // namespace config

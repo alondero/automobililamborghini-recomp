@@ -21,6 +21,7 @@ cmake_minimum_required(VERSION 3.20)
 project(lamborghini_modern VERSION 0.5.0 LANGUAGES C CXX)
 
 include(CTest)
+find_package(Threads REQUIRED)
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_CXX_STANDARD 20)
@@ -234,6 +235,23 @@ if(WIN32)
     set(FREETYPE_LIBRARY ${LAMBO_FREETYPE_ROOT}/lib/x64/freetype.lib CACHE FILEPATH "" FORCE)
     set(FREETYPE_LIBRARY_RELEASE ${LAMBO_FREETYPE_ROOT}/lib/x64/freetype.lib CACHE FILEPATH "" FORCE)
 endif()
+
+# lambo_config.cpp coalesces menu persistence on a portable std::thread. Keep
+# every executable that compiles it explicitly linked to the platform thread
+# implementation; relying on a transitive SDL/runtime dependency breaks test
+# targets and older Linux toolchains.
+foreach(lambo_config_thread_target
+        lambo_config_tests
+        lambo_controls_tests
+        lambo_controls_capture_tests
+        lambo_ui_controls_tests
+        lambo_ui_settings_tests
+        lambo_controls_sdl_tests
+        lamborghini_modern)
+    if(TARGET ${lambo_config_thread_target})
+        target_link_libraries(${lambo_config_thread_target} PRIVATE Threads::Threads)
+    endif()
+endforeach()
 if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/RmlUi/CMakeLists.txt)
     message(FATAL_ERROR "lib/RmlUi submodule is missing. Initialise it first:\n"
         "  git submodule update --init --recursive")
@@ -334,6 +352,7 @@ if(BUILD_TESTING)
     else()
         target_link_libraries(lambo_controls_sdl_tests PRIVATE ${SDL2_LIBRARIES})
     endif()
+    target_link_libraries(lambo_controls_sdl_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_controls_sdl_registry COMMAND lambo_controls_sdl_tests)
 endif()
 
@@ -461,6 +480,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     target_link_libraries(lamborghini_modern PRIVATE
         librecomp
         ultramodern
+        Threads::Threads
     )
     if(TARGET RecompiledFuncs)
         target_link_libraries(lamborghini_modern PRIVATE RecompiledFuncs)

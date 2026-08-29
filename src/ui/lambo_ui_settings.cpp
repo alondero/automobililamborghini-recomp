@@ -142,6 +142,7 @@ std::optional<SettingAction> setting_action_from_name(std::string_view name) {
 bool apply_setting_action(SettingAction action) {
     using namespace ultramodern::renderer;
     auto cfg = lambo::config::current_graphics();
+    bool apply_live = true;
 
     switch (action) {
         case SettingAction::ResolutionNext:
@@ -186,6 +187,7 @@ bool apply_setting_action(SettingAction action) {
             cfg.api_option = next_value(cfg.api_option,
                 std::array{GraphicsApi::Auto, GraphicsApi::Vulkan});
 #endif
+            apply_live = false;
             break;
         case SettingAction::FogMatchToggle:
             lambo::config::set_widescreen_fog_match(!lambo::config::widescreen_fog_match()); return true;
@@ -208,7 +210,7 @@ bool apply_setting_action(SettingAction action) {
                 lambo::config::global_fog_scale(), std::array{0.0, 0.5, 0.75, 1.0, 1.5, 2.0})); return true;
     }
 
-    lambo::config::apply_graphics(cfg);
+    lambo::config::apply_graphics(cfg, apply_live);
     return true;
 }
 

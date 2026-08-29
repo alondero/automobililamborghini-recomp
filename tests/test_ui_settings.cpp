@@ -40,7 +40,8 @@ nlohmann::json read_json(const std::filesystem::path& path) {
 } // namespace
 
 namespace ultramodern::renderer {
-void set_graphics_config(const GraphicsConfig&) {}
+int graphics_config_apply_count = 0;
+void set_graphics_config(const GraphicsConfig&) { ++graphics_config_apply_count; }
 }
 
 int main() {
@@ -84,8 +85,12 @@ int main() {
 
     expect(apply("res:next") && apply("ss:next") && apply("aspect:next") &&
            apply("hud:next") && apply("rate:next") && apply("msaa:next") &&
-           apply("hpfb:next") && apply("api:next"),
+           apply("hpfb:next"),
            "graphics cycle bindings apply through the typed settings seam");
+    const int live_apply_count_before_api_change = ultramodern::renderer::graphics_config_apply_count;
+    expect(apply("api:next"), "graphics API setting applies through the typed settings seam");
+    expect(ultramodern::renderer::graphics_config_apply_count == live_apply_count_before_api_change,
+           "graphics API setting does not reconfigure the live renderer");
     const auto graphics = lambo::config::current_graphics();
     using namespace ultramodern::renderer;
     expect(graphics.res_option == Resolution::Original, "resolution cycle updates config");
@@ -158,6 +163,7 @@ int main() {
     expect_cycle_wraps("fogdensity:next", 6, snapshot.fog_density,
                        &lambo::ui::SettingsSnapshot::fog_density, "fog-density cycle wraps");
 
+    lambo::config::flush_pending_graphics_updates();
     const auto persisted = read_json(config_path);
 #if defined(_WIN32)
     expect(persisted.at("api_option") == "D3D12", "graphics API persists");
