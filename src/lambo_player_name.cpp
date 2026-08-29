@@ -1,5 +1,6 @@
 #include "lambo_player_name.h"
 
+#include <cstddef>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -15,15 +16,19 @@ namespace {
 // Verified against the ROM's name editor (func_8003CD84 setup and the append /
 // delete helpers at 0x8003F3C0-0x8003F4E8). Driver indices are one-based and
 // each name occupies 13 bytes: up to 12 keyboard characters plus a NUL.
+// The ROM's result insertion at 0x8003F8E8 copies 13 bytes from these buffers
+// into only the leaderboard row earned by that driver.
 constexpr uint32_t kCurrentDriverAddr = 0x800CE6A6u;
 constexpr uint32_t kDriverNamesBase = 0x800A4819u;
 constexpr int kPlayerOne = 1;
-constexpr int kNameStride = 13;
-constexpr int kMaxNameLength = 12;
+constexpr std::size_t kNameStride = 13;
+constexpr std::size_t kMaxNameLength = kNameStride - 1;
 constexpr const char* kPlayerConfigFile = "player.json";
 
 gpr name_addr(int driver) {
-    return (gpr)(int32_t)(kDriverNamesBase + uint32_t(driver * kNameStride));
+    return (gpr)(int32_t)(kDriverNamesBase +
+                          static_cast<uint32_t>(driver) *
+                              static_cast<uint32_t>(kNameStride));
 }
 
 bool valid_name(const std::string& name) {
@@ -96,6 +101,23 @@ int current_driver(uint8_t* rdram) {
     return (int16_t)MEM_H(0, (gpr)(int32_t)kCurrentDriverAddr);
 }
 
+std::string read_name(uint8_t* rdram, gpr src) {
+    std::string name;
+    for (std::size_t i = 0; i < kMaxNameLength; ++i) {
+        const unsigned char ch = MEM_BU(i, src);
+        if (ch == 0) break;
+        name.push_back(static_cast<char>(ch));
+    }
+    return name;
+}
+
+void write_name(uint8_t* rdram, gpr dst, const std::string& name) {
+    for (std::size_t i = 0; i < kNameStride; ++i) {
+        const bool has_character = i < kMaxNameLength && i < name.size();
+        MEM_B(i, dst) = has_character ? static_cast<unsigned char>(name[i]) : 0;
+    }
+}
+
 } // namespace
 
 extern "C" void lambo_player_name_seed(uint8_t* rdram) {
@@ -104,23 +126,14 @@ extern "C" void lambo_player_name_seed(uint8_t* rdram) {
     const std::string saved = load_saved_name();
     if (!valid_name(saved)) return;
 
-    const gpr dst = name_addr(kPlayerOne);
-    for (int i = 0; i < kNameStride; ++i) {
-        MEM_B(i, dst) = i < (int)saved.size() ? saved[(size_t)i] : 0;
-    }
+    write_name(rdram, name_addr(kPlayerOne), saved);
     LAMBO_LOG_INFO("name", "seeded player name: %s\n", saved.c_str());
 }
 
 extern "C" void lambo_player_name_save(uint8_t* rdram) {
     if (current_driver(rdram) != kPlayerOne) return;
 
-    const gpr src = name_addr(kPlayerOne);
-    std::string name;
-    for (int i = 0; i < kMaxNameLength; ++i) {
-        const unsigned char ch = MEM_BU(i, src);
-        if (ch == 0) break;
-        name.push_back((char)ch);
-    }
+    const std::string name = read_name(rdram, name_addr(kPlayerOne));
     if (!valid_name(name)) return;
 
     save_name(name);

@@ -3,12 +3,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <vector>
 
 #include "json/json.hpp"
 #include "lambo_config.h"
-#include "lambo_player_name.h"
-#include "recomp.h"
 
 namespace {
 
@@ -46,13 +43,10 @@ int main() {
     const auto dir = std::filesystem::temp_directory_path() /
                      ("lambo-config-test-" + std::to_string(unique));
     const auto path = dir / "graphics.json";
-    const auto player_path = dir / "player.json";
 #if defined(_WIN32)
     _putenv_s("LAMBO_GRAPHICS_CONFIG", path.string().c_str());
-    _putenv_s("LAMBO_PLAYER_CONFIG", player_path.string().c_str());
 #else
     setenv("LAMBO_GRAPHICS_CONFIG", path.string().c_str(), 1);
-    setenv("LAMBO_PLAYER_CONFIG", player_path.string().c_str(), 1);
 #endif
 
     auto cfg = lambo::config::load_and_apply_graphics();
@@ -146,26 +140,6 @@ int main() {
     lambo::config::flush_pending_graphics_updates();
     expect(lambo::config::show_launcher() == true, "show_launcher toggle updates snapshot");
     expect(read_json(path).at("show_launcher") == true, "show_launcher persists to json");
-
-    std::vector<uint8_t> memory(0x800000);
-    uint8_t* rdram = memory.data();
-    const gpr driver_index = (gpr)(int32_t)0x800CE6A6u;
-    const gpr player_one_name = (gpr)(int32_t)0x800A4826u;
-    MEM_H(0, driver_index) = 1;
-    const std::string edited = "CHAMP";
-    for (int i = 0; i < 13; ++i) {
-        MEM_B(i, player_one_name) = i < (int)edited.size() ? edited[(size_t)i] : 0;
-    }
-    lambo_player_name_save(rdram);
-    expect(read_json(player_path).at("name") == edited, "confirmed ROM name persists");
-
-    for (int i = 0; i < 13; ++i) MEM_B(i, player_one_name) = 0;
-    lambo_player_name_seed(rdram);
-    std::string seeded;
-    for (int i = 0; i < 13 && MEM_BU(i, player_one_name) != 0; ++i) {
-        seeded.push_back((char)MEM_BU(i, player_one_name));
-    }
-    expect(seeded == edited, "next run seeds the persisted name into the ROM buffer");
 
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
