@@ -59,7 +59,9 @@ GOLD_GLYPHS = {
     "1ca0ebcef7bd9d17": "K", "1d1c418210eb8eb9": "G",
     "612ea5fbdcf2041e": "N", "69f496caa4a581b4": "E",
     "6b5caa506c64dc65": "H", "82cd326180c0a37f": "C",
-    "a165edf11842509a": "A", "ac27ab4ec0732a83": "D",
+    # I captured from the active gold UI glyph at RDRAM 0x0014F020 on 2026-08-29;
+    # decoded as 24x24 RGBA32 and hashed with RT64's v5 TMEM format.
+    "a14581e313afdd84": "I", "a165edf11842509a": "A", "ac27ab4ec0732a83": "D",
     "af3e5e7b4903e514": "Y", "b45e8785058d9d71": ".",
     "b724e8b4f81ca6ce": "T", "b8e41873b7efd84a": "O",
     "be528398b54d1001": "R", "c6c7989916f1c72c": "W",

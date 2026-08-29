@@ -108,6 +108,9 @@ class TestPackCoverage(unittest.TestCase):
         self.assertEqual(gp.GOLD_GLYPHS["7112047fab42df0d"], "U")
         self.assertEqual(gp.GOLD_GLYPHS["e56e844ba1d87442"], "L")
 
+    def test_runtime_captured_checkpoint_i_hash_is_mapped(self):
+        self.assertEqual(gp.GOLD_GLYPHS["a14581e313afdd84"], "I")
+
     def test_oversize_glyph_is_fitted_inside_a_transparent_margin(self):
         tile = Image.new("RGBA", (200, 100), (255, 255, 255, 255))
         fitted = gp.fit_tile(tile, (128, 128), margin=8)
