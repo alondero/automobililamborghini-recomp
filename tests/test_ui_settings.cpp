@@ -115,14 +115,19 @@ int main() {
     expect(lambo::config::no_lod_circuit(5), "per-circuit visibility toggles live");
     expect(lambo::config::global_draw_distance() == 2.0, "draw-distance cycle applies live");
     expect(lambo::config::global_fog_scale() == 1.5, "fog-density cycle applies live");
-    // The initial mode cycles from off to scalefx. A second cycle reaches xbrz.
-    lambo::config::set_texture_upscaler("off");
-    expect(apply("upscale:next"), "upscaler cycle 1: off -> scalefx");
-    expect(lambo::config::texture_upscaler() == "scalefx", "upscaler state after cycle 1");
-    expect(apply("upscale:next"), "upscaler cycle 2: scalefx -> xbrz");
-    expect(lambo::config::texture_upscaler() == "xbrz", "upscaler state after cycle 2");
-    expect(apply("upscale:next"), "upscaler cycle 3: xbrz -> off (wrap)");
-    expect(lambo::config::texture_upscaler() == "off", "upscaler state after cycle 3 (wraps to off)");
+    // The initial mode cycles from off to xbrz and wraps. We use the typed
+    // setter here (not the string setter) so the callback path is exercised
+    // too -- the test build has no renderer registered, so the callback
+    // never fires, but the typed setter still persists the value.
+    lambo::config::set_texture_upscaler_mode(lambo::config::TextureUpscalerMode::Off);
+    expect(apply("upscale:next"), "upscaler cycle 1: off -> xbrz");
+    expect(lambo::config::texture_upscaler_mode() == lambo::config::TextureUpscalerMode::Xbrz,
+           "upscaler state after cycle 1");
+    expect(lambo::config::texture_upscaler() == "xbrz",
+           "string view of mode reflects the typed state");
+    expect(apply("upscale:next"), "upscaler cycle 2: xbrz -> off (wrap)");
+    expect(lambo::config::texture_upscaler_mode() == lambo::config::TextureUpscalerMode::Off,
+           "upscaler state after cycle 2 (wraps to off)");
 
     const auto snapshot = lambo::ui::settings_snapshot();
     expect(snapshot.resolution == "Original", "settings snapshot presents resolution");

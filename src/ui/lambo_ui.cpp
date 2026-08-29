@@ -33,7 +33,6 @@
 #include "lambo_startup.h"
 
 // Forward-declared definition lives in src/rt64_renderer.cpp.
-namespace lambo_rt64 { void refresh_texture_upscaler(); }
 #include "lambo_ui_input.h"
 #include "lambo_ui_controls.h"
 #include "lambo_ui_render_interface.h"
@@ -753,10 +752,6 @@ void shutdown() {
     deinit_hook();
     Rml::Debugger::Shutdown();
     Rml::Shutdown();
-}
-
-void refresh_texture_upscaler() {
-    lambo_rt64::refresh_texture_upscaler();
 }
 
 } // namespace lambo::ui

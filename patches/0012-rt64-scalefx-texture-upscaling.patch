@@ -1,43 +1,27 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 2fb01e5..0f214f1 100644
+index 2fb01e5..691cfea 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -540,6 +540,12 @@ build_pixel_shader(  rt64 "src/shaders/RtCopyDepthToColorPS.hlsl" "src/shaders/R
+@@ -540,6 +540,7 @@ build_pixel_shader(  rt64 "src/shaders/RtCopyDepthToColorPS.hlsl" "src/shaders/R
  build_pixel_shader(  rt64 "src/shaders/RtCopyDepthToColorPS.hlsl" "src/shaders/RtCopyDepthToColor8XPS.hlsl" "-D SAMPLES_8X")
  build_pixel_shader(  rt64 "src/shaders/TextureCopyPS.hlsl")
  build_compute_shader(rt64 "src/shaders/TextureDecodeCS.hlsl")
-+build_compute_shader(rt64 "src/shaders/TextureScaleFX0CS.hlsl")
-+build_compute_shader(rt64 "src/shaders/TextureScaleFX1CS.hlsl")
-+build_compute_shader(rt64 "src/shaders/TextureScaleFX2CS.hlsl")
-+build_compute_shader(rt64 "src/shaders/TextureScaleFX3CS.hlsl")
-+build_compute_shader(rt64 "src/shaders/TextureScaleFX4CS.hlsl")
 +build_compute_shader(rt64 "src/shaders/TextureXbrzCS.hlsl")
  build_pixel_shader(  rt64 "src/shaders/TextureResolvePS.hlsl" "src/shaders/TextureResolveSamples2XPS.hlsl" "-D SAMPLES_2X")
  build_pixel_shader(  rt64 "src/shaders/TextureResolvePS.hlsl" "src/shaders/TextureResolveSamples4XPS.hlsl" "-D SAMPLES_4X")
  build_pixel_shader(  rt64 "src/shaders/TextureResolvePS.hlsl" "src/shaders/TextureResolveSamples8XPS.hlsl" "-D SAMPLES_8X")
 diff --git a/src/render/rt64_descriptor_sets.h b/src/render/rt64_descriptor_sets.h
-index 69a82ac..3539aeb 100644
+index 69a82ac..1a08775 100644
 --- a/src/render/rt64_descriptor_sets.h
 +++ b/src/render/rt64_descriptor_sets.h
-@@ -643,6 +643,25 @@ namespace RT64 {
-         }
-     };
+@@ -639,10 +639,10 @@ namespace RT64 {
  
-+    // ScaleFX passes 2 and 4 take two inputs (t1, t2) and write one output (u3).
-+    struct TextureScaleFXDualDescriptorSet : RenderDescriptorSetBase {
-+        uint32_t InputA;
-+        uint32_t InputB;
-+        uint32_t Output;
-+
-+        TextureScaleFXDualDescriptorSet(RenderDevice *device = nullptr) {
-+            builder.begin();
-+            InputA = builder.addTexture(1);
-+            InputB = builder.addTexture(2);
-+            Output = builder.addReadWriteTexture(3);
-+            builder.end();
-+
-+            if (device != nullptr) {
-+                create(device);
+             if (device != nullptr) {
+                 create(device);
+-            }
+-        }
+-    };
+-
 +            }
 +        }
 +    };
@@ -46,104 +30,55 @@ index 69a82ac..3539aeb 100644
          uint32_t TMEM;
          uint32_t RGBA32;
 diff --git a/src/render/rt64_shader_library.cpp b/src/render/rt64_shader_library.cpp
-index d1c5273..14a0f82 100644
+index d1c5273..c06607d 100644
 --- a/src/render/rt64_shader_library.cpp
 +++ b/src/render/rt64_shader_library.cpp
-@@ -41,6 +41,12 @@
+@@ -39,8 +39,9 @@
+ #include "shaders/RtCopyDepthToColor2XPS.hlsl.spirv.h"
+ #include "shaders/RtCopyDepthToColor4XPS.hlsl.spirv.h"
  #include "shaders/RtCopyDepthToColor8XPS.hlsl.spirv.h"
- #include "shaders/TextureCopyPS.hlsl.spirv.h"
- #include "shaders/TextureDecodeCS.hlsl.spirv.h"
-+#include "shaders/TextureScaleFX0CS.hlsl.spirv.h"
-+#include "shaders/TextureScaleFX1CS.hlsl.spirv.h"
-+#include "shaders/TextureScaleFX2CS.hlsl.spirv.h"
-+#include "shaders/TextureScaleFX3CS.hlsl.spirv.h"
-+#include "shaders/TextureScaleFX4CS.hlsl.spirv.h"
+-#include "shaders/TextureCopyPS.hlsl.spirv.h"
+-#include "shaders/TextureDecodeCS.hlsl.spirv.h"
++#include "shaders/TextureCopyPS.hlsl.spirv.h"
++#include "shaders/TextureDecodeCS.hlsl.spirv.h"
 +#include "shaders/TextureXbrzCS.hlsl.spirv.h"
  #include "shaders/TextureResolveSamples2XPS.hlsl.spirv.h"
  #include "shaders/TextureResolveSamples4XPS.hlsl.spirv.h"
  #include "shaders/TextureResolveSamples8XPS.hlsl.spirv.h"
-@@ -87,6 +93,12 @@
+@@ -85,8 +86,9 @@
+ #   include "shaders/RtCopyDepthToColor2XPS.hlsl.dxil.h"
+ #   include "shaders/RtCopyDepthToColor4XPS.hlsl.dxil.h"
  #   include "shaders/RtCopyDepthToColor8XPS.hlsl.dxil.h"
- #   include "shaders/TextureCopyPS.hlsl.dxil.h"
- #   include "shaders/TextureDecodeCS.hlsl.dxil.h"
-+#   include "shaders/TextureScaleFX0CS.hlsl.dxil.h"
-+#   include "shaders/TextureScaleFX1CS.hlsl.dxil.h"
-+#   include "shaders/TextureScaleFX2CS.hlsl.dxil.h"
-+#   include "shaders/TextureScaleFX3CS.hlsl.dxil.h"
-+#   include "shaders/TextureScaleFX4CS.hlsl.dxil.h"
+-#   include "shaders/TextureCopyPS.hlsl.dxil.h"
+-#   include "shaders/TextureDecodeCS.hlsl.dxil.h"
++#   include "shaders/TextureCopyPS.hlsl.dxil.h"
++#   include "shaders/TextureDecodeCS.hlsl.dxil.h"
 +#   include "shaders/TextureXbrzCS.hlsl.dxil.h"
  #   include "shaders/TextureResolveSamples2XPS.hlsl.dxil.h"
  #   include "shaders/TextureResolveSamples4XPS.hlsl.dxil.h"
  #   include "shaders/TextureResolveSamples8XPS.hlsl.dxil.h"
-@@ -132,6 +144,12 @@
+@@ -131,7 +133,8 @@
+ #   include "shaders/RtCopyDepthToColor4XPS.hlsl.metal.h"
  #   include "shaders/RtCopyDepthToColor8XPS.hlsl.metal.h"
  #   include "shaders/TextureCopyPS.hlsl.metal.h"
- #   include "shaders/TextureDecodeCS.hlsl.metal.h"
-+#   include "shaders/TextureScaleFX0CS.hlsl.metal.h"
-+#   include "shaders/TextureScaleFX1CS.hlsl.metal.h"
-+#   include "shaders/TextureScaleFX2CS.hlsl.metal.h"
-+#   include "shaders/TextureScaleFX3CS.hlsl.metal.h"
-+#   include "shaders/TextureScaleFX4CS.hlsl.metal.h"
+-#   include "shaders/TextureDecodeCS.hlsl.metal.h"
++#   include "shaders/TextureDecodeCS.hlsl.metal.h"
 +#   include "shaders/TextureXbrzCS.hlsl.metal.h"
  #   include "shaders/TextureResolveSamples2XPS.hlsl.metal.h"
  #   include "shaders/TextureResolveSamples4XPS.hlsl.metal.h"
  #   include "shaders/TextureResolveSamples8XPS.hlsl.metal.h"
-@@ -583,6 +601,74 @@ namespace RT64 {
-             textureDecode.pipeline = device->createComputePipeline(pipelineDesc);
-         }
+@@ -578,11 +581,25 @@ namespace RT64 {
+             layoutBuilder.end();
+             textureDecode.pipelineLayout = layoutBuilder.create(device);
  
-+        // ScaleFX texture upscaling passes.
-+        {
-+            struct ScaleFXShaderRefs {
-+                ShaderRecord *record;
-+                bool dual;
-+            };
-+
-+            const ScaleFXShaderRefs scaleFXShaders[5] = {
-+                { &textureScaleFX0, false },
-+                { &textureScaleFX1, false },
-+                { &textureScaleFX2, true  },
-+                { &textureScaleFX3, false },
-+                { &textureScaleFX4, true  }
-+            };
-+
-+            for (int i = 0; i < 5; i++) {
-+                ShaderRecord *record = scaleFXShaders[i].record;
-+                layoutBuilder.begin();
-+                layoutBuilder.addPushConstant(0, 0, sizeof(uint32_t) * 8, RenderShaderStageFlag::COMPUTE);
-+                if (scaleFXShaders[i].dual) {
-+                    TextureScaleFXDualDescriptorSet descriptorSet;
-+                    layoutBuilder.addDescriptorSet(descriptorSet);
-+                }
-+                else {
-+                    TextureDecodeDescriptorSet descriptorSet;
-+                    layoutBuilder.addDescriptorSet(descriptorSet);
-+                }
-+                layoutBuilder.end();
-+                record->pipelineLayout = layoutBuilder.create(device);
-+
-+                std::unique_ptr<RenderShader> computeShader = nullptr;
-+                switch (i) {
-+                case 0:
-+                    computeShader = device->createShader(CREATE_SHADER_INPUTS(TextureScaleFX0CSBlobDXIL, TextureScaleFX0CSBlobSPIRV, TextureScaleFX0CSBlobMSL, "CSMain", shaderFormat));
-+                    break;
-+                case 1:
-+                    computeShader = device->createShader(CREATE_SHADER_INPUTS(TextureScaleFX1CSBlobDXIL, TextureScaleFX1CSBlobSPIRV, TextureScaleFX1CSBlobMSL, "CSMain", shaderFormat));
-+                    break;
-+                case 2:
-+                    computeShader = device->createShader(CREATE_SHADER_INPUTS(TextureScaleFX2CSBlobDXIL, TextureScaleFX2CSBlobSPIRV, TextureScaleFX2CSBlobMSL, "CSMain", shaderFormat));
-+                    break;
-+                case 3:
-+                    computeShader = device->createShader(CREATE_SHADER_INPUTS(TextureScaleFX3CSBlobDXIL, TextureScaleFX3CSBlobSPIRV, TextureScaleFX3CSBlobMSL, "CSMain", shaderFormat));
-+                    break;
-+                case 4:
-+                    computeShader = device->createShader(CREATE_SHADER_INPUTS(TextureScaleFX4CSBlobDXIL, TextureScaleFX4CSBlobSPIRV, TextureScaleFX4CSBlobMSL, "CSMain", shaderFormat));
-+                    break;
-+                }
-+
-+                RenderComputePipelineDesc scaleFXPipelineDesc(record->pipelineLayout.get(), computeShader.get(), 8, 8, 1);
-+                record->pipeline = device->createComputePipeline(scaleFXPipelineDesc);
-+            }
+-            std::unique_ptr<RenderShader> computeShader = device->createShader(CREATE_SHADER_INPUTS(TextureDecodeCSBlobDXIL, TextureDecodeCSBlobSPIRV, TextureDecodeCSBlobMSL, "CSMain", shaderFormat));
+-            RenderComputePipelineDesc pipelineDesc(textureDecode.pipelineLayout.get(), computeShader.get(), 8, 8, 1);
+-            textureDecode.pipeline = device->createComputePipeline(pipelineDesc);
+-        }
+-
++            std::unique_ptr<RenderShader> computeShader = device->createShader(CREATE_SHADER_INPUTS(TextureDecodeCSBlobDXIL, TextureDecodeCSBlobSPIRV, TextureDecodeCSBlobMSL, "CSMain", shaderFormat));
++            RenderComputePipelineDesc pipelineDesc(textureDecode.pipelineLayout.get(), computeShader.get(), 8, 8, 1);
++            textureDecode.pipeline = device->createComputePipeline(pipelineDesc);
 +        }
 +
 +        // xBRZ texture upscaling (single pass).
@@ -164,24 +99,21 @@ index d1c5273..14a0f82 100644
          {
              std::unique_ptr<RenderShader> regularShader = device->createShader(CREATE_SHADER_INPUTS(VideoInterfacePSRegularBlobDXIL, VideoInterfacePSRegularBlobSPIRV, VideoInterfacePSRegularBlobMSL, "PSMain", shaderFormat));
 diff --git a/src/render/rt64_shader_library.h b/src/render/rt64_shader_library.h
-index 641f3ec..23eaadb 100644
+index 641f3ec..27ca126 100644
 --- a/src/render/rt64_shader_library.h
 +++ b/src/render/rt64_shader_library.h
-@@ -52,6 +52,12 @@ namespace RT64 {
+@@ -51,7 +51,8 @@ namespace RT64 {
+         ShaderRecord rtCopyDepthToColor;
          ShaderRecord rtCopyColorToDepthMS;
          ShaderRecord rtCopyDepthToColorMS;
-         ShaderRecord textureDecode;
-+        ShaderRecord textureScaleFX0;
-+        ShaderRecord textureScaleFX1;
-+        ShaderRecord textureScaleFX2;
-+        ShaderRecord textureScaleFX3;
-+        ShaderRecord textureScaleFX4;
+-        ShaderRecord textureDecode;
++        ShaderRecord textureDecode;
 +        ShaderRecord textureXbrz;
          ShaderRecord textureCopy;
          ShaderRecord textureResolve;
          ShaderRecord videoInterfaceLinear;
 diff --git a/src/render/rt64_texture_cache.cpp b/src/render/rt64_texture_cache.cpp
-index 0848f3e..a4ac541 100644
+index 0848f3e..796fe4b 100644
 --- a/src/render/rt64_texture_cache.cpp
 +++ b/src/render/rt64_texture_cache.cpp
 @@ -4,6 +4,9 @@
@@ -194,20 +126,78 @@ index 0848f3e..a4ac541 100644
  #include "ddspp/ddspp.h"
  #include "stb/stb_image.h"
  #include "xxHash/xxh3.h"
-@@ -199,10 +202,23 @@ namespace RT64 {
-         for (Texture *texture : evictedTextures) {
-             delete texture;
-         }
+@@ -191,18 +194,73 @@ namespace RT64 {
+         replacementMapEnabled = true;
+     }
+ 
+-    TextureMap::~TextureMap() {
+-        for (Texture *texture : textures) {
+-            delete texture;
+-        }
+-
+-        for (Texture *texture : evictedTextures) {
+-            delete texture;
+-        }
++    TextureMap::~TextureMap() {
++        for (Texture *texture : textures) {
++            delete texture;
++        }
++
++        for (Texture *texture : evictedTextures) {
++            delete texture;
++        }
 +
 +        for (const auto &pair : upscaledReplacements) {
 +            delete pair.second;
 +        }
++    }
++
++    void TextureCache::flushUpscaledReplacements() {
++        // Hold the texture map mutex so the worker thread cannot dereference
++        // a textureReplacements[i] pointer that we are about to free. The
++        // eviction path below appends to evictedTextures (deleted by the
++        // existing dtor / decrementLock path), so freeing here is safe.
++        std::lock_guard<std::mutex> lock(textureMapMutex);
++        for (const auto &pair : textureMap.upscaledReplacements) {
++            const auto hashIt = textureMap.hashMap.find(pair.first);
++            if (hashIt != textureMap.hashMap.end()) {
++                const uint32_t textureIndex = hashIt->second;
++                if (textureMap.textureReplacements[textureIndex] == pair.second) {
++                    textureMap.textureReplacements[textureIndex] = nullptr;
++                    textureMap.textureReplacementShiftedByHalf[textureIndex] = false;
++                    textureMap.textureReplacementReferenceCounted[textureIndex] = false;
++                }
++            }
++            textureMap.evictedTextures.emplace_back(pair.second);
++        }
++        textureMap.upscaledReplacements.clear();
++    }
++
++    void TextureCache::flushUpscaledReplacements() {
++        // Hold the texture map mutex so the worker thread cannot dereference
++        // a textureReplacements[i] pointer that we are about to free. The
++        // eviction path below appends to evictedTextures (deleted by the
++        // existing dtor / decrementLock path), so freeing here is safe.
++        std::lock_guard<std::mutex> lock(textureMapMutex);
++        for (const auto &pair : textureMap.upscaledReplacements) {
++            const auto hashIt = textureMap.hashMap.find(pair.first);
++            if (hashIt != textureMap.hashMap.end()) {
++                const uint32_t textureIndex = hashIt->second;
++                if (textureMap.textureReplacements[textureIndex] == pair.second) {
++                    textureMap.textureReplacements[textureIndex] = nullptr;
++                    textureMap.textureReplacementShiftedByHalf[textureIndex] = false;
++                    textureMap.textureReplacementReferenceCounted[textureIndex] = false;
++                }
++            }
++            textureMap.evictedTextures.emplace_back(pair.second);
++        }
++        textureMap.upscaledReplacements.clear();
      }
  
      void TextureMap::clearReplacements() {
          for (size_t i = 0; i < textureReplacements.size(); i++) {
 +            if ((textureReplacements[i] != nullptr) && !textureReplacementReferenceCounted[i]) {
-+                // ScaleFX/xBRZ upscaled variants are owned by the map; free them.
++                // xBRZ upscaled variants are owned by the map; free them.
 +                const auto it = upscaledReplacements.find(hashes[i]);
 +                if ((it != upscaledReplacements.end()) && (it->second == textureReplacements[i])) {
 +                    delete it->second;
@@ -218,11 +208,84 @@ index 0848f3e..a4ac541 100644
              if (textureReplacements[i] != nullptr) {
                  textureReplacements[i] = nullptr;
                  textureReplacementShiftedByHalf[i] = false;
-@@ -359,6 +375,13 @@ namespace RT64 {
+@@ -254,32 +312,46 @@ namespace RT64 {
+         listIterators[textureIndex] = accessList.begin();
+     }
+ 
+-    void TextureMap::replace(uint64_t hash, Texture *texture, bool shiftedByHalf, bool referenceCounted) {
+-        const auto it = hashMap.find(hash);
+-        if (it == hashMap.end()) {
+-            return;
+-        }
+-
+-        // Do nothing if it's the same texture. If the operations were done correctly, it's not possible for either the texture or the
+-        // replacement to be any different, so the operation can be considered a no-op.
+-        if (texture == textureReplacements[it->second]) {
+-            // The exception is that the shifting mode can be changed in real-time by the user while editing, so we update it regardless.
+-            textureReplacementShiftedByHalf[it->second] = shiftedByHalf;
+-            return;
+-        }
+-
+-        // If it's a different texture and a texture was already replaced, decrement its reference.
+-        if ((textureReplacements[it->second] != nullptr) && textureReplacementReferenceCounted[it->second]) {
+-            replacementMap.decrementReference(textureReplacements[it->second]);
+-        }
+-
+-        Texture *replacedTexture = textures[it->second];
+-        textureReplacements[it->second] = texture;
+-        textureReplacementShiftedByHalf[it->second] = shiftedByHalf;
+-        textureReplacementReferenceCounted[it->second] = referenceCounted;
+-        textureScales[it->second] = { float(texture->width) / float(replacedTexture->width), float(texture->height) / float(replacedTexture->height) };
+-        cachedTextureReplacementDimensions[it->second] = interop::float3(float(texture->width), float(texture->height), float(texture->mipmaps));
+-        versions[it->second]++;
++    void TextureMap::replace(uint64_t hash, Texture *texture, bool shiftedByHalf, bool referenceCounted) {
++        const auto it = hashMap.find(hash);
++        if (it == hashMap.end()) {
++            return;
++        }
++
++        // Do nothing if it's the same texture. If the operations were done correctly, it's not possible for either the texture or the
++        // replacement to be any different, so the operation can be considered a no-op.
++        if (texture == textureReplacements[it->second]) {
++            // The exception is that the shifting mode can be changed in real-time by the user while editing, so we update it regardless.
++            textureReplacementShiftedByHalf[it->second] = shiftedByHalf;
++            return;
++        }
++
++        // If it's a different texture and a texture was already replaced, decrement its reference.
++        if ((textureReplacements[it->second] != nullptr) && textureReplacementReferenceCounted[it->second]) {
++            replacementMap.decrementReference(textureReplacements[it->second]);
++        }
++
++        // For map-owned upscaled variants (the xBRZ pass), we are responsible
++        // for the lifetime; if a previous run produced a different upscaled
++        // texture for the same hash, the new one replaces it and the old
++        // GPU resource must be released now or it leaks. Note: this does not
++        // apply to reference-counted hi-res replacement packs (those live in
++        // ReplacementMap).
++        if (!referenceCounted) {
++            const auto upscaledIt = upscaledReplacements.find(hash);
++            if (upscaledIt != upscaledReplacements.end() && upscaledIt->second != texture) {
++                delete upscaledIt->second;
++                upscaledReplacements.erase(upscaledIt);
++            }
++        }
++
++        Texture *replacedTexture = textures[it->second];
++        textureReplacements[it->second] = texture;
++        textureReplacementShiftedByHalf[it->second] = shiftedByHalf;
++        textureReplacementReferenceCounted[it->second] = referenceCounted;
++        textureScales[it->second] = { float(texture->width) / float(replacedTexture->width), float(texture->height) / float(replacedTexture->height) };
++        cachedTextureReplacementDimensions[it->second] = interop::float3(float(texture->width), float(texture->height), float(texture->mipmaps));
++        versions[it->second]++;
+         globalVersion++;
+ 
+         if (referenceCounted) {
+@@ -359,6 +431,13 @@ namespace RT64 {
                      replacementMap.decrementReference(textureReplacements[textureIndex]);
                  }
  
-+                // Free the ScaleFX/xBRZ upscaled variant owned by the map, if any.
++                // Free the xBRZ upscaled variant owned by the map, if any.
 +                const auto upscaledIt = upscaledReplacements.find(textureHash);
 +                if (upscaledIt != upscaledReplacements.end()) {
 +                    evictedTextures.emplace_back(upscaledIt->second);
@@ -232,26 +295,34 @@ index 0848f3e..a4ac541 100644
                  textureReplacements[textureIndex] = nullptr;
                  textureReplacementShiftedByHalf[textureIndex] = false;
                  textureReplacementReferenceCounted[textureIndex] = false;
-@@ -981,12 +1004,49 @@ namespace RT64 {
+@@ -981,12 +1060,62 @@ namespace RT64 {
          std::vector<RenderTextureBarrier> afterDecodeBarriers;
          std::vector<uint8_t> replacementBytes;
  
-+        // ScaleFX chain intermediates + the upscaled output, registered as
-+        // hi-res replacement textures. Cleared per batch.
-+        struct ScaleFXChainResources {
-+            RenderTexture *intermediates[4] = { nullptr, nullptr, nullptr, nullptr };
++        // xBRZ upscaled output, registered as a hi-res replacement texture.
++        // Cleared per batch. (xBRZ is a single-pass compute shader; the
++        // intermediate-texture pool used by ScaleFX's 5-pass chain has been
++        // removed along with the broken ScaleFX algorithm.)
++        struct XbrzChainResources {
 +            RenderTexture *upscaledGPU = nullptr;
 +        };
-+        std::vector<ScaleFXChainResources> scaleFXChains;
-+        std::vector<std::pair<uint64_t, Texture *>> scaleFXBatchReplacements;
++        std::vector<XbrzChainResources> xbrzChains;
++        std::vector<std::pair<uint64_t, Texture *>> xbrzBatchReplacements;
 +
-+        // Diagnostic GPU readback of the first N upscaled textures to PPM
-+        // files in the cwd. Env LAMBO_UPSCALE_DUMP=<count>. Modelled after
-+        // LAMBO_TEXTURE_DUMP for consistency with the project's existing
-+        // diagnostic tooling.
++#ifdef LAMBO_DEV_DIAGNOSTICS
++        // Developer diagnostic: GPU readback of the first N upscaled textures
++        // to PPM files in the cwd. Env LAMBO_UPSCALE_DUMP=<count>. Modelled
++        // after LAMBO_TEXTURE_DUMP. Disabled in release builds (the synchronous
++        // disk I/O inside the texture upload worker thread would otherwise
++        // stall the whole pipeline on a misconfigured environment variable).
 +        const uint32_t upscaleDumpCount = []() {
 +            const char *v = std::getenv("LAMBO_UPSCALE_DUMP");
-+            return (v != nullptr) ? (uint32_t)atoi(v) : 0;
++            if (v == nullptr) return 0u;
++            // atoi without bounds check would happily produce giant values
++            // and try to allocate gigabytes of readback memory. Cap at 64.
++            long parsed = strtol(v, nullptr, 10);
++            if (parsed < 0) return 0u;
++            return uint32_t(parsed > 64 ? 64 : parsed);
 +        }();
 +        uint32_t upscaleDumpsIssued = 0;
 +        struct UpscaleDumpRequest {
@@ -267,67 +338,65 @@ index 0848f3e..a4ac541 100644
 +        };
 +        std::vector<UpscaleDumpRequest> upscaleDumpRequests;
 +        std::vector<std::unique_ptr<RenderBuffer>> upscaleDumpBuffers;
++#else
++        constexpr uint32_t upscaleDumpCount = 0;
++#endif
 +
          while (uploadThreadRunning) {
              resolvedPathQueueCopy.clear();
              streamResultQueueCopy.clear();
-             beforeCopyBarriers.clear();
-             beforeDecodeBarriers.clear();
-             afterDecodeBarriers.clear();
-+            scaleFXBatchTextures.clear();
-+            scaleFXChains.clear();
-+            scaleFXBatchReplacements.clear();
+-            beforeCopyBarriers.clear();
+-            beforeDecodeBarriers.clear();
+-            afterDecodeBarriers.clear();
++            beforeCopyBarriers.clear();
++            beforeDecodeBarriers.clear();
++            afterDecodeBarriers.clear();
++            xbrzBatchTextures.clear();
++            xbrzChains.clear();
++            xbrzBatchReplacements.clear();
++#ifdef LAMBO_DEV_DIAGNOSTICS
 +            upscaleDumpRequests.clear();
 +            upscaleDumpBuffers.clear();
++#endif
  
              // Check the top of the queue or wait if it's empty.
              {
-@@ -1054,6 +1114,20 @@ namespace RT64 {
+@@ -1054,6 +1183,15 @@ namespace RT64 {
                      descriptorSets.emplace_back(std::make_unique<TextureDecodeDescriptorSet>(directWorker->device));
                  }
  
-+                if (upscaler != TextureUpscaler::Off) {
-+                    // ScaleFX uses three single-input passes (0, 1, 3) and two dual-input
-+                    // passes (2, 4) per texture; xBRZ uses one single-input pass.
-+                    for (size_t i = scaleFXSingleSets.size(); i < queueSize * 3; i++) {
-+                        scaleFXSingleSets.emplace_back(std::make_unique<TextureDecodeDescriptorSet>(directWorker->device));
-+                    }
-+
-+                    if (upscaler == TextureUpscaler::ScaleFX) {
-+                        for (size_t i = scaleFXDualSets.size(); i < queueSize * 2; i++) {
-+                            scaleFXDualSets.emplace_back(std::make_unique<TextureScaleFXDualDescriptorSet>(directWorker->device));
-+                        }
++                if (upscaler.load() != TextureUpscaler::Off) {
++                    // xBRZ uses one single-input descriptor set per upload.
++                    // ScaleFX's larger pool (3 single + 2 dual per texture) is
++                    // gone along with the broken ScaleFX algorithm.
++                    for (size_t i = xbrzSets.size(); i < queueSize; i++) {
++                        xbrzSets.emplace_back(std::make_unique<TextureDecodeDescriptorSet>(directWorker->device));
 +                    }
 +                }
 +
                  // Upload all textures in the queue using the copy worker. It's worth noting the usage of a copy worker during copy texture operations is intentional
                  // to avoid issues with drivers that are not very explicit about where they execute the copy texture operations and end up causing subtle synchronization
                  // issues that can't be accounted for. Using dedicated copy queues for these operations has shown to eliminate these issues entirely.
-@@ -1110,6 +1184,61 @@ namespace RT64 {
+@@ -1110,6 +1248,57 @@ namespace RT64 {
                          descSet->setTexture(descSet->TMEM, dstTexture->tmem.get(), RenderTextureLayout::SHADER_READ);
                          descSet->setTexture(descSet->RGBA32, dstTexture->texture.get(), RenderTextureLayout::GENERAL);
                          beforeDecodeBarriers.emplace_back(dstTexture->texture.get(), RenderTextureLayout::GENERAL);
 +
-+                        if (upscaler != TextureUpscaler::Off) {
-+                            // Upscaled texture (ScaleFX: 3x, xBRZ: 4x). It only lives
-+                            // for this batch; ScaleFX also needs transient intermediates.
++                        if (upscaler.load() != TextureUpscaler::Off) {
++                            // xBRZ produces a 4x upscaled output texture. The
++                            // upscaled texture only lives for this batch; the
++                            // upload worker registers it as a hi-res replacement
++                            // at the end of the batch and the cache owns its
++                            // lifetime thereafter (freeing it on eviction or on
++                            // the next mode change via flushUpscaledReplacements).
 +                            static uint32_t UpscalerGlobalCounter = 0;
-+                            const uint32_t factor = (upscaler == TextureUpscaler::Xbrz) ? 4 : 3;
-+                            ScaleFXChainResources chain = {};
-+                            const uint32_t wf = upload.width * factor;
-+                            const uint32_t hf = upload.height * factor;
++                            constexpr uint32_t kXbrzFactor = 4;
++                            XbrzChainResources chain = {};
++                            const uint32_t wf = upload.width * kXbrzFactor;
++                            const uint32_t hf = upload.height * kXbrzFactor;
 +                            chain.upscaledGPU = directWorker->device->createTexture(RenderTextureDesc::Texture2D(wf, hf, 1, RenderFormat::R8G8B8A8_UNORM, RenderTextureFlag::STORAGE | RenderTextureFlag::UNORDERED_ACCESS)).release();
 +                            chain.upscaledGPU->setName("Texture Cache Upscale #" + std::to_string(UpscalerGlobalCounter++));
 +                            beforeDecodeBarriers.emplace_back(chain.upscaledGPU, RenderTextureLayout::GENERAL);
-+
-+                            if (upscaler == TextureUpscaler::ScaleFX) {
-+                                for (int p = 0; p < 4; p++) {
-+                                    std::unique_ptr<RenderTexture> intermediate = directWorker->device->createTexture(RenderTextureDesc::Texture2D(upload.width, upload.height, 1, RenderFormat::R8G8B8A8_UNORM, RenderTextureFlag::STORAGE | RenderTextureFlag::UNORDERED_ACCESS));
-+                                    beforeDecodeBarriers.emplace_back(intermediate.get(), RenderTextureLayout::GENERAL);
-+                                    chain.intermediates[p] = intermediate.get();
-+                                    scaleFXBatchTextures.emplace_back(std::move(intermediate));
-+                                }
-+                            }
 +
 +                            Texture *upscaledTexture = new Texture();
 +                            upscaledTexture->creationFrame = upload.creationFrame;
@@ -336,10 +405,10 @@ index 0848f3e..a4ac541 100644
 +                            upscaledTexture->height = hf;
 +                            upscaledTexture->mipmaps = 1;
 +                            upscaledTexture->texture.reset(chain.upscaledGPU);
-+                            scaleFXBatchReplacements.emplace_back(std::make_pair(upload.hash, upscaledTexture));
-+                            // For xBRZ only `upscaledGPU` is meaningful; intermediates stay null.
-+                            scaleFXChains.push_back(chain);
++                            xbrzBatchReplacements.emplace_back(std::make_pair(upload.hash, upscaledTexture));
++                            xbrzChains.push_back(chain);
 +
++#ifdef LAMBO_DEV_DIAGNOSTICS
 +                            if (upscaleDumpsIssued < upscaleDumpCount) {
 +                                UpscaleDumpRequest req = {};
 +                                req.texture = chain.upscaledGPU;
@@ -361,51 +430,105 @@ index 0848f3e..a4ac541 100644
 +                                upscaleDumpRequests.push_back(req);
 +                                upscaleDumpsIssued++;
 +                            }
++#endif
 +                        }
                      }
  
                      addResolvedPaths(upload.hash, upload.width, upload.height, upload.tlut, upload.loadTile, upload.bytesTMEM, upload.decodeTMEM, resolvedPathQueueCopy);
-@@ -1187,7 +1316,13 @@ namespace RT64 {
+@@ -1186,42 +1375,122 @@ namespace RT64 {
+                 directWorker->commandList->begin();
                  directWorker->commandList->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, beforeDecodeBarriers);
  
-                 const ShaderRecord &textureDecode = shaderLibrary->textureDecode;
-+                const ShaderRecord &scaleFX0 = shaderLibrary->textureScaleFX0;
-+                const ShaderRecord &scaleFX1 = shaderLibrary->textureScaleFX1;
-+                const ShaderRecord &scaleFX2 = shaderLibrary->textureScaleFX2;
-+                const ShaderRecord &scaleFX3 = shaderLibrary->textureScaleFX3;
-+                const ShaderRecord &scaleFX4 = shaderLibrary->textureScaleFX4;
-                 bool pipelineSet = false;
-+                size_t chainIndex = 0;
-                 for (size_t i = 0; i < queueSize; i++) {
-                     const TextureUpload &upload = queueCopy[i];
-                     if (upload.decodeTMEM) {
-@@ -1214,6 +1349,114 @@ namespace RT64 {
-                         directWorker->commandList->setComputeDescriptorSet(descriptorSets[i]->get(), 0);
-                         directWorker->commandList->dispatch(dispatchX, dispatchY, 1);
- 
+-                const ShaderRecord &textureDecode = shaderLibrary->textureDecode;
+-                bool pipelineSet = false;
+-                for (size_t i = 0; i < queueSize; i++) {
+-                    const TextureUpload &upload = queueCopy[i];
+-                    if (upload.decodeTMEM) {
+-                        if (!pipelineSet) {
+-                            directWorker->commandList->setPipeline(textureDecode.pipeline.get());
+-                            directWorker->commandList->setComputePipelineLayout(textureDecode.pipelineLayout.get());
+-                        }
+-
+-                        interop::TextureDecodeCB decodeCB;
+-                        decodeCB.Resolution.x = upload.width;
+-                        decodeCB.Resolution.y = upload.height;
+-                        decodeCB.fmt = upload.loadTile.fmt;
+-                        decodeCB.siz = upload.loadTile.siz;
+-                        decodeCB.address = interop::uint(upload.loadTile.tmem) << 3;
+-                        decodeCB.stride = interop::uint(upload.loadTile.line) << 3;
+-                        decodeCB.tlut = upload.tlut;
+-                        decodeCB.palette = upload.loadTile.palette;
+-
+-                        // Dispatch compute shader for decoding texture.
+-                        const uint32_t ThreadGroupSize = 8;
+-                        const uint32_t dispatchX = (decodeCB.Resolution.x + ThreadGroupSize - 1) / ThreadGroupSize;
+-                        const uint32_t dispatchY = (decodeCB.Resolution.y + ThreadGroupSize - 1) / ThreadGroupSize;
+-                        directWorker->commandList->setComputePushConstants(0, &decodeCB);
+-                        directWorker->commandList->setComputeDescriptorSet(descriptorSets[i]->get(), 0);
+-                        directWorker->commandList->dispatch(dispatchX, dispatchY, 1);
+-
+-                        afterDecodeBarriers.emplace_back(RenderTextureBarrier(textureMapAdditions[i].texture->texture.get(), RenderTextureLayout::SHADER_READ));
+-                    }
+-                }
+-
+-                if (!afterDecodeBarriers.empty()) {
+-                    directWorker->commandList->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, afterDecodeBarriers);
+-                }
+-
++                const ShaderRecord &textureDecode = shaderLibrary->textureDecode;
++                bool pipelineSet = false;
++                for (size_t i = 0; i < queueSize; i++) {
++                    const TextureUpload &upload = queueCopy[i];
++                    if (upload.decodeTMEM) {
++                        if (!pipelineSet) {
++                            directWorker->commandList->setPipeline(textureDecode.pipeline.get());
++                            directWorker->commandList->setComputePipelineLayout(textureDecode.pipelineLayout.get());
++                        }
++
++                        interop::TextureDecodeCB decodeCB;
++                        decodeCB.Resolution.x = upload.width;
++                        decodeCB.Resolution.y = upload.height;
++                        decodeCB.fmt = upload.loadTile.fmt;
++                        decodeCB.siz = upload.loadTile.siz;
++                        decodeCB.address = interop::uint(upload.loadTile.tmem) << 3;
++                        decodeCB.stride = interop::uint(upload.loadTile.line) << 3;
++                        decodeCB.tlut = upload.tlut;
++                        decodeCB.palette = upload.loadTile.palette;
++
++                        // Dispatch compute shader for decoding texture.
++                        const uint32_t ThreadGroupSize = 8;
++                        const uint32_t dispatchX = (decodeCB.Resolution.x + ThreadGroupSize - 1) / ThreadGroupSize;
++                        const uint32_t dispatchY = (decodeCB.Resolution.y + ThreadGroupSize - 1) / ThreadGroupSize;
++                        directWorker->commandList->setComputePushConstants(0, &decodeCB);
++                        directWorker->commandList->setComputeDescriptorSet(descriptorSets[i]->get(), 0);
++                        directWorker->commandList->dispatch(dispatchX, dispatchY, 1);
++
 +                        // Synchronize the upscaler's SRV reads of the decoded texture
 +                        // with the decode dispatch's UAV writes. Without this barrier
 +                        // the two dispatches can overlap on D3D12, causing the
 +                        // upscaler to race the decode and read partial / uninitialised
 +                        // texels (manifests as black or checkerboard textures).
-+                        if (upscaler != TextureUpscaler::Off) {
++                        if (upscaler.load() != TextureUpscaler::Off) {
 +                            directWorker->commandList->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, { RenderTextureBarrier(textureMapAdditions[i].texture->texture.get(), RenderTextureLayout::SHADER_READ) });
 +                        }
 +
-+                        // Run the selected upscaler on the freshly decoded texture and
-+                        // register its output in place of a native texture sample.
-+                        if ((upscaler == TextureUpscaler::Xbrz) && (chainIndex < scaleFXChains.size())) {
-+                            const ScaleFXChainResources &chain = scaleFXChains[chainIndex];
++                        // Run the upscaler on the freshly decoded texture. Only
++                        // xBRZ is wired up; ScaleFX was removed (see PR #169 for
++                        // the algorithm-correctness rationale). The chain index
++                        // matches the upload index because every decoded texture
++                        // got an upscaler entry above.
++                        if (upscaler.load() == TextureUpscaler::Xbrz && i < xbrzChains.size()) {
++                            const XbrzChainResources &chain = xbrzChains[i];
 +                            RenderTexture *srcRGBA = textureMapAdditions[i].texture->texture.get();
 +
-+                            interop::TextureScaleFXCB fxCB;
++                            interop::TextureXbrzCB fxCB;
 +                            fxCB.Resolution.x = upload.width;
 +                            fxCB.Resolution.y = upload.height;
 +                            fxCB.Threshold = 0.0f;
 +                            fxCB.FilterAA = 0.0f;
 +                            fxCB.Corners = 0.0f;
 +
-+                            TextureDecodeDescriptorSet *xbrzSet = scaleFXSingleSets[i * 3 + 0].get();
++                            TextureDecodeDescriptorSet *xbrzSet = xbrzSets[i].get();
 +                            xbrzSet->setTexture(xbrzSet->TMEM, srcRGBA, RenderTextureLayout::SHADER_READ);
 +                            xbrzSet->setTexture(xbrzSet->RGBA32, chain.upscaledGPU, RenderTextureLayout::GENERAL);
 +                            directWorker->commandList->setPipeline(shaderLibrary->textureXbrz.pipeline.get());
@@ -416,88 +539,17 @@ index 0848f3e..a4ac541 100644
 +                            directWorker->commandList->dispatch(dispatchX, dispatchY, 1);
 +
 +                            afterDecodeBarriers.emplace_back(RenderTextureBarrier(chain.upscaledGPU, RenderTextureLayout::SHADER_READ));
-+                            chainIndex++;
-+                        }
-+                        else if (upscaler == TextureUpscaler::ScaleFX && (chainIndex < scaleFXChains.size())) {
-+                            const ScaleFXChainResources &chain = scaleFXChains[chainIndex];
-+                            RenderTexture *srcRGBA = textureMapAdditions[i].texture->texture.get();
-+
-+                            interop::TextureScaleFXCB fxCB;
-+                            fxCB.Resolution.x = upload.width;
-+                            fxCB.Resolution.y = upload.height;
-+                            fxCB.Threshold = 0.5f; // RetroArch SFX_CLR default.
-+                            fxCB.FilterAA = 1.0f; // RetroArch SFX_SAA default.
-+                            fxCB.Corners = 1.0f; // RetroArch SFX_SCN default.
-+
-+                            // Pass 0: source -> metric.
-+                            TextureDecodeDescriptorSet *singleSet = scaleFXSingleSets[i * 3 + 0].get();
-+                            singleSet->setTexture(singleSet->TMEM, srcRGBA, RenderTextureLayout::SHADER_READ);
-+                            singleSet->setTexture(singleSet->RGBA32, chain.intermediates[0], RenderTextureLayout::GENERAL);
-+                            directWorker->commandList->setPipeline(scaleFX0.pipeline.get());
-+                            directWorker->commandList->setComputePipelineLayout(scaleFX0.pipelineLayout.get());
-+                            directWorker->commandList->setComputePushConstants(0, &fxCB);
-+                            directWorker->commandList->setComputeDescriptorSet(singleSet->get(), 0);
-+                            directWorker->commandList->dispatch(dispatchX, dispatchY, 1);
-+                            directWorker->commandList->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, { RenderTextureBarrier(chain.intermediates[0], RenderTextureLayout::SHADER_READ) });
-+
-+                            // Pass 1: metric -> strength.
-+                            singleSet = scaleFXSingleSets[i * 3 + 1].get();
-+                            singleSet->setTexture(singleSet->TMEM, chain.intermediates[0], RenderTextureLayout::SHADER_READ);
-+                            singleSet->setTexture(singleSet->RGBA32, chain.intermediates[1], RenderTextureLayout::GENERAL);
-+                            directWorker->commandList->setPipeline(scaleFX1.pipeline.get());
-+                            directWorker->commandList->setComputePipelineLayout(scaleFX1.pipelineLayout.get());
-+                            directWorker->commandList->setComputePushConstants(0, &fxCB);
-+                            directWorker->commandList->setComputeDescriptorSet(singleSet->get(), 0);
-+                            directWorker->commandList->dispatch(dispatchX, dispatchY, 1);
-+                            directWorker->commandList->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, { RenderTextureBarrier(chain.intermediates[1], RenderTextureLayout::SHADER_READ) });
-+
-+                            // Pass 2: metric + strength -> junction tags.
-+                            TextureScaleFXDualDescriptorSet *dualSet = scaleFXDualSets[i * 2 + 0].get();
-+                            dualSet->setTexture(dualSet->InputA, chain.intermediates[0], RenderTextureLayout::SHADER_READ);
-+                            dualSet->setTexture(dualSet->InputB, chain.intermediates[1], RenderTextureLayout::SHADER_READ);
-+                            dualSet->setTexture(dualSet->Output, chain.intermediates[2], RenderTextureLayout::GENERAL);
-+                            directWorker->commandList->setPipeline(scaleFX2.pipeline.get());
-+                            directWorker->commandList->setComputePipelineLayout(scaleFX2.pipelineLayout.get());
-+                            directWorker->commandList->setComputePushConstants(0, &fxCB);
-+                            directWorker->commandList->setComputeDescriptorSet(dualSet->get(), 0);
-+                            directWorker->commandList->dispatch(dispatchX, dispatchY, 1);
-+                            directWorker->commandList->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, { RenderTextureBarrier(chain.intermediates[2], RenderTextureLayout::SHADER_READ) });
-+
-+                            // Pass 3: junction tags -> subpixel tags.
-+                            singleSet = scaleFXSingleSets[i * 3 + 2].get();
-+                            singleSet->setTexture(singleSet->TMEM, chain.intermediates[2], RenderTextureLayout::SHADER_READ);
-+                            singleSet->setTexture(singleSet->RGBA32, chain.intermediates[3], RenderTextureLayout::GENERAL);
-+                            directWorker->commandList->setPipeline(scaleFX3.pipeline.get());
-+                            directWorker->commandList->setComputePipelineLayout(scaleFX3.pipelineLayout.get());
-+                            directWorker->commandList->setComputePushConstants(0, &fxCB);
-+                            directWorker->commandList->setComputeDescriptorSet(singleSet->get(), 0);
-+                            directWorker->commandList->dispatch(dispatchX, dispatchY, 1);
-+                            directWorker->commandList->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, { RenderTextureBarrier(chain.intermediates[3], RenderTextureLayout::SHADER_READ) });
-+
-+                            // Pass 4: source + subpixel tags -> upscaled texture (3x).
-+                            const uint32_t dispatch3X = (upload.width * 3 + ThreadGroupSize - 1) / ThreadGroupSize;
-+                            const uint32_t dispatch3Y = (upload.height * 3 + ThreadGroupSize - 1) / ThreadGroupSize;
-+                            dualSet = scaleFXDualSets[i * 2 + 1].get();
-+                            dualSet->setTexture(dualSet->InputA, srcRGBA, RenderTextureLayout::SHADER_READ);
-+                            dualSet->setTexture(dualSet->InputB, chain.intermediates[3], RenderTextureLayout::SHADER_READ);
-+                            dualSet->setTexture(dualSet->Output, chain.upscaledGPU, RenderTextureLayout::GENERAL);
-+                            directWorker->commandList->setPipeline(scaleFX4.pipeline.get());
-+                            directWorker->commandList->setComputePipelineLayout(scaleFX4.pipelineLayout.get());
-+                            directWorker->commandList->setComputePushConstants(0, &fxCB);
-+                            directWorker->commandList->setComputeDescriptorSet(dualSet->get(), 0);
-+                            directWorker->commandList->dispatch(dispatch3X, dispatch3Y, 1);
-+
-+                            afterDecodeBarriers.emplace_back(RenderTextureBarrier(chain.upscaledGPU, RenderTextureLayout::SHADER_READ));
-+                            chainIndex++;
 +                        }
 +
-                         afterDecodeBarriers.emplace_back(RenderTextureBarrier(textureMapAdditions[i].texture->texture.get(), RenderTextureLayout::SHADER_READ));
-                     }
-                 }
-@@ -1222,6 +1465,46 @@ namespace RT64 {
-                     directWorker->commandList->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, afterDecodeBarriers);
-                 }
- 
++                        afterDecodeBarriers.emplace_back(RenderTextureBarrier(textureMapAdditions[i].texture->texture.get(), RenderTextureLayout::SHADER_READ));
++                    }
++                }
++
++                if (!afterDecodeBarriers.empty()) {
++                    directWorker->commandList->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, afterDecodeBarriers);
++                }
++
++#ifdef LAMBO_DEV_DIAGNOSTICS
 +                // Diagnostic readback copies.
 +                if (!upscaleDumpRequests.empty()) {
 +                    std::vector<RenderTextureBarrier> dumpBarriers;
@@ -537,19 +589,24 @@ index 0848f3e..a4ac541 100644
 +                            RenderTextureCopyLocation::Subresource(r.nativeTexture));
 +                    }
 +                }
++#endif // LAMBO_DEV_DIAGNOSTICS
 +
                  // Execute the direct worker but make it wait for the copy worker to finish first.
                  const RenderCommandList *directCommandList = directWorker->commandList.get();
                  directWorker->commandList->end();
-@@ -1230,6 +1513,55 @@ namespace RT64 {
+@@ -1230,6 +1499,60 @@ namespace RT64 {
  
                  // Delete all the resources used during the upload of replacements.
                  replacementUploadResources.clear();
 +
 +                // ScaleFX intermediates are transient per batch; the GPU is done with them.
-+                scaleFXBatchTextures.clear();
++                xbrzBatchTextures.clear();
 +
-+                // Diagnostic dump write-out.
++#ifdef LAMBO_DEV_DIAGNOSTICS
++                // Diagnostic dump write-out. Gated by the LAMBO_DEV_DIAGNOSTICS
++                // build option; the env-gated readback above is also under the
++                // same option. Disabled in production builds to avoid synchronous
++                // disk I/O on the texture upload worker thread.
 +                if (!upscaleDumpRequests.empty()) {
 +                    for (size_t d = 0; d < upscaleDumpRequests.size(); d++) {
 +                        const UpscaleDumpRequest &r = upscaleDumpRequests[d];
@@ -594,16 +651,20 @@ index 0848f3e..a4ac541 100644
 +                    upscaleDumpRequests.clear();
 +                    upscaleDumpBuffers.clear();
 +                }
++#endif // LAMBO_DEV_DIAGNOSTICS
                  
                  // Add all the textures to the map once they're ready.
                  {
-@@ -1238,6 +1570,20 @@ namespace RT64 {
+@@ -1238,6 +1561,23 @@ namespace RT64 {
                          textureMap.add(addition.hash, addition.texture->creationFrame, addition.texture);
                      }
  
-+                    // Register the ScaleFX/xBRZ upscaled variants as replacements so the
++                    // Register the xBRZ upscaled variants as replacements so the
 +                    // whole sampling pipeline treats them like hi-res textures.
-+                    for (std::pair<uint64_t, Texture *> &pair : scaleFXBatchReplacements) {
++                    // textureMap.replace() handles the case where this hash
++                    // already has a (stale) upscaled replacement from a prior
++                    // run by deleting the old Texture* (see TextureMap::replace).
++                    for (std::pair<uint64_t, Texture *> &pair : xbrzBatchReplacements) {
 +                        if (textureMap.hashMap.find(pair.first) != textureMap.hashMap.end()) {
 +                            textureMap.replace(pair.first, pair.second, false, false);
 +                            textureMap.upscaledReplacements[pair.first] = pair.second;
@@ -613,16 +674,16 @@ index 0848f3e..a4ac541 100644
 +                            delete pair.second;
 +                        }
 +                    }
-+                    scaleFXBatchReplacements.clear();
++                    xbrzBatchReplacements.clear();
 +
                      for (const ReplacementMapAddition &addition : replacementMapAdditions) {
                          textureMap.replace(addition.hash, addition.texture, addition.shift == ReplacementShift::Half, addition.referenceCounted);
                      }
 diff --git a/src/render/rt64_texture_cache.h b/src/render/rt64_texture_cache.h
-index 9131697..560579a 100644
+index 9131697..c4cf0e8 100644
 --- a/src/render/rt64_texture_cache.h
 +++ b/src/render/rt64_texture_cache.h
-@@ -32,9 +32,25 @@ namespace interop {
+@@ -32,9 +32,24 @@ namespace interop {
          uint tlut;
          uint palette;
      };
@@ -638,17 +699,17 @@ index 9131697..560579a 100644
 +    static_assert(sizeof(TextureScaleFXCB) == sizeof(uint32_t) * 8);
  };
  
- namespace RT64 {
+-namespace RT64 {
++namespace RT64 {
 +    // Algorithmic texture upscalers applied to decoded TMEM textures at upload time.
 +    enum class TextureUpscaler {
 +        Off = 0,
-+        ScaleFX = 1, // 3x, 5-pass edge interpolation (Sp00kyFox).
-+        Xbrz = 2     // 4x, single-pass xBRZ rules (Zenju/Hyllian).
++        Xbrz = 1, // 4x, single-pass xBRZ rules (Zenju/Hyllian).
 +    };
      struct TextureUpload {
          uint64_t hash;
          uint64_t creationFrame;
-@@ -126,6 +142,9 @@ namespace RT64 {
+@@ -126,6 +141,9 @@ namespace RT64 {
          std::vector<interop::float3> cachedTextureReplacementDimensions;
          std::vector<bool> textureReplacementShiftedByHalf;
          std::vector<bool> textureReplacementReferenceCounted;
@@ -658,468 +719,56 @@ index 9131697..560579a 100644
          std::vector<interop::float2> textureScales;
          std::vector<uint64_t> hashes;
          std::vector<uint32_t> freeSpaces;
-@@ -205,6 +224,13 @@ namespace RT64 {
+@@ -138,8 +156,8 @@ namespace RT64 {
+         ReplacementMap replacementMap;
+         bool replacementMapEnabled;
+ 
+-        TextureMap();
+-        ~TextureMap();
++        TextureMap();
++        ~TextureMap();
+         void clearReplacements();
+         void add(uint64_t hash, uint64_t creationFrame, Texture *texture);
+         void replace(uint64_t hash, Texture *texture, bool shiftedByHalf, bool referenceCounted);
+@@ -205,6 +223,16 @@ namespace RT64 {
          std::vector<std::unique_ptr<RenderBuffer>> tmemUploadResources;
          std::vector<std::unique_ptr<RenderBuffer>> replacementUploadResources;
          std::vector<std::unique_ptr<TextureDecodeDescriptorSet>> descriptorSets;
-+        std::vector<std::unique_ptr<TextureDecodeDescriptorSet>> scaleFXSingleSets;
-+        std::vector<std::unique_ptr<TextureScaleFXDualDescriptorSet>> scaleFXDualSets;
-+        TextureUpscaler upscaler = TextureUpscaler::Off;
-+        // ScaleFX chain intermediates and the upscaled output are transient per
-+        // batch and owned by these vectors so the GPU is done with them by
-+        // the time they go out of scope.
-+        std::vector<std::unique_ptr<RenderTexture>> scaleFXBatchTextures;
++        std::vector<std::unique_ptr<TextureDecodeDescriptorSet>> xbrzSets;
++        // The current upscaler mode. Read on the texture upload worker thread,
++        // written from the renderer's main thread (or a config-change callback)
++        // when the user toggles the mode. The atomic makes the read/write
++        // race-free without taking the upload mutex on every texture.
++        std::atomic<TextureUpscaler> upscaler{TextureUpscaler::Off};
++        // xBRZ intermediate and output textures are transient per batch and
++        // owned by this vector so the GPU is done with them by the time they
++        // go out of scope.
++        std::vector<std::unique_ptr<RenderTexture>> xbrzBatchTextures;
          std::mutex uploadQueueMutex;
          std::condition_variable uploadQueueChanged;
          std::condition_variable uploadQueueFinished;
-diff --git a/src/shaders/TextureScaleFX.hlsli b/src/shaders/TextureScaleFX.hlsli
-new file mode 100644
-index 0000000..6003c48
---- /dev/null
-+++ b/src/shaders/TextureScaleFX.hlsli
-@@ -0,0 +1,25 @@
-+//
-+// RT64: ScaleFX texture upscaling (port of Sp00kyFox's ScaleFX, GPL, from
-+// libretro/slang-shaders edge-smoothing/scalefx) to compute shaders that run
-+// right after TMEM decode inside the texture cache upload path.
-+//
-+
-+#pragma once
-+
-+// Must match interop::TextureScaleFXCB (rt64_texture_cache.h).
-+struct TextureScaleFXCB {
-+    uint2 Resolution;
-+    float Threshold; // SFX_CLR
-+    float FilterAA;  // SFX_SAA
-+    float Corners;   // SFX_SCN
-+};
-+
-+[[vk::push_constant]] ConstantBuffer<TextureScaleFXCB> gConstants : register(b0);
-+
-+// Weighted colour distance, http://www.compuphase.com/cmetric.htm
-+float sfxDist(float3 A, float3 B) {
-+    float r = 0.5 * (A.r + B.r);
-+    float3 d = A - B;
-+    float3 c = float3(2 + r, 4, 3 - r);
-+    return sqrt(dot(c * d, d)) / 3;
-+}
-\ No newline at end of file
-diff --git a/src/shaders/TextureScaleFX0CS.hlsl b/src/shaders/TextureScaleFX0CS.hlsl
-new file mode 100644
-index 0000000..00e8e36
---- /dev/null
-+++ b/src/shaders/TextureScaleFX0CS.hlsl
-@@ -0,0 +1,37 @@
-+//
-+// RT64
-+//
-+
-+// ScaleFX - Pass 0 (metric preparation). Port of Sp00kyFox's scalefx-pass0
-+// (GPL, libretro/slang-shaders). Scale 1x. Outputs weighted colour distances
-+// between the centre pixel E and its A/B/C/F neighbours.
-+
-+#include "TextureScaleFX.hlsli"
-+
-+#define GROUP_SIZE 8
-+
-+Texture2D<float4> Source : register(t1);
-+RWTexture2D<float4> Output : register(u2);
-+
-+float4 texel(int2 c) {
-+    int2 s = int2(gConstants.Resolution);
-+    return Source.Load(int3(((c % s) + s) % s, 0));
-+}
-+
-+[numthreads(GROUP_SIZE, GROUP_SIZE, 1)]
-+void CSMain(uint2 coord : SV_DispatchThreadID) {
-+    if ((coord.x < gConstants.Resolution.x) && (coord.y < gConstants.Resolution.y)) {
-+        /*	grid		metric
-+
-+            A B C		x y z
-+              E F		  o w
-+        */
-+        float3 A = texel(coord + int2(-1, -1)).rgb;
-+        float3 B = texel(coord + int2(0, -1)).rgb;
-+        float3 C = texel(coord + int2(1, -1)).rgb;
-+        float3 E = texel(coord).rgb;
-+        float3 F = texel(coord + int2(1, 0)).rgb;
-+
-+        Output[coord] = float4(sfxDist(E, A), sfxDist(E, B), sfxDist(E, C), sfxDist(E, F));
-+    }
-+}
-\ No newline at end of file
-diff --git a/src/shaders/TextureScaleFX1CS.hlsl b/src/shaders/TextureScaleFX1CS.hlsl
-new file mode 100644
-index 0000000..277eb24
---- /dev/null
-+++ b/src/shaders/TextureScaleFX1CS.hlsl
-@@ -0,0 +1,88 @@
-+//
-+// RT64
-+//
-+
-+// ScaleFX - Pass 1 (corner strength). Port of Sp00kyFox's scalefx-pass1
-+// (GPL, libretro/slang-shaders). Scale 1x. Input is pass 0's metric output.
-+
-+#include "TextureScaleFX.hlsli"
-+
-+#define GROUP_SIZE 8
-+
-+Texture2D<float4> Source : register(t1);
-+RWTexture2D<float4> Output : register(u2);
-+
-+float4 texel(int2 c) {
-+    int2 s = int2(gConstants.Resolution);
-+    return Source.Load(int3(((c % s) + s) % s, 0));
-+}
-+
-+// corner strength
-+float str(float d, float2 a, float2 b) {
-+    float diff = a.x - a.y;
-+    float wght1 = max(gConstants.Threshold - d, 0) / gConstants.Threshold;
-+    float wght2 = clamp((1 - d) + (min(a.x, b.x) + a.x > min(a.y, b.y) + a.y ? diff : -diff), 0., 1.);
-+    return (gConstants.FilterAA == 1. || 2. * d < a.x + a.y) ? (wght1 * wght2) * (a.x * a.y) : 0.;
-+}
-+
-+[numthreads(GROUP_SIZE, GROUP_SIZE, 1)]
-+void CSMain(uint2 coord : SV_DispatchThreadID) {
-+    if ((coord.x < gConstants.Resolution.x) && (coord.y < gConstants.Resolution.y)) {
-+        /*	grid		metric		pattern
-+
-+            A B		x y z		x y
-+            D E F		  o w		w z
-+            G H I
-+        */
-+        float4 A = texel(coord + int2(-1, -1)), B = texel(coord + int2(0, -1));
-+        float4 D = texel(coord + int2(-1, 0)), E = texel(coord), F = texel(coord + int2(1, 0));
-+        float4 G = texel(coord + int2(-1, 1)), H = texel(coord + int2(0, 1)), I = texel(coord + int2(1, 1));
-+
-+        float v[9];
-+        v[0] = dot(E.rgb, float3(65536.0, 256.0, 1.0));
-+        v[1] = dot(F.rgb, float3(65536.0, 256.0, 1.0));
-+        v[2] = dot(I.rgb, float3(65536.0, 256.0, 1.0));
-+        v[3] = dot(H.rgb, float3(65536.0, 256.0, 1.0));
-+        v[4] = dot(G.rgb, float3(65536.0, 256.0, 1.0));
-+        v[5] = dot(D.rgb, float3(65536.0, 256.0, 1.0));
-+        v[6] = dot(A.rgb, float3(65536.0, 256.0, 1.0));
-+        v[7] = dot(B.rgb, float3(65536.0, 256.0, 1.0));
-+        v[8] = 0; // unused slot retained so neighbour-compare branches never index past the array.
-+
-+        int4 blendResult = int4(0, 0, 0, 0);
-+
-+        // Corner (1, 1)
-+        if (((v[0] == v[1] && v[3] == v[2]) || (v[0] == v[3] && v[1] == v[2])) == false) {
-+            float dist_03_01 = sfxDist(G.rgb, E.rgb) + sfxDist(E.rgb, H.rgb) + sfxDist(H.rgb, I.rgb) + sfxDist(I.rgb, F.rgb) + (4.0 * sfxDist(H.rgb, F.rgb));
-+            float dist_00_02 = sfxDist(D.rgb, H.rgb) + sfxDist(H.rgb, E.rgb) + sfxDist(B.rgb, F.rgb) + sfxDist(F.rgb, E.rgb) + (4.0 * sfxDist(E.rgb, I.rgb));
-+            bool dominantGradient = (gConstants.Corners * dist_03_01) < dist_00_02;
-+            blendResult[2] = ((dist_03_01 < dist_00_02) && (v[0] != v[1]) && (v[0] != v[3])) ? ((dominantGradient) ? 2 : 1) : 0;
-+        }
-+
-+        // Corner (0, 1)
-+        if (((v[5] == v[0] && v[4] == v[3]) || (v[5] == v[4] && v[0] == v[3])) == false) {
-+            float dist_04_00 = sfxDist(G.rgb, D.rgb) + sfxDist(D.rgb, B.rgb) + sfxDist(G.rgb, H.rgb) + sfxDist(H.rgb, F.rgb) + (4.0 * sfxDist(G.rgb, E.rgb));
-+            float dist_05_03 = sfxDist(D.rgb, D.rgb) + sfxDist(D.rgb, H.rgb) + sfxDist(A.rgb, E.rgb) + sfxDist(E.rgb, E.rgb) + (4.0 * sfxDist(D.rgb, H.rgb));
-+            bool dominantGradient = (gConstants.Corners * dist_05_03) < dist_04_00;
-+            blendResult[3] = ((dist_04_00 > dist_05_03) && (v[0] != v[5]) && (v[0] != v[3])) ? ((dominantGradient) ? 2 : 1) : 0;
-+        }
-+
-+        // Corner (1, 0)
-+        if (((v[7] == v[1] && v[0] == v[1]) || (v[7] == v[0] && v[8] == v[1])) == false) {
-+            float dist_00_08 = sfxDist(D.rgb, B.rgb) + sfxDist(B.rgb, B.rgb) + sfxDist(H.rgb, F.rgb) + sfxDist(F.rgb, F.rgb) + (4.0 * sfxDist(E.rgb, E.rgb));
-+            float dist_07_01 = sfxDist(A.rgb, E.rgb) + sfxDist(E.rgb, E.rgb) + sfxDist(B.rgb, B.rgb) + sfxDist(B.rgb, F.rgb) + (4.0 * sfxDist(B.rgb, F.rgb));
-+            bool dominantGradient = (gConstants.Corners * dist_07_01) < dist_00_08;
-+            blendResult[1] = ((dist_00_08 > dist_07_01) && (v[0] != v[7]) && (v[0] != v[1])) ? ((dominantGradient) ? 2 : 1) : 0;
-+        }
-+
-+        // Corner (0, 0)
-+        if (((v[6] == v[7] && v[5] == v[0]) || (v[6] == v[5] && v[7] == v[0])) == false) {
-+            float dist_05_07 = sfxDist(G.rgb, A.rgb) + sfxDist(A.rgb, B.rgb) + sfxDist(G.rgb, E.rgb) + sfxDist(E.rgb, E.rgb) + (4.0 * sfxDist(D.rgb, B.rgb));
-+            float dist_06_00 = sfxDist(G.rgb, D.rgb) + sfxDist(D.rgb, H.rgb) + sfxDist(A.rgb, B.rgb) + sfxDist(B.rgb, B.rgb) + (4.0 * sfxDist(A.rgb, E.rgb));
-+            bool dominantGradient = (gConstants.Corners * dist_05_07) < dist_06_00;
-+            blendResult[0] = ((dist_05_07 < dist_06_00) && (v[0] != v[5]) && (v[0] != v[7])) ? ((dominantGradient) ? 2 : 1) : 0;
-+        }
-+
-+        Output[coord] = float4(blendResult);
-+    }
-+}
-\ No newline at end of file
-diff --git a/src/shaders/TextureScaleFX2CS.hlsl b/src/shaders/TextureScaleFX2CS.hlsl
-new file mode 100644
-index 0000000..ad586aa
---- /dev/null
-+++ b/src/shaders/TextureScaleFX2CS.hlsl
-@@ -0,0 +1,97 @@
-+//
-+// RT64
-+//
-+
-+// ScaleFX - Pass 2 (junction resolution). Port of Sp00kyFox's scalefx-pass2
-+// (GPL, libretro/slang-shaders). Scale 1x. Resolves ambiguous configurations
-+// of corner candidates at pixel junctions. Inputs: pass 0 metric (InputA)
-+// and pass 1 strength (InputB). Packs corners/horizontal/vertical/orientation
-+// bits into a /15 value.
-+
-+#include "TextureScaleFX.hlsli"
-+
-+#define GROUP_SIZE 8
-+
-+Texture2D<float4> InputMetric : register(t1);
-+Texture2D<float4> InputStrength : register(t2);
-+RWTexture2D<float4> Output : register(u3);
-+
-+float4 texelM(int2 c) {
-+    int2 s = int2(gConstants.Resolution);
-+    return InputMetric.Load(int3(((c % s) + s) % s, 0));
-+}
-+
-+float4 texelS(int2 c) {
-+    int2 s = int2(gConstants.Resolution);
-+    return InputStrength.Load(int3(((c % s) + s) % s, 0));
-+}
-+
-+#define LE(x, y) (1 - step(y, x))
-+#define GE(x, y) (1 - step(x, y))
-+#define LEQ(x, y) step(x, y)
-+#define GEQ(x, y) step(y, x)
-+#define NOT(x) (1 - (x))
-+
-+float4 dom(float3 x, float3 y, float3 z, float3 w) {
-+    return 2 * float4(x.y, y.y, z.y, w.y) - (float4(x.x, y.x, z.x, w.x) + float4(x.z, y.z, z.z, w.z));
-+}
-+
-+float clear(float2 crn, float2 a, float2 b) {
-+    return (crn.x >= max(min(a.x, a.y), min(b.x, b.y))) && (crn.y >= max(min(a.x, b.y), min(b.x, a.y))) ? 1. : 0.;
-+}
-+
-+[numthreads(GROUP_SIZE, GROUP_SIZE, 1)]
-+void CSMain(uint2 coord : SV_DispatchThreadID) {
-+    if ((coord.x < gConstants.Resolution.x) && (coord.y < gConstants.Resolution.y)) {
-+        /*	grid		metric		pattern
-+
-+            A B C		x y z		x y
-+            D E F		  o w		w z
-+            G H I
-+        */
-+        // metric data
-+        float4 A = texelM(coord + int2(-1, -1)), B = texelM(coord + int2(0, -1));
-+        float4 D = texelM(coord + int2(-1, 0)), E = texelM(coord), F = texelM(coord + int2(1, 0));
-+        float4 G = texelM(coord + int2(-1, 1)), H = texelM(coord + int2(0, 1)), I = texelM(coord + int2(1, 1));
-+
-+        // strength data
-+        float4 As = texelS(coord + int2(-1, -1)), Bs = texelS(coord + int2(0, -1)), Cs = texelS(coord + int2(1, -1));
-+        float4 Ds = texelS(coord + int2(-1, 0)), Es = texelS(coord), Fs = texelS(coord + int2(1, 0));
-+        float4 Gs = texelS(coord + int2(-1, 1)), Hs = texelS(coord + int2(0, 1)), Is = texelS(coord + int2(1, 1));
-+
-+        // strength & dominance junctions
-+        float4 jSx = float4(As.z, Bs.w, Es.x, Ds.y), jDx = dom(As.yzw, Bs.zwx, Es.wxy, Ds.xyz);
-+        float4 jSy = float4(Bs.z, Cs.w, Fs.x, Es.y), jDy = dom(Bs.yzw, Cs.zwx, Fs.wxy, Es.xyz);
-+        float4 jSz = float4(Es.z, Fs.w, Is.x, Hs.y), jDz = dom(Es.yzw, Fs.zwx, Is.wxy, Hs.xyz);
-+        float4 jSw = float4(Ds.z, Es.w, Hs.x, Gs.y), jDw = dom(Ds.yzw, Es.zwx, Hs.wxy, Gs.xyz);
-+
-+        float4 zero4 = float4(0, 0, 0, 0);
-+        float4 jx = min(GE(jDx, zero4) * (LEQ(jDx.yzwx, zero4) * LEQ(jDx.wxyz, zero4) + GE(jDx + jDx.zwxy, jDx.yzwx + jDx.wxyz)), 1);
-+        float4 jy = min(GE(jDy, zero4) * (LEQ(jDy.yzwx, zero4) * LEQ(jDy.wxyz, zero4) + GE(jDy + jDy.zwxy, jDy.yzwx + jDy.wxyz)), 1);
-+        float4 jz = min(GE(jDz, zero4) * (LEQ(jDz.yzwx, zero4) * LEQ(jDz.wxyz, zero4) + GE(jDz + jDz.zwxy, jDz.yzwx + jDz.wxyz)), 1);
-+        float4 jw = min(GE(jDw, zero4) * (LEQ(jDw.yzwx, zero4) * LEQ(jDw.wxyz, zero4) + GE(jDw + jDw.zwxy, jDw.yzwx + jDw.wxyz)), 1);
-+
-+        float4 res;
-+        res.x = min(jx.z + NOT(jx.y) * NOT(jx.w) * GE(jSx.z, 0) * (jx.x + GE(jSx.x + jSx.z, jSx.y + jSx.w)), 1);
-+        res.y = min(jy.w + NOT(jy.z) * NOT(jy.x) * GE(jSy.w, 0) * (jy.y + GE(jSy.y + jSy.w, jSy.x + jSy.z)), 1);
-+        res.z = min(jz.x + NOT(jz.w) * NOT(jz.y) * GE(jSz.x, 0) * (jz.z + GE(jSz.x + jSz.z, jSz.y + jSz.w)), 1);
-+        res.w = min(jw.y + NOT(jw.x) * NOT(jw.z) * GE(jSw.y, 0) * (jw.w + GE(jSw.y + jSw.w, jSw.x + jSw.z)), 1);
-+
-+        res = min(res * (float4(jx.z, jy.w, jz.x, jw.y) + NOT(res.wxyz * res.yzwx)), 1);
-+
-+        float4 clr;
-+        clr.x = clear(float2(D.z, E.x), float2(D.w, E.y), float2(A.w, D.y));
-+        clr.y = clear(float2(F.x, E.z), float2(E.w, E.y), float2(B.w, F.y));
-+        clr.z = clear(float2(H.z, I.x), float2(E.w, H.y), float2(H.w, I.y));
-+        clr.w = clear(float2(H.x, G.z), float2(D.w, H.y), float2(G.w, G.y));
-+
-+        float4 h = float4(min(D.w, A.w), min(E.w, B.w), min(E.w, H.w), min(D.w, G.w));
-+        float4 v = float4(min(E.y, D.y), min(E.y, F.y), min(H.y, I.y), min(H.y, G.y));
-+
-+        float4 orien = GE(h + float4(D.w, E.w, E.w, D.w), v + float4(E.y, E.y, H.y, H.y));
-+        float4 hori  = LE(h, v) * clr;
-+        float4 vert  = GE(h, v) * clr;
-+
-+        Output[coord] = (res + 2 * hori + 4 * vert + 8 * orien) / 15;
-+    }
-+}
-\ No newline at end of file
-diff --git a/src/shaders/TextureScaleFX3CS.hlsl b/src/shaders/TextureScaleFX3CS.hlsl
-new file mode 100644
-index 0000000..e50fc28
---- /dev/null
-+++ b/src/shaders/TextureScaleFX3CS.hlsl
-@@ -0,0 +1,92 @@
-+//
-+// RT64
-+//
-+
-+// ScaleFX - Pass 3 (edge levels & subpixel tags). Port of Sp00kyFox's
-+// scalefx-pass3 (GPL, libretro/slang-shaders). Scale 1x. Determines which
-+// edge level is present and prepares tags for subpixel output in the final
-+// pass. Packs corner/mid tags into a /80 value.
-+
-+#include "TextureScaleFX.hlsli"
-+
-+#define GROUP_SIZE 8
-+
-+Texture2D<float4> Source : register(t1);
-+RWTexture2D<float4> Output : register(u2);
-+
-+float4 texel(int2 c) {
-+    int2 s = int2(gConstants.Resolution);
-+    return Source.Load(int3(((c % s) + s) % s, 0));
-+}
-+
-+bool4 loadCorn(float4 x) { return bool4(floor(fmod(x * 15 + 0.5, 2))); }
-+bool4 loadHori(float4 x) { return bool4(floor(fmod(x * 7.5 + 0.25, 2))); }
-+bool4 loadVert(float4 x) { return bool4(floor(fmod(x * 3.75 + 0.125, 2))); }
-+bool4 loadOr(float4 x)   { return bool4(floor(fmod(x * 1.875 + 0.0625, 2))); }
-+
-+[numthreads(GROUP_SIZE, GROUP_SIZE, 1)]
-+void CSMain(uint2 coord : SV_DispatchThreadID) {
-+    if ((coord.x < gConstants.Resolution.x) && (coord.y < gConstants.Resolution.y)) {
-+        /*	grid		corners		mids
-+
-+                  B		x   y	  	  x
-+                D E F				w   y
-+                  H		w   z	  	  z
-+        */
-+        float4 E = texel(coord);
-+        float4 D = texel(coord + int2(-1, 0)), D0 = texel(coord + int2(-2, 0)), D1 = texel(coord + int2(-3, 0));
-+        float4 F = texel(coord + int2(1, 0)), F0 = texel(coord + int2(2, 0)), F1 = texel(coord + int2(3, 0));
-+        float4 B = texel(coord + int2(0, -1)), B0 = texel(coord + int2(0, -2)), B1 = texel(coord + int2(0, -3));
-+        float4 H = texel(coord + int2(0, 1)), H0 = texel(coord + int2(0, 2)), H1 = texel(coord + int2(0, 3));
-+
-+        bool4 Ec = loadCorn(E), Eh = loadHori(E), Ev = loadVert(E), Eo = loadOr(E);
-+        bool4 Dc = loadCorn(D), Dh = loadHori(D), Do = loadOr(D), D0c = loadCorn(D0), D0h = loadHori(D0), D1h = loadHori(D1);
-+        bool4 Fc = loadCorn(F), Fh = loadHori(F), Fo = loadOr(F), F0c = loadCorn(F0), F0h = loadHori(F0), F1h = loadHori(F1);
-+        bool4 Bc = loadCorn(B), Bv = loadVert(B), Bo = loadOr(B), B0c = loadCorn(B0), B0v = loadVert(B0), B1v = loadVert(B1);
-+        bool4 Hc = loadCorn(H), Hv = loadVert(H), Ho = loadOr(H), H0c = loadCorn(H0), H0v = loadVert(H0), H1v = loadVert(H1);
-+
-+        bool lvl1x = Ec.x && (Dc.z || Bc.z || gConstants.Corners == 1);
-+        bool lvl1y = Ec.y && (Fc.w || Bc.w || gConstants.Corners == 1);
-+        bool lvl1z = Ec.z && (Fc.x || Hc.x || gConstants.Corners == 1);
-+        bool lvl1w = Ec.w && (Dc.y || Hc.y || gConstants.Corners == 1);
-+
-+        bool2 lvl2x = bool2((Ec.x && Eh.y) && Dc.z, (Ec.y && Eh.x) && Fc.w);
-+        bool2 lvl2y = bool2((Ec.y && Ev.z) && Bc.w, (Ec.z && Ev.y) && Hc.x);
-+        bool2 lvl2z = bool2((Ec.w && Eh.z) && Dc.y, (Ec.z && Eh.w) && Fc.x);
-+        bool2 lvl2w = bool2((Ec.x && Ev.w) && Bc.z, (Ec.w && Ev.x) && Hc.y);
-+
-+        bool2 lvl3x = bool2(lvl2x.y && (Dh.y && Dh.x) && Fh.z, lvl2w.y && (Bv.w && Bv.x) && Hv.z);
-+        bool2 lvl3y = bool2(lvl2x.x && (Fh.x && Fh.y) && Dh.w, lvl2y.y && (Bv.z && Bv.y) && Hv.w);
-+        bool2 lvl3z = bool2(lvl2z.x && (Fh.w && Fh.z) && Dh.x, lvl2y.x && (Hv.y && Hv.z) && Bv.x);
-+        bool2 lvl3w = bool2(lvl2z.y && (Dh.z && Dh.w) && Fh.y, lvl2w.x && (Hv.x && Hv.w) && Bv.y);
-+
-+        bool2 lvl4x = bool2((Dc.x && Dh.y && Eh.x && Eh.y && Fh.x && Fh.y) && (D0c.z && D0h.w), (Bc.x && Bv.w && Ev.x && Ev.w && Hv.x && Hv.w) && (B0c.z && B0v.y));
-+        bool2 lvl4y = bool2((Fc.y && Fh.x && Eh.y && Eh.x && Dh.y && Dh.x) && (F0c.w && F0h.z), (Bc.y && Bv.z && Ev.y && Ev.z && Hv.y && Hv.z) && (B0c.w && B0v.x));
-+        bool2 lvl4z = bool2((Fc.z && Fh.w && Eh.z && Eh.w && Dh.z && Dh.w) && (F0c.x && F0h.y), (Hc.z && Hv.y && Ev.z && Ev.y && Bv.z && Bv.y) && (H0c.x && H0v.w));
-+        bool2 lvl4w = bool2((Dc.w && Dh.z && Eh.w && Eh.z && Fh.w && Fh.z) && (D0c.y && D0h.x), (Hc.w && Hv.x && Ev.w && Ev.x && Bv.w && Bv.x) && (H0c.y && H0v.z));
-+
-+        bool2 lvl5x = bool2(lvl4x.x && (F0h.x && F0h.y) && (D1h.z && D1h.w), lvl4y.x && (D0h.y && D0h.x) && (F1h.w && F1h.z));
-+        bool2 lvl5y = bool2(lvl4y.y && (H0v.y && H0v.z) && (B1v.w && B1v.x), lvl4z.y && (B0v.z && B0v.y) && (H1v.x && H1v.w));
-+        bool2 lvl5z = bool2(lvl4w.x && (F0h.w && F0h.z) && (D1h.y && D1h.x), lvl4z.x && (D0h.z && D0h.w) && (F1h.x && F1h.y));
-+        bool2 lvl5w = bool2(lvl4x.y && (H0v.x && H0v.w) && (B1v.z && B1v.y), lvl4w.y && (B0v.w && B0v.x) && (H1v.y && H1v.z));
-+
-+        bool2 lvl6x = bool2(lvl5x.y && (D1h.y && D1h.x), lvl5w.y && (B1v.w && B1v.x));
-+        bool2 lvl6y = bool2(lvl5x.x && (F1h.x && F1h.y), lvl5y.y && (B1v.z && B1v.y));
-+        bool2 lvl6z = bool2(lvl5z.x && (F1h.w && F1h.z), lvl5y.x && (Hv.y && Hv.z) && Bv.x);
-+        bool2 lvl6w = bool2(lvl5z.y && (D1h.z && D1h.w), lvl5w.x && (H1v.x && H1v.w));
-+
-+        float4 crn;
-+        crn.x = (lvl1x && Eo.x || lvl3x.x && Eo.y || lvl4x.x && Do.x || lvl6x.x && Fo.y) ? 5 : (lvl1x || lvl3x.y && !Eo.w || lvl4x.y && !Bo.x || lvl6x.y && !Ho.w) ? 1 : lvl3x.x ? 3 : lvl3x.y ? 7 : lvl4x.x ? 2 : lvl4x.y ? 6 : lvl6x.x ? 4 : lvl6x.y ? 8 : 0;
-+        crn.y = (lvl1y && Eo.y || lvl3y.x && Eo.x || lvl4y.x && Fo.y || lvl6y.x && Do.x) ? 5 : (lvl1y || lvl3y.y && !Eo.z || lvl4y.y && !Bo.y || lvl6y.y && !Ho.z) ? 3 : lvl3y.x ? 1 : lvl3y.y ? 7 : lvl4y.x ? 4 : lvl4y.y ? 6 : lvl6y.x ? 2 : lvl6y.y ? 8 : 0;
-+        crn.z = (lvl1z && Eo.z || lvl3z.x && Eo.w || lvl4z.x && Fo.z || lvl6z.x && Do.w) ? 7 : (lvl1z || lvl3z.y && !Eo.y || lvl4z.y && !Ho.z || lvl6z.y && !Bo.y) ? 3 : lvl3z.x ? 1 : lvl3z.y ? 5 : lvl4z.x ? 4 : lvl4z.y ? 8 : lvl6z.x ? 2 : lvl6z.y ? 6 : 0;
-+        crn.w = (lvl1w && Eo.w || lvl3w.x && Eo.z || lvl4w.x && Do.w || lvl6w.x && Fo.z) ? 7 : (lvl1w || lvl3w.y && !Eo.x || lvl4w.y && !Ho.w || lvl6w.y && !Bo.x) ? 1 : lvl3w.x ? 3 : lvl3w.y ? 5 : lvl4w.x ? 2 : lvl4w.y ? 8 : lvl6w.x ? 4 : lvl6w.y ? 6 : 0;
-+
-+        float4 mid;
-+        mid.x = (lvl2x.x &&  Eo.x || lvl2x.y &&  Eo.y || lvl5x.x &&  Do.x || lvl5x.y &&  Fo.y) ? 5 : lvl2x.x ? 1 : lvl2x.y ? 3 : lvl5x.x ? 2 : lvl5x.y ? 4 : (Ec.x && Dc.z && Ec.y && Fc.w) ? ( Eo.x ?  Eo.y ? 5 : 3 : 1) : 0;
-+        mid.y = (lvl2y.x && !Eo.y || lvl2y.y && !Eo.z || lvl5y.x && !Bo.y || lvl5y.y && !Ho.z) ? 3 : lvl2y.x ? 5 : lvl2y.y ? 7 : lvl5y.x ? 6 : lvl5y.y ? 8 : (Ec.y && Bc.w && Ec.z && Hc.x) ? (!Eo.y ? !Eo.z ? 3 : 7 : 5) : 0;
-+        mid.z = (lvl2z.x &&  Eo.w || lvl2z.y &&  Eo.z || lvl5z.x &&  Do.w || lvl5z.y &&  Fo.z) ? 7 : lvl2z.x ? 1 : lvl2z.y ? 3 : lvl5z.x ? 2 : lvl5z.y ? 4 : (Ec.z && Fc.x && Ec.w && Dc.y) ? ( Eo.z ?  Eo.w ? 7 : 1 : 3) : 0;
-+        mid.w = (lvl2w.x && !Eo.x || lvl2w.y && !Eo.w || lvl5w.x && !Bo.x || lvl5w.y && !Ho.w) ? 1 : lvl2w.x ? 5 : lvl2w.y ? 7 : lvl5w.x ? 6 : lvl5w.y ? 8 : (Ec.w && Hc.y && Ec.x && Bc.z) ? (!Eo.w ? !Eo.x ? 1 : 5 : 7) : 0;
-+
-+        Output[coord] = (crn + 9 * mid) / 80;
-+    }
-+}
-\ No newline at end of file
-diff --git a/src/shaders/TextureScaleFX4CS.hlsl b/src/shaders/TextureScaleFX4CS.hlsl
-new file mode 100644
-index 0000000..346759e
---- /dev/null
-+++ b/src/shaders/TextureScaleFX4CS.hlsl
-@@ -0,0 +1,61 @@
-+//
-+// RT64
-+//
-+
-+// ScaleFX - Pass 4 (subpixel output). Port of Sp00kyFox's scalefx-pass4
-+// (GPL, libretro/slang-shaders). Scale 3x. Expands each source pixel to a
-+// 3x3 block by picking source texels based on pass 3's tags.
-+// Inputs: decoded RGBA32 source (InputA) and pass 3 tags (InputB).
-+
-+#include "TextureScaleFX.hlsli"
-+
-+#define GROUP_SIZE 8
-+
-+Texture2D<float4> InputSource : register(t1);
-+Texture2D<float4> InputTags : register(t2);
-+RWTexture2D<float4> Output : register(u3);
-+
-+float4 texelSrc(int2 c) {
-+    int2 s = int2(gConstants.Resolution);
-+    return InputSource.Load(int3(((c % s) + s) % s, 0));
-+}
-+
-+float4 texelTag(int2 c) {
-+    int2 s = int2(gConstants.Resolution);
-+    return InputTags.Load(int3(((c % s) + s) % s, 0));
-+}
-+
-+// extract corners
-+float4 loadCrn(float4 x) {
-+    return floor(fmod(x * 80 + 0.5, 9));
-+}
-+
-+// extract mids
-+float4 loadMid(float4 x) {
-+    return floor(fmod(x * 8.888888 + 0.055555, 9));
-+}
-+
-+[numthreads(GROUP_SIZE, GROUP_SIZE, 1)]
-+void CSMain(uint2 coord : SV_DispatchThreadID) {
-+    if ((coord.x < gConstants.Resolution.x) && (coord.y < gConstants.Resolution.y)) {
-+        /*	grid		corners		mids
-+
-+                  B		x   y	  	  x
-+                D E F				w   y
-+                  H		w   z	  	  z
-+        */
-+        int2 srcCoord = int2(coord);
-+        uint2 fp = uint2(coord * 3 % (uint2(gConstants.Resolution.xy) * 3));
-+
-+        float4 E = texelTag(srcCoord);
-+
-+        float4 crn = loadCrn(E);
-+        float4 mid = loadMid(E);
-+
-+        float sp = fp.y == 0 ? (fp.x == 0 ? crn.x : fp.x == 1 ? mid.x : crn.y) : (fp.y == 1 ? (fp.x == 0 ? mid.w : fp.x == 1 ? 0 : mid.y) : (fp.x == 0 ? crn.w : fp.x == 1 ? mid.z : crn.z));
-+
-+        int2 res = sp == 0 ? int2(0, 0) : sp == 1 ? int2(-1, 0) : sp == 2 ? int2(-2, 0) : sp == 3 ? int2(1, 0) : sp == 4 ? int2(2, 0) : sp == 5 ? int2(0, -1) : sp == 6 ? int2(0, -2) : sp == 7 ? int2(0, 1) : int2(0, 2);
-+
-+        Output[coord * 3 + int2(fp.x % 3, fp.y % 3)] = texelSrc(srcCoord + res);
-+    }
-+}
-\ No newline at end of file
+@@ -248,7 +276,14 @@ namespace RT64 {
+         void setReplacementDefaultShift(ReplacementShift shift);
+         void setReplacementDefaultOperation(ReplacementOperation shift);
+         void setReplacementShift(uint64_t hash, ReplacementShift shift);
+-        void setReplacementOperation(uint64_t hash, ReplacementOperation operation);
++        void setReplacementOperation(uint64_t hash, ReplacementOperation operation);
++        // Free every currently-registered upscaled replacement and tear down
++        // the corresponding hi-res descriptors so the next dispatch sees the
++        // fresh mode. Safe to call from the renderer's main thread -- the
++        // upload worker thread is just reading the atomic upscaler field
++        // each batch and will start applying the new mode to subsequent
++        // textures.
++        void flushUpscaledReplacements();
+         void removeUnusedEntriesFromDatabase();
+         bool evict(uint64_t submissionFrame, std::vector<uint64_t> &evictedHashes);
+         void incrementLock();
 diff --git a/src/shaders/TextureXbrzCS.hlsl b/src/shaders/TextureXbrzCS.hlsl
 new file mode 100644
-index 0000000..07bfad9
+index 0000000..1c1cd8d
 --- /dev/null
 +++ b/src/shaders/TextureXbrzCS.hlsl
-@@ -0,0 +1,229 @@
+@@ -0,0 +1,222 @@
 +//
 +// RT64
 +//
@@ -1200,7 +849,7 @@ index 0000000..07bfad9
 +    src[14] = texel(p + int2(0, 2)).rgb;
 +    src[13] = texel(p + int2(1, 2)).rgb;
 +
-+    float4 srcA = texel(p); // full RGBA of the centre pixel for alpha preservation.
++    float4 srcA = texel(p);
 +
 +    float v[9];
 +    v[0] = dot(src[0], float3(65536.0, 256.0, 1.0));
@@ -1215,7 +864,6 @@ index 0000000..07bfad9
 +
 +    int4 blendResult = int4(BLEND_NONE, BLEND_NONE, BLEND_NONE, BLEND_NONE);
 +
-+    // Preprocess corners.
 +    // Corner (1, 1)
 +    if (((v[0] == v[1] && v[3] == v[2]) || (v[0] == v[3] && v[1] == v[2])) == false) {
 +        float dist_03_01 = DistYCbCr(src[4], src[0]) + DistYCbCr(src[0], src[8]) + DistYCbCr(src[14], src[2]) + DistYCbCr(src[2], src[10]) + (4.0 * DistYCbCr(src[3], src[1]));
@@ -1253,7 +901,6 @@ index 0000000..07bfad9
 +        dst[i] = src[0];
 +    }
 +
-+    // Scale pixel.
 +    if (any(blendResult != int4(BLEND_NONE, BLEND_NONE, BLEND_NONE, BLEND_NONE))) {
 +        float dist_01_04 = DistYCbCr(src[1], src[4]);
 +        float dist_03_08 = DistYCbCr(src[3], src[8]);
@@ -1336,11 +983,6 @@ index 0000000..07bfad9
 +        dst[ 6] = lerp(dst[ 6], blendPix, (needBlend && doLineBlend && haveShallowLine) ? 0.25 : 0.00);
 +    }
 +
-+    // 4x4 output block layout (row-major):
-+    //   dst[ 6] dst[ 7] dst[ 8] dst[ 9]
-+    //   dst[ 5] dst[ 0] dst[ 1] dst[10]
-+    //   dst[ 4] dst[ 3] dst[ 2] dst[11]
-+    //   dst[15] dst[14] dst[13] dst[12]
 +    const int blockMap[4][4] = { { 6, 7, 8, 9 }, { 5, 0, 1, 10 }, { 4, 3, 2, 11 }, { 15, 14, 13, 12 } };
 +    for (int dy = 0; dy < 4; dy++) {
 +        for (int dx = 0; dx < 4; dx++) {
@@ -1349,4 +991,3 @@ index 0000000..07bfad9
 +        }
 +    }
 +}
-\ No newline at end of file

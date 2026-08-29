@@ -79,7 +79,6 @@ enum Command : UINT {
     CMD_SKY_MATCH,
     CMD_NO_LOD,
     CMD_UPSCALER_OFF,
-    CMD_UPSCALER_SCALEFX,
     CMD_UPSCALER_XBRZ,
     CMD_PVS_CIRCUIT_1,
     CMD_PVS_CIRCUIT_2,
@@ -176,11 +175,9 @@ void refresh() {
 check(g_enhancements_menu, CMD_FOG_MATCH, lambo::config::widescreen_fog_match());
     check(g_enhancements_menu, CMD_SKY_MATCH, lambo::config::widescreen_sky_match());
     check(g_enhancements_menu, CMD_NO_LOD, lambo::config::no_lod());
-    const std::string up = lambo::config::texture_upscaler();
+    const auto up = lambo::config::texture_upscaler_mode();
     radio(g_upscale_menu, CMD_UPSCALER_OFF, CMD_UPSCALER_XBRZ,
-          up == "scalefx" ? CMD_UPSCALER_SCALEFX :
-          up == "xbrz"   ? CMD_UPSCALER_XBRZ  :
-          up == "off"    ? CMD_UPSCALER_OFF   : CMD_UPSCALER_OFF);
+          up == lambo::config::TextureUpscalerMode::Xbrz ? CMD_UPSCALER_XBRZ : CMD_UPSCALER_OFF);
     for (int i = 0; i < 6; ++i) check(g_pvs_menu, CMD_PVS_CIRCUIT_1 + i, lambo::config::no_lod_circuit(i));
 
     const double draw = lambo::config::global_draw_distance();
@@ -263,9 +260,8 @@ void dispatch(UINT command) {
 case CMD_FOG_MATCH: lambo::config::set_widescreen_fog_match(!lambo::config::widescreen_fog_match()); break;
         case CMD_SKY_MATCH: lambo::config::set_widescreen_sky_match(!lambo::config::widescreen_sky_match()); break;
         case CMD_NO_LOD: lambo::config::set_no_lod(!lambo::config::no_lod()); break;
-        case CMD_UPSCALER_OFF:     lambo::config::set_texture_upscaler("off");     lambo::ui::refresh_texture_upscaler(); break;
-        case CMD_UPSCALER_SCALEFX: lambo::config::set_texture_upscaler("scalefx"); lambo::ui::refresh_texture_upscaler(); break;
-        case CMD_UPSCALER_XBRZ:    lambo::config::set_texture_upscaler("xbrz");    lambo::ui::refresh_texture_upscaler(); break;
+        case CMD_UPSCALER_OFF: lambo::config::set_texture_upscaler_mode(lambo::config::TextureUpscalerMode::Off); break;
+        case CMD_UPSCALER_XBRZ: lambo::config::set_texture_upscaler_mode(lambo::config::TextureUpscalerMode::Xbrz); break;
         case CMD_PVS_CIRCUIT_1: case CMD_PVS_CIRCUIT_2: case CMD_PVS_CIRCUIT_3:
         case CMD_PVS_CIRCUIT_4: case CMD_PVS_CIRCUIT_5: case CMD_PVS_CIRCUIT_6: {
             int circuit = int(command - CMD_PVS_CIRCUIT_1);
@@ -369,9 +365,8 @@ HMENU fog = g_fog_menu = append_submenu(enhancements, "Fog density");
     append_item(fog, CMD_FOG_75, "75%"); append_item(fog, CMD_FOG_100, "Original (100%)");
     append_item(fog, CMD_FOG_150, "150%"); append_item(fog, CMD_FOG_200, "200%");
     HMENU upscale = g_upscale_menu = append_submenu(enhancements, "Texture upscaler");
-    append_item(upscale, CMD_UPSCALER_OFF,     "Off");
-    append_item(upscale, CMD_UPSCALER_SCALEFX, "ScaleFX (3x, edge interpolation)");
-    append_item(upscale, CMD_UPSCALER_XBRZ,    "xBRZ (4x, edge rules)");
+    append_item(upscale, CMD_UPSCALER_OFF,  "Off");
+    append_item(upscale, CMD_UPSCALER_XBRZ, "xBRZ (4x, edge rules)");
     HMENU cam_dist = g_cam_dist_menu = append_submenu(enhancements, "Chase camera distance (sense of speed)");
     append_item(cam_dist, CMD_CAM_DIST_ORIG, "Original"); append_item(cam_dist, CMD_CAM_DIST_80, "Closer");
     append_item(cam_dist, CMD_CAM_DIST_65, "Closer still"); append_item(cam_dist, CMD_CAM_DIST_50, "Bumper-ish");

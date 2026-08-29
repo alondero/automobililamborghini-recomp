@@ -115,8 +115,9 @@ int main() {
     expect(lambo::config::texture_upscaler() == "xbrz", "xBRZ upscaler selection updates live");
     expect(read_json(path).at("texture_upscaler") == "xbrz", "xBRZ upscaler persists");
     lambo::config::set_texture_upscaler("scalefx");
-    expect(lambo::config::texture_upscaler() == "scalefx", "ScaleFX upscaler selection updates live");
-    expect(read_json(path).at("texture_upscaler") == "scalefx", "ScaleFX upscaler persists");
+    // ScaleFX is no longer a selectable mode; the string falls back to Off.
+    expect(lambo::config::texture_upscaler() == "off", "ScaleFX string maps to Off (algorithm removed)");
+    expect(read_json(path).at("texture_upscaler") == "off", "legacy ScaleFX string persists as off");
     lambo::config::set_texture_upscaler("bogus");
     expect(lambo::config::texture_upscaler() == "off", "unknown upscaler mode falls back to off");
 

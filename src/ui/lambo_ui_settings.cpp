@@ -130,9 +130,8 @@ std::string multiplier_name(double value) {
     return std::to_string(tenths / 10) + "." + std::to_string(tenths % 10) + "x";
 }
 
-std::string upscale_pretty_name(const std::string& mode) {
-    if (mode == "scalefx") return "ScaleFX (3x)";
-    if (mode == "xbrz") return "xBRZ (4x)";
+std::string upscale_pretty_name(lambo::config::TextureUpscalerMode mode) {
+    if (mode == lambo::config::TextureUpscalerMode::Xbrz) return "xBRZ (4x)";
     return "Off";
 }
 
@@ -140,9 +139,12 @@ std::string upscale_pretty_name(const std::string& mode) {
 
 namespace lambo::ui {
 
-// `lambo::ui::refresh_texture_upscaler` is defined in src/ui/lambo_ui.cpp
-// (game build). The test build does not link lambo_ui.cpp; the call site
-// is gated by LAMBO_RT64_LINKED so the test never needs the symbol.
+// The cycle action now uses the typed `lambo::TextureUpscalerMode` enum and
+// calls `lambo::config::set_texture_upscaler_mode`, which itself fires the
+// registered callback (`RT64Context::on_texture_upscaler_changed`) to
+// push the change into the running renderer and flush the upscaled texture
+// cache so the toggle is visible immediately. No render-side hook is
+// needed from this translation unit.
 
 std::optional<SettingAction> setting_action_from_name(std::string_view name) {
     for (const auto& [binding, action] : setting_bindings) {
@@ -219,16 +221,17 @@ bool apply_setting_action(SettingAction action) {
             lambo::config::set_global_fog_scale(next_number(
                 lambo::config::global_fog_scale(), std::array{0.0, 0.5, 0.75, 1.0, 1.5, 2.0})); return true;
         case SettingAction::UpscalerNext: {
-            const std::string current = lambo::config::texture_upscaler();
-            const std::array<const char *, 3> modes{ "off", "scalefx", "xbrz" };
+            // Cycle through the typed mode enum. set_texture_upscaler_mode
+            // both persists the value and fires the registered callback so
+            // the live RT64 context picks up the change immediately.
+            using Mode = lambo::config::TextureUpscalerMode;
+            constexpr std::array<Mode, 2> modes{ Mode::Off, Mode::Xbrz };
+            const Mode current = lambo::config::texture_upscaler_mode();
             auto position = std::find(modes.begin(), modes.end(), current);
-            const char *next_mode = (position == modes.end() || std::next(position) == modes.end())
+            const Mode next = (position == modes.end() || std::next(position) == modes.end())
                 ? modes.front()
                 : *std::next(position);
-            lambo::config::set_texture_upscaler(next_mode);
-#if LAMBO_RT64_LINKED
-            refresh_texture_upscaler();
-#endif
+            lambo::config::set_texture_upscaler_mode(next);
             return true;
         }
     }
@@ -251,7 +254,7 @@ SettingsSnapshot settings_snapshot() {
         lambo::config::widescreen_fog_match() ? "Enabled" : "Disabled",
         lambo::config::widescreen_sky_match() ? "Enabled" : "Disabled",
         lambo::config::no_lod() ? "Enabled" : "Disabled",
-        upscale_pretty_name(lambo::config::texture_upscaler()),
+        upscale_pretty_name(lambo::config::texture_upscaler_mode()),
         multiplier_name(lambo::config::global_draw_distance()),
         {},
         {},
