@@ -14,6 +14,7 @@
         </div>
 
         <p class="help">Full-track visibility reduces distant pop-in per circuit when LOD limits are removed. Pro circuits may reveal unfinished scenery.</p>
+        <p class="help">Texture upscaling runs an extra compute pass in RT64's texture upload thread. New textures will use the selected mode; textures already in the cache keep their original samples until they are evicted.</p>
 
         <div class="columns">
           <div class="column">
@@ -23,6 +24,7 @@
             <button onclick="setting:lod:toggle"><span class="setting-label">Remove original LOD limits</span><span id="enhancement-lod" class="setting-value">Loading...</span></button>
             <button onclick="setting:distance:next"><span class="setting-label">Draw distance</span><span id="enhancement-distance" class="setting-value">Loading...</span></button>
             <button onclick="setting:fogdensity:next"><span class="setting-label">Fog density</span><span id="enhancement-fog-density" class="setting-value">Loading...</span></button>
+            <button onclick="setting:upscale:next"><span class="setting-label">Texture upscaler</span><span id="enhancement-upscale" class="setting-value">Loading...</span></button>
           </div>
           <div class="column">
             <h2>Full-track visibility</h2>

@@ -111,6 +111,16 @@ int main() {
     expect(lambo::config::show_launcher() == true, "show_launcher toggle updates snapshot");
     expect(read_json(path).at("show_launcher") == true, "show_launcher persists to json");
 
+    lambo::config::set_texture_upscaler("xbrz");
+    expect(lambo::config::texture_upscaler() == "xbrz", "xBRZ upscaler selection updates live");
+    expect(read_json(path).at("texture_upscaler") == "xbrz", "xBRZ upscaler persists");
+    lambo::config::set_texture_upscaler("scalefx");
+    // ScaleFX is no longer a selectable mode; the string falls back to Off.
+    expect(lambo::config::texture_upscaler() == "off", "ScaleFX string maps to Off (algorithm removed)");
+    expect(read_json(path).at("texture_upscaler") == "off", "legacy ScaleFX string persists as off");
+    lambo::config::set_texture_upscaler("bogus");
+    expect(lambo::config::texture_upscaler() == "off", "unknown upscaler mode falls back to off");
+
     std::vector<uint8_t> memory(0x800000);
     uint8_t* rdram = memory.data();
     const gpr driver_index = (gpr)(int32_t)0x800CE6A6u;

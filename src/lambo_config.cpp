@@ -48,6 +48,23 @@ std::atomic_bool g_widescreen_sky_match{true};
 // lose the far scenery entirely. Default-on; the emit still self-gates on the
 // record pointer being non-null, so segments without a scenery DL are unaffected.
 std::atomic_bool g_no_lod{true};
+
+// Texture upscaler selection (0=off, 1=xBRZ 4x). GPU compute chain in the
+// RT64 texture cache. ScaleFX was removed because the port was not
+// algorithmically correct (see PR #169).
+std::atomic<lambo::config::TextureUpscalerMode> g_texture_upscaler{lambo::config::TextureUpscalerMode::Off};
+
+static const char* k_upscaler_names[] = {"off", "xbrz"};
+
+static int upscaler_from_string(const std::string& s) {
+    for (int i = 0; i < 2; ++i) {
+        if (s == k_upscaler_names[i]) return i;
+    }
+    return 0; // Unknown / "scalefx" -> Off.
+}
+
+static lambo::config::TextureUpscalerChangedFn g_upscaler_changed_cb = nullptr;
+
 std::atomic_bool g_show_launcher{false};
 
 // Per-circuit refinement of the global no_lod. Rationale + JSON key in
@@ -120,6 +137,7 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"widescreen_fog_match", g_widescreen_fog_match.load()},
         {"widescreen_sky_match", g_widescreen_sky_match.load()},
         {"no_lod", g_no_lod.load()},
+        {"texture_upscaler", std::string(k_upscaler_names[static_cast<int>(g_texture_upscaler.load())])},
         {"no_lod_circuit", nlohmann::json::array({
             g_no_lod_circuit[0].load(), g_no_lod_circuit[1].load(),
             g_no_lod_circuit[2].load(), g_no_lod_circuit[3].load(),
@@ -154,6 +172,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     bool widescreen_fog_match = g_widescreen_fog_match.load();
     bool widescreen_sky_match = g_widescreen_sky_match.load();
     bool no_lod = g_no_lod.load();
+    std::string texture_upscaler = k_upscaler_names[static_cast<int>(g_texture_upscaler.load())];
     std::array<bool, 6> no_lod_circuit{};
     for (size_t i = 0; i < no_lod_circuit.size(); ++i) {
         no_lod_circuit[i] = g_no_lod_circuit[i].load();
@@ -167,6 +186,16 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "widescreen_fog_match", widescreen_fog_match);
     from_or_default(j, "widescreen_sky_match", widescreen_sky_match);
     from_or_default(j, "no_lod", no_lod);
+    from_or_default(j, "texture_upscaler", texture_upscaler);
+    if (!j.contains("texture_upscaler")) {
+        // Legacy key from the first ScaleFX-only build. Maps to Off now
+        // (ScaleFX is no longer a selectable mode).
+        bool legacy_scalefx = false;
+        from_or_default(j, "scalefx_textures", legacy_scalefx);
+        if (legacy_scalefx) {
+            texture_upscaler = "xbrz";
+        }
+    }
     from_or_default(j, "no_lod_circuit", no_lod_circuit);
     from_or_default(j, "fog_scale", fog_scale);
     from_or_default(j, "fog_scale_circuit", g_fog_scale_circuit);
@@ -179,6 +208,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     g_widescreen_fog_match.store(widescreen_fog_match);
     g_widescreen_sky_match.store(widescreen_sky_match);
     g_no_lod.store(no_lod);
+    g_texture_upscaler.store(static_cast<lambo::config::TextureUpscalerMode>(upscaler_from_string(texture_upscaler)));
     for (size_t i = 0; i < no_lod_circuit.size(); ++i) {
         g_no_lod_circuit[i].store(no_lod_circuit[i]);
     }
@@ -392,6 +422,39 @@ bool no_lod() {
         return v[0] == '1';
     }
     return g_no_lod.load();
+}
+
+// LAMBO_UPSCALER=off|xbrz overrides the JSON key; the legacy
+// LAMBO_SCALEFX=1 still maps to "xbrz" (the only selectable mode now) for
+// headless capture/testing.
+std::string texture_upscaler() {
+    if (const char* v = std::getenv("LAMBO_UPSCALER")) {
+        return v;
+    }
+    if (const char* v = std::getenv("LAMBO_SCALEFX"); v && v[0] == '1') {
+        return "xbrz";
+    }
+    return k_upscaler_names[static_cast<int>(g_texture_upscaler.load())];
+}
+
+TextureUpscalerMode texture_upscaler_mode() {
+    return g_texture_upscaler.load();
+}
+
+void set_texture_upscaler_mode(TextureUpscalerMode mode) {
+    g_texture_upscaler.store(mode);
+    save_graphics(g_current_graphics);
+    if (g_upscaler_changed_cb != nullptr) {
+        g_upscaler_changed_cb();
+    }
+}
+
+void set_texture_upscaler(const std::string& mode) {
+    set_texture_upscaler_mode(static_cast<TextureUpscalerMode>(upscaler_from_string(mode)));
+}
+
+void set_texture_upscaler_changed_callback(lambo::config::TextureUpscalerChangedFn fn) {
+    g_upscaler_changed_cb = fn;
 }
 
 void set_no_lod(bool enabled) {

@@ -31,6 +31,8 @@
 #include "lambo_config.h"
 #include "lambo_log.h"
 #include "lambo_startup.h"
+
+// Forward-declared definition lives in src/rt64_renderer.cpp.
 #include "lambo_ui_input.h"
 #include "lambo_ui_controls.h"
 #include "lambo_ui_render_interface.h"
@@ -242,6 +244,7 @@ void UiState::refresh_document_values() {
     set_text("enhancement-fog", values.widescreen_fog);
     set_text("enhancement-sky", values.widescreen_sky);
     set_text("enhancement-lod", values.lod_removal);
+    set_text("enhancement-upscale", values.texture_upscaler);
     set_text("enhancement-distance", values.draw_distance);
     set_text("enhancement-fog-density", values.fog_density);
     for (size_t circuit = 0; circuit < values.circuit_visibility.size(); ++circuit) {

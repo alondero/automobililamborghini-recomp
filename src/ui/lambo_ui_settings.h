@@ -20,6 +20,7 @@ enum class SettingAction {
     FogMatchToggle,
     SkyMatchToggle,
     NoLodToggle,
+    UpscalerNext,
     Circuit1Toggle,
     Circuit2Toggle,
     Circuit3Toggle,
@@ -42,6 +43,7 @@ struct SettingsSnapshot {
     std::string widescreen_fog;
     std::string widescreen_sky;
     std::string lod_removal;
+    std::string texture_upscaler;
     std::string draw_distance;
     std::string fog_density;
     std::array<std::string, 6> circuit_visibility;

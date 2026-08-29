@@ -84,6 +84,31 @@ void set_widescreen_sky_match(bool enabled);
 bool no_lod();
 void set_no_lod(bool enabled);
 
+// Algorithmic texture upscaling in RT64's upload path: every decoded TMEM
+// texture is upscaled on the GPU and sampled like a hi-res replacement pack.
+// Currently only the xBRZ (4x) mode ships; ScaleFX was removed because the
+// port was not algorithmically correct.
+// graphics.json key "texture_upscaler": "off"|"xbrz" (default "off";
+// legacy bool key "scalefx_textures" still honoured), overridable by
+// LAMBO_UPSCALER=<mode> or the legacy LAMBO_SCALEFX=1.
+enum class TextureUpscalerMode : uint8_t {
+    Off = 0,
+    Xbrz = 1,
+};
+
+TextureUpscalerMode texture_upscaler_mode();
+void set_texture_upscaler_mode(TextureUpscalerMode mode);
+// String overloads for the legacy / JSON / env path. Valid strings are
+// "off" and "xbrz"; anything else (including "scalefx" from older configs)
+// is treated as Off.
+std::string texture_upscaler();
+void set_texture_upscaler(const std::string& mode);
+// Called by the config layer after a successful set; lets the renderer
+// push the new mode into the live RT64 context (the renderer may also
+// invalidate cached textures so the change is visible immediately).
+using TextureUpscalerChangedFn = void (*)();
+void set_texture_upscaler_changed_callback(TextureUpscalerChangedFn fn);
+
 // Per-circuit refinement of no_lod: the full-track walk (PVS synth) is what fixes
 // the cross-track distance pop-in (PR #122), but on the pro tracks it surfaces
 // back-of-buildings / cross-track geometry the track authors relied on the

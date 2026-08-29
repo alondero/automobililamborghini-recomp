@@ -349,12 +349,37 @@ public:
             LAMBO_LOG("rt64", "texture pack %s: %s\n",
                          ok ? "loaded" : "FAILED to load", pack.c_str());
         }
+
+        // Register a callback so the config layer can push live mode changes
+        // into the running RT64 context and flush cached upscaled replacements
+        // (so the toggle is visible immediately, not 'drive past new scenery').
+        lambo::config::set_texture_upscaler_changed_callback(&RT64Context::on_texture_upscaler_changed);
     }
 
     ~RT64Context() override {
         if (g_lambo_active_app == app.get()) {
             g_lambo_active_app = nullptr;
         }
+    }
+
+    static void on_texture_upscaler_changed() {
+        RT64::Application *app = g_lambo_active_app.load(std::memory_order_acquire);
+        if (app == nullptr || app->textureCache == nullptr) return;
+        const auto mode = lambo::config::texture_upscaler_mode();
+        switch (mode) {
+        case lambo::config::TextureUpscalerMode::Xbrz:
+            app->textureCache->upscaler.store(RT64::TextureUpscaler::Xbrz);
+            LAMBO_LOG("rt64", "xBRZ texture upscaling enabled (4x)\n");
+            break;
+        case lambo::config::TextureUpscalerMode::Off:
+        default:
+            app->textureCache->upscaler.store(RT64::TextureUpscaler::Off);
+            LAMBO_LOG("rt64", "Texture upscaling disabled\n");
+            break;
+        }
+        // Drop every currently-cached upscaled replacement so the screen
+        // stops mixing 1x/3x/4x samples from the previous mode.
+        app->textureCache->flushUpscaledReplacements();
     }
 
     bool valid() override { return static_cast<bool>(app); }

@@ -207,6 +207,7 @@ try {
         @{ Sub = 'lib/rt64';                   Patch = 'patches/0009-rt64-widescreen-split-subviewport.patch' },
         @{ Sub = 'lib/rt64';                   Patch = 'patches/0010-rt64-intel-explicit-d3d12-escape-hatch.patch' },
         @{ Sub = 'lib/rt64';                   Patch = 'patches/0011-rt64-fov-independent-backdrop.patch' },
+        @{ Sub = 'lib/rt64';                   Patch = 'patches/0012-rt64-scalefx-texture-upscaling.patch' },
         @{ Sub = 'lib/rt64/src/contrib/plume'; Patch = 'patches/0004-plume-d3d12-mingw-com-abi-struct-return.patch' }
     )
     foreach ($p in $patches) {

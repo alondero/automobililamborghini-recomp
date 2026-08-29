@@ -224,6 +224,12 @@ set(BUILD_SHARED_LIBS OFF)
 set(RMLUI_TESTS OFF CACHE BOOL "" FORCE)
 set(RMLUI_SAMPLES OFF CACHE BOOL "" FORCE)
 set(RMLUI_SVG_PLUGIN OFF CACHE BOOL "" FORCE)
+
+# LAMBO_DEV_DIAGNOSTICS: enables runtime developer-only diagnostic paths
+# (e.g. the LAMBO_UPSCALE_DUMP PPM readback). Off by default -- these
+# paths perform synchronous work on hot threads and must not be compiled
+# into packaged releases.
+option(LAMBO_DEV_DIAGNOSTICS "Enable developer-only runtime diagnostics" OFF)
 if(WIN32)
     # Reuse RT64's pinned FreeType build for RmlUi text rendering. The Windows
     # SDK bundle does not necessarily provide a CMake package of its own.
@@ -419,6 +425,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     add_executable(lamborghini_modern ${LAMBO_SOURCES})
     target_compile_definitions(lamborghini_modern PRIVATE
         HLSL_CPU
+        LAMBO_RT64_LINKED
+        # Enable the LAMBO_UPSCALE_DUMP diagnostic, which writes the first N
+        # upscaled textures to PPM files for visual debugging of the texture
+        # upscaler. Off by default; flip on for local texture-pipeline work
+        # only (the synchronous disk I/O on the upload thread would otherwise
+        # stall the whole pipeline if enabled in a packaged release).
+        LAMBO_DEV_DIAGNOSTICS=$<BOOL:LAMBO_DEV_DIAGNOSTICS>
         LAMBO_VERSION="${PROJECT_VERSION}"
         LAMBO_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
         LAMBO_VERSION_MINOR=${PROJECT_VERSION_MINOR}
