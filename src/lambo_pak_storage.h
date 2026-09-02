@@ -19,6 +19,12 @@ void lambo_pak_storage_schedule_save(const uint8_t image[LAMBO_PAK_SIZE]);
 LamboPakIoResult lambo_pak_storage_flush(void);
 void lambo_pak_storage_shutdown(void);
 
+#if defined(LAMBO_PAK_STORAGE_TESTING)
+typedef LamboPakIoResult (*LamboPakStorageWriteHook)(
+    const char* path, const uint8_t image[LAMBO_PAK_SIZE]);
+void lambo_pak_storage_set_write_hook(LamboPakStorageWriteHook hook);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

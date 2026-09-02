@@ -1033,7 +1033,7 @@ int main(int, char**) {
     std::vector<std::string> arguments;
     std::vector<char*> argument_pointers;
     arguments.reserve(static_cast<size_t>(argument_count));
-    argument_pointers.reserve(static_cast<size_t>(argument_count));
+    argument_pointers.reserve(static_cast<size_t>(argument_count) + 1);
     for (int index = 0; index < argument_count; ++index) {
         const int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_arguments[index],
                                              -1, nullptr, 0, nullptr, nullptr);
@@ -1049,6 +1049,7 @@ int main(int, char**) {
     }
     LocalFree(wide_arguments);
     for (std::string& argument : arguments) argument_pointers.push_back(argument.data());
+    argument_pointers.push_back(nullptr);
     return application_main(argument_count, argument_pointers.data());
 }
 #else

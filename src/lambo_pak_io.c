@@ -347,8 +347,8 @@ static TargetState inspect_unrecognised_target(const char* path) {
 #endif
     );
     long length;
-    size_t index;
-    int byte;
+    uint8_t block[4096];
+    size_t offset;
     if (file == NULL) return errno == ENOENT ? TARGET_MISSING : TARGET_OTHER;
     if (fseek(file, 0, SEEK_END) != 0 || (length = ftell(file)) < 0 ||
         fseek(file, 0, SEEK_SET) != 0) {
@@ -363,11 +363,17 @@ static TargetState inspect_unrecognised_target(const char* path) {
         fclose(file);
         return TARGET_OTHER;
     }
-    for (index = 0; index < LAMBO_PAK_SIZE; ++index) {
-        byte = fgetc(file);
-        if (byte != 0) {
+    for (offset = 0; offset < LAMBO_PAK_SIZE; offset += sizeof(block)) {
+        size_t index;
+        if (fread(block, 1, sizeof(block), file) != sizeof(block)) {
             fclose(file);
             return TARGET_OTHER;
+        }
+        for (index = 0; index < sizeof(block); ++index) {
+            if (block[index] != 0) {
+                fclose(file);
+                return TARGET_OTHER;
+            }
         }
     }
     fclose(file);

@@ -24,9 +24,13 @@ struct StorageState {
     uint64_t generation = 0;
     bool dirty = false;
     bool writing = false;
+    bool flush_requested = false;
     bool stopping = false;
     bool exit_handler_registered = false;
     LamboPakIoResult last_result{};
+#if defined(LAMBO_PAK_STORAGE_TESTING)
+    LamboPakStorageWriteHook write = lambo_pak_write_file;
+#endif
 };
 
 StorageState& state() {
@@ -48,7 +52,12 @@ void publish_snapshot(StorageState& storage, std::unique_lock<std::mutex>& lock)
     storage.dirty = false;
     storage.writing = true;
     lock.unlock();
-    const LamboPakIoResult result = lambo_pak_write_file(path.c_str(), image.data());
+    const LamboPakIoResult result =
+#if defined(LAMBO_PAK_STORAGE_TESTING)
+        storage.write(path.c_str(), image.data());
+#else
+        lambo_pak_write_file(path.c_str(), image.data());
+#endif
     if (!result.ok) std::fprintf(stderr, "[pak] save failed: %s\n", result.error);
     lock.lock();
     storage.last_result = result;
@@ -63,16 +72,23 @@ void storage_worker() {
         storage.changed.wait(lock, [&storage] { return storage.dirty || storage.stopping; });
         if (!storage.dirty && storage.stopping) return;
 
-        if (!storage.stopping) {
+        if (!storage.stopping && !storage.flush_requested) {
             const uint64_t generation = storage.generation;
             const auto deadline = storage.deadline;
             storage.changed.wait_until(lock, deadline, [&storage, generation] {
-                return storage.stopping || storage.generation != generation;
+                return storage.stopping || storage.flush_requested ||
+                       storage.generation != generation;
             });
-            if (!storage.stopping && storage.generation != generation) continue;
+            if (!storage.stopping && !storage.flush_requested &&
+                storage.generation != generation) {
+                continue;
+            }
         }
 
+        if (!storage.dirty) continue;
         publish_snapshot(storage, lock);
+        if (!storage.dirty) storage.flush_requested = false;
+        storage.changed.notify_all();
         if (storage.stopping && !storage.dirty) return;
     }
 }
@@ -122,10 +138,13 @@ extern "C" void lambo_pak_storage_schedule_save(const uint8_t image[LAMBO_PAK_SI
 extern "C" LamboPakIoResult lambo_pak_storage_flush(void) {
     StorageState& storage = state();
     std::unique_lock lock(storage.mutex);
-    while (storage.writing) storage.changed.wait(lock);
-    while (storage.dirty) {
-        publish_snapshot(storage, lock);
-        while (storage.writing) storage.changed.wait(lock);
+    if (storage.dirty || storage.writing) {
+        start_worker(storage);
+        storage.flush_requested = true;
+        storage.changed.notify_all();
+        storage.changed.wait(lock, [&storage] {
+            return !storage.dirty && !storage.writing;
+        });
     }
     return storage.last_result.ok ? storage.last_result :
            (storage.last_result.error[0] != '\0' ? storage.last_result : idle_result());
@@ -143,5 +162,14 @@ extern "C" void lambo_pak_storage_shutdown(void) {
     {
         std::lock_guard lock(storage.mutex);
         storage.stopping = false;
+        storage.flush_requested = false;
     }
 }
+
+#if defined(LAMBO_PAK_STORAGE_TESTING)
+extern "C" void lambo_pak_storage_set_write_hook(LamboPakStorageWriteHook hook) {
+    StorageState& storage = state();
+    std::lock_guard lock(storage.mutex);
+    storage.write = hook != nullptr ? hook : lambo_pak_write_file;
+}
+#endif

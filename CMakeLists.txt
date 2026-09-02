@@ -111,6 +111,9 @@ if(BUILD_TESTING)
     target_include_directories(lambo_controller_pak_storage_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
+    target_compile_definitions(lambo_controller_pak_storage_tests PRIVATE
+        LAMBO_PAK_STORAGE_TESTING=1
+    )
     target_link_libraries(lambo_controller_pak_storage_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_controller_pak_batched_storage COMMAND lambo_controller_pak_storage_tests)
 

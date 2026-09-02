@@ -5,11 +5,26 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <mutex>
 #include <thread>
 
 namespace {
 
 int failures;
+std::mutex writer_observation_mutex;
+std::thread::id writer_thread;
+bool writer_thread_changed = false;
+
+LamboPakIoResult observed_write(const char* path, const uint8_t image[LAMBO_PAK_SIZE]) {
+    {
+        std::lock_guard lock(writer_observation_mutex);
+        if (writer_thread == std::thread::id{})
+            writer_thread = std::this_thread::get_id();
+        else if (writer_thread != std::this_thread::get_id())
+            writer_thread_changed = true;
+    }
+    return lambo_pak_write_file(path, image);
+}
 
 void expect(bool condition, const char* message) {
     if (!condition) {
@@ -46,6 +61,7 @@ int main() {
     make_valid_pak(image);
 
     lambo_pak_storage_configure(first.string().c_str());
+    lambo_pak_storage_set_write_hook(observed_write);
     expect(std::strcmp(lambo_pak_storage_path(), first.string().c_str()) == 0,
            "configured storage path is visible to the Joybus adapter");
     lambo_pak_storage_configure(second.string().c_str());
@@ -66,6 +82,11 @@ int main() {
     lambo_pak_storage_schedule_save(image.data());
     const LamboPakIoResult flushed = lambo_pak_storage_flush();
     expect(flushed.ok, "explicit flush publishes the pending save batch");
+    {
+        std::lock_guard lock(writer_observation_mutex);
+        expect(!writer_thread_changed,
+               "debounced and flushed saves use the same dedicated writer thread");
+    }
 
     std::array<uint8_t, LAMBO_PAK_SIZE> actual{};
     const LamboPakIoResult loaded = lambo_pak_read_file(second.string().c_str(), actual.data());
