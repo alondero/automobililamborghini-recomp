@@ -15,6 +15,32 @@ Only the **North American (USA) release** is currently supported. The build read
 
 This is an in-progress port. It boots, presents the attract/title sequence and menus, and goes in-race. Input, audio, and rendering are wired through RT64. Expect rough edges — see the issue tracker.
 
+## Controller Pak save compatibility
+
+Automobili Lamborghini stores its records and progress on a Controller Pak, not in
+cartridge EEPROM. The port's normal save is `lambo_controller_pak.mpk` in its config
+directory. It is a standard raw 32 KiB Controller Pak image and can be opened by
+Controller Pak tools or used by emulators that accept `.mpk` files.
+
+The port recognises these common containers and uses controller port 1:
+
+| Format | Size | Compatibility |
+| --- | ---: | --- |
+| Raw `.mpk` / `.pak` | 32 KiB | Emulators, flash carts, and tools that accept raw Controller Pak images |
+| Four-port `.mpk` | 128 KiB | Wii64/not64 and multi-controller dumps |
+| Mupen64Plus-Next `.srm` | exactly 290 KiB | RetroArch combined save; Pak 1 begins at offset `0x800` |
+| DexDrive `.n64` | 36,928 bytes | DexDrive Controller Pak backup |
+
+To import a save, drag one of those files onto the game executable, or run
+`lamborghini_modern --import-save "path/to/save.srm"`. The source is left untouched;
+an existing port save is backed up before the imported Pak replaces it. A 2 KiB `.eep`
+file is cartridge EEPROM and does not contain this game's Controller Pak progress.
+
+For a save that remains shared with an emulator, launch with
+`--controller-pak "path/to/save.srm"` (or set `LAMBO_CONTROLLER_PAK_FILE`). Writes update
+only Pak 1 inside an existing Mupen64Plus-Next, four-port, or DexDrive container and preserve
+all unrelated bytes. Do not have both programs open on the shared file at once.
+
 ## Graphics options
 
 Graphics settings persist in `graphics.json` (in `%LOCALAPPDATA%\LamborghiniRecomp` on

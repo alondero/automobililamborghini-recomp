@@ -84,11 +84,22 @@ if(BUILD_TESTING)
     add_executable(lambo_controller_pak_tests
         tests/test_controller_pak.c
         src/libultra_stubs.c
+        src/lambo_pak_io.c
     )
     target_include_directories(lambo_controller_pak_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${N64MR}/N64Recomp/include
     )
     add_test(NAME lambo_controller_pak_identity COMMAND lambo_controller_pak_tests)
+
+    add_executable(lambo_controller_pak_io_tests
+        tests/test_pak_io.c
+        src/lambo_pak_io.c
+    )
+    target_include_directories(lambo_controller_pak_io_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    add_test(NAME lambo_controller_pak_emulator_formats COMMAND lambo_controller_pak_io_tests)
 
     add_executable(lambo_startup_tests
         tests/test_startup.cpp
@@ -420,6 +431,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
                                # function-lookup trace ring. No deps beyond libc + DbgHelp (Win) /
                                # libc backtrace(3) (POSIX).
         src/libultra_stubs.c   # no-op symbols for ignored libultra CP0 helpers (e.g. __osSetSR)
+        src/lambo_pak_io.c
         src/lambo_hud_widescreen.c  # issue #2: gEXSetRectAlign brackets around the race-HUD dials
         src/lambo_flare_widescreen.c  # issue #40: gEXSetRectAspect(STRETCH) bracket around the sun lens-flare ghosts
         src/lambo_fog_widescreen.cpp  # issue #83: widen dense 3P/4P fog to the 1P window/colour (DL rewrite, players>=3)

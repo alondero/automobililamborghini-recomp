@@ -15,6 +15,7 @@
 // drmario64/Zelda64Recomp leave __osSetSR in ignored_funcs.
 
 #include "recomp.h"
+#include "lambo_pak_io.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -107,7 +108,7 @@ static unsigned char lambo_joybus_data_crc(uint8_t* rdram, gpr addr) {
 // a dead pak. Port of the proven legacy HLE (src/recomp/recomp_support.c lambo_pak_image_format,
 // W16): ID areas at pages 1/3/4/6 (device id bit0, 1 bank = 32 KB, id16 + inverted checksums),
 // inode table page 1 + backup page 2 with slots 5..127 = 0x03 (empty).
-uint8_t g_lambo_pak_image[0x8000];
+uint8_t g_lambo_pak_image[LAMBO_PAK_SIZE];
 
 static void lambo_pak_format(void) {
     uint8_t* img = g_lambo_pak_image;
@@ -152,12 +153,27 @@ static void lambo_pak_format(void) {
 // change after startup, and lambo_joybus_answer is on the per-frame input-poll hot path, so a
 // getenv() per call is wasted work. Caching the path into our own buffer also avoids holding a
 // pointer into getenv's storage.
+static char g_lambo_pak_default_path[1024] = "lambo_controller_pak.mpk";
+static char g_lambo_pak_override_path[1024];
+
+void lambo_pak_set_default_path(const char* path) {
+    if (path != NULL && path[0] != '\0')
+        snprintf(g_lambo_pak_default_path, sizeof(g_lambo_pak_default_path), "%s", path);
+}
+
+void lambo_pak_override_path(const char* path) {
+    if (path != NULL && path[0] != '\0')
+        snprintf(g_lambo_pak_override_path, sizeof(g_lambo_pak_override_path), "%s", path);
+}
+
 static const char* lambo_pak_path(void) {
     static char cached[1024];
     static int init = 0;
     if (!init) {
-        const char* p = getenv("LAMBO_CONTROLLER_PAK_FILE");
-        if (!p || !*p) p = "lambo_controller_pak.mpk";
+        const char* p = g_lambo_pak_override_path[0] != '\0'
+            ? g_lambo_pak_override_path
+            : getenv("LAMBO_CONTROLLER_PAK_FILE");
+        if (!p || !*p) p = g_lambo_pak_default_path;
         snprintf(cached, sizeof(cached), "%s", p);
         init = 1;
     }
@@ -181,39 +197,37 @@ static int lambo_pak_enabled(void) {
 // the game thread during boot. The file is created on the first real save (lambo_pak_save).
 static void lambo_pak_ensure_loaded(void) {
     static int loaded = 0;
-    FILE* f;
+    LamboPakIoResult result;
     if (loaded) return;
     loaded = 1;
-    f = fopen(lambo_pak_path(), "rb");
-    if (f) {
-        size_t n = fread(g_lambo_pak_image, 1, sizeof(g_lambo_pak_image), f);
-        fclose(f);
-        if (n == sizeof(g_lambo_pak_image)) return;             /* good image on disk */
+    result = lambo_pak_read_file(lambo_pak_path(), g_lambo_pak_image);
+    if (result.ok) {
+        fprintf(stderr, "[pak] loaded %s from %s\n",
+                lambo_pak_format_name(result.format), lambo_pak_path());
+        return;
+    }
+    /* A missing file is the normal first-run case. Malformed/external formats are
+     * reported before falling back, so a failed import is not silent. */
+    {
+        FILE* existing = fopen(lambo_pak_path(), "rb");
+        if (existing != NULL) {
+            fclose(existing);
+            fprintf(stderr, "[pak] %s; using a fresh in-memory Pak without overwriting it\n", result.error);
+        }
     }
     lambo_pak_format();                                         /* fresh formatted pak (memory only) */
 }
 
 // Persist the whole 32 KB image after a block write. ATOMIC: write a temp file, then rename it
 // over the target -- a crash/kill/power-loss mid-write must never truncate the live .mpk (a short
-// read on next boot would silently reformat and lose ALL saved games). rename() is atomic on POSIX
-// and replaces; on Windows (MinGW/MSVCRT) it fails if the target exists, so fall back to
-// remove()+rename(). We flush per block (each write persisted immediately) rather than batching --
+// read on next boot would silently reformat and lose ALL saved games). The storage module uses
+// rename() on POSIX and MoveFileEx(REPLACE_EXISTING) on Windows, leaving the old file in place if
+// publication fails. We flush per block (each write persisted immediately) rather than batching --
 // this trades a small hitch at save time for crash-safety, which for a save file is the right call
 // (saves are rare: records/best-times, a handful of blocks).
 static void lambo_pak_save(void) {
-    const char* path = lambo_pak_path();
-    char tmp[1024];
-    FILE* f;
-    size_t n;
-    if ((int)snprintf(tmp, sizeof(tmp), "%s.tmp", path) >= (int)sizeof(tmp)) return; /* path too long */
-    f = fopen(tmp, "wb");
-    if (!f) return;
-    n = fwrite(g_lambo_pak_image, 1, sizeof(g_lambo_pak_image), f);
-    if (fclose(f) != 0 || n != sizeof(g_lambo_pak_image)) { remove(tmp); return; }
-    if (rename(tmp, path) != 0) {          /* Windows: target exists -> replace explicitly */
-        remove(path);
-        if (rename(tmp, path) != 0) remove(tmp);
-    }
+    LamboPakIoResult result = lambo_pak_write_file(lambo_pak_path(), g_lambo_pak_image);
+    if (!result.ok) fprintf(stderr, "[pak] save failed: %s\n", result.error);
 }
 
 // LAMBO_PAK_TRACE=1: per-frame joybus log (issue #35 diagnosis) -- shows exactly what the save

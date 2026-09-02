@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -42,6 +43,7 @@
 #include "lambo_crash.h"   // issue #13 / A14
 #include "lambo_gpu_advisory.h"  // issue #109: outdated-driver popup handoff
 #include "lambo_log.h"   
+#include "lambo_pak_io.h"
 #include "lambo_menu.h"
 #include "lambo_input_gate.h"
 #include "lambo_analog_throttle.h"
@@ -686,6 +688,32 @@ static ultramodern::input::connected_device_info_t input_device_info(int control
     return { Device::None, Pak::None };
 }
 
+static bool is_controller_pak_container(const char* path) {
+    const LamboPakIoResult result = lambo_pak_probe_file(path);
+    std::string extension = std::filesystem::path(path).extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    if (!result.ok) return false;
+    switch (result.format) {
+    case LAMBO_PAK_FORMAT_RAW:
+    case LAMBO_PAK_FORMAT_FOUR_PORT:
+        return extension == ".mpk" || extension == ".pak";
+    case LAMBO_PAK_FORMAT_RETROARCH:
+        return extension == ".srm";
+    case LAMBO_PAK_FORMAT_DEXDRIVE:
+        return extension == ".n64";
+    default:
+        return false;
+    }
+}
+
+static std::filesystem::path unused_backup_path(const std::filesystem::path& path) {
+    std::filesystem::path candidate = path.string() + ".bak";
+    for (unsigned index = 1; std::filesystem::exists(candidate); ++index)
+        candidate = path.string() + ".bak." + std::to_string(index);
+    return candidate;
+}
+
 int main(int argc, char** argv) {
     // Deterministic lighting self-test: no ROM, no runtime -- exercises the swrender
     // light-decode + lambert path on a synthetic DL and exits (tests/pivot/test_lighting.py).
@@ -695,14 +723,29 @@ int main(int argc, char** argv) {
     // Parse --lambo-debug BEFORE anything else that might print a [probe] line.
     // The flag is read by every LAMBO_LOG() site via the lambo_log_enabled bool.
     lambo_log_parse_flag(argc, argv);
-    // The ROM path is the first non-flag positional arg; skip argv entries that
-    // start with "--" so e.g. `lamborghini_modern --lambo-debug` still finds the
-    // bundled ROM at argv[2] (or falls back to the default when no path given).
     const char* rom_path = "Automobili Lamborghini (USA).z64";
+    const char* import_path = nullptr;
+    const char* controller_pak_path = nullptr;
+    bool rom_was_selected = false;
     for (int i = 1; i < argc; ++i) {
-        if (argv[i] && argv[i][0] != '-' && argv[i][0] != '\0') {
+        if (argv[i] && std::strcmp(argv[i], "--import-save") == 0) {
+            if (i + 1 >= argc || argv[i + 1] == nullptr || argv[i + 1][0] == '\0') {
+                std::fprintf(stderr, "--import-save requires an MPK, SRM, or DexDrive N64 file\n");
+                return 2;
+            }
+            import_path = argv[++i];
+        } else if (argv[i] && std::strcmp(argv[i], "--controller-pak") == 0) {
+            if (i + 1 >= argc || argv[i + 1] == nullptr || argv[i + 1][0] == '\0') {
+                std::fprintf(stderr, "--controller-pak requires an MPK, SRM, or DexDrive N64 file\n");
+                return 2;
+            }
+            controller_pak_path = argv[++i];
+        } else if (argv[i] && argv[i][0] != '-' && argv[i][0] != '\0' &&
+                   is_controller_pak_container(argv[i])) {
+            import_path = argv[i];
+        } else if (!rom_was_selected && argv[i] && argv[i][0] != '-' && argv[i][0] != '\0') {
             rom_path = argv[i];
-            break;
+            rom_was_selected = true;
         }
     }
     LAMBO_LOG("probe", "ROM: %s\n", rom_path);
@@ -736,6 +779,65 @@ int main(int argc, char** argv) {
     std::filesystem::path config_dir = lambo::config::app_config_dir();
     std::filesystem::create_directories(config_dir);
     recomp::register_config_path(config_dir);
+
+    const std::filesystem::path pak_path = config_dir / "lambo_controller_pak.mpk";
+    const std::string pak_path_string = pak_path.string();
+    const std::string active_pak_path = controller_pak_path != nullptr
+        ? std::filesystem::path(controller_pak_path).string()
+        : pak_path_string;
+    if (controller_pak_path != nullptr) lambo_pak_override_path(active_pak_path.c_str());
+    else lambo_pak_set_default_path(active_pak_path.c_str());
+
+    if (import_path != nullptr && controller_pak_path != nullptr) {
+        std::fprintf(stderr, "--import-save and --controller-pak cannot be used together\n");
+        return 2;
+    } else if (import_path != nullptr) {
+        std::error_code error;
+        const LamboPakIoResult source = lambo_pak_probe_file(import_path);
+        if (!source.ok) {
+            std::fprintf(stderr, "[pak] import failed: %s\n", source.error);
+            return 2;
+        }
+        const bool source_is_destination = std::filesystem::equivalent(import_path, pak_path, error);
+        if (source_is_destination && !error) {
+            std::fprintf(stderr, "[pak] selected save is already the active Controller Pak: %s\n",
+                         pak_path_string.c_str());
+        } else {
+            error.clear();
+            if (std::filesystem::exists(pak_path)) {
+                const auto backup = unused_backup_path(pak_path);
+                std::filesystem::copy_file(pak_path, backup, error);
+                if (error) {
+                    std::fprintf(stderr, "[pak] cannot back up existing save to %s: %s\n",
+                                 backup.string().c_str(), error.message().c_str());
+                    return 2;
+                }
+                std::fprintf(stderr, "[pak] backed up existing save to %s\n", backup.string().c_str());
+            }
+            const LamboPakIoResult imported = lambo_pak_import_file(import_path, pak_path_string.c_str());
+            if (!imported.ok) {
+                std::fprintf(stderr, "[pak] import failed: %s\n", imported.error);
+                return 2;
+            }
+            std::fprintf(stderr, "[pak] imported %s to %s\n",
+                         lambo_pak_format_name(imported.format), pak_path_string.c_str());
+        }
+    } else if (controller_pak_path == nullptr && !std::filesystem::exists(pak_path)) {
+        // One-time migration for builds before #176, which accidentally stored the
+        // default Controller Pak beside the executable/current working directory.
+        const std::filesystem::path legacy = "lambo_controller_pak.mpk";
+        std::error_code same_error;
+        const bool same_path = std::filesystem::equivalent(legacy, pak_path, same_error);
+        if (std::filesystem::exists(legacy) && (!same_path || same_error)) {
+            const LamboPakIoResult migrated =
+                lambo_pak_import_file(legacy.string().c_str(), pak_path_string.c_str());
+            if (migrated.ok)
+                std::fprintf(stderr, "[pak] migrated legacy %s save to %s\n",
+                             lambo_pak_format_name(migrated.format), pak_path_string.c_str());
+            else
+                std::fprintf(stderr, "[pak] legacy save migration failed: %s\n", migrated.error);
+        }
+    }
     g_controls = std::make_unique<lambo::controls::SdlAdapter>();
 
     recomp::GameEntry game{};
