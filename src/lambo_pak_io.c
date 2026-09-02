@@ -1,8 +1,13 @@
 #include "lambo_pak_io.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if !defined(_WIN32)
+#include <sys/stat.h>
+#endif
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -30,6 +35,7 @@ static const unsigned char dexdrive_magic[12] = {
  * byte-swapped by the referenced emulator/converter implementations. */
 
 typedef struct PakContainer {
+    /* load_container owns this allocation; callers free it exactly once. */
     uint8_t* data;
     size_t size;
     size_t pak_offset;
@@ -58,6 +64,75 @@ static LamboPakIoResult result_error(const char* message, const char* path) {
     else snprintf(result.error, sizeof(result.error), "%s", message);
     return result;
 }
+
+static LamboPakIoResult result_errno(const char* message, const char* path, int code) {
+    LamboPakIoResult result;
+    memset(&result, 0, sizeof(result));
+    snprintf(result.error, sizeof(result.error), "%s (errno=%d: %s): %s",
+             message, code, strerror(code), path != NULL ? path : "");
+    return result;
+}
+
+#if defined(_WIN32)
+static LamboPakIoResult result_win32(const char* message, const char* path, DWORD code) {
+    LamboPakIoResult result;
+    memset(&result, 0, sizeof(result));
+    snprintf(result.error, sizeof(result.error), "%s (Win32 error=%lu): %s",
+             message, (unsigned long)code, path != NULL ? path : "");
+    return result;
+}
+
+static wchar_t* path_to_wide(const char* path) {
+    int count;
+    wchar_t* wide;
+    if (path == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+    count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
+    if (count == 0) {
+        errno = EINVAL;
+        return NULL;
+    }
+    wide = (wchar_t*)malloc((size_t)count * sizeof(*wide));
+    if (wide == NULL) {
+        errno = ENOMEM;
+        return NULL;
+    }
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, count) == 0) {
+        free(wide);
+        errno = EINVAL;
+        return NULL;
+    }
+    return wide;
+}
+
+static FILE* path_open(const char* path, const wchar_t* mode) {
+    wchar_t* wide = path_to_wide(path);
+    FILE* file;
+    if (wide == NULL) return NULL;
+    file = _wfopen(wide, mode);
+    free(wide);
+    return file;
+}
+
+static int path_remove(const char* path) {
+    wchar_t* wide = path_to_wide(path);
+    int removed;
+    if (wide == NULL) return -1;
+    removed = _wremove(wide);
+    free(wide);
+    return removed;
+}
+#else
+static FILE* path_open(const char* path, const char* mode) {
+    return fopen(path, mode);
+}
+
+static int path_remove(const char* path) {
+    return remove(path);
+}
+#endif
 
 static LamboPakIoResult result_ok(const PakContainer* container) {
     LamboPakIoResult result;
@@ -114,12 +189,19 @@ static LamboPakIoResult load_container(const char* path, PakContainer* container
     size_t read_count;
 
     memset(container, 0, sizeof(*container));
-    file = fopen(path, "rb");
-    if (file == NULL) return result_error("cannot open Controller Pak file", path);
+    file = path_open(path,
+#if defined(_WIN32)
+                     L"rb"
+#else
+                     "rb"
+#endif
+    );
+    if (file == NULL) return result_errno("cannot open Controller Pak file", path, errno);
     if (fseek(file, 0, SEEK_END) != 0 || (length = ftell(file)) < 0 ||
         fseek(file, 0, SEEK_SET) != 0) {
+        const int code = errno != 0 ? errno : EIO;
         fclose(file);
-        return result_error("cannot determine Controller Pak file size", path);
+        return result_errno("cannot determine Controller Pak file size", path, code);
     }
     container->size = (size_t)length;
     if (container->size == 0 || container->size > RETROARCH_SIZE) {
@@ -133,9 +215,10 @@ static LamboPakIoResult load_container(const char* path, PakContainer* container
     }
     read_count = fread(container->data, 1, container->size, file);
     if (fclose(file) != 0 || read_count != container->size) {
+        const int code = errno != 0 ? errno : EIO;
         free(container->data);
         container->data = NULL;
-        return result_error("cannot read complete Controller Pak file", path);
+        return result_errno("cannot read complete Controller Pak file", path, code);
     }
     if (!identify_container(container)) {
         free(container->data);
@@ -150,35 +233,86 @@ static LamboPakIoResult load_container(const char* path, PakContainer* container
     return result_ok(container);
 }
 
-static LamboPakIoResult publish_container(const char* path, const PakContainer* container) {
-    char temporary[1024];
+static LamboPakIoResult publish_bytes(const char* path, const uint8_t* data, size_t size,
+                                      LamboPakFormat format, size_t pak_offset) {
+    char* temporary;
     FILE* file;
     size_t written;
     LamboPakIoResult result;
+    PakContainer view;
+    const size_t path_length = strlen(path);
 
-    if ((int)snprintf(temporary, sizeof(temporary), "%s.tmp", path) >= (int)sizeof(temporary))
-        return result_error("Controller Pak path is too long", path);
-    file = fopen(temporary, "wb");
-    if (file == NULL) return result_error("cannot create temporary Controller Pak file", temporary);
-    written = fwrite(container->data, 1, container->size, file);
-    if (fclose(file) != 0 || written != container->size) {
-        remove(temporary);
-        return result_error("cannot write complete Controller Pak file", temporary);
+    temporary = (char*)malloc(path_length + 5);
+    if (temporary == NULL) return result_error("out of memory while saving Controller Pak", path);
+    memcpy(temporary, path, path_length);
+    memcpy(temporary + path_length, ".tmp", 5);
+    file = path_open(temporary,
+#if defined(_WIN32)
+                     L"wb"
+#else
+                     "wb"
+#endif
+    );
+    if (file == NULL) {
+        result = result_errno("cannot create temporary Controller Pak file", temporary, errno);
+        free(temporary);
+        return result;
+    }
+    written = fwrite(data, 1, size, file);
+    if (fclose(file) != 0 || written != size) {
+        const int code = errno != 0 ? errno : EIO;
+        path_remove(temporary);
+        result = result_errno("cannot write complete Controller Pak file", temporary, code);
+        free(temporary);
+        return result;
     }
 #if defined(_WIN32)
+    {
+        wchar_t* wide_temporary = path_to_wide(temporary);
+        wchar_t* wide_path = path_to_wide(path);
+        DWORD code = ERROR_SUCCESS;
+        int attempt;
+        int moved = 0;
     /* Unlike MSVCRT rename(), MoveFileEx replaces without first deleting the live
      * save. A failed publish therefore leaves the prior emulator container intact. */
-    if (!MoveFileExA(temporary, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-        remove(temporary);
-        return result_error("cannot replace Controller Pak file", path);
+        if (wide_temporary != NULL && wide_path != NULL) {
+            for (attempt = 0; attempt < 5; ++attempt) {
+                if (MoveFileExW(wide_temporary, wide_path,
+                                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+                    moved = 1;
+                    break;
+                }
+                code = GetLastError();
+                if (code != ERROR_ACCESS_DENIED && code != ERROR_SHARING_VIOLATION) break;
+                Sleep((DWORD)(10 * (attempt + 1)));
+            }
+        } else {
+            code = ERROR_NO_UNICODE_TRANSLATION;
+        }
+        if (!moved) {
+            free(wide_temporary);
+            free(wide_path);
+            path_remove(temporary);
+            free(temporary);
+            return result_win32("cannot replace Controller Pak file", path, code);
+        }
+        free(wide_temporary);
+        free(wide_path);
     }
 #else
     if (rename(temporary, path) != 0) {
-        remove(temporary);
-        return result_error("cannot replace Controller Pak file", path);
+        const int code = errno;
+        path_remove(temporary);
+        free(temporary);
+        return result_errno("cannot replace Controller Pak file", path, code);
     }
 #endif
-    result = result_ok(container);
+    free(temporary);
+    memset(&view, 0, sizeof(view));
+    view.size = size;
+    view.format = format;
+    view.pak_offset = pak_offset;
+    result = result_ok(&view);
     return result;
 }
 
@@ -198,16 +332,55 @@ LamboPakIoResult lambo_pak_probe_file(const char* path) {
     return result;
 }
 
+typedef enum TargetState {
+    TARGET_MISSING,
+    TARGET_BLANK_RAW,
+    TARGET_OTHER
+} TargetState;
+
+static TargetState inspect_unrecognised_target(const char* path) {
+    FILE* file = path_open(path,
+#if defined(_WIN32)
+                           L"rb"
+#else
+                           "rb"
+#endif
+    );
+    long length;
+    size_t index;
+    int byte;
+    if (file == NULL) return errno == ENOENT ? TARGET_MISSING : TARGET_OTHER;
+    if (fseek(file, 0, SEEK_END) != 0 || (length = ftell(file)) < 0 ||
+        fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return TARGET_OTHER;
+    }
+    if (length == 0) {
+        fclose(file);
+        return TARGET_BLANK_RAW;
+    }
+    if ((size_t)length != LAMBO_PAK_SIZE) {
+        fclose(file);
+        return TARGET_OTHER;
+    }
+    for (index = 0; index < LAMBO_PAK_SIZE; ++index) {
+        byte = fgetc(file);
+        if (byte != 0) {
+            fclose(file);
+            return TARGET_OTHER;
+        }
+    }
+    fclose(file);
+    return TARGET_BLANK_RAW;
+}
+
 LamboPakIoResult lambo_pak_write_file(const char* path, const uint8_t image[LAMBO_PAK_SIZE]) {
     PakContainer container;
     LamboPakIoResult loaded = load_container(path, &container);
 
     if (!loaded.ok) {
-        FILE* probe = fopen(path, "rb");
-        if (probe != NULL) {
-            fclose(probe);
-            return loaded; /* Never replace an existing unrecognised file. */
-        }
+        const TargetState state = inspect_unrecognised_target(path);
+        if (state == TARGET_OTHER) return loaded;
         memset(&container, 0, sizeof(container));
         container.size = LAMBO_PAK_SIZE;
         container.format = LAMBO_PAK_FORMAT_RAW;
@@ -216,30 +389,63 @@ LamboPakIoResult lambo_pak_write_file(const char* path, const uint8_t image[LAMB
     }
 
     memcpy(container.data + container.pak_offset, image, LAMBO_PAK_SIZE);
-    loaded = publish_container(path, &container);
+    loaded = publish_bytes(path, container.data, container.size,
+                           container.format, container.pak_offset);
     free(container.data);
     return loaded;
+}
+
+static int paths_refer_to_same_file(const char* first, const char* second) {
+#if defined(_WIN32)
+    wchar_t* wide_first = path_to_wide(first);
+    wchar_t* wide_second = path_to_wide(second);
+    HANDLE first_handle;
+    HANDLE second_handle;
+    BY_HANDLE_FILE_INFORMATION first_info;
+    BY_HANDLE_FILE_INFORMATION second_info;
+    int same = 0;
+    if (wide_first == NULL || wide_second == NULL) {
+        free(wide_first);
+        free(wide_second);
+        return 0;
+    }
+    first_handle = CreateFileW(wide_first, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                               NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    second_handle = CreateFileW(wide_second, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (first_handle != INVALID_HANDLE_VALUE && second_handle != INVALID_HANDLE_VALUE &&
+        GetFileInformationByHandle(first_handle, &first_info) &&
+        GetFileInformationByHandle(second_handle, &second_info)) {
+        same = first_info.dwVolumeSerialNumber == second_info.dwVolumeSerialNumber &&
+               first_info.nFileIndexHigh == second_info.nFileIndexHigh &&
+               first_info.nFileIndexLow == second_info.nFileIndexLow;
+    }
+    if (first_handle != INVALID_HANDLE_VALUE) CloseHandle(first_handle);
+    if (second_handle != INVALID_HANDLE_VALUE) CloseHandle(second_handle);
+    free(wide_first);
+    free(wide_second);
+    return same;
+#else
+    struct stat first_info;
+    struct stat second_info;
+    return stat(first, &first_info) == 0 && stat(second, &second_info) == 0 &&
+           first_info.st_dev == second_info.st_dev && first_info.st_ino == second_info.st_ino;
+#endif
 }
 
 LamboPakIoResult lambo_pak_import_file(const char* source_path, const char* destination_path) {
     uint8_t image[LAMBO_PAK_SIZE];
     LamboPakIoResult source;
     LamboPakIoResult written;
-    if (strcmp(source_path, destination_path) == 0)
+    if (paths_refer_to_same_file(source_path, destination_path))
         return result_error("import source and destination must be different", source_path);
     source = lambo_pak_read_file(source_path, image);
     if (!source.ok) return source;
 
     /* Imports intentionally produce raw MPK. Do not let an existing destination's
      * container format affect the result, and never modify the source file. */
-    {
-        PakContainer container;
-        memset(&container, 0, sizeof(container));
-        container.data = image;
-        container.size = LAMBO_PAK_SIZE;
-        container.format = LAMBO_PAK_FORMAT_RAW;
-        written = publish_container(destination_path, &container);
-    }
+    written = publish_bytes(destination_path, image, LAMBO_PAK_SIZE,
+                            LAMBO_PAK_FORMAT_RAW, 0);
     if (written.ok) {
         written.format = source.format;
         written.container_size = source.container_size;

@@ -39,7 +39,9 @@ file is cartridge EEPROM and does not contain this game's Controller Pak progres
 For a save that remains shared with an emulator, launch with
 `--controller-pak "path/to/save.srm"` (or set `LAMBO_CONTROLLER_PAK_FILE`). Writes update
 only Pak 1 inside an existing Mupen64Plus-Next, four-port, or DexDrive container and preserve
-all unrelated bytes. Do not have both programs open on the shared file at once.
+all unrelated bytes. Joybus write bursts are coalesced and atomically published by a background
+writer instead of blocking the emulation thread. Do not have both programs open on the shared
+file at once.
 
 ## Graphics options
 

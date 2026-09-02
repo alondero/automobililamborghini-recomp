@@ -40,11 +40,6 @@ LamboPakIoResult lambo_pak_import_file(const char* source_path, const char* dest
 
 const char* lambo_pak_format_name(LamboPakFormat format);
 
-void lambo_pak_set_default_path(const char* path);
-
-/* Explicit CLI selection takes precedence over LAMBO_CONTROLLER_PAK_FILE. */
-void lambo_pak_override_path(const char* path);
-
 #ifdef __cplusplus
 }
 #endif

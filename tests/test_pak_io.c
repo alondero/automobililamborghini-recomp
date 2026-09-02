@@ -4,6 +4,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#include <sys/stat.h>
+#endif
+
 enum {
     FOUR_PORT_SIZE = 4 * LAMBO_PAK_SIZE,
     RETROARCH_SIZE = 296960,
@@ -75,6 +82,9 @@ int main(void) {
     static const char* dex_path = "pak_io_test_dexdrive.n64";
     static const char* bad_path = "pak_io_test_eeprom.eep";
     static const char* import_path = "pak_io_test_imported.mpk";
+    static const char* empty_path = "pak_io_test_empty.mpk";
+    static const char* zero_path = "pak_io_test_zero.mpk";
+    static const char* missing_path = "pak_io_missing_dir/save.mpk";
     unsigned char expected[LAMBO_PAK_SIZE];
     unsigned char actual[LAMBO_PAK_SIZE];
     unsigned char* container;
@@ -83,6 +93,7 @@ int main(void) {
 
     remove(raw_path); remove(four_path); remove(srm_path);
     remove(dex_path); remove(bad_path); remove(import_path);
+    remove(empty_path); remove(zero_path);
     fill_pattern(expected);
     make_valid_pak(expected);
 
@@ -154,8 +165,46 @@ int main(void) {
     free(container);
     result = lambo_pak_import_file(import_path, import_path);
     expect(!result.ok, "import refuses to overwrite its own source");
+    result = lambo_pak_import_file(import_path, "./pak_io_test_imported.mpk");
+    expect(!result.ok, "import refuses a lexical alias of its own source");
+
+    expect(write_bytes(empty_path, expected, 0), "empty target fixture writes");
+    result = lambo_pak_write_file(empty_path, expected);
+    expect(result.ok, "an explicitly selected empty target becomes a formatted raw MPK");
+    memset(actual, 0, sizeof(actual));
+    result = lambo_pak_read_file(empty_path, actual);
+    expect(result.ok && memcmp(actual, expected, sizeof(actual)) == 0,
+           "formatted empty target round-trips");
+
+    container = (unsigned char*)calloc(1, LAMBO_PAK_SIZE);
+    expect(write_bytes(zero_path, container, LAMBO_PAK_SIZE), "zero-filled target fixture writes");
+    free(container);
+    result = lambo_pak_write_file(zero_path, expected);
+    expect(result.ok, "an explicitly selected zero-filled raw target becomes formatted");
+
+    result = lambo_pak_write_file(missing_path, expected);
+    expect(!result.ok && (strstr(result.error, "errno=") != NULL ||
+                          strstr(result.error, "Win32 error=") != NULL),
+           "I/O failures include the operating-system error code");
+
+#if defined(_WIN32)
+    {
+        static const wchar_t unicode_dir[] = L"pak_io_t\u00e9st";
+        static const char unicode_path[] = "pak_io_t\xC3\xA9st/save.mpk";
+        CreateDirectoryW(unicode_dir, NULL);
+        result = lambo_pak_write_file(unicode_path, expected);
+        expect(result.ok, "UTF-8 Controller Pak paths work on Windows");
+        memset(actual, 0, sizeof(actual));
+        result = lambo_pak_read_file(unicode_path, actual);
+        expect(result.ok && memcmp(actual, expected, sizeof(actual)) == 0,
+               "UTF-8 Controller Pak path round-trips on Windows");
+        DeleteFileW(L"pak_io_t\u00e9st\\save.mpk");
+        RemoveDirectoryW(unicode_dir);
+    }
+#endif
 
     remove(raw_path); remove(four_path); remove(srm_path);
     remove(dex_path); remove(bad_path); remove(import_path);
+    remove(empty_path); remove(zero_path);
     return failures == 0 ? 0 : 1;
 }

@@ -22,6 +22,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "librecomp/game.hpp"
 #include "librecomp/rsp.hpp"
@@ -36,6 +37,9 @@
 #include <SDL.h>          // RT64 default presenter (#58): real window + event pump under WSLg
 #if defined(_WIN32)
 #include <SDL_syswm.h>    // native Windows (#68): unwrap the HWND for ultramodern/RT64-D3D12
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <shellapi.h>
 #endif
 #include "lambo_rt64.h"
 #include "lambo_audio.h"
@@ -44,6 +48,7 @@
 #include "lambo_gpu_advisory.h"  // issue #109: outdated-driver popup handoff
 #include "lambo_log.h"   
 #include "lambo_pak_io.h"
+#include "lambo_pak_storage.h"
 #include "lambo_menu.h"
 #include "lambo_input_gate.h"
 #include "lambo_analog_throttle.h"
@@ -119,6 +124,7 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
     LAMBO_LOG("probe", "boot summary; threads=%d vis=%d first_vi=%d max_state=%d swaps=%d\n",
                  g_threads.load(), g_vis.load(), (int)g_first_vi.load(), g_max_state.load(),
                  g_swaps.load());
+    (void)lambo_pak_storage_flush();
     std::fflush(nullptr);
     std::_Exit(g_first_vi.load() ? 0 : 2);
 }
@@ -131,6 +137,7 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
     // down RmlUi while a draw hook can still be using it. This path deliberately
     // terminates the process below, so there is no cleanup benefit that can
     // justify touching either subsystem first.
+    (void)lambo_pak_storage_flush();
     std::fflush(nullptr);
     std::_Exit(0);
 }
@@ -689,10 +696,18 @@ static ultramodern::input::connected_device_info_t input_device_info(int control
 }
 
 static bool is_controller_pak_container(const char* path) {
-    const LamboPakIoResult result = lambo_pak_probe_file(path);
-    std::string extension = std::filesystem::path(path).extension().string();
+    const char* extension_start = std::strrchr(path, '.');
+    const char* forward_slash = std::strrchr(path, '/');
+    const char* back_slash = std::strrchr(path, '\\');
+    const char* slash = forward_slash == nullptr ? back_slash :
+        (back_slash == nullptr || forward_slash > back_slash ? forward_slash : back_slash);
+    if (extension_start == nullptr || (slash != nullptr && extension_start < slash)) return false;
+    std::string extension = extension_start;
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    if (extension != ".mpk" && extension != ".pak" &&
+        extension != ".srm" && extension != ".n64") return false;
+    const LamboPakIoResult result = lambo_pak_probe_file(path);
     if (!result.ok) return false;
     switch (result.format) {
     case LAMBO_PAK_FORMAT_RAW:
@@ -707,14 +722,27 @@ static bool is_controller_pak_container(const char* path) {
     }
 }
 
+static std::string path_to_utf8(const std::filesystem::path& path) {
+    const std::u8string value = path.u8string();
+    return {reinterpret_cast<const char*>(value.data()), value.size()};
+}
+
+static std::filesystem::path path_from_utf8(const char* path) {
+    const auto* begin = reinterpret_cast<const char8_t*>(path);
+    return std::filesystem::path(std::u8string(begin, begin + std::strlen(path)));
+}
+
 static std::filesystem::path unused_backup_path(const std::filesystem::path& path) {
-    std::filesystem::path candidate = path.string() + ".bak";
-    for (unsigned index = 1; std::filesystem::exists(candidate); ++index)
-        candidate = path.string() + ".bak." + std::to_string(index);
+    std::filesystem::path candidate = path;
+    candidate += ".bak";
+    for (unsigned index = 1; std::filesystem::exists(candidate); ++index) {
+        candidate = path;
+        candidate += ".bak." + std::to_string(index);
+    }
     return candidate;
 }
 
-int main(int argc, char** argv) {
+static int application_main(int argc, char** argv) {
     // Deterministic lighting self-test: no ROM, no runtime -- exercises the swrender
     // light-decode + lambert path on a synthetic DL and exits (tests/pivot/test_lighting.py).
     if (std::getenv("LAMBO_LIGHTING_SELFTEST")) {
@@ -781,12 +809,23 @@ int main(int argc, char** argv) {
     recomp::register_config_path(config_dir);
 
     const std::filesystem::path pak_path = config_dir / "lambo_controller_pak.mpk";
-    const std::string pak_path_string = pak_path.string();
-    const std::string active_pak_path = controller_pak_path != nullptr
-        ? std::filesystem::path(controller_pak_path).string()
-        : pak_path_string;
-    if (controller_pak_path != nullptr) lambo_pak_override_path(active_pak_path.c_str());
-    else lambo_pak_set_default_path(active_pak_path.c_str());
+    const std::string pak_path_string = path_to_utf8(pak_path);
+    std::filesystem::path active_pak_path = pak_path;
+    if (controller_pak_path != nullptr) {
+        active_pak_path = path_from_utf8(controller_pak_path);
+    } else {
+#if defined(_WIN32)
+        if (const wchar_t* environment_path = _wgetenv(L"LAMBO_CONTROLLER_PAK_FILE");
+            environment_path != nullptr && environment_path[0] != L'\0')
+            active_pak_path = environment_path;
+#else
+        if (const char* environment_path = std::getenv("LAMBO_CONTROLLER_PAK_FILE");
+            environment_path != nullptr && environment_path[0] != '\0')
+            active_pak_path = path_from_utf8(environment_path);
+#endif
+    }
+    const std::string active_pak_path_string = path_to_utf8(active_pak_path);
+    lambo_pak_storage_configure(active_pak_path_string.c_str());
 
     if (import_path != nullptr && controller_pak_path != nullptr) {
         std::fprintf(stderr, "--import-save and --controller-pak cannot be used together\n");
@@ -798,7 +837,8 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "[pak] import failed: %s\n", source.error);
             return 2;
         }
-        const bool source_is_destination = std::filesystem::equivalent(import_path, pak_path, error);
+        const bool source_is_destination =
+            std::filesystem::equivalent(path_from_utf8(import_path), pak_path, error);
         if (source_is_destination && !error) {
             std::fprintf(stderr, "[pak] selected save is already the active Controller Pak: %s\n",
                          pak_path_string.c_str());
@@ -808,11 +848,13 @@ int main(int argc, char** argv) {
                 const auto backup = unused_backup_path(pak_path);
                 std::filesystem::copy_file(pak_path, backup, error);
                 if (error) {
+                    const std::string backup_string = path_to_utf8(backup);
                     std::fprintf(stderr, "[pak] cannot back up existing save to %s: %s\n",
-                                 backup.string().c_str(), error.message().c_str());
+                                 backup_string.c_str(), error.message().c_str());
                     return 2;
                 }
-                std::fprintf(stderr, "[pak] backed up existing save to %s\n", backup.string().c_str());
+                const std::string backup_string = path_to_utf8(backup);
+                std::fprintf(stderr, "[pak] backed up existing save to %s\n", backup_string.c_str());
             }
             const LamboPakIoResult imported = lambo_pak_import_file(import_path, pak_path_string.c_str());
             if (!imported.ok) {
@@ -826,11 +868,10 @@ int main(int argc, char** argv) {
         // One-time migration for builds before #176, which accidentally stored the
         // default Controller Pak beside the executable/current working directory.
         const std::filesystem::path legacy = "lambo_controller_pak.mpk";
-        std::error_code same_error;
-        const bool same_path = std::filesystem::equivalent(legacy, pak_path, same_error);
-        if (std::filesystem::exists(legacy) && (!same_path || same_error)) {
+        if (std::filesystem::exists(legacy)) {
+            const std::string legacy_string = path_to_utf8(legacy);
             const LamboPakIoResult migrated =
-                lambo_pak_import_file(legacy.string().c_str(), pak_path_string.c_str());
+                lambo_pak_import_file(legacy_string.c_str(), pak_path_string.c_str());
             if (migrated.ok)
                 std::fprintf(stderr, "[pak] migrated legacy %s save to %s\n",
                              lambo_pak_format_name(migrated.format), pak_path_string.c_str());
@@ -983,3 +1024,35 @@ int main(int argc, char** argv) {
     // path exits from vi_cb via boot_summary_and_exit() and never returns here.
     boot_summary_and_exit();
 }
+
+#if defined(_WIN32)
+int main(int, char**) {
+    int argument_count = 0;
+    wchar_t** wide_arguments = CommandLineToArgvW(GetCommandLineW(), &argument_count);
+    if (wide_arguments == nullptr) return 2;
+    std::vector<std::string> arguments;
+    std::vector<char*> argument_pointers;
+    arguments.reserve(static_cast<size_t>(argument_count));
+    argument_pointers.reserve(static_cast<size_t>(argument_count));
+    for (int index = 0; index < argument_count; ++index) {
+        const int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_arguments[index],
+                                             -1, nullptr, 0, nullptr, nullptr);
+        if (size == 0) {
+            LocalFree(wide_arguments);
+            return 2;
+        }
+        std::string converted(static_cast<size_t>(size), '\0');
+        WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_arguments[index], -1,
+                            converted.data(), size, nullptr, nullptr);
+        converted.pop_back();
+        arguments.push_back(std::move(converted));
+    }
+    LocalFree(wide_arguments);
+    for (std::string& argument : arguments) argument_pointers.push_back(argument.data());
+    return application_main(argument_count, argument_pointers.data());
+}
+#else
+int main(int argc, char** argv) {
+    return application_main(argc, argv);
+}
+#endif

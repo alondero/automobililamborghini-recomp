@@ -16,6 +16,7 @@
 
 #include "recomp.h"
 #include "lambo_pak_io.h"
+#include "lambo_pak_storage.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -149,37 +150,6 @@ static void lambo_pak_format(void) {
     }
 }
 
-// Both the path and the enable flag are read from the environment ONCE and cached: env vars can't
-// change after startup, and lambo_joybus_answer is on the per-frame input-poll hot path, so a
-// getenv() per call is wasted work. Caching the path into our own buffer also avoids holding a
-// pointer into getenv's storage.
-static char g_lambo_pak_default_path[1024] = "lambo_controller_pak.mpk";
-static char g_lambo_pak_override_path[1024];
-
-void lambo_pak_set_default_path(const char* path) {
-    if (path != NULL && path[0] != '\0')
-        snprintf(g_lambo_pak_default_path, sizeof(g_lambo_pak_default_path), "%s", path);
-}
-
-void lambo_pak_override_path(const char* path) {
-    if (path != NULL && path[0] != '\0')
-        snprintf(g_lambo_pak_override_path, sizeof(g_lambo_pak_override_path), "%s", path);
-}
-
-static const char* lambo_pak_path(void) {
-    static char cached[1024];
-    static int init = 0;
-    if (!init) {
-        const char* p = g_lambo_pak_override_path[0] != '\0'
-            ? g_lambo_pak_override_path
-            : getenv("LAMBO_CONTROLLER_PAK_FILE");
-        if (!p || !*p) p = g_lambo_pak_default_path;
-        snprintf(cached, sizeof(cached), "%s", p);
-        init = 1;
-    }
-    return cached;
-}
-
 // Controller-pak feature is ON by default (this is the #69 deliverable). LAMBO_CONTROLLER_PAK=0
 // is a deliberate A/B opt-out (the old W121 "no pak" behaviour) for boot-stability debugging.
 static int lambo_pak_enabled(void) {
@@ -200,34 +170,21 @@ static void lambo_pak_ensure_loaded(void) {
     LamboPakIoResult result;
     if (loaded) return;
     loaded = 1;
-    result = lambo_pak_read_file(lambo_pak_path(), g_lambo_pak_image);
+    result = lambo_pak_storage_load(g_lambo_pak_image);
     if (result.ok) {
         fprintf(stderr, "[pak] loaded %s from %s\n",
-                lambo_pak_format_name(result.format), lambo_pak_path());
+                lambo_pak_format_name(result.format), lambo_pak_storage_path());
         return;
     }
-    /* A missing file is the normal first-run case. Malformed/external formats are
-     * reported before falling back, so a failed import is not silent. */
-    {
-        FILE* existing = fopen(lambo_pak_path(), "rb");
-        if (existing != NULL) {
-            fclose(existing);
-            fprintf(stderr, "[pak] %s; using a fresh in-memory Pak without overwriting it\n", result.error);
-        }
-    }
+    fprintf(stderr, "[pak] %s; using a fresh formatted Pak in memory\n", result.error);
     lambo_pak_format();                                         /* fresh formatted pak (memory only) */
 }
 
-// Persist the whole 32 KB image after a block write. ATOMIC: write a temp file, then rename it
-// over the target -- a crash/kill/power-loss mid-write must never truncate the live .mpk (a short
-// read on next boot would silently reformat and lose ALL saved games). The storage module uses
-// rename() on POSIX and MoveFileEx(REPLACE_EXISTING) on Windows, leaving the old file in place if
-// publication fails. We flush per block (each write persisted immediately) rather than batching --
-// this trades a small hitch at save time for crash-safety, which for a save file is the right call
-// (saves are rare: records/best-times, a handful of blocks).
+// Copy the current image into the host storage module. Its worker coalesces a burst of 32-byte
+// Joybus writes and atomically publishes the final image after the burst, keeping filesystem I/O
+// off this emulation thread. Explicit application-exit paths flush any pending image.
 static void lambo_pak_save(void) {
-    LamboPakIoResult result = lambo_pak_write_file(lambo_pak_path(), g_lambo_pak_image);
-    if (!result.ok) fprintf(stderr, "[pak] save failed: %s\n", result.error);
+    lambo_pak_storage_schedule_save(g_lambo_pak_image);
 }
 
 // LAMBO_PAK_TRACE=1: per-frame joybus log (issue #35 diagnosis) -- shows exactly what the save
