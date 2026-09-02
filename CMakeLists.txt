@@ -84,11 +84,38 @@ if(BUILD_TESTING)
     add_executable(lambo_controller_pak_tests
         tests/test_controller_pak.c
         src/libultra_stubs.c
+        src/lambo_pak_io.c
+        src/lambo_pak_storage.cpp
     )
     target_include_directories(lambo_controller_pak_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${N64MR}/N64Recomp/include
     )
+    target_link_libraries(lambo_controller_pak_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_controller_pak_identity COMMAND lambo_controller_pak_tests)
+
+    add_executable(lambo_controller_pak_io_tests
+        tests/test_pak_io.c
+        src/lambo_pak_io.c
+    )
+    target_include_directories(lambo_controller_pak_io_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    add_test(NAME lambo_controller_pak_emulator_formats COMMAND lambo_controller_pak_io_tests)
+
+    add_executable(lambo_controller_pak_storage_tests
+        tests/test_pak_storage.cpp
+        src/lambo_pak_storage.cpp
+        src/lambo_pak_io.c
+    )
+    target_include_directories(lambo_controller_pak_storage_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_compile_definitions(lambo_controller_pak_storage_tests PRIVATE
+        LAMBO_PAK_STORAGE_TESTING=1
+    )
+    target_link_libraries(lambo_controller_pak_storage_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_controller_pak_batched_storage COMMAND lambo_controller_pak_storage_tests)
 
     add_executable(lambo_startup_tests
         tests/test_startup.cpp
@@ -420,6 +447,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
                                # function-lookup trace ring. No deps beyond libc + DbgHelp (Win) /
                                # libc backtrace(3) (POSIX).
         src/libultra_stubs.c   # no-op symbols for ignored libultra CP0 helpers (e.g. __osSetSR)
+        src/lambo_pak_io.c
+        src/lambo_pak_storage.cpp
         src/lambo_hud_widescreen.c  # issue #2: gEXSetRectAlign brackets around the race-HUD dials
         src/lambo_flare_widescreen.c  # issue #40: gEXSetRectAspect(STRETCH) bracket around the sun lens-flare ghosts
         src/lambo_fog_widescreen.cpp  # issue #83: widen dense 3P/4P fog to the 1P window/colour (DL rewrite, players>=3)
@@ -578,7 +607,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         # dbghelp.dll. MinGW64 ships the import lib (libdbghelp.a) so an explicit
         # target_link_libraries entry is enough; we don't ship the DLL — the
         # system one is fine.
-        target_link_libraries(lamborghini_modern PRIVATE dbghelp)
+        target_link_libraries(lamborghini_modern PRIVATE dbghelp shell32)
         # Self-contained exe dir: RT64 dlopen()s dxcompiler/dxil at runtime and SDL2 is
         # a dynamic dep; MinGW's own runtime is linked statically so the exe runs
         # outside an MSYS/MinGW shell.

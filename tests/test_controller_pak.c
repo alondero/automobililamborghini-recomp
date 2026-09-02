@@ -1,7 +1,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
+#include "lambo_pak_storage.h"
 #include "recomp.h"
 
 void func_8007F780(uint8_t* rdram, recomp_context* ctx);
@@ -44,6 +46,7 @@ void func_8007AF60(uint8_t* rdram, recomp_context* ctx) {
 }
 
 int main(void) {
+    static const char* pak_path = "controller_pak_joybus_test.mpk";
     uint8_t* rdram = calloc(1, 0x800000);
     recomp_context ctx = { 0 };
     gpr pak_status = (gpr)(int32_t)0x8011C6D0u;
@@ -56,6 +59,9 @@ int main(void) {
         return 1;
     }
 
+    remove(pak_path);
+    lambo_pak_storage_configure(pak_path);
+
     ctx.r5 = pak_status;
     MEM_B(0, pak_status) = (signed char)0xFE;
     MEM_W(0, rumble_present) = 1;
@@ -64,6 +70,36 @@ int main(void) {
 
     if (MEM_W(0, rumble_present) != 0) {
         fprintf(stderr, "Controller Pak poll left the Rumble Pak present flag set\n");
+        free(rdram);
+        return 1;
+    }
+
+    for (unsigned block = 0; block < 20; ++block) {
+        const unsigned address = 0x500u + block * 0x20u;
+        memset(rdram + 0x11C6D0u, 0, 0x40);
+        MEM_B(0, pak_status) = (signed char)0xFF;
+        MEM_B(1, pak_status) = 0x23;
+        MEM_B(2, pak_status) = 0x01;
+        MEM_B(3, pak_status) = 0x03;
+        MEM_B(4, pak_status) = (signed char)(address >> 8);
+        MEM_B(5, pak_status) = (signed char)address;
+        for (unsigned byte = 0; byte < 32; ++byte)
+            MEM_B(6 + byte, pak_status) = (signed char)(block + byte);
+        MEM_B(39, pak_status) = (signed char)0xFE;
+        ctx.r5 = pak_status;
+        func_8007F780(rdram, &ctx);
+    }
+    {
+        FILE* synchronous_write = fopen(pak_path, "rb");
+        if (synchronous_write != NULL) {
+            fprintf(stderr, "Joybus block write synchronously published the Pak\n");
+            fclose(synchronous_write);
+            free(rdram);
+            return 1;
+        }
+    }
+    if (!lambo_pak_storage_flush().ok) {
+        fprintf(stderr, "batched Joybus Pak writes did not flush\n");
         free(rdram);
         return 1;
     }
@@ -109,6 +145,8 @@ int main(void) {
         return 1;
     }
 
+    lambo_pak_storage_shutdown();
+    remove(pak_path);
     free(rdram);
     return 0;
 }

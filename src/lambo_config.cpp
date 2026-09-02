@@ -379,7 +379,7 @@ std::filesystem::path app_config_dir() {
         return std::filesystem::current_path();
     }
 #if defined(_WIN32)
-    if (const char* localappdata = std::getenv("LOCALAPPDATA")) {
+    if (const wchar_t* localappdata = _wgetenv(L"LOCALAPPDATA")) {
         return std::filesystem::path{localappdata} / kAppFolderName;
     }
 #else
