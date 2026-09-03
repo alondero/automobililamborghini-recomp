@@ -773,13 +773,15 @@ static int application_main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         if (argv[i] && std::strcmp(argv[i], "--import-save") == 0) {
             if (i + 1 >= argc || argv[i + 1] == nullptr || argv[i + 1][0] == '\0') {
-                LAMBO_LOG_ERROR("cli", "--import-save requires an MPK, SRM, or DexDrive N64 file\n");
+                std::fprintf(stderr,
+                             "[error] [cli] --import-save requires an MPK, SRM, or DexDrive N64 file\n");
                 return 2;
             }
             import_path = argv[++i];
         } else if (argv[i] && std::strcmp(argv[i], "--controller-pak") == 0) {
             if (i + 1 >= argc || argv[i + 1] == nullptr || argv[i + 1][0] == '\0') {
-                LAMBO_LOG_ERROR("cli", "--controller-pak requires an MPK, SRM, or DexDrive N64 file\n");
+                std::fprintf(stderr,
+                             "[error] [cli] --controller-pak requires an MPK, SRM, or DexDrive N64 file\n");
                 return 2;
             }
             controller_pak_path = argv[++i];
@@ -787,17 +789,15 @@ static int application_main(int argc, char** argv) {
             // lambo_log_parse_args already validated and consumed this value;
             // keep the ROM selector from mistaking it for a ROM path.
             ++i;
-        } else if (argv[i] && (std::strncmp(argv[i], "--log-level=", 12) == 0 ||
-                              std::strcmp(argv[i], "--verbose") == 0 ||
-                              std::strcmp(argv[i], "--lambo-debug") == 0 ||
-                              std::strcmp(argv[i], "--console") == 0)) {
-            // Logging-only switches are handled by the logging pass above.
         } else if (argv[i] && argv[i][0] != '-' && argv[i][0] != '\0' &&
                    is_controller_pak_container(argv[i])) {
             import_path = argv[i];
         } else if (!rom_was_selected && argv[i] && argv[i][0] != '-' && argv[i][0] != '\0') {
             rom_path = argv[i];
             rom_was_selected = true;
+        } else if (argv[i] && argv[i][0] == '-') {
+            // Logging and future switches are parsed by their owning subsystem;
+            // they must never be mistaken for a ROM or save path here.
         }
     }
     LAMBO_LOG("probe", "ROM: %s\n", rom_path);

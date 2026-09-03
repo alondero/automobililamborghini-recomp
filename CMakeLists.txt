@@ -56,6 +56,7 @@ if(BUILD_TESTING)
         ${N64MR}/N64Recomp/include
         ${N64MR}/thirdparty
     )
+    target_link_libraries(lambo_config_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_config_live_updates COMMAND lambo_config_tests)
 
     add_executable(lambo_log_tests

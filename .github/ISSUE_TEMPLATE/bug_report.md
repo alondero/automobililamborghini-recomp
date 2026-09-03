@@ -82,7 +82,7 @@ A clear and concise description of what you expected to happen.
 **Session log.** On Windows, reproduce once with:
 
 ```
-LamborghiniRecomp.exe --console --verbose
+lamborghini_modern.exe --console --verbose
 ```
 
 Then attach the newest `logs/lamborghini-*.log` from

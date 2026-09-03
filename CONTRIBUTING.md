@@ -7,8 +7,9 @@ recompilation — please read this before opening an issue or PR.
 
 Use the **Bug report** issue template. The fields are not bureaucracy — each one
 maps to a layer the maintainer has to peel back to fix anything (ROM, build,
-config, runtime). A save state (F7) + `LAMBO_WARP` recipe + last 30 lines of
-stderr cut triage from hours to minutes. See the template for the full list.
+config, runtime). A save state (F7) + `LAMBO_WARP` recipe + the newest session
+log and crash report cut triage from hours to minutes. See the template for
+the full list.
 
 ## Proposing a change
 
