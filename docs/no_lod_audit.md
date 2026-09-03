@@ -434,3 +434,24 @@ extraction script preserved in the session scratchpad. ROM scans were byte-patte
 searches over the .z64. Per-mode facts cite the #83/#84 measurement sessions
 (2026-07-09/10); nothing in this report rests on unverified session notes except where
 marked "probe needed".*
+
+## 13. Addendum (2026-09-03): circuit 6 synthesized-wall occlusion
+
+The full-track PVS synthesis on circuit 6 (index 5) exposed a canyon wall across
+the upper road at camera segment 2. The authored row is
+`[3,4,5,-1,1,0,-1,11,-1,-1]`; segment 55 is therefore not visible from that
+camera in the ROM path, but the synthesized extras previously appended it.
+
+A settled savestate frame-DL bisection first separated road (`record+0x4`), wall
+(`+0x8`), and far-scenery (`+0xC`) targets, then identified one occluded segment:
+circuit index 5, camera segment 2, segment 55. Replacing only that root `G_DL`
+with `G_SPNOOP` removed the obstruction; the final row gate produces the
+identical framebuffer hash while omitting segment 55 from synthesized extras.
+The wall DL `0x802E7BE0` is diagnostic evidence from that bisection, not a
+runtime identity check.
+
+`src/lambo_no_lod_policy.cpp` keeps that segment out of camera segment 2's
+synthesized extras only. Other camera rows are unchanged, and if an authored row
+explicitly names segment 55, the stock-prefix pass still emits it normally. The
+row builder checks only the existing road-pointer renderability field
+(`record+0x4`); wall and far-scenery pointers are not read by this exception.

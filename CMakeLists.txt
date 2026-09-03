@@ -77,6 +77,15 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_camera_projection_policy COMMAND lambo_camera_projection_tests)
 
+    add_executable(lambo_no_lod_policy_tests
+        tests/test_no_lod_policy.cpp
+        src/lambo_no_lod_policy.cpp
+    )
+    target_include_directories(lambo_no_lod_policy_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    add_test(NAME lambo_no_lod_policy COMMAND lambo_no_lod_policy_tests)
+
     add_executable(lambo_rt64_angular_velocity_tests
         tests/test_rt64_angular_velocity.cpp
         lib/rt64/src/hle/rt64_rigid_body.cpp
@@ -502,6 +511,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_fog_widescreen.cpp  # issue #83: widen dense 3P/4P fog to the 1P window/colour (DL rewrite, players>=3)
         src/lambo_sky_widescreen.cpp  # issue #84: draw the 1P/2P sky panorama in 3P/4P (patches.hook branch guard)
         src/lambo_no_lod.cpp   # issues #87/#91: emit the per-segment scenery layer in 2P-4P like 1P (patches.hook branch guards)
+        src/lambo_no_lod_policy.cpp # measured exceptions for synthesized PVS extras
         src/lambo_camera.cpp   # sense of speed: chase-camera distance/height + FOV delta float-bit shims for the hooks
         src/lambo_gpu_advisory.cpp  # issue #109: outdated-Intel-driver detection + user-facing fix advisory
         src/lambo_warp.c       # issue #12: developer warp menu (F1-F6 / LAMBO_WARP race-track warp)
