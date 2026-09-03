@@ -119,12 +119,13 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
 // thread actually runs its per-frame dispatch loop, those threads are live in native
 // osRecvMesg and race the munmap into a SIGSEGV. This is a headless boot/probe harness that is
 // quitting anyway, so skip the unwind and let process exit tear the game threads down.
-// (Graceful game-thread shutdown is RT64-integration work, #58.)
+    // (Graceful game-thread shutdown is RT64-integration work, #58.)
 [[noreturn]] static void boot_summary_and_exit() {
     LAMBO_LOG("probe", "boot summary; threads=%d vis=%d first_vi=%d max_state=%d swaps=%d\n",
                  g_threads.load(), g_vis.load(), (int)g_first_vi.load(), g_max_state.load(),
                  g_swaps.load());
     (void)lambo_pak_storage_flush();
+    lambo_log_shutdown();
     std::fflush(nullptr);
     std::_Exit(g_first_vi.load() ? 0 : 2);
 }
@@ -138,6 +139,7 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
     // terminates the process below, so there is no cleanup benefit that can
     // justify touching either subsystem first.
     (void)lambo_pak_storage_flush();
+    lambo_log_shutdown();
     std::fflush(nullptr);
     std::_Exit(0);
 }
