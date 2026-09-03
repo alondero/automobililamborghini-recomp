@@ -447,7 +447,7 @@ void toggle_fullscreen() {
     if (g_window == nullptr) return;
     const bool fullscreen = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == 0;
     if (SDL_SetWindowFullscreen(g_window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0) != 0) {
-        LAMBO_LOG("config", "fullscreen toggle FAILED: %s\n", SDL_GetError());
+        LAMBO_LOG_WARN("config", "fullscreen toggle FAILED: %s\n", SDL_GetError());
         return;
     }
     set_window_menu(fullscreen ? nullptr : g_menu_bar);
@@ -456,7 +456,7 @@ void toggle_fullscreen() {
                                : ultramodern::renderer::WindowMode::Windowed;
     // Window mode is owned by SDL and deliberately not sent through RT64.
     lambo::config::update_saved_window_mode(cfg.wm_option);
-    LAMBO_LOG("config", "fullscreen %s (menu / F11 / Alt+Enter)\n", fullscreen ? "ON" : "OFF");
+    LAMBO_LOG_INFO("config", "fullscreen %s (menu / F11 / Alt+Enter)\n", fullscreen ? "ON" : "OFF");
     refresh();
 }
 
@@ -475,13 +475,13 @@ void toggle_fullscreen() {
     if (g_window == nullptr) return;
     const bool fullscreen = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == 0;
     if (SDL_SetWindowFullscreen(g_window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0) != 0) {
-        LAMBO_LOG("config", "fullscreen toggle FAILED: %s\n", SDL_GetError());
+        LAMBO_LOG_WARN("config", "fullscreen toggle FAILED: %s\n", SDL_GetError());
         return;
     }
     lambo::config::update_saved_window_mode(
         fullscreen ? ultramodern::renderer::WindowMode::Fullscreen
                    : ultramodern::renderer::WindowMode::Windowed);
-    LAMBO_LOG("config", "fullscreen %s (F11 / Alt+Enter)\n", fullscreen ? "ON" : "OFF");
+    LAMBO_LOG_INFO("config", "fullscreen %s (F11 / Alt+Enter)\n", fullscreen ? "ON" : "OFF");
 }
 } // namespace lambo::menu
 

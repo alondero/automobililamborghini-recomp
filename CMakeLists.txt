@@ -56,7 +56,18 @@ if(BUILD_TESTING)
         ${N64MR}/N64Recomp/include
         ${N64MR}/thirdparty
     )
+    target_link_libraries(lambo_config_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_config_live_updates COMMAND lambo_config_tests)
+
+    add_executable(lambo_log_tests
+        tests/test_lambo_log.cpp
+        src/lambo_log.cpp
+    )
+    target_include_directories(lambo_log_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(lambo_log_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_logging_policy COMMAND lambo_log_tests)
 
     add_executable(lambo_camera_projection_tests
         tests/test_camera_projection.cpp
@@ -334,6 +345,20 @@ else()
     set(NFD_PORTAL ON CACHE BOOL "" FORCE)
 endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64 ${CMAKE_BINARY_DIR}/rt64)
+# SDL2main owns the Windows entry point, but this project provides its own
+# WinMain wrapper so it can build as a GUI executable while still accepting
+# normal command-line arguments. RT64's bundled CMake adds SDL2main to its
+# direct link list; remove only that transitive entry-point library while
+# retaining SDL2 for the renderer and input backends.
+if(WIN32 AND TARGET rt64)
+    get_target_property(RT64_LINK_LIBRARIES rt64 LINK_LIBRARIES)
+    list(REMOVE_ITEM RT64_LINK_LIBRARIES SDL2main)
+    set_target_properties(rt64 PROPERTIES LINK_LIBRARIES "${RT64_LINK_LIBRARIES}")
+    get_target_property(RT64_INTERFACE_LINK_LIBRARIES rt64 INTERFACE_LINK_LIBRARIES)
+    list(REMOVE_ITEM RT64_INTERFACE_LINK_LIBRARIES SDL2main)
+    set_target_properties(rt64 PROPERTIES
+        INTERFACE_LINK_LIBRARIES "${RT64_INTERFACE_LINK_LIBRARIES}")
+endif()
 # Generated shader headers land in the rt64 binary dir (Zelda64Recomp does the same).
 target_include_directories(rt64 PRIVATE ${CMAKE_BINARY_DIR}/rt64/src)
 if(WIN32)
@@ -481,13 +506,20 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_gpu_advisory.cpp  # issue #109: outdated-Intel-driver detection + user-facing fix advisory
         src/lambo_warp.c       # issue #12: developer warp menu (F1-F6 / LAMBO_WARP race-track warp)
         src/lambo_savestate.c  # issue #22: developer save-state (F7/F8 / LAMBO_STATE_LOAD RDRAM snapshot)
-        src/lambo_log.cpp      # first-party debug-logging gate (--lambo-debug CLI flag)
+        src/lambo_log.cpp      # file-first levelled logging + --console/--verbose CLI policy
     )
     if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/aspMain.cpp)
         list(APPEND LAMBO_SOURCES src/aspMain.cpp)
     endif()
 
-    add_executable(lamborghini_modern ${LAMBO_SOURCES})
+    # The shipped Windows application is a GUI-subsystem executable.  Its
+    # WinMain wrapper still accepts normal command-line arguments; lambo_log
+    # allocates a console only when --console is requested.
+    if(WIN32)
+        add_executable(lamborghini_modern WIN32 ${LAMBO_SOURCES})
+    else()
+        add_executable(lamborghini_modern ${LAMBO_SOURCES})
+    endif()
     target_compile_definitions(lamborghini_modern PRIVATE
         HLSL_CPU
         LAMBO_VERSION="${PROJECT_VERSION}"
@@ -495,6 +527,9 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         LAMBO_VERSION_MINOR=${PROJECT_VERSION_MINOR}
         LAMBO_VERSION_PATCH=${PROJECT_VERSION_PATCH}
     )
+    if(WIN32)
+        target_compile_definitions(lamborghini_modern PRIVATE SDL_MAIN_HANDLED)
+    endif()
     if(NOT WIN32 AND NOT APPLE)
         target_compile_definitions(lamborghini_modern PRIVATE
             PLUME_SDL_VULKAN_ENABLED
@@ -593,8 +628,14 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         rt64
         RmlUi::Core
         RmlUi::Debugger
-        ${SDL2_LIBRARIES}
     )
+    if(WIN32)
+        # We own WinMain for the GUI-subsystem executable; SDL2main supplies
+        # its own entrypoint and would conflict with it.
+        target_link_libraries(lamborghini_modern PRIVATE SDL2)
+    else()
+        target_link_libraries(lamborghini_modern PRIVATE ${SDL2_LIBRARIES})
+    endif()
 
     add_custom_command(TARGET lamborghini_modern POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory

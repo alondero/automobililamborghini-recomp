@@ -1563,10 +1563,10 @@ create_render_context(uint8_t* rdram, ultramodern::renderer::WindowHandle window
     if (lambo_rt64::enabled()) {
         auto rt64_ctx = lambo_rt64::create_render_context(rdram, window_handle, developer_mode);
         if (rt64_ctx) {
-            LAMBO_LOG("rt64", "RT64 renderer ACTIVE (default presenter)\n");
+            LAMBO_LOG_INFO("rt64", "RT64 renderer ACTIVE (default presenter)\n");
             return rt64_ctx;
         }
-        LAMBO_LOG("rt64", "RT64 setup failed -- falling back to headless swrender\n");
+        LAMBO_LOG_WARN("rt64", "RT64 setup failed -- falling back to headless swrender\n");
     }
     (void)window_handle;
     (void)developer_mode;

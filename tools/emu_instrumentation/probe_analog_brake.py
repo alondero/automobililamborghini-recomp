@@ -56,7 +56,7 @@ def run_sample(executable: Path, value: float | None) -> tuple[float, float]:
     else:
         environment["LAMBO_ANALOG_BRAKE"] = f"{value:.6f}"
     completed = subprocess.run(
-        [str(executable), "--lambo-debug"],
+        [str(executable), "--console", "--lambo-debug"],
         cwd=REPO,
         env=environment,
         text=True,
@@ -107,7 +107,7 @@ def run_menu_smoke(executable: Path) -> tuple[tuple[int, int], tuple[int, int]]:
     environment.pop("LAMBO_WARP", None)
     environment.pop("LAMBO_MODERN_INPUT", None)
     completed = subprocess.run(
-        [str(executable), "--lambo-debug"], cwd=REPO, env=environment,
+        [str(executable), "--console", "--lambo-debug"], cwd=REPO, env=environment,
         text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, timeout=90, check=False,
     )

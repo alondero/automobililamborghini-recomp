@@ -302,7 +302,7 @@ void UiState::load_page(lambo::ui::Page page, bool push_history) {
     const std::filesystem::path path = asset_root() / descriptor.document;
     document = context->LoadDocument(path.string());
     if (document == nullptr) {
-        LAMBO_LOG("ui", "failed to load %s\n", path.string().c_str());
+        LAMBO_LOG_WARN("ui", "failed to load %s\n", path.string().c_str());
         g_visible.store(false, std::memory_order_release);
         g_capture.store(false, std::memory_order_release);
         current_page.reset();
@@ -321,7 +321,7 @@ void UiState::load_page(lambo::ui::Page page, bool push_history) {
     set_input_mode(input_mode);
     g_visible.store(true, std::memory_order_release);
     g_capture.store(true, std::memory_order_release);
-    LAMBO_LOG("ui", "opened %s page\n", descriptor.title);
+    LAMBO_LOG_INFO("ui", "opened %s page\n", descriptor.title);
 }
 
 void UiState::show_page(lambo::ui::Page page) {
@@ -365,7 +365,7 @@ void process_action(const std::string& action, const std::string& parameter) {
         auto* controller = g_startup_controller.load(std::memory_order_acquire);
         if (controller != nullptr && controller->request_play()) {
             if (g_state != nullptr) g_state->hide_pages();
-            LAMBO_LOG("ui", "Play accepted; launcher hidden\n");
+            LAMBO_LOG_INFO("ui", "Play accepted; launcher hidden\n");
         }
     } else if (action == "quit") {
         if (auto* controller = g_startup_controller.load(std::memory_order_acquire)) {
@@ -418,7 +418,7 @@ void init_hook(RT64::RenderInterface* interface, RT64::RenderDevice* device) {
     Rml::SetRenderInterface(state->render_interface.get_rml_interface());
     install_event_handlers(*state);
     if (!Rml::Initialise()) {
-        LAMBO_LOG("ui", "RmlUi initialisation failed\n");
+        LAMBO_LOG_ERROR("ui", "RmlUi initialisation failed\n");
         return;
     }
     Rml::Factory::RegisterEventListenerInstancer(&state->event_listener_instancer);
@@ -427,7 +427,7 @@ void init_hook(RT64::RenderInterface* interface, RT64::RenderDevice* device) {
     SDL_GetWindowSizeInPixels(g_window, &width, &height);
     state->context = Rml::CreateContext("lamborghini", {width, height});
     if (state->context == nullptr) {
-        LAMBO_LOG("ui", "RmlUi context creation failed\n");
+        LAMBO_LOG_ERROR("ui", "RmlUi context creation failed\n");
         Rml::Shutdown();
         return;
     }
@@ -443,7 +443,7 @@ void init_hook(RT64::RenderInterface* interface, RT64::RenderDevice* device) {
         } else if (std::filesystem::exists(fallback_path)) {
             use_path = &fallback_path;
         } else {
-            LAMBO_LOG("ui", "font %s not found (configured=%s, fallback=%s)\n",
+            LAMBO_LOG_WARN("ui", "font %s not found (configured=%s, fallback=%s)\n",
                 filename, configured_path.string().c_str(), fallback_path.string().c_str());
             return;
         }
@@ -453,13 +453,13 @@ void init_hook(RT64::RenderInterface* interface, RT64::RenderDevice* device) {
         const auto& data = state->font_data.back();
         const bool ok = !data.empty() && Rml::LoadFontFace(
             data, "Lato", Rml::Style::FontStyle::Normal, weight, false);
-        LAMBO_LOG("ui", "font %s: %s (path=%s)\n",
+        LAMBO_LOG_INFO("ui", "font %s: %s (path=%s)\n",
             filename, ok ? "loaded" : "FAILED", use_path->string().c_str());
     };
     load_font("LatoLatin-Regular.ttf", Rml::Style::FontWeight::Normal);
     load_font("LatoLatin-Bold.ttf", Rml::Style::FontWeight::Bold);
     g_state = std::move(state);
-    LAMBO_LOG("ui", "RmlUi render hooks initialised\n");
+    LAMBO_LOG_INFO("ui", "RmlUi render hooks initialised\n");
 }
 
 std::optional<lambo::ui::NavigationKey> navigation_key_from_button(uint8_t button) {

@@ -16,12 +16,12 @@
 #include <thread>
 
 #include "lambo_log.h"
+#include "lambo_paths.h"
 
 #include "json/json.hpp"
 
 namespace {
 
-constexpr const char* kAppFolderName = "LamborghiniRecomp";
 constexpr const char* kGraphicsFile = "graphics.json";
 
 // Window-size keys live in the same graphics.json (extra keys alongside the
@@ -100,13 +100,13 @@ void from_or_default(const nlohmann::json& j, const char* key, T& out) {
     try {
         T parsed = it->get<T>();
         if (nlohmann::json(parsed) != *it) {
-            LAMBO_LOG("config", "%s: invalid value %s -- keeping default\n",
+            LAMBO_LOG_WARN("config", "%s: invalid value %s -- keeping default\n",
                          key, it->dump().c_str());
             return;
         }
         out = parsed;
     } catch (const nlohmann::json::exception&) {
-        LAMBO_LOG("config", "%s: wrong type -- keeping default\n", key);
+        LAMBO_LOG_WARN("config", "%s: wrong type -- keeping default\n", key);
     }
 }
 
@@ -212,7 +212,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     // permanently headless, so reset to defaults instead.
     if (g_window_size.width < 320 || g_window_size.width > 7680 ||
         g_window_size.height < 240 || g_window_size.height > 4320) {
-        LAMBO_LOG("config", "window %dx%d out of range -- using %dx%d\n",
+        LAMBO_LOG_WARN("config", "window %dx%d out of range -- using %dx%d\n",
                      g_window_size.width, g_window_size.height,
                      kDefaultWindowWidth, kDefaultWindowHeight);
         g_window_size = {kDefaultWindowWidth, kDefaultWindowHeight};
@@ -232,7 +232,7 @@ ReadResult read_graphics_file(const std::filesystem::path& path,
         from_json(j, cfg);
         return ReadResult::Ok;
     } catch (const nlohmann::json::exception& e) {
-        LAMBO_LOG("config", "%s unparseable (%s); using defaults IN MEMORY"
+        LAMBO_LOG_WARN("config", "%s unparseable (%s); using defaults IN MEMORY"
                      " -- file left untouched, fix or delete it\n",
                      path.string().c_str(), e.what());
         return ReadResult::Unparseable;
@@ -252,13 +252,13 @@ bool write_graphics_json(const std::filesystem::path& path, const nlohmann::json
     std::filesystem::create_directories(path.parent_path(), ec);
     std::ofstream out{path};
     if (!out.good()) {
-        LAMBO_LOG("config", "cannot write %s\n", path.string().c_str());
+        LAMBO_LOG_ERROR("config", "cannot write %s\n", path.string().c_str());
         return false;
     }
     out << json.dump(4) << "\n";
     out.flush();
     if (!out.good()) {
-        LAMBO_LOG("config", "write to %s FAILED (disk full / permissions?)"
+        LAMBO_LOG_ERROR("config", "write to %s FAILED (disk full / permissions?)"
                             " -- settings may not persist\n", path.string().c_str());
         return false;
     }
@@ -283,12 +283,12 @@ void save_graphics_updates_sync(const nlohmann::json& updates) {
         try {
             in >> current;
             if (!current.is_object()) {
-                LAMBO_LOG("config", "%s is not a JSON object; leaving it untouched\n",
+                LAMBO_LOG_WARN("config", "%s is not a JSON object; leaving it untouched\n",
                           path.string().c_str());
                 return;
             }
         } catch (const nlohmann::json::exception& e) {
-            LAMBO_LOG("config", "%s unparseable (%s); leaving it untouched\n",
+            LAMBO_LOG_WARN("config", "%s unparseable (%s); leaving it untouched\n",
                       path.string().c_str(), e.what());
             return;
         }
@@ -373,24 +373,7 @@ std::filesystem::path graphics_config_path() {
 }
 
 std::filesystem::path app_config_dir() {
-    // Portable mode: a portable.txt in the working directory keeps everything local.
-    std::error_code ec;
-    if (std::filesystem::exists("portable.txt", ec)) {
-        return std::filesystem::current_path();
-    }
-#if defined(_WIN32)
-    if (const wchar_t* localappdata = _wgetenv(L"LOCALAPPDATA")) {
-        return std::filesystem::path{localappdata} / kAppFolderName;
-    }
-#else
-    if (const char* xdg = std::getenv("XDG_CONFIG_HOME")) {
-        return std::filesystem::path{xdg} / kAppFolderName;
-    }
-    if (const char* home = std::getenv("HOME")) {
-        return std::filesystem::path{home} / ".config" / kAppFolderName;
-    }
-#endif
-    return std::filesystem::current_path();
+    return lambo::paths::app_config_dir();
 }
 
 ultramodern::renderer::GraphicsConfig default_graphics_config() {
@@ -436,7 +419,7 @@ ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
     if (r != ReadResult::Unparseable) {
         save_graphics(cfg);
     }
-    LAMBO_LOG("config", "graphics config: %s\n", path.string().c_str());
+    LAMBO_LOG_INFO("config", "graphics config: %s\n", path.string().c_str());
     return cfg;
 }
 

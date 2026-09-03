@@ -8,6 +8,7 @@
 #include <cstdint>
 
 #include "recomp.h"
+#include "lambo_log.h"
 
 // Guest seam (measured live, see docs/analog-brake.md):
 // - Brake demand is the float at vehicle offset 0xA0. Stock digital play ramps
@@ -151,8 +152,8 @@ extern "C" void lambo_analog_brake_apply(uint8_t* rdram) {
         const int32_t speed = static_cast<int32_t>(MEM_W(0,
             (gpr)(int32_t)(kVehicleBase +
                 static_cast<uint32_t>(vehicle) * kVehicleStride + kSpeedOffset)));
-        std::fprintf(stderr,
-            "[probe] analog brake field: mode=%s port=%u channel=%d vehicle=%d frame=%u "
+        LAMBO_LOG_DEBUG("probe",
+            "analog brake field: mode=%s port=%u channel=%d vehicle=%d frame=%u "
             "normalized=%u demand=%.1f speed=%d\n",
             analog_mode ? "analog" : "digital", port, channel, vehicle, frame,
             static_cast<unsigned>(normalized), static_cast<double>(demand), speed);

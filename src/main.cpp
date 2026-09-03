@@ -119,12 +119,13 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
 // thread actually runs its per-frame dispatch loop, those threads are live in native
 // osRecvMesg and race the munmap into a SIGSEGV. This is a headless boot/probe harness that is
 // quitting anyway, so skip the unwind and let process exit tear the game threads down.
-// (Graceful game-thread shutdown is RT64-integration work, #58.)
+    // (Graceful game-thread shutdown is RT64-integration work, #58.)
 [[noreturn]] static void boot_summary_and_exit() {
     LAMBO_LOG("probe", "boot summary; threads=%d vis=%d first_vi=%d max_state=%d swaps=%d\n",
                  g_threads.load(), g_vis.load(), (int)g_first_vi.load(), g_max_state.load(),
                  g_swaps.load());
     (void)lambo_pak_storage_flush();
+    lambo_log_shutdown();
     std::fflush(nullptr);
     std::_Exit(g_first_vi.load() ? 0 : 2);
 }
@@ -138,6 +139,7 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
     // terminates the process below, so there is no cleanup benefit that can
     // justify touching either subsystem first.
     (void)lambo_pak_storage_flush();
+    lambo_log_shutdown();
     std::fflush(nullptr);
     std::_Exit(0);
 }
@@ -745,14 +747,27 @@ static std::filesystem::path unused_backup_path(const std::filesystem::path& pat
 }
 
 static int application_main(int argc, char** argv) {
+    // Parse and initialise logging before any startup path can emit a message.
+    // The Windows target is GUI-subsystem, so --console is responsible for
+    // attaching/allocating the live stderr sink.
+    if (!lambo_log_parse_args(argc, argv)) {
+        (void)lambo_log_initialize();
+        // Command-line syntax errors must remain visible even when the user
+        // did not request a console or the log directory is unavailable.
+        std::fprintf(stderr, "[error] [log] %s\n", lambo_log_last_error());
+        return 2;
+    }
+    (void)lambo_log_initialize();
+#if defined(_WIN32)
+    // SDL2main normally performs this when it owns WinMain. This target owns
+    // WinMain because it is a GUI-subsystem executable.
+    SDL_SetMainReady();
+#endif
     // Deterministic lighting self-test: no ROM, no runtime -- exercises the swrender
     // light-decode + lambert path on a synthetic DL and exits (tests/pivot/test_lighting.py).
     if (std::getenv("LAMBO_LIGHTING_SELFTEST")) {
         return headless::run_lighting_selftest();
     }
-    // Parse --lambo-debug BEFORE anything else that might print a [probe] line.
-    // The flag is read by every LAMBO_LOG() site via the lambo_log_enabled bool.
-    lambo_log_parse_flag(argc, argv);
     const char* rom_path = "Automobili Lamborghini (USA).z64";
     const char* import_path = nullptr;
     const char* controller_pak_path = nullptr;
@@ -760,22 +775,31 @@ static int application_main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         if (argv[i] && std::strcmp(argv[i], "--import-save") == 0) {
             if (i + 1 >= argc || argv[i + 1] == nullptr || argv[i + 1][0] == '\0') {
-                std::fprintf(stderr, "--import-save requires an MPK, SRM, or DexDrive N64 file\n");
+                std::fprintf(stderr,
+                             "[error] [cli] --import-save requires an MPK, SRM, or DexDrive N64 file\n");
                 return 2;
             }
             import_path = argv[++i];
         } else if (argv[i] && std::strcmp(argv[i], "--controller-pak") == 0) {
             if (i + 1 >= argc || argv[i + 1] == nullptr || argv[i + 1][0] == '\0') {
-                std::fprintf(stderr, "--controller-pak requires an MPK, SRM, or DexDrive N64 file\n");
+                std::fprintf(stderr,
+                             "[error] [cli] --controller-pak requires an MPK, SRM, or DexDrive N64 file\n");
                 return 2;
             }
             controller_pak_path = argv[++i];
+        } else if (argv[i] && std::strcmp(argv[i], "--log-level") == 0) {
+            // lambo_log_parse_args already validated and consumed this value;
+            // keep the ROM selector from mistaking it for a ROM path.
+            ++i;
         } else if (argv[i] && argv[i][0] != '-' && argv[i][0] != '\0' &&
                    is_controller_pak_container(argv[i])) {
             import_path = argv[i];
         } else if (!rom_was_selected && argv[i] && argv[i][0] != '-' && argv[i][0] != '\0') {
             rom_path = argv[i];
             rom_was_selected = true;
+        } else if (argv[i] && argv[i][0] == '-') {
+            // Logging and future switches are parsed by their owning subsystem;
+            // they must never be mistaken for a ROM or save path here.
         }
     }
     LAMBO_LOG("probe", "ROM: %s\n", rom_path);
@@ -830,20 +854,20 @@ static int application_main(int argc, char** argv) {
     lambo_pak_storage_configure(active_pak_path_string.c_str());
 
     if (import_path != nullptr && controller_pak_path != nullptr) {
-        std::fprintf(stderr, "--import-save and --controller-pak cannot be used together\n");
+        LAMBO_LOG_ERROR("cli", "--import-save and --controller-pak cannot be used together\n");
         return 2;
     } else if (import_path != nullptr) {
         std::error_code error;
         const LamboPakIoResult source = lambo_pak_probe_file(import_path);
         if (!source.ok) {
-            std::fprintf(stderr, "[pak] import failed: %s\n", source.error);
+            LAMBO_LOG_ERROR("pak", "import failed: %s\n", source.error);
             return 2;
         }
         const bool source_is_destination =
             std::filesystem::equivalent(path_from_utf8(import_path), pak_path, error);
         if (source_is_destination && !error) {
-            std::fprintf(stderr, "[pak] selected save is already the active Controller Pak: %s\n",
-                         pak_path_string.c_str());
+            LAMBO_LOG_INFO("pak", "selected save is already the active Controller Pak: %s\n",
+                           pak_path_string.c_str());
         } else {
             error.clear();
             if (std::filesystem::exists(pak_path)) {
@@ -851,20 +875,20 @@ static int application_main(int argc, char** argv) {
                 std::filesystem::copy_file(pak_path, backup, error);
                 if (error) {
                     const std::string backup_string = path_to_utf8(backup);
-                    std::fprintf(stderr, "[pak] cannot back up existing save to %s: %s\n",
-                                 backup_string.c_str(), error.message().c_str());
+                    LAMBO_LOG_ERROR("pak", "cannot back up existing save to %s: %s\n",
+                                     backup_string.c_str(), error.message().c_str());
                     return 2;
                 }
                 const std::string backup_string = path_to_utf8(backup);
-                std::fprintf(stderr, "[pak] backed up existing save to %s\n", backup_string.c_str());
+                LAMBO_LOG_INFO("pak", "backed up existing save to %s\n", backup_string.c_str());
             }
             const LamboPakIoResult imported = lambo_pak_import_file(import_path, pak_path_string.c_str());
             if (!imported.ok) {
-                std::fprintf(stderr, "[pak] import failed: %s\n", imported.error);
+                LAMBO_LOG_ERROR("pak", "import failed: %s\n", imported.error);
                 return 2;
             }
-            std::fprintf(stderr, "[pak] imported %s to %s\n",
-                         lambo_pak_format_name(imported.format), pak_path_string.c_str());
+            LAMBO_LOG_INFO("pak", "imported %s to %s\n",
+                           lambo_pak_format_name(imported.format), pak_path_string.c_str());
         }
     } else if (controller_pak_path == nullptr && !std::filesystem::exists(pak_path)) {
         // One-time migration for builds before #176, which accidentally stored the
@@ -875,10 +899,10 @@ static int application_main(int argc, char** argv) {
             const LamboPakIoResult migrated =
                 lambo_pak_import_file(legacy_string.c_str(), pak_path_string.c_str());
             if (migrated.ok)
-                std::fprintf(stderr, "[pak] migrated legacy %s save to %s\n",
-                             lambo_pak_format_name(migrated.format), pak_path_string.c_str());
+                LAMBO_LOG_INFO("pak", "migrated legacy %s save to %s\n",
+                               lambo_pak_format_name(migrated.format), pak_path_string.c_str());
             else
-                std::fprintf(stderr, "[pak] legacy save migration failed: %s\n", migrated.error);
+                LAMBO_LOG_WARN("pak", "legacy save migration failed: %s\n", migrated.error);
         }
     }
     g_controls = std::make_unique<lambo::controls::SdlAdapter>();
@@ -897,7 +921,7 @@ static int application_main(int argc, char** argv) {
     std::u8string game_id = u8"lamborghini.us";
     recomp::RomValidationError verr = recomp::select_rom(rom_path, game_id);
     if (verr != recomp::RomValidationError::Good) {
-        LAMBO_LOG("probe", "select_rom FAILED (RomValidationError=%d)\n", (int)verr);
+        LAMBO_LOG_ERROR("rom", "select_rom FAILED (RomValidationError=%d)\n", (int)verr);
         return 1;
     }
     LAMBO_LOG("probe", "ROM validated; rom_hash matches\n");
@@ -913,7 +937,7 @@ static int application_main(int argc, char** argv) {
     g_startup_controller = &startup_controller;
     lambo::ui::set_startup_controller(&startup_controller);
     lambo::ui::install_render_hooks();
-    LAMBO_LOG("probe", "startup mode: %s\n",
+    LAMBO_LOG_INFO("startup", "startup mode: %s\n",
               startup_mode == lambo::StartupMode::Automatic ? "automatic" : "interactive");
 
     // Watchdog: guarantee automatic probes terminate and report. Only started for
@@ -1029,7 +1053,7 @@ static int application_main(int argc, char** argv) {
 }
 
 #if defined(_WIN32)
-int main(int, char**) {
+static int windows_command_line_main() {
     int argument_count = 0;
     wchar_t** wide_arguments = CommandLineToArgvW(GetCommandLineW(), &argument_count);
     if (wide_arguments == nullptr) return 2;
@@ -1054,6 +1078,13 @@ int main(int, char**) {
     for (std::string& argument : arguments) argument_pointers.push_back(argument.data());
     argument_pointers.push_back(nullptr);
     return application_main(argument_count, argument_pointers.data());
+}
+
+// The release executable uses the GUI subsystem so Explorer launches do not
+// create a console.  Keep argument parsing in one place and let application
+// logging decide whether --console needs to allocate a window.
+int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
+    return windows_command_line_main();
 }
 #else
 int main(int argc, char** argv) {

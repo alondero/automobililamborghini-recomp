@@ -17,6 +17,7 @@
 #include "recomp.h"
 #include "lambo_pak_io.h"
 #include "lambo_pak_storage.h"
+#include "lambo_log.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -172,11 +173,11 @@ static void lambo_pak_ensure_loaded(void) {
     loaded = 1;
     result = lambo_pak_storage_load(g_lambo_pak_image);
     if (result.ok) {
-        fprintf(stderr, "[pak] loaded %s from %s\n",
-                lambo_pak_format_name(result.format), lambo_pak_storage_path());
+        LAMBO_LOG_INFO("pak", "loaded %s from %s\n",
+                       lambo_pak_format_name(result.format), lambo_pak_storage_path());
         return;
     }
-    fprintf(stderr, "[pak] %s; using a fresh formatted Pak in memory\n", result.error);
+    LAMBO_LOG_WARN("pak", "%s; using a fresh formatted Pak in memory\n", result.error);
     lambo_pak_format();                                         /* fresh formatted pak (memory only) */
 }
 
@@ -287,7 +288,7 @@ static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
                         /* gate the addr bytes on tx>=3 (same as the WRITE tracer): a degenerate
                          * short read frame near the end of the 0x40 buffer passes the pos+2+tx+rx
                          * guard but has no addr bytes, so reading pos+3/pos+4 would run off the end */
-                        fprintf(stderr, "[paktrc] READ  ch=%d tx=%d rx=%d addr=%04x served=%s crc=%02x\n",
+                        LAMBO_LOG_TRACE("paktrc", "READ  ch=%d tx=%d rx=%d addr=%04x served=%s crc=%02x\n",
                                 channel, tx, rx,
                                 (unsigned)(tx >= 3 ? (((MEM_BU(pos + 3, buf) << 8) | MEM_BU(pos + 4, buf)) & 0xFFE0u) : 0xFFFFu),
                                 (has_pak && rx == 33) ? "image" : "nopak",
@@ -312,7 +313,7 @@ static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
                         MEM_B(0, resp) = (signed char)(crc ^ 0xFF);             /* no pak */
                     }
                     if (lambo_pak_trace())
-                        fprintf(stderr, "[paktrc] WRITE ch=%d tx=%d rx=%d addr=%04x data0=%02x served=%s ack=%02x\n",
+                        LAMBO_LOG_TRACE("paktrc", "WRITE ch=%d tx=%d rx=%d addr=%04x data0=%02x served=%s ack=%02x\n",
                                 channel, tx, rx,
                                 (unsigned)(tx >= 3 ? (((MEM_BU(pos + 3, buf) << 8) | MEM_BU(pos + 4, buf)) & 0xFFE0u) : 0xFFFFu),
                                 (unsigned)(tx >= 3 ? MEM_BU(0, data) : 0),
@@ -322,7 +323,7 @@ static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
                 }
                 default: /* unknown command: no response */
                     if (lambo_pak_trace())
-                        fprintf(stderr, "[paktrc] UNKN  ch=%d tx=%d rx=%d cmd=%02x (no response)\n", channel, tx, rx, cmd);
+                        LAMBO_LOG_TRACE("paktrc", "UNKN  ch=%d tx=%d rx=%d cmd=%02x (no response)\n", channel, tx, rx, cmd);
                     MEM_B(pos + 1, buf) = (signed char)(rx | 0x80);
                     break;
                 }
@@ -356,8 +357,8 @@ static void lambo_pak_channel_probe(uint8_t* rdram, gpr buf) {
             gpr resp = buf + (gpr)(pos + 2 + tx);
             if (pos + 2 + tx + rx > 0x40) return;
             pak_probe_logged = 1;
-            fprintf(stderr, "[pak] first frame in status/pak buffer: cmd=%02x resp=%02x %02x %02x\n",
-                    cmd, (unsigned)MEM_BU(0, resp), (unsigned)MEM_BU(1, resp), (unsigned)MEM_BU(2, resp));
+            LAMBO_LOG_DEBUG("pak", "first frame in status/pak buffer: cmd=%02x resp=%02x %02x %02x\n",
+                            cmd, (unsigned)MEM_BU(0, resp), (unsigned)MEM_BU(1, resp), (unsigned)MEM_BU(2, resp));
             return;
         }
     }
@@ -455,7 +456,7 @@ void func_8007F780(uint8_t* rdram, recomp_context* ctx) {
         static int input_probe_logged = 0;
         if (!input_probe_logged) {
             input_probe_logged = 1;
-            fprintf(stderr, "[input] pad read reached game: buttons=%04x dest=%s bytes45=%02x %02x stick=(%d,%d)\n",
+            LAMBO_LOG_DEBUG("input", "pad read reached game: buttons=%04x dest=%s bytes45=%02x %02x stick=(%d,%d)\n",
                     (unsigned)pads[0].button, std_read ? "menu" : "race",
                     (unsigned char)MEM_BU(4, buf), (unsigned char)MEM_BU(5, buf),
                     (int)pads[0].stick_x, (int)pads[0].stick_y);
@@ -558,7 +559,7 @@ void func_8007AC78(uint8_t* rdram, recomp_context* ctx) {
      * Natively bypasses the uninitialized pfs->queue and pfs->channel (which remain zero/uninitialized
      * since osMotorInit is skipped when a Controller Pak is detected) and directly drives the motor. */
     int channel = ((int32_t)ctx->r4 - 0x80110D68) / 40;
-    if (lambo_pak_trace()) fprintf(stderr, "[pak] MOTOR START ch=%d\n", channel);
+    if (lambo_pak_trace()) LAMBO_LOG_DEBUG("pak", "MOTOR START ch=%d\n", channel);
     if (channel == 0) {
         lambo_pak_set_rumble(1);
     }
@@ -568,7 +569,7 @@ void func_8007AC78(uint8_t* rdram, recomp_context* ctx) {
 void func_8007AB10(uint8_t* rdram, recomp_context* ctx) {
     /* osMotorStop: VRAM 0x80079f10 */
     int channel = ((int32_t)ctx->r4 - 0x80110D68) / 40;
-    if (lambo_pak_trace()) fprintf(stderr, "[pak] MOTOR STOP ch=%d\n", channel);
+    if (lambo_pak_trace()) LAMBO_LOG_DEBUG("pak", "MOTOR STOP ch=%d\n", channel);
     if (channel == 0) {
         lambo_pak_set_rumble(0);
     }
