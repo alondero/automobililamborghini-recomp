@@ -8,6 +8,7 @@
 #include <cstdint>
 
 #include "recomp.h"
+#include "lambo_log.h"
 
 namespace {
 
@@ -150,8 +151,8 @@ extern "C" void lambo_analog_throttle_apply(uint8_t* rdram) {
         const int32_t speed = static_cast<int32_t>(MEM_W(0, speed_addr));
         const int previous = g_probe_last[port].exchange(demand, std::memory_order_relaxed);
         if (previous == demand && frame % 60u != 0) return;
-        std::fprintf(stderr,
-            "[probe] analog throttle field: mode=%s port=%u channel=%d vehicle=%d frame=%u "
+        LAMBO_LOG_DEBUG("probe",
+            "analog throttle field: mode=%s port=%u channel=%d vehicle=%d frame=%u "
             "normalized=%u limit=%d demand=%d speed=%d\n",
             analog_mode ? "analog" : "digital", port, channel, vehicle, frame,
             static_cast<unsigned>(normalized), static_cast<int>(limit),

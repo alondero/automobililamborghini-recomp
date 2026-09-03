@@ -1,4 +1,5 @@
 #include "lambo_pak_storage.h"
+#include "lambo_log.h"
 
 #include <array>
 #include <chrono>
@@ -58,7 +59,7 @@ void publish_snapshot(StorageState& storage, std::unique_lock<std::mutex>& lock)
 #else
         lambo_pak_write_file(path.c_str(), image.data());
 #endif
-    if (!result.ok) std::fprintf(stderr, "[pak] save failed: %s\n", result.error);
+    if (!result.ok) LAMBO_LOG_ERROR("pak", "save failed: %s\n", result.error);
     lock.lock();
     storage.last_result = result;
     storage.writing = false;

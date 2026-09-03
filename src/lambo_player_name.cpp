@@ -53,7 +53,7 @@ std::string load_saved_name() {
         std::string name = field->get<std::string>();
         return valid_name(name) ? name : std::string{};
     } catch (const nlohmann::json::exception& e) {
-        LAMBO_LOG("name", "%s unparseable (%s); keeping ROM default\n",
+        LAMBO_LOG_WARN("name", "%s unparseable (%s); keeping ROM default\n",
                   path.string().c_str(), e.what());
         return {};
     }
@@ -67,13 +67,13 @@ void save_name(const std::string& name) {
 
     std::ofstream out{tmp};
     if (!out.good()) {
-        LAMBO_LOG("name", "cannot write %s\n", tmp.string().c_str());
+        LAMBO_LOG_ERROR("name", "cannot write %s\n", tmp.string().c_str());
         return;
     }
     out << nlohmann::json{{"name", name}}.dump(4) << '\n';
     out.flush();
     if (!out.good()) {
-        LAMBO_LOG("name", "write to %s failed\n", tmp.string().c_str());
+        LAMBO_LOG_ERROR("name", "write to %s failed\n", tmp.string().c_str());
         return;
     }
     out.close();
@@ -88,7 +88,7 @@ void save_name(const std::string& name) {
     }
 #endif
     if (ec) {
-        LAMBO_LOG("name", "cannot publish %s\n", path.string().c_str());
+        LAMBO_LOG_ERROR("name", "cannot publish %s\n", path.string().c_str());
     }
 }
 
@@ -108,7 +108,7 @@ extern "C" void lambo_player_name_seed(uint8_t* rdram) {
     for (int i = 0; i < kNameStride; ++i) {
         MEM_B(i, dst) = i < (int)saved.size() ? saved[(size_t)i] : 0;
     }
-    LAMBO_LOG("name", "seeded player name: %s\n", saved.c_str());
+    LAMBO_LOG_INFO("name", "seeded player name: %s\n", saved.c_str());
 }
 
 extern "C" void lambo_player_name_save(uint8_t* rdram) {
@@ -124,5 +124,5 @@ extern "C" void lambo_player_name_save(uint8_t* rdram) {
     if (!valid_name(name)) return;
 
     save_name(name);
-    LAMBO_LOG("name", "saved player name: %s\n", name.c_str());
+    LAMBO_LOG_INFO("name", "saved player name: %s\n", name.c_str());
 }

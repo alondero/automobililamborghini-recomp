@@ -26,6 +26,7 @@
 
 #include "librecomp/sections.h"
 #include "recomp.h"
+#include "lambo_log.h"
 
 #if defined(_WIN32)
     #define LAMBO_CRASH_WIN32 1
@@ -68,8 +69,8 @@ const SymbolInfo* lookup_in_pool(uint32_t vram, uint32_t* out_offset_bytes) {
 bool load_symbol_table(const std::filesystem::path& syms_path) {
     std::ifstream f(syms_path);
     if (!f.good()) {
-        std::fprintf(stderr, "[crash] syms file %s not found; raw N64 PCs only\n",
-                     syms_path.string().c_str());
+        LAMBO_LOG_WARN("crash", "syms file %s not found; raw N64 PCs only\n",
+                       syms_path.string().c_str());
         return false;
     }
 
@@ -163,8 +164,8 @@ bool load_symbol_table(const std::filesystem::path& syms_path) {
     // attributed name is identical run-to-run (matters for crash-digest CI).
     std::stable_sort(g_pool.table.begin(), g_pool.table.end(),
         [](const SymbolInfo& a, const SymbolInfo& b) { return a.vram < b.vram; });
-    std::fprintf(stderr, "[crash] loaded %zu symbols from %s\n",
-                 g_pool.table.size(), syms_path.string().c_str());
+    LAMBO_LOG_INFO("crash", "loaded %zu symbols from %s\n",
+                   g_pool.table.size(), syms_path.string().c_str());
     return !g_pool.table.empty();
 }
 
@@ -202,6 +203,7 @@ const SymbolInfo* lookup(uint32_t vram, uint32_t* out_offset_bytes) {
 // ----- Native-PC -> N64-vram map (populated by register_overlays) -----
 namespace {
 std::unordered_map<const void*, uint32_t> g_native_to_vram;
+FILE* g_crash_file = nullptr;
 } // namespace
 
 extern "C" void lambo_crash_register_code_ptrs(
@@ -365,8 +367,7 @@ void print_native_backtrace(FILE* fp, const void* const* pcs, int n, const char*
     }
 }
 
-void dump_crash_state(const char* reason, uint32_t vram_guess) {
-    FILE* fp = stderr;
+void dump_crash_state(FILE* fp, const char* reason, uint32_t vram_guess) {
     std::fprintf(fp, "\n========================= NATIVE CRASH =========================\n");
     if (reason) std::fprintf(fp, "Reason: %s\n", reason);
     if (vram_guess != 0) {
@@ -386,10 +387,26 @@ void dump_crash_state(const char* reason, uint32_t vram_guess) {
 void final_dump_and_die(const char* reason, uint32_t vram_guess,
                         const void* const* native_pcs, int native_pcs_n,
                         const char* kind) {
-    dump_crash_state(reason, vram_guess);
+    FILE* report = g_crash_file != nullptr ? g_crash_file : stderr;
+    dump_crash_state(report, reason, vram_guess);
     if (native_pcs && native_pcs_n > 0)
-        print_native_backtrace(stderr, native_pcs, native_pcs_n, kind);
-    std::fflush(stderr);
+        print_native_backtrace(report, native_pcs, native_pcs_n, kind);
+    std::fflush(report);
+#if !defined(_WIN32)
+    if (report != stderr) {
+        dump_crash_state(stderr, reason, vram_guess);
+        if (native_pcs && native_pcs_n > 0)
+            print_native_backtrace(stderr, native_pcs, native_pcs_n, kind);
+        std::fflush(stderr);
+    }
+#elif defined(_WIN32)
+    if (lambo_log_console_requested() && report != stderr) {
+        dump_crash_state(stderr, reason, vram_guess);
+        if (native_pcs && native_pcs_n > 0)
+            print_native_backtrace(stderr, native_pcs, native_pcs_n, kind);
+        std::fflush(stderr);
+    }
+#endif
     // _Exit (not abort): we finished the dump; do not re-enter via abort->SIGABRT.
     std::_Exit(EXIT_FAILURE);
 }
@@ -452,11 +469,21 @@ LONG WINAPI win32_vectored_handler(EXCEPTION_POINTERS* ep) {
         // dump path's own fprintf would re-fault it. _resetstkoflw bumps
         // RSP past the guard, then we print a minimal banner and exit.
         _resetstkoflw();
-        std::fprintf(stderr,
+        FILE* report = g_crash_file != nullptr ? g_crash_file : stderr;
+        std::fprintf(report,
             "\n========================= NATIVE CRASH =========================\n"
             "Reason: EXCEPTION_STACK_OVERFLOW (code 0x%08lX at %p)\n"
             "(dump truncated: stack overflow -- no native backtrace recoverable)\n",
             (unsigned long)code, ep->ExceptionRecord->ExceptionAddress);
+        std::fflush(report);
+        if (report != stderr && lambo_log_console_requested()) {
+            std::fprintf(stderr,
+                "\n========================= NATIVE CRASH =========================\n"
+                "Reason: EXCEPTION_STACK_OVERFLOW (code 0x%08lX at %p)\n"
+                "(dump truncated: stack overflow -- no native backtrace recoverable)\n",
+                (unsigned long)code, ep->ExceptionRecord->ExceptionAddress);
+            std::fflush(stderr);
+        }
         std::_Exit(EXIT_FAILURE);
     }
     // Raw code + faulting address in the banner: a field report with only a
@@ -510,7 +537,7 @@ void install_posix() {
     alt_stack.ss_size  = sizeof(alt_stack_buf);
     alt_stack.ss_flags = 0;
     if (sigaltstack(&alt_stack, nullptr) != 0)
-        std::fprintf(stderr, "[crash] sigaltstack failed; stack-overflow dumps may not land\n");
+        LAMBO_LOG_WARN("crash", "sigaltstack failed; stack-overflow dumps may not land\n");
 
     struct sigaction sa{};
     sa.sa_sigaction = posix_signal_handler;
@@ -524,7 +551,7 @@ void install_posix() {
     int fatal[] = { SIGSEGV, SIGBUS, SIGFPE, SIGILL };
     for (int s : fatal) {
         if (sigaction(s, &sa, nullptr) != 0)
-            std::fprintf(stderr, "[crash] sigaction(%d) failed; crash dumps disabled for this signal\n", s);
+            LAMBO_LOG_WARN("crash", "sigaction(%d) failed; crash dumps disabled for this signal\n", s);
     }
 }
 
@@ -535,18 +562,38 @@ void install() {
     static std::atomic<bool> once{false};
     bool expected = false;
     if (!once.compare_exchange_strong(expected, true)) return;
+    // Open a crash-specific destination before installing the handler. The
+    // handler does not enter the normal logger (its mutex/heap may be unsafe).
+    {
+        std::filesystem::path report_dir;
+        const char* log_path = lambo_log_path();
+        if (const char* override_dir = std::getenv("LAMBO_LOG_DIR");
+            override_dir != nullptr && override_dir[0] != '\0') {
+            report_dir = std::filesystem::path{override_dir} / "crashes";
+        } else if (log_path != nullptr && log_path[0] != '\0') {
+            report_dir = std::filesystem::path{log_path}.parent_path().parent_path() / "crashes";
+        } else {
+            report_dir = std::filesystem::current_path() / "crashes";
+        }
+        std::error_code ec;
+        std::filesystem::create_directories(report_dir, ec);
+        if (!ec) {
+            const auto report_path = report_dir / "crash-report.txt";
+            g_crash_file = std::fopen(report_path.string().c_str(), "wb");
+        }
+    }
 #if defined(LAMBO_CRASH_POSIX)
-    // Install handlers BEFORE the syms file IO: a slow disk read of the
-    // .toml must not race a fault on another thread that just started.
+    // Install handlers before the symbol-table IO, but only after the durable
+    // crash destination above is ready.
     install_posix();
 #endif
     find_and_load_symbol_table();
 #if defined(LAMBO_CRASH_WIN32)
     void* veh = AddVectoredExceptionHandler(0, win32_vectored_handler);
     if (veh == nullptr)
-        std::fprintf(stderr, "[crash] AddVectoredExceptionHandler returned NULL; dumps UNRELIABLE\n");
+        LAMBO_LOG_WARN("crash", "AddVectoredExceptionHandler returned NULL; dumps UNRELIABLE\n");
 #endif
-    std::fprintf(stderr, "[crash] native crash handler installed (%s)\n",
+    LAMBO_LOG_INFO("crash", "native crash handler installed (%s)\n",
 #if defined(LAMBO_CRASH_WIN32)
                  "Win32 AddVectoredExceptionHandler"
 #else

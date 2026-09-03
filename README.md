@@ -138,7 +138,16 @@ For development it is useful to jump straight into a race without driving the me
 
 The warp performs the same stores the game's own menu makes when you confirm RACE
 (selection cursors + audio quiesce + game-state 7), so the race it starts is a normal
-single race. Each warp is logged to stderr as `[warp] CIRCUIT N: ...`.
+single race. Warp and other diagnostic output is written to a per-session log
+file. By default only warnings and errors are retained; use `--log-level=debug`
+(or the shorter `--verbose`) for a bug report. Logs are stored under the same
+`LamborghiniRecomp` directory as `graphics.json`, in `logs/`. On Windows, launch
+with `--console --verbose` to mirror the verbose log live in a console as well.
+
+The console, verbosity, and log file are independent: `--console` alone shows
+only the default warning/error output, while `--verbose` still records a file
+when the game is launched by double-click. The older `--lambo-debug` flag remains
+accepted as an alias for `--verbose`.
 
 ## Building
 
