@@ -27,6 +27,10 @@ namespace lambo::audio {
 // unpaused) so the runtime can immediately queue PCM via ultramodern's shim.
 void init(uint32_t desired_sample_rate);
 
+// Pump device discovery/recovery from the application's main-thread event loop. This keeps
+// SDL_InitSubSystem/SDL_OpenAudioDevice/SDL_CloseAudioDevice out of queue_samples.
+void pump();
+
 // Populate the three ultramodern audio callbacks (queue_samples /
 // get_frames_remaining / set_frequency) into `out`. Callers must invoke
 // `init(...)` first; the callback pointers are stable for the process lifetime

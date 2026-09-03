@@ -427,6 +427,8 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
 }
 
 static void update_gfx_stub(void* /*gfx_data*/) {
+    lambo::audio::pump();
+
     static bool runtime_ready_announced = false;
     if (!runtime_ready_announced && g_startup_controller != nullptr) {
         const bool render_ready = lambo::ui::is_initialized();
@@ -1007,11 +1009,12 @@ static int application_main(int argc, char** argv) {
     cfg.input_callbacks.get_connected_device_info = input_device_info;
     LAMBO_LOG("probe", "input: controller0 connected (default), buttons=%04x\n", g_held_buttons);
 
-    // Audio epic #53 (PR 1 of 3): populate the host audio sink. ultramodern
+    // Audio epic #53 (PR 1 of 3): initialize the host audio sink. ultramodern
     // reads cfg.audio_callbacks inside recomp::start (recomp.cpp:743), before
     // preinit (recomp.cpp:809) calls init_audio() -> set_audio_frequency(48000).
-    // Opening the SDL device now means the runtime's first set_frequency call
-    // hits a live queue; the per-game osAiSetNextBuffer_recomp calls later
+    // init() makes the initial main-thread attempt; update_gfx_stub() pumps
+    // later discovery/recovery before the per-game AI buffers are submitted.
+    // The per-game osAiSetNextBuffer_recomp calls later
     // (recomp/funcs_8.c lines 2186, 2828, 3755, 3764, 4075) route the AI buffer
     // into SDL via ultramodern's shim.
     lambo::audio::init(48000);

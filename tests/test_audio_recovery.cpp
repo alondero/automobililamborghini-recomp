@@ -3,11 +3,9 @@
 #include <SDL.h>
 #include <ultramodern/ultramodern.hpp>
 
-#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <thread>
 
 namespace {
 
@@ -55,6 +53,7 @@ extern "C" SDL_AudioDeviceID SDLCALL SDL_OpenAudioDevice(
 
     *obtained = *desired;
     device_status = SDL_AUDIO_PLAYING;
+    queued_bytes = 0;
     return 2;
 }
 
@@ -97,12 +96,6 @@ extern "C" int SDLCALL SDL_AudioStreamGet(SDL_AudioStream*, void*, int) {
 
 extern "C" void SDLCALL SDL_FreeAudioStream(SDL_AudioStream*) {}
 
-namespace ultramodern {
-
-void deliver_external_and_yield(uint8_t*) {}
-
-} // namespace ultramodern
-
 int main() {
     ultramodern::audio_callbacks_t callbacks{};
     lambo::audio::get_callbacks(&callbacks);
@@ -116,23 +109,25 @@ int main() {
 
     callbacks.queue_samples(samples, 4);
 
-    expect(open_attempts == 2,
-           "a later audio buffer should retry after a transient startup failure");
+    expect(open_attempts == 1, "submission must not retry or open SDL on the audio callback");
+    lambo::audio::pump();
+    expect(open_attempts == 2, "the main-thread pump should retry after a transient startup failure");
+    callbacks.queue_samples(samples, 4);
     expect(queued_buffers == 1,
-           "the buffer that recovers the device should be queued, not dropped");
+           "the first buffer after recovery should be queued");
 
     // SDL2 reports a removed output device as STOPPED even though its software
     // queue can continue accepting and counting buffers successfully. Queue-depth
     // backpressure must not prevent the guest from making the next submission.
-    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
     queued_bytes = 65536;
     device_status = SDL_AUDIO_STOPPED;
+    lambo::audio::pump();
+    expect(closed_devices == 1, "the main-thread pump should close a stopped SDL device");
+    expect(open_attempts == 3, "a stopped SDL device should reopen the current default device");
     expect(callbacks.get_frames_remaining() == 0,
-           "a stopped device's abandoned software queue must not apply backpressure");
-    expect(closed_devices == 1, "a stopped SDL device should be closed during the depth query");
+           "the replacement device should start with an empty queue");
 
     callbacks.queue_samples(samples, 4);
-    expect(open_attempts == 3, "a stopped SDL device should reopen the current default device");
     expect(queued_buffers == 2, "the replacement device should receive the current buffer");
 
     lambo::audio::shutdown();
