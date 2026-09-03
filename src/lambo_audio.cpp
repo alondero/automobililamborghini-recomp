@@ -28,6 +28,7 @@
 #include "recomp.h" // recomp_context + MEM_W for the func_80079720 native override below
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -52,9 +53,15 @@ uint32_t         g_desired_rate = 0;
 SDL_AudioStream*  g_stream = nullptr;
 uint32_t          g_stream_src_rate = 0;
 std::atomic<bool> g_device_opened{false};
+bool              g_audio_subsystem_ready = false;
+bool              g_initialized = false;
+bool              g_headless_sink = false;
 std::atomic<bool> g_init_logged{false};
 std::atomic<bool> g_first_hit_logged{false};
 std::atomic<bool> g_first_nonsilent_logged{false};
+
+constexpr auto k_device_retry_interval = std::chrono::seconds(1);
+std::chrono::steady_clock::time_point g_next_device_attempt{};
 
 // Tiny guard for the rare case the runtime calls set_frequency before init
 // (init_audio does this). We accept whatever was last set; if init never ran,
@@ -69,6 +76,92 @@ void log_opened_once() {
                      (unsigned)g_obtained.freq, (int)g_obtained.format,
                      (unsigned)g_obtained.channels, (unsigned)g_obtained.samples);
     }
+}
+
+// g_state_mtx must be held.
+void close_device_locked() {
+    if (g_stream != nullptr) {
+        SDL_FreeAudioStream(g_stream);
+        g_stream = nullptr;
+        g_stream_src_rate = 0;
+    }
+    if (g_dev != 0) {
+        SDL_CloseAudioDevice(g_dev);
+        g_dev = 0;
+    }
+    g_device_opened.store(false);
+}
+
+// g_state_mtx must be held. SDL2 keeps a removed queued-output device alive in the STOPPED state,
+// and its software queue may continue accepting and counting data. Close it so queue-depth
+// backpressure cannot mistake an abandoned queue for playable audio.
+bool close_stopped_device_locked() {
+    if (!g_device_opened.load() || g_dev == 0 ||
+        SDL_GetAudioDeviceStatus(g_dev) != SDL_AUDIO_STOPPED) {
+        return false;
+    }
+
+    LAMBO_LOG("probe", "audio: output device stopped; reopening default device\n");
+    close_device_locked();
+    return true;
+}
+
+// g_state_mtx must be held. A failed eager open used to leave the sink disabled for the rest of
+// the process. Later PCM submissions prove that audio is still wanted, so let them retry while
+// pacing attempts to avoid an open/log loop when no backend is available.
+bool open_device_locked(bool respect_retry_interval) {
+    if (!g_initialized || g_headless_sink || g_device_opened.load()) {
+        return g_device_opened.load();
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (respect_retry_interval) {
+        if (now < g_next_device_attempt) {
+            return false;
+        }
+        g_next_device_attempt = now + k_device_retry_interval;
+    } else {
+        // Let the first real PCM buffer retry immediately after the eager startup attempt. Only
+        // repeated failures from the audio thread are paced.
+        g_next_device_attempt = {};
+    }
+
+    // Windows driver hint: bypass DirectSound for the lower-latency WASAPI
+    // backend. Mirrors the peer pattern in Zelda64Recomp/SnowboardKids2/
+    // BM64Recomp. No-op on Linux/macOS.
+#if defined(_WIN32)
+    SDL_setenv("SDL_AUDIODRIVER", "wasapi", true);
+#endif
+
+    if (!g_audio_subsystem_ready) {
+        if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
+            LAMBO_LOG("probe", "audio: SDL_InitSubSystem(SDL_INIT_AUDIO) failed: %s; retrying\n",
+                         SDL_GetError());
+            return false;
+        }
+        g_audio_subsystem_ready = true;
+    }
+
+    SDL_AudioSpec want{};
+    want.freq     = (int)g_desired_rate;
+    want.format   = AUDIO_S16LSB;  // int16 little-endian, host-native on x86
+    want.channels = 2;            // stereo, matching the N64 AI output
+    want.samples  = 0x100;        // 256 frames ~= 5.3 ms at 48 kHz; the value
+                                  // ultramodern's buffer_offset_frames heuristic
+                                  // (ultramodern/src/audio.cpp:41) plays nicely with
+    want.callback = nullptr;      // use SDL_QueueAudio, not a callback
+
+    g_dev = SDL_OpenAudioDevice(/*device=*/nullptr, /*iscapture=*/0,
+                                &want, &g_obtained,
+                                SDL_AUDIO_ALLOW_ANY_CHANGE);
+    if (g_dev == 0) {
+        LAMBO_LOG("probe", "audio: SDL_OpenAudioDevice failed: %s; retrying\n", SDL_GetError());
+        return false;
+    }
+    SDL_PauseAudioDevice(g_dev, 0);  // start playback immediately
+    g_device_opened.store(true);
+    log_opened_once();
+    return true;
 }
 
 void submit(const int16_t* pcm, size_t sample_count) {
@@ -91,11 +184,6 @@ void submit(const int16_t* pcm, size_t sample_count) {
                 break;
             }
         }
-    }
-    if (!g_device_opened.load() || g_dev == 0) {
-        // Graceful degradation: drop. This is the same shape peer projects use
-        // for headless builds where no audio device is available.
-        return;
     }
     // Bounds guard (W135, #53): early boot submits one garbage-sized buffer (measured:
     // byte_count 0xFFFF5000 = -0xB000 as a signed AI length) which overflowed the conversion
@@ -134,6 +222,14 @@ void submit(const int16_t* pcm, size_t sample_count) {
     }
 
     std::lock_guard<std::mutex> lock(g_state_mtx);
+    close_stopped_device_locked();
+    if (!g_device_opened.load() || g_dev == 0) {
+        // Headless remains an ideal-drain sink. For a real session, a submission after the retry
+        // interval re-attempts the default device and queues this same buffer if it succeeds.
+        if (!open_device_locked(/*respect_retry_interval=*/true)) {
+            return;
+        }
+    }
     // Cheap passthrough: native format + native channels + native rate.
     const bool native_rate  = (uint32_t)g_obtained.freq == g_desired_rate;
     const bool native_fmt   = g_obtained.format == AUDIO_S16LSB;
@@ -197,6 +293,12 @@ void queue_samples(int16_t* pcm, size_t sample_count) {
 }
 
 size_t get_frames_remaining() {
+    std::lock_guard<std::mutex> lock(g_state_mtx);
+    if (close_stopped_device_locked()) {
+        // Report an empty sink so the guest produces another buffer; submit() will use it to
+        // reopen the current default device once the retry interval permits.
+        return 0;
+    }
     if (!g_device_opened.load() || g_dev == 0) {
         return 0;
     }
@@ -225,7 +327,6 @@ size_t get_frames_remaining() {
     // it the game's mixer backpressure — reasons in the game's AI rate (e.g. 22050). Reporting
     // device frames overstates the buffered audio by freq_device/freq_game (~2.18x), so the
     // game synthesized only ~46% of real time: constant underruns, music stretched ~2.2x slow.
-    std::lock_guard<std::mutex> lock(g_state_mtx);
     if (g_desired_rate != 0 && g_obtained.freq > 0 &&
         (uint32_t)g_obtained.freq != g_desired_rate) {
         device_frames = device_frames * g_desired_rate / (uint32_t)g_obtained.freq;
@@ -256,6 +357,7 @@ void init(uint32_t desired_sample_rate) {
         return;  // idempotent
     }
     g_desired_rate = desired_sample_rate ? desired_sample_rate : 48000;
+    g_initialized = true;
 
     // HEADLESS harness runs get NO audio device (W135, #53). Rationale: in a headless/WSL
     // environment the SDL queue never drains (Pulse has no real sink; SDL's dummy driver buffers
@@ -267,43 +369,13 @@ void init(uint32_t desired_sample_rate) {
     {
         const char* headless = std::getenv("LAMBO_HEADLESS");
         if (headless && headless[0] && headless[0] != '0') {
+            g_headless_sink = true;
             LAMBO_LOG("probe", "audio: headless -- no SDL device (ideal-drain sink)\n");
             return;
         }
     }
-
-    // Windows driver hint: bypass DirectSound for the lower-latency WASAPI
-    // backend. Mirrors the peer pattern in Zelda64Recomp/SnowboardKids2/
-    // BM64Recomp. No-op on Linux/macOS.
-#if defined(_WIN32)
-    SDL_setenv("SDL_AUDIODRIVER", "wasapi", true);
-#endif
-
-    if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
-        LAMBO_LOG("probe", "audio: SDL_InitSubSystem(SDL_INIT_AUDIO) failed: %s\n",
-                     SDL_GetError());
-        return;
-    }
-
-    SDL_AudioSpec want{};
-    want.freq     = (int)g_desired_rate;
-    want.format   = AUDIO_S16LSB;  // int16 little-endian, host-native on x86
-    want.channels = 2;            // stereo, matching the N64 AI output
-    want.samples  = 0x100;        // 256 frames ~= 5.3 ms at 48 kHz; the value
-                                  // ultramodern's buffer_offset_frames heuristic
-                                  // (ultramodern/src/audio.cpp:41) plays nicely with
-    want.callback = nullptr;      // use SDL_QueueAudio, not a callback
-
-    g_dev = SDL_OpenAudioDevice(/*device=*/nullptr, /*iscapture=*/0,
-                                &want, &g_obtained,
-                                SDL_AUDIO_ALLOW_ANY_CHANGE);
-    if (g_dev == 0) {
-        LAMBO_LOG("probe", "audio: SDL_OpenAudioDevice failed: %s\n", SDL_GetError());
-        return;
-    }
-    SDL_PauseAudioDevice(g_dev, 0);  // start playback immediately
-    g_device_opened.store(true);
-    log_opened_once();
+    g_headless_sink = false;
+    open_device_locked(/*respect_retry_interval=*/false);
 }
 
 void get_callbacks(ultramodern::audio_callbacks_t* out) {
@@ -314,16 +386,10 @@ void get_callbacks(ultramodern::audio_callbacks_t* out) {
 
 void shutdown() {
     std::lock_guard<std::mutex> lock(g_state_mtx);
-    if (g_stream != nullptr) {
-        SDL_FreeAudioStream(g_stream);
-        g_stream = nullptr;
-        g_stream_src_rate = 0;
-    }
-    if (g_dev != 0) {
-        SDL_CloseAudioDevice(g_dev);
-        g_dev = 0;
-    }
-    g_device_opened.store(false);
+    close_device_locked();
+    g_initialized = false;
+    g_headless_sink = false;
+    g_next_device_attempt = {};
 }
 
 } // namespace lambo::audio
