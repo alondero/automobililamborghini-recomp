@@ -16,12 +16,12 @@
 #include <thread>
 
 #include "lambo_log.h"
+#include "lambo_paths.h"
 
 #include "json/json.hpp"
 
 namespace {
 
-constexpr const char* kAppFolderName = "LamborghiniRecomp";
 constexpr const char* kGraphicsFile = "graphics.json";
 
 // Window-size keys live in the same graphics.json (extra keys alongside the
@@ -373,24 +373,7 @@ std::filesystem::path graphics_config_path() {
 }
 
 std::filesystem::path app_config_dir() {
-    // Portable mode: a portable.txt in the working directory keeps everything local.
-    std::error_code ec;
-    if (std::filesystem::exists("portable.txt", ec)) {
-        return std::filesystem::current_path();
-    }
-#if defined(_WIN32)
-    if (const wchar_t* localappdata = _wgetenv(L"LOCALAPPDATA")) {
-        return std::filesystem::path{localappdata} / kAppFolderName;
-    }
-#else
-    if (const char* xdg = std::getenv("XDG_CONFIG_HOME")) {
-        return std::filesystem::path{xdg} / kAppFolderName;
-    }
-    if (const char* home = std::getenv("HOME")) {
-        return std::filesystem::path{home} / ".config" / kAppFolderName;
-    }
-#endif
-    return std::filesystem::current_path();
+    return lambo::paths::app_config_dir();
 }
 
 ultramodern::renderer::GraphicsConfig default_graphics_config() {

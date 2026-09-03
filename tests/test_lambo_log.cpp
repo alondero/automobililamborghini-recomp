@@ -42,6 +42,16 @@ int main() {
                "invalid log level reports a useful error");
     }
 
+    {
+        char a0[] = "game";
+        char a1[] = "--log-level=bogus";
+        char a2[] = "--console";
+        char* args[] = {a0, a1, a2};
+        expect(!lambo_log_parse_args(3, args), "invalid log level remains an error");
+        expect(lambo_log_console_requested(),
+               "console switch is still honored when another switch is invalid");
+    }
+
     const std::filesystem::path directory =
         std::filesystem::temp_directory_path() / "lambo-log-test";
     std::error_code ec;
@@ -73,6 +83,8 @@ int main() {
            "enabled messages include level and tag");
 
     input.close();
+    lambo_log_shutdown();
+    expect(lambo_log_initialize(), "logger can be initialized again after shutdown");
     lambo_log_shutdown();
     clear_env("LAMBO_LOG_DIR");
     std::filesystem::remove_all(directory, ec);

@@ -22,6 +22,7 @@ typedef enum LamboLogLevel {
 // Source-compatible fast path for existing hot-loop probes. It is true when
 // the selected threshold includes debug messages.
 extern bool lambo_log_enabled;
+extern volatile int g_log_threshold;
 bool lambo_log_parse_args(int argc, char** argv);
 void lambo_log_parse_flag(int argc, char** argv); // compatibility entry point
 const char* lambo_log_last_error(void);
@@ -30,7 +31,6 @@ void lambo_log_shutdown(void);
 const char* lambo_log_path(void);
 bool lambo_log_console_requested(void);
 LamboLogLevel lambo_log_level(void);
-bool lambo_log_would_emit(LamboLogLevel level);
 void lambo_log_write(LamboLogLevel level, const char* tag, const char* format, ...);
 
 #ifdef __cplusplus
@@ -41,6 +41,13 @@ void lambo_log_write(LamboLogLevel level, const char* tag, const char* format, .
 // so expensive formatting expressions are not evaluated at a disabled level.
 #define LAMBO_LOG_AT(level, tag, ...) \
     do { if (lambo_log_would_emit(level)) lambo_log_write(level, tag, __VA_ARGS__); } while (0)
+
+// Keep disabled probes to one inlined atomic load/compare. GCC/Clang are the
+// supported native toolchains for this project (including MinGW on Windows).
+static inline bool lambo_log_would_emit(LamboLogLevel level) {
+    return (int)level <=
+        __atomic_load_n(&g_log_threshold, __ATOMIC_RELAXED);
+}
 
 // Existing diagnostics are debug-level by design.
 #define LAMBO_LOG(tag, ...) LAMBO_LOG_AT(LAMBO_LEVEL_DEBUG, tag, __VA_ARGS__)

@@ -91,7 +91,7 @@ preferred `--verbose` flag is equivalent to `--log-level=debug`; use
 `--log-level=trace` only when a maintainer requests the noisier trace.
 
 **Crash output.** If the port hit a native crash, attach the newest
-`crashes/crash-report.txt` from the same directory. The crash report is written
+`crashes/crash-*.txt` from the same directory. The crash report is written
 even when no console was visible and contains a banner like:
 
 ```

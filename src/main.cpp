@@ -750,10 +750,17 @@ static int application_main(int argc, char** argv) {
     // attaching/allocating the live stderr sink.
     if (!lambo_log_parse_args(argc, argv)) {
         (void)lambo_log_initialize();
-        LAMBO_LOG_ERROR("log", "%s\n", lambo_log_last_error());
+        // Command-line syntax errors must remain visible even when the user
+        // did not request a console or the log directory is unavailable.
+        std::fprintf(stderr, "[error] [log] %s\n", lambo_log_last_error());
         return 2;
     }
     (void)lambo_log_initialize();
+#if defined(_WIN32)
+    // SDL2main normally performs this when it owns WinMain. This target owns
+    // WinMain because it is a GUI-subsystem executable.
+    SDL_SetMainReady();
+#endif
     // Deterministic lighting self-test: no ROM, no runtime -- exercises the swrender
     // light-decode + lambert path on a synthetic DL and exits (tests/pivot/test_lighting.py).
     if (std::getenv("LAMBO_LIGHTING_SELFTEST")) {
@@ -776,6 +783,15 @@ static int application_main(int argc, char** argv) {
                 return 2;
             }
             controller_pak_path = argv[++i];
+        } else if (argv[i] && std::strcmp(argv[i], "--log-level") == 0) {
+            // lambo_log_parse_args already validated and consumed this value;
+            // keep the ROM selector from mistaking it for a ROM path.
+            ++i;
+        } else if (argv[i] && (std::strncmp(argv[i], "--log-level=", 12) == 0 ||
+                              std::strcmp(argv[i], "--verbose") == 0 ||
+                              std::strcmp(argv[i], "--lambo-debug") == 0 ||
+                              std::strcmp(argv[i], "--console") == 0)) {
+            // Logging-only switches are handled by the logging pass above.
         } else if (argv[i] && argv[i][0] != '-' && argv[i][0] != '\0' &&
                    is_controller_pak_container(argv[i])) {
             import_path = argv[i];

@@ -344,6 +344,20 @@ else()
     set(NFD_PORTAL ON CACHE BOOL "" FORCE)
 endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64 ${CMAKE_BINARY_DIR}/rt64)
+# SDL2main owns the Windows entry point, but this project provides its own
+# WinMain wrapper so it can build as a GUI executable while still accepting
+# normal command-line arguments. RT64's bundled CMake adds SDL2main to its
+# direct link list; remove only that transitive entry-point library while
+# retaining SDL2 for the renderer and input backends.
+if(WIN32 AND TARGET rt64)
+    get_target_property(RT64_LINK_LIBRARIES rt64 LINK_LIBRARIES)
+    list(REMOVE_ITEM RT64_LINK_LIBRARIES SDL2main)
+    set_target_properties(rt64 PROPERTIES LINK_LIBRARIES "${RT64_LINK_LIBRARIES}")
+    get_target_property(RT64_INTERFACE_LINK_LIBRARIES rt64 INTERFACE_LINK_LIBRARIES)
+    list(REMOVE_ITEM RT64_INTERFACE_LINK_LIBRARIES SDL2main)
+    set_target_properties(rt64 PROPERTIES
+        INTERFACE_LINK_LIBRARIES "${RT64_INTERFACE_LINK_LIBRARIES}")
+endif()
 # Generated shader headers land in the rt64 binary dir (Zelda64Recomp does the same).
 target_include_directories(rt64 PRIVATE ${CMAKE_BINARY_DIR}/rt64/src)
 if(WIN32)

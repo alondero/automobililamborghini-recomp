@@ -16,9 +16,12 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -27,12 +30,14 @@
 #include "librecomp/sections.h"
 #include "recomp.h"
 #include "lambo_log.h"
+#include "lambo_paths.h"
 
 #if defined(_WIN32)
     #define LAMBO_CRASH_WIN32 1
     #include <windows.h>
     #include <dbghelp.h>
     #include <malloc.h>
+    #include <process.h>
     #pragma comment(lib, "dbghelp.lib")
 #else
     #define LAMBO_CRASH_POSIX 1
@@ -204,6 +209,7 @@ const SymbolInfo* lookup(uint32_t vram, uint32_t* out_offset_bytes) {
 namespace {
 std::unordered_map<const void*, uint32_t> g_native_to_vram;
 FILE* g_crash_file = nullptr;
+std::filesystem::path g_crash_report_path;
 } // namespace
 
 extern "C" void lambo_crash_register_code_ptrs(
@@ -387,6 +393,13 @@ void dump_crash_state(FILE* fp, const char* reason, uint32_t vram_guess) {
 void final_dump_and_die(const char* reason, uint32_t vram_guess,
                         const void* const* native_pcs, int native_pcs_n,
                         const char* kind) {
+    if (g_crash_file == nullptr && !g_crash_report_path.empty()) {
+#if defined(_WIN32)
+        g_crash_file = _wfopen(g_crash_report_path.c_str(), L"wb");
+#else
+        g_crash_file = std::fopen(g_crash_report_path.string().c_str(), "wb");
+#endif
+    }
     FILE* report = g_crash_file != nullptr ? g_crash_file : stderr;
     dump_crash_state(report, reason, vram_guess);
     if (native_pcs && native_pcs_n > 0)
@@ -469,6 +482,9 @@ LONG WINAPI win32_vectored_handler(EXCEPTION_POINTERS* ep) {
         // dump path's own fprintf would re-fault it. _resetstkoflw bumps
         // RSP past the guard, then we print a minimal banner and exit.
         _resetstkoflw();
+        if (g_crash_file == nullptr && !g_crash_report_path.empty()) {
+            g_crash_file = _wfopen(g_crash_report_path.c_str(), L"wb");
+        }
         FILE* report = g_crash_file != nullptr ? g_crash_file : stderr;
         std::fprintf(report,
             "\n========================= NATIVE CRASH =========================\n"
@@ -562,24 +578,37 @@ void install() {
     static std::atomic<bool> once{false};
     bool expected = false;
     if (!once.compare_exchange_strong(expected, true)) return;
-    // Open a crash-specific destination before installing the handler. The
-    // handler does not enter the normal logger (its mutex/heap may be unsafe).
+    // Resolve a crash-specific destination before installing the handler. The
+    // file itself is opened only after a crash, so a later reproduction cannot
+    // erase the previous report and ordinary sessions leave no empty file.
     {
         std::filesystem::path report_dir;
-        const char* log_path = lambo_log_path();
         if (const char* override_dir = std::getenv("LAMBO_LOG_DIR");
             override_dir != nullptr && override_dir[0] != '\0') {
             report_dir = std::filesystem::path{override_dir} / "crashes";
-        } else if (log_path != nullptr && log_path[0] != '\0') {
-            report_dir = std::filesystem::path{log_path}.parent_path().parent_path() / "crashes";
         } else {
-            report_dir = std::filesystem::current_path() / "crashes";
+            report_dir = lambo::paths::app_state_dir() / "crashes";
         }
         std::error_code ec;
         std::filesystem::create_directories(report_dir, ec);
         if (!ec) {
-            const auto report_path = report_dir / "crash-report.txt";
-            g_crash_file = std::fopen(report_path.string().c_str(), "wb");
+            const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            std::tm tm{};
+#if defined(_WIN32)
+            localtime_s(&tm, &now);
+#else
+            localtime_r(&now, &tm);
+#endif
+            std::ostringstream name;
+            name << "crash-" << std::put_time(&tm, "%Y%m%d-%H%M%S")
+                 << "-" << static_cast<unsigned long>(
+#if defined(_WIN32)
+                     _getpid()
+#else
+                     getpid()
+#endif
+                 ) << ".txt";
+            g_crash_report_path = report_dir / name.str();
         }
     }
 #if defined(LAMBO_CRASH_POSIX)
