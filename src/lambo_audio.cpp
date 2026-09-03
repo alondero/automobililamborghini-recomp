@@ -13,7 +13,7 @@
 //    (rate/format) and runs SDL_ConvertAudio on every submit.
 //  * Thread model: the game's audio thread calls queue_samples (via the
 //    ultramodern shim). SDL device lifecycle work is pumped from the main
-//    thread; submission only queues already-prepared data.
+//    thread; submission performs conversion and queueing but never device lifecycle calls.
 //  * First-AICall tripwire: queue_samples logs once the first time it sees a
 //    non-empty buffer. The producer cluster is currently stubbed (W96), so
 //    the log will not fire under the current headless boot. It becomes
