@@ -17,6 +17,7 @@
 #include "recomp.h"
 
 #include "lambo_config.h"
+#include "lambo_no_lod_policy.h"
 
 extern "C" unsigned long long lambo_camera_view_cone_cos_bits();
 
@@ -124,6 +125,17 @@ bool valid_guest_ptr(int32_t p) {
     return u >= 0x80000000u && u < 0x80800000u;
 }
 
+struct SegmentRecordView {
+    uint8_t* rdram;
+    gpr records;
+};
+
+bool segment_is_renderable(int segment, const void* context) {
+    const auto& view = *static_cast<const SegmentRecordView*>(context);
+    uint8_t* rdram = view.rdram;
+    return valid_guest_ptr(MEM_W(segment * 64 + 0x4, view.records));
+}
+
 // Rebuild the synthesized row for the viewport walk that is starting. The segment
 // count is not stored anywhere by the game -- it is (header+0x8 - header+0x4) / 20,
 // the size of the PVS block itself (verified exact on circuit 5: 1100/20 = 55 rows,
@@ -152,22 +164,16 @@ void build_synth_row(uint8_t* rdram) {
     int cam = MEM_H(0, kCamSegAddr);
     if (cam < 0 || cam >= n) return;
 
-    bool listed[256] = {};
-    int out = 0;
-    listed[cam] = true;  // the camera's own segment is drawn by its dedicated path
+    int16_t authored[10];
     for (int i = 0; i < 10; i++) {  // authored row first: stock drawn-list prefix
-        int e = MEM_H(cam * 20 + i * 2, (gpr)pvs);
-        if (e < 0 || e >= n || listed[e]) continue;
-        listed[e] = true;
-        s_synth_row[out++] = (int16_t)e;
+        authored[i] = static_cast<int16_t>(MEM_H(cam * 20 + i * 2, (gpr)pvs));
     }
-    for (int s = 0; s < n; s++) {
-        if (listed[s]) continue;
-        // Skip records with no road sub-DL (defends against sentinel/padding rows).
-        if (!valid_guest_ptr(MEM_W(s * 64 + 0x4, (gpr)recs))) continue;
-        s_synth_row[out++] = (int16_t)s;
-    }
-    s_synth_n = out;
+    SegmentRecordView records{rdram, (gpr)recs};
+    // The pure row policy keeps authored membership ahead of exclusions: a
+    // PVS-gated segment is withheld only when it would be a synthesized extra.
+    s_synth_n = lambo::no_lod::build_synthesized_row(
+        cur_circuit, n, cam, std::span<const int16_t>(authored),
+        &segment_is_renderable, &records, std::span<int16_t>(s_synth_row));
 }
 
 }  // namespace
