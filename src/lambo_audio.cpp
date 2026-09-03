@@ -112,7 +112,7 @@ void mark_open_failure(const char* operation, bool subsystem_ready) {
 
 // g_state_mtx must be held. Queueing itself is short and thread-safe in SDL; lifecycle recovery is
 // only requested here and performed later by pump() on the main thread.
-bool queue_audio_locked(const void* data, Uint32 byte_count, const char* path) {
+bool queue_audio_locked(const void* data, Uint32 byte_count, const char* queue_context) {
     if (SDL_QueueAudio(g_dev, data, byte_count) == 0) {
         return true;
     }
@@ -121,7 +121,7 @@ bool queue_audio_locked(const void* data, Uint32 byte_count, const char* path) {
     if (!g_unavailable_logged) {
         g_unavailable_logged = true;
         LAMBO_LOG("probe", "audio: SDL_QueueAudio%s failed: %s; scheduling recovery\n",
-                  path, SDL_GetError());
+                  queue_context, SDL_GetError());
     }
     return false;
 }
