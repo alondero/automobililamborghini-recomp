@@ -360,6 +360,28 @@ if(NOT WIN32)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(lambo_audio_recovery_tests
+        tests/test_audio_recovery.cpp
+        src/lambo_audio.cpp
+        src/lambo_log.cpp
+    )
+    target_include_directories(lambo_audio_recovery_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/ultramodern/include
+        ${N64MR}/librecomp/include
+        ${N64MR}/N64Recomp/include
+        ${N64MR}/thirdparty
+        ${N64MR}/thirdparty/concurrentqueue
+        ${SDL2_INCLUDE_DIRS}
+    )
+    target_compile_definitions(lambo_audio_recovery_tests PRIVATE
+        SDL_MAIN_HANDLED
+        LAMBO_AUDIO_RETRY_INTERVAL_MS=0
+    )
+    target_link_libraries(lambo_audio_recovery_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_audio_recovers_from_device_failures
+        COMMAND lambo_audio_recovery_tests)
+
     add_executable(lambo_controls_sdl_tests
         tests/test_controls_sdl.cpp
         src/controls/lambo_controls.cpp
@@ -427,6 +449,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/register_overlays.cpp
         src/stub_renderer.cpp
         src/lambo_audio.cpp    # SDL2 push-audio sink for the AI buffer (audio epic #53, PR 1 of 3)
+        src/lambo_audio_override.cpp # audio status getter override (W135)
         src/lambo_config.cpp   # persistent graphics.json -> ultramodern GraphicsConfig (enhancements #1/#2)
         src/lambo_player_name.cpp # remember player one's confirmed name for later name-entry screens
         src/lambo_menu.cpp     # lightweight native Win32 menu bar; live config actions + persistence
