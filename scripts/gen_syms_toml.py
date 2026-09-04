@@ -924,6 +924,25 @@ func = "func_800028D0"
 before_vram = 0x80001CD4
 text = "extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_savestate_tick(rdram, ctx);"
 
+# Deterministic input record/replay harness. The controller hook replaces/records
+# the decoded pad before the ROM derives its held/pressed masks. The following
+# dispatcher entry verifies that staged pad and freezes its analog channels; the
+# common epilogue counts it only after the 30 Hz game update has returned.
+[[patches.hook]]
+func = "func_800028D0"
+before_vram = 0x80001CD8
+text = "extern void lambo_replay_dispatch_begin(uint8_t*); lambo_replay_dispatch_begin(rdram);"
+
+[[patches.hook]]
+func = "func_800028D0"
+before_vram = 0x800024E8
+text = "extern void lambo_replay_dispatch_end(uint8_t*); lambo_replay_dispatch_end(rdram);"
+
+[[patches.hook]]
+func = "BootLoadInitialAssets"
+before_vram = 0x8000193C
+text = "extern void lambo_replay_input_tick(uint8_t*); lambo_replay_input_tick(rdram);"
+
 # Issue #128 — true analog throttle. Capture the pedal demand immediately before the
 # stock human-driver A/Z branch, then apply the selected native port's continuous target
 # at the common merge. The two hooks preserve the ROM's +/-10 pedal ramp, including exact

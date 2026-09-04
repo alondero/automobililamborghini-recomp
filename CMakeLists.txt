@@ -167,6 +167,16 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_input_capture_gate COMMAND lambo_input_gate_tests)
 
+    add_executable(lambo_input_replay_tests
+        tests/test_lambo_replay.cpp
+        src/lambo_replay.cpp
+    )
+    target_include_directories(lambo_input_replay_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/thirdparty
+    )
+    add_test(NAME lambo_input_record_replay COMMAND lambo_input_replay_tests)
+
     add_executable(lambo_controls_tests
         tests/test_controls.cpp
         src/controls/lambo_controls.cpp
@@ -259,6 +269,10 @@ if(BUILD_TESTING)
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_quit_path.py
                 ${CMAKE_CURRENT_SOURCE_DIR}
+        )
+        add_test(NAME lambo_game_scenario_runner
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_game_scenario.py
         )
     else()
         message(WARNING "Python not found; Python-based tests will not be registered")
@@ -489,6 +503,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_menu.cpp     # lightweight native Win32 menu bar; live config actions + persistence
         src/lambo_startup.cpp  # runtime-ready -> Play startup state machine (issue #126)
         src/lambo_input_gate.cpp # controller capture/neutral-release barrier (issue #126)
+        src/lambo_replay.cpp    # versioned effective-input trace parser/recorder
+        src/lambo_replay_runtime.cpp # game-dispatch-clock record/replay harness
         src/lambo_analog_throttle.cpp # issue #128: atomic native-port throttle bridge + race hook
         src/lambo_analog_brake.cpp    # issue #152: atomic native-port brake bridge + race hook
         src/controls/lambo_controls.cpp

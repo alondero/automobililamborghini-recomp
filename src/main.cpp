@@ -19,9 +19,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "librecomp/game.hpp"
@@ -53,6 +55,7 @@
 #include "lambo_input_gate.h"
 #include "lambo_analog_throttle.h"
 #include "lambo_analog_brake.h"
+#include "lambo_replay_runtime.h"
 #include "lambo_startup.h"
 #include "controls/lambo_controls_sdl.h"
 #include "ui/lambo_ui.h"
@@ -79,7 +82,14 @@ static std::atomic<bool> g_first_vi{false};
 // smoke test assert the init cascade reaches the title state machine rather than just
 // "didn't crash". See state_probe(). (0 = never read; the cold-boot seed is state 1.)
 static std::atomic<int>  g_max_state{0};
+static std::atomic<int>  g_current_state{0};
+static std::atomic<int>  g_current_menu_screen{-1};
+static std::atomic<int>  g_loaded_circuit{0};
 static std::atomic<int>  g_swaps{0};
+static std::atomic<int>  g_player_vehicle{-1};
+static std::atomic<int>  g_player_speed{0};
+static std::atomic<int>  g_max_abs_player_speed{0};
+static std::atomic<bool> g_termination_started{false};
 
 // LAMBO_CRASH_TEST: when set, the test thread's 2 s sleep must outlast
 // boot_summary_and_exit() so its deliberate crash fires. Disable the VI cap.
@@ -112,6 +122,137 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
     if (n <= 12) LAMBO_LOG("probe", "game thread #%d started (osCreateThread)\n", n);
 }
 
+extern "C" int lambo_warp_env_applied(void);
+extern "C" int lambo_warp_env_failed(void);
+extern "C" int lambo_warp_env_circuit(void);
+extern "C" int lambo_warp_env_laps(void);
+extern "C" int lambo_warp_env_car(void);
+extern "C" int lambo_warp_env_players(void);
+extern "C" int lambo_warp_env_mode(void);
+extern "C" int lambo_savestate_env_load_applied(void);
+extern "C" int lambo_savestate_env_load_failed(void);
+
+// Scenario runners need a machine-readable outcome rather than having to infer success from
+// human-oriented log prose. The artifact is opt-in and atomically published so a killed or
+// crashed process can never leave a plausible-looking partial result.
+static void write_harness_result(const char* reason, int exit_code) {
+    const char* value = std::getenv("LAMBO_HARNESS_RESULT");
+    if (value == nullptr || value[0] == '\0') return;
+
+    const lambo::replay_runtime::Status replay = lambo::replay_runtime::status();
+    auto environment_requested = [](const char* name) {
+        const char* configured = std::getenv(name);
+        return configured != nullptr && configured[0] != '\0';
+    };
+    const bool warp_requested = environment_requested("LAMBO_WARP");
+    const bool state_load_requested = environment_requested("LAMBO_STATE_LOAD");
+    const std::filesystem::path output(value);
+    std::error_code error;
+    if (!output.parent_path().empty()) {
+        std::filesystem::create_directories(output.parent_path(), error);
+        if (error) {
+            LAMBO_LOG_ERROR("harness", "cannot create result directory for %s: %s\n",
+                            value, error.message().c_str());
+            return;
+        }
+    }
+    std::filesystem::path temporary = output;
+    temporary += ".tmp";
+    std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+    if (!stream) {
+        LAMBO_LOG_ERROR("harness", "cannot write result file %s\n", value);
+        return;
+    }
+    stream << "{\n"
+           << "  \"schema\": 1,\n"
+           << "  \"outcome\": \"" << (exit_code == 0 ? "passed" : "failed") << "\",\n"
+           << "  \"reason\": \"" << reason << "\",\n"
+           << "  \"exit_code\": " << exit_code << ",\n"
+           << "  \"vis\": " << g_vis.load() << ",\n"
+           << "  \"swaps\": " << g_swaps.load() << ",\n"
+           << "  \"max_state\": " << g_max_state.load() << ",\n"
+           << "  \"final_state\": " << g_current_state.load() << ",\n"
+           << "  \"menu_screen\": " << g_current_menu_screen.load() << ",\n"
+           << "  \"loaded_circuit\": " << g_loaded_circuit.load() << ",\n"
+           << "  \"player_vehicle\": " << g_player_vehicle.load() << ",\n"
+           << "  \"player_speed\": " << g_player_speed.load() << ",\n"
+           << "  \"max_abs_player_speed\": " << g_max_abs_player_speed.load() << ",\n"
+           << "  \"warp\": {\n"
+           << "    \"requested\": " << (warp_requested ? "true" : "false") << ",\n"
+           << "    \"applied\": " << (lambo_warp_env_applied() ? "true" : "false") << ",\n"
+           << "    \"failed\": " << (lambo_warp_env_failed() ? "true" : "false") << ",\n"
+           << "    \"circuit\": " << lambo_warp_env_circuit() << ",\n"
+           << "    \"laps\": " << lambo_warp_env_laps() << ",\n"
+           << "    \"car\": " << lambo_warp_env_car() << ",\n"
+           << "    \"players\": " << lambo_warp_env_players() << ",\n"
+           << "    \"mode\": " << lambo_warp_env_mode() << "\n"
+           << "  },\n"
+           << "  \"state_load\": {\n"
+           << "    \"requested\": " << (state_load_requested ? "true" : "false") << ",\n"
+           << "    \"applied\": "
+           << (lambo_savestate_env_load_applied() ? "true" : "false") << ",\n"
+           << "    \"failed\": "
+           << (lambo_savestate_env_load_failed() ? "true" : "false") << "\n"
+           << "  },\n"
+           << "  \"replay\": {\n"
+           << "    \"configured\": " << (replay.configured ? "true" : "false") << ",\n"
+           << "    \"recording\": " << (replay.recording ? "true" : "false") << ",\n"
+           << "    \"active\": " << (replay.active ? "true" : "false") << ",\n"
+           << "    \"complete\": " << (replay.complete ? "true" : "false") << ",\n"
+           << "    \"failed\": " << (replay.failed ? "true" : "false") << ",\n"
+           << "    \"total_frames\": " << replay.total_frames << ",\n"
+           << "    \"frames_consumed\": " << replay.frames_consumed << ",\n"
+           << "    \"guest_frames_verified\": " << replay.guest_frames_verified << ",\n"
+           << "    \"dispatcher_ticks\": " << replay.dispatcher_ticks << "\n"
+           << "  }\n"
+           << "}\n";
+    stream.close();
+    if (!stream) {
+        LAMBO_LOG_ERROR("harness", "failed while writing result file %s\n", value);
+        return;
+    }
+
+    std::filesystem::rename(temporary, output, error);
+    if (error) {
+        // Windows does not replace an existing destination. Preserve the first rename's
+        // failure semantics, then replace only this explicitly requested harness artifact.
+        error.clear();
+        std::filesystem::remove(output, error);
+        error.clear();
+        std::filesystem::rename(temporary, output, error);
+    }
+    if (error) {
+        LAMBO_LOG_ERROR("harness", "cannot publish result file %s: %s\n",
+                        value, error.message().c_str());
+    }
+}
+
+struct HarnessOutcome {
+    std::string reason;
+    int exit_code;
+};
+
+// VI EOF/max-vis, the watchdog, and a UI close can converge on the immediate
+// exit paths from different native threads. Let exactly one thread publish the
+// result and shut down shared logging/storage; the winner's _Exit terminates
+// any losing waiter a few instructions later.
+static void claim_immediate_exit() {
+    if (!g_termination_started.exchange(true, std::memory_order_acq_rel)) return;
+    for (;;) std::this_thread::yield();
+}
+
+static HarnessOutcome finalize_harness_outcome(const char* reason, int exit_code) {
+    lambo::replay_runtime::finalize();
+    const lambo::replay_runtime::Status replay = lambo::replay_runtime::status();
+    std::string effective_reason = reason;
+    if (replay.failed) {
+        exit_code = 2;
+        const std::string terminal = lambo::replay_runtime::terminal_reason();
+        effective_reason = terminal.empty() ? "replay_failed" : terminal;
+    }
+    return {std::move(effective_reason), exit_code};
+}
+
 // Print the one-line boot summary the runtime guard (tests/pivot/test_boot_smoke.py) parses,
 // then terminate the process immediately. We _Exit instead of returning through
 // recomp::start()'s teardown on purpose: that teardown joins the helper threads and munmaps
@@ -121,16 +262,36 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
 // quitting anyway, so skip the unwind and let process exit tear the game threads down.
     // (Graceful game-thread shutdown is RT64-integration work, #58.)
 [[noreturn]] static void boot_summary_and_exit() {
+    claim_immediate_exit();
     LAMBO_LOG("probe", "boot summary; threads=%d vis=%d first_vi=%d max_state=%d swaps=%d\n",
                  g_threads.load(), g_vis.load(), (int)g_first_vi.load(), g_max_state.load(),
                  g_swaps.load());
+    const HarnessOutcome outcome = finalize_harness_outcome(
+        "max_vis", g_first_vi.load() ? 0 : 2);
+    write_harness_result(outcome.reason.c_str(), outcome.exit_code);
     (void)lambo_pak_storage_flush();
     lambo_log_shutdown();
     std::fflush(nullptr);
-    std::_Exit(g_first_vi.load() ? 0 : 2);
+    std::_Exit(outcome.exit_code);
+}
+
+[[noreturn]] static void harness_summary_and_exit(const char* reason, int exit_code) {
+    claim_immediate_exit();
+    const HarnessOutcome outcome = finalize_harness_outcome(reason, exit_code);
+    LAMBO_LOG("harness", "scenario finished; reason=%s status=%d\n",
+              outcome.reason.c_str(), outcome.exit_code);
+    LAMBO_LOG("probe", "boot summary; threads=%d vis=%d first_vi=%d max_state=%d swaps=%d\n",
+              g_threads.load(), g_vis.load(), (int)g_first_vi.load(), g_max_state.load(),
+              g_swaps.load());
+    write_harness_result(outcome.reason.c_str(), outcome.exit_code);
+    (void)lambo_pak_storage_flush();
+    lambo_log_shutdown();
+    std::fflush(nullptr);
+    std::_Exit(outcome.exit_code);
 }
 
 [[noreturn]] static void application_exit_success() {
+    claim_immediate_exit();
     LAMBO_LOG("probe", "application exit requested; status=success\n");
     // update_gfx_stub runs on librecomp's primary thread, while RT64 invokes the
     // UI render hooks on its presentation thread. Calling ui::shutdown() here
@@ -138,10 +299,12 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
     // down RmlUi while a draw hook can still be using it. This path deliberately
     // terminates the process below, so there is no cleanup benefit that can
     // justify touching either subsystem first.
+    const HarnessOutcome outcome = finalize_harness_outcome("runtime_exit", 0);
+    write_harness_result(outcome.reason.c_str(), outcome.exit_code);
     (void)lambo_pak_storage_flush();
     lambo_log_shutdown();
     std::fflush(nullptr);
-    std::_Exit(0);
+    std::_Exit(outcome.exit_code);
 }
 
 // Set by headless::create_render_context (stub_renderer.cpp) so this retrace hook can reach RDRAM.
@@ -224,7 +387,43 @@ static void state_probe() {
         return (a & 2u) ? (w & 0xFFFF) : ((w >> 16) & 0xFFFF);
     };
     int state = (int)h(0x800CE6AC);
+    // The dispatcher range-checks state-1 < 0x10, so its measured domain is
+    // states 1..16 (plus the cold seed 0). The native VI callback races guest
+    // writes; ignore values outside that domain so a torn sample cannot satisfy
+    // an "at least state N" oracle.
+    if (state < 0 || state > 16) return;
+    g_current_state.store(state, std::memory_order_relaxed);
     if (state > g_max_state.load()) g_max_state.store(state);
+    if (state == 8) {
+        // This is the loader's live zero-based circuit, not the menu cursor
+        // written by the warp hook. Keeping it separately lets a scenario
+        // detect a loader regression that selects the wrong track.
+        const int circuit0 = static_cast<int16_t>(h(0x800CE794u));
+        if (circuit0 >= 0 && circuit0 < 6) {
+            g_loaded_circuit.store(circuit0 + 1, std::memory_order_relaxed);
+        }
+        // Vehicle records and these fields are runtime-verified (see the historical
+        // car-differences instrumentation): +0x0E is the one-based player channel and
+        // +0x90 is the signed speedometer value. Report channel 1 without assuming a
+        // stable vehicle-slot assignment across race modes.
+        constexpr uint32_t kVehicleBase = 0x800B69A8u;
+        constexpr uint32_t kVehicleStride = 0x10Cu;
+        for (int vehicle = 0; vehicle < 6; ++vehicle) {
+            const uint32_t base = kVehicleBase + static_cast<uint32_t>(vehicle) * kVehicleStride;
+            if (static_cast<int16_t>(h(base + 0x0Eu)) != 1) continue;
+            const int speed = static_cast<int32_t>(
+                *(const uint32_t*)(g_lambo_rdram + (base + 0x90u - 0x80000000u)));
+            g_player_vehicle.store(vehicle, std::memory_order_relaxed);
+            g_player_speed.store(speed, std::memory_order_relaxed);
+            const int magnitude = speed == std::numeric_limits<int>::min()
+                ? std::numeric_limits<int>::max() : std::abs(speed);
+            int previous = g_max_abs_player_speed.load(std::memory_order_relaxed);
+            while (magnitude > previous &&
+                   !g_max_abs_player_speed.compare_exchange_weak(
+                       previous, magnitude, std::memory_order_relaxed)) {}
+            break;
+        }
+    }
     static int s_last = -1;
     if (state != s_last) {
         LAMBO_LOG("state", "vi=%d  state=%d (was %d)\n", g_vis.load(), state, s_last);
@@ -246,6 +445,7 @@ static void menu_probe() {
     };
     int scr = (int)(int16_t)h(0x80098562);
     int sub = (int)(int16_t)h(0x80098560);
+    g_current_menu_screen.store(scr, std::memory_order_relaxed);
     static int s_scr = -9999, s_sub = -9999;
     if (scr != s_scr || sub != s_sub) {
         LAMBO_LOG("menu", "vi=%d  screen=%d sub=%d (was %d/%d)\n",
@@ -286,6 +486,12 @@ static void vi_cb() {
     pace_probe(n);
     if ((n % 50) == 0) lambo_thread_trace_dump(n); // THROWAWAY: per-thread recv/send snapshot to find the frozen thread
     if (!g_first_vi.exchange(true)) LAMBO_LOG("probe", "FIRST VI retrace\n");
+    if (lambo::replay_runtime::should_exit()) {
+        const lambo::replay_runtime::Status replay = lambo::replay_runtime::status();
+        const std::string reason = lambo::replay_runtime::terminal_reason();
+        harness_summary_and_exit(reason.empty() ? "replay_failed" : reason.c_str(),
+                                 replay.failed ? 3 : 0);
+    }
     if (n == kQuitAfterVis) {
         LAMBO_LOG("probe", "reached %d VIs; quitting\n", n);
         boot_summary_and_exit();
@@ -663,10 +869,10 @@ static void input_sample() {
     lambo::input_gate::publish_physical_snapshot(gated_snap);
     const float throttle = lambo::input_gate::guest_input_suppressed()
         ? 0.0f : physical_throttle;
-    lambo::analog_throttle::publish(0, analog_mode, throttle);
     const float brake = lambo::input_gate::guest_input_suppressed()
         ? 0.0f : physical_brake;
-    lambo::analog_brake::publish(0, brake_analog_mode, brake);
+    lambo::replay_runtime::publish_physical_analog(
+        analog_mode, throttle, brake_analog_mode, brake);
 }
 
 static void input_poll_stub() {}
@@ -686,6 +892,33 @@ static bool input_get_input(int controller_num, uint16_t* buttons, float* x, flo
     int8_t   sy = (int8_t)((snap >> 24) & 0xFF);
     if (!suppressed && sx == 0) sx = g_held_sx;                  // env stick fills in when live stick idle
     if (!suppressed && sy == 0) sy = g_held_sy;
+
+    // Record/replay uses mapped N64 controls rather than SDL device events. This callback
+    // mirrors the current movie frame into the normal controller response, while the
+    // authoritative injection/recording seam is the game dispatcher in lambo_replay_runtime.
+    auto normalized_u16 = [](float value) -> uint16_t {
+        if (!std::isfinite(value) || value <= 0.0f) return 0;
+        if (value >= 1.0f) return UINT16_MAX;
+        return static_cast<uint16_t>(std::lround(value * static_cast<float>(UINT16_MAX)));
+    };
+    lambo::replay::InputFrame effective{};
+    effective.buttons = b;
+    effective.stick_x = sx;
+    effective.stick_y = sy;
+    float analog_value = 0.0f;
+    effective.throttle_analog = lambo::analog_throttle::sample(0, analog_value);
+    effective.throttle = normalized_u16(analog_value);
+    analog_value = 0.0f;
+    effective.brake_analog = lambo::analog_brake::sample(0, analog_value);
+    effective.brake = normalized_u16(analog_value);
+
+    lambo::replay::InputFrame replay_frame{};
+    if (lambo::replay_runtime::playback_frame(replay_frame)) {
+        effective = replay_frame;
+    }
+    b = effective.buttons;
+    sx = effective.stick_x;
+    sy = effective.stick_y;
     if (buttons) *buttons = b;
     // ultramodern does stick_x = (int8_t)(127 * x), so divide by 127 (NOT N64_STICK_MAX) to
     // preserve our authentic +-80 range through that re-scale instead of re-expanding to +-127.
@@ -926,6 +1159,17 @@ static int application_main(int argc, char** argv) {
     }
     LAMBO_LOG("probe", "ROM validated; rom_hash matches\n");
 
+    if (!lambo::replay_runtime::initialize_from_environment()) {
+        const std::string error = lambo::replay_runtime::last_error();
+        LAMBO_LOG_ERROR("replay", "cannot initialize input record/replay: %s\n", error.c_str());
+        lambo::replay_runtime::finalize();
+        const std::string reason = lambo::replay_runtime::terminal_reason();
+        write_harness_result(reason.empty() ? "invalid_configuration" : reason.c_str(), 2);
+        (void)lambo_pak_storage_flush();
+        lambo_log_shutdown();
+        return 2;
+    }
+
     lambo::StartupMode startup_mode = lambo::startup_mode_from_environment();
     if (startup_mode == lambo::StartupMode::Automatic && lambo::config::show_launcher()) {
         startup_mode = lambo::StartupMode::InteractiveLauncher;
@@ -956,7 +1200,7 @@ static int application_main(int argc, char** argv) {
                          wd_sec, g_threads.load(), g_vis.load(), (int)g_first_vi.load());
             // Exit deterministically (same as the VI-cap path) rather than ultramodern::quit(),
             // whose teardown munmaps RDRAM out from under the live game threads (SIGSEGV race).
-            boot_summary_and_exit();
+            harness_summary_and_exit("watchdog", 2);
         });
         watchdog.detach();
     }
@@ -1049,7 +1293,7 @@ static int application_main(int argc, char** argv) {
     recomp::start(cfg);
     // Reached only via the watchdog quit path (a boot stall before the VI cap): the VI-cap
     // path exits from vi_cb via boot_summary_and_exit() and never returns here.
-    boot_summary_and_exit();
+    harness_summary_and_exit("runtime_return", g_first_vi.load() ? 0 : 2);
 }
 
 #if defined(_WIN32)

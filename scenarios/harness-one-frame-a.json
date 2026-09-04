@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "name": "harness-one-frame-a",
+  "headless": true,
+  "warp": "1:1:0:1",
+  "warp_mode": 0,
+  "max_vis": 1200,
+  "input": {
+    "replay": "../recordings/harness-one-frame-a.jsonl",
+    "start_state": 8,
+    "start_delay": 0,
+    "exit_on_end": true
+  },
+  "expect": {
+    "max_state_at_least": 8,
+    "replay_complete": true,
+    "min_swaps": 1
+  }
+}
