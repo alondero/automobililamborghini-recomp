@@ -1,0 +1,5 @@
+{"type":"header","format":"lambo-input-trace","version":1,"clock":"game-dispatch","ports":1}
+{"type":"run","frames":120,"buttons":0,"stick_x":0,"stick_y":0,"throttle_analog":false,"throttle":0,"brake_analog":false,"brake":0}
+{"type":"run","frames":450,"buttons":32768,"stick_x":0,"stick_y":0,"throttle_analog":false,"throttle":0,"brake_analog":false,"brake":0}
+{"type":"run","frames":30,"buttons":0,"stick_x":0,"stick_y":0,"throttle_analog":false,"throttle":0,"brake_analog":false,"brake":0}
+{"type":"end","frames":600}

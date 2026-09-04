@@ -37,6 +37,7 @@ dma_validation/
 *.log
 *.stackdump
 scratch/
+artifacts/
 # Local Track Lab snapshots, editable exports, and compiled corrections.
 track-lab-work/
 # gdb batch backtrace/logging dumps from native port debugging

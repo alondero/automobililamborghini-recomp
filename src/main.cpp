@@ -19,9 +19,12 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <latch>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "librecomp/game.hpp"
@@ -53,6 +56,8 @@
 #include "lambo_input_gate.h"
 #include "lambo_analog_throttle.h"
 #include "lambo_analog_brake.h"
+#include "lambo_harness_report.h"
+#include "lambo_replay_runtime.h"
 #include "lambo_startup.h"
 #include "lambo_track_patch.h"
 #include "controls/lambo_controls_sdl.h"
@@ -72,15 +77,9 @@ create_render_context(uint8_t* rdram, ultramodern::renderer::WindowHandle window
 int run_lighting_selftest();
 }
 
-// --- probe instrumentation ---------------------------------------------------
-static std::atomic<int>  g_threads{0};
-static std::atomic<int>  g_vis{0};
-static std::atomic<bool> g_first_vi{false};
-// Highest stage3 state-machine value (D_800CE6AC) observed during the run. Lets the boot
-// smoke test assert the init cascade reaches the title state machine rather than just
-// "didn't crash". See state_probe(). (0 = never read; the cold-boot seed is state 1.)
-static std::atomic<int>  g_max_state{0};
-static std::atomic<int>  g_swaps{0};
+static std::mutex g_termination_mutex;
+static std::latch g_termination_latch{1};
+static bool g_termination_claimed = false;
 
 // LAMBO_CRASH_TEST: when set, the test thread's 2 s sleep must outlast
 // boot_summary_and_exit() so its deliberate crash fires. Disable the VI cap.
@@ -109,8 +108,18 @@ static void on_init_cb(uint8_t*, recomp_context*) {
 }
 
 static void thread_create_cb(uint8_t*, recomp_context*) {
-    int n = ++g_threads;
-    if (n <= 12) LAMBO_LOG("probe", "game thread #%d started (osCreateThread)\n", n);
+    lambo::harness::note_thread_created();
+}
+
+// Multiple native threads can request finalization; serialize the publisher.
+static void claim_immediate_exit() {
+    std::unique_lock lock(g_termination_mutex);
+    if (!g_termination_claimed) {
+        g_termination_claimed = true;
+        return;
+    }
+    lock.unlock();
+    g_termination_latch.wait();
 }
 
 // Print the one-line boot summary the runtime guard (tests/pivot/test_boot_smoke.py) parses,
@@ -122,16 +131,33 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
 // quitting anyway, so skip the unwind and let process exit tear the game threads down.
     // (Graceful game-thread shutdown is RT64-integration work, #58.)
 [[noreturn]] static void boot_summary_and_exit() {
-    LAMBO_LOG("probe", "boot summary; threads=%d vis=%d first_vi=%d max_state=%d swaps=%d\n",
-                 g_threads.load(), g_vis.load(), (int)g_first_vi.load(), g_max_state.load(),
-                 g_swaps.load());
+    claim_immediate_exit();
+    lambo::harness::log_boot_summary();
+    const lambo::harness::Snapshot metrics = lambo::harness::snapshot();
+    const lambo::harness::Outcome outcome = lambo::harness::finalize_outcome(
+        "max_vis", metrics.first_vi ? 0 : 2);
+    lambo::harness::write_result(outcome);
     (void)lambo_pak_storage_flush();
     lambo_log_shutdown();
     std::fflush(nullptr);
-    std::_Exit(g_first_vi.load() ? 0 : 2);
+    std::_Exit(outcome.exit_code);
+}
+
+[[noreturn]] static void harness_summary_and_exit(const char* reason, int exit_code) {
+    claim_immediate_exit();
+    const lambo::harness::Outcome outcome = lambo::harness::finalize_outcome(reason, exit_code);
+    LAMBO_LOG("harness", "scenario finished; reason=%s status=%d\n",
+              outcome.reason.c_str(), outcome.exit_code);
+    lambo::harness::log_boot_summary();
+    lambo::harness::write_result(outcome);
+    (void)lambo_pak_storage_flush();
+    lambo_log_shutdown();
+    std::fflush(nullptr);
+    std::_Exit(outcome.exit_code);
 }
 
 [[noreturn]] static void application_exit_success() {
+    claim_immediate_exit();
     LAMBO_LOG("probe", "application exit requested; status=success\n");
     // update_gfx_stub runs on librecomp's primary thread, while RT64 invokes the
     // UI render hooks on its presentation thread. Calling ui::shutdown() here
@@ -139,10 +165,13 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
     // down RmlUi while a draw hook can still be using it. This path deliberately
     // terminates the process below, so there is no cleanup benefit that can
     // justify touching either subsystem first.
+    const lambo::harness::Outcome outcome = lambo::harness::finalize_outcome("runtime_exit", 0);
+    lambo::harness::write_result(outcome);
     (void)lambo_pak_storage_flush();
     lambo_log_shutdown();
     std::fflush(nullptr);
-    std::_Exit(0);
+    if (outcome.exit_code == 0) std::_Exit(0);
+    std::_Exit(outcome.exit_code);
 }
 
 // Set by headless::create_render_context (stub_renderer.cpp) so this retrace hook can reach RDRAM.
@@ -201,92 +230,17 @@ static void promote_vi_context() {
     }
 }
 
-// Stage3 state-machine progression tracker (PERMANENT harness instrumentation, not a
-// throwaway diagnostic). The ROM's per-frame dispatcher (func_800028D0) walks a state
-// register at D_800CE6AC and advances copyright(2)->...->title(6)->demo-race(8). We sample
-// it each VI, record the max reached (g_max_state, asserted by the boot smoke test) and log
-// each transition, so a run reports "stuck vs progressing" instead of just "didn't crash".
-//
-// Addressing (measured 2026-06-28, ares-cross-checked): the register lives at its LITERAL
-// address 0x800CE6AC (NOT the -0xC00 boot shift -- that applies to IPL3-loaded code, not this
-// BSS global; 0x800CDAAC stays 0). ultramodern stores RDRAM so a native u32 load yields the
-// N64 word, but a halfword needs the MEM_H XOR-2 swizzle -- hence the (a&2) extract below,
-// which matches recomp.h's MEM_H exactly. The progression is 0->1->2->3->4->5->6 then (as of
-// 2026-06-28) STUCK at 6 (ares walks 0..6->7->8). The 6->7 advance lives in func_80038D6C
-// (state-6 worker, guest 0x8003816C): the hold counter 0x800985AC expires and the fade
-// D_800A2D08 reaches 0 -- the SAME gate values ares has at state 7 -- yet a hardware watchpoint
-// confirms `state = 7` is never written. Mechanism not yet isolated (the recomp body is
-// auto-generated computed-goto C; -O2 + multithread make gdb line-tracing unreliable). #53.
-static void state_probe() {
-    uint8_t* rdram = g_lambo_rdram;
-    if (rdram == nullptr) return;
-    auto h = [&](uint32_t a) -> uint32_t { // N64 big-endian halfword at literal addr (MEM_H)
-        uint32_t w = *(uint32_t*)(rdram + ((a & ~3u) - 0x80000000u));
-        return (a & 2u) ? (w & 0xFFFF) : ((w >> 16) & 0xFFFF);
-    };
-    int state = (int)h(0x800CE6AC);
-    if (state > g_max_state.load()) g_max_state.store(state);
-    static int s_last = -1;
-    if (state != s_last) {
-        LAMBO_LOG("state", "vi=%d  state=%d (was %d)\n", g_vis.load(), state, s_last);
-        s_last = state;
-    }
-}
-
-// Menu-screen probe (PERMANENT harness instrumentation, same class as state_probe): samples the
-// menu overlay's current-screen id D_80098562 (set by the "request menu screen" API func_800383A8,
-// docs/notes/menu.md) plus its neighbour D_80098560 each VI and logs transitions -- the menu chain
-// (players/mode/series/car/name/pak-message, #69) all runs under top-level state 6, so state_probe
-// alone cannot show menu navigation.
-static void menu_probe() {
-    uint8_t* rdram = g_lambo_rdram;
-    if (rdram == nullptr) return;
-    auto h = [&](uint32_t a) -> uint32_t { // N64 big-endian halfword at literal addr (MEM_H)
-        uint32_t w = *(uint32_t*)(rdram + ((a & ~3u) - 0x80000000u));
-        return (a & 2u) ? (w & 0xFFFF) : ((w >> 16) & 0xFFFF);
-    };
-    int scr = (int)(int16_t)h(0x80098562);
-    int sub = (int)(int16_t)h(0x80098560);
-    static int s_scr = -9999, s_sub = -9999;
-    if (scr != s_scr || sub != s_sub) {
-        LAMBO_LOG("menu", "vi=%d  screen=%d sub=%d (was %d/%d)\n",
-                     g_vis.load(), scr, sub, s_scr, s_sub);
-        s_scr = scr; s_sub = sub;
-    }
-}
-
-// Frame-pace probe (PERMANENT harness instrumentation, same class as state_probe): counts game
-// framebuffer swaps by sampling __osViNext->buffer (ctx at *(0x8008D1A4), buffer field +0x4) once
-// per VI. The scheduler gate admits at most one swap per retrace, so per-VI sampling cannot miss
-// one. Real hardware runs this game at ~30fps = 0.5 swaps/VI (ares state-8 dwell 3094 VIs, W102);
-// ~1.0 swaps/VI means the port is running the game 2x fast (#58 pacing).
-static void pace_probe(int vi_n) {
-    uint8_t* rdram = g_lambo_rdram;
-    if (rdram == nullptr) return;
-    auto gw = [&](uint32_t a) -> uint32_t { return *(uint32_t*)(rdram + (a - 0x80000000u)); };
-    uint32_t next = gw(0x8008D1A4); // __osViNext
-    if (next < 0x80000000u || next >= 0x80800000u) return;
-    uint32_t buf = gw(next + 0x4);
-    static uint32_t s_last_buf = 0;
-    if (buf != s_last_buf) { s_last_buf = buf; g_swaps.fetch_add(1); }
-    if ((vi_n % 600) == 0) {
-        static int s_prev_total = 0;
-        int total = g_swaps.load();
-        LAMBO_LOG("pace", "vi=%d swaps_last_600vi=%d (~%.1f fps)\n",
-                     vi_n, total - s_prev_total, (total - s_prev_total) / 10.0);
-        s_prev_total = total;
-    }
-}
-
 extern "C" void lambo_thread_trace_dump(int vi); // THROWAWAY diag (mesgqueue.cpp), gated by LAMBO_THREAD_TRACE
 static void vi_cb() {
     promote_vi_context();
-    state_probe();
-    menu_probe();
-    int n = ++g_vis;
-    pace_probe(n);
+    const int n = lambo::harness::sample_vi();
     if ((n % 50) == 0) lambo_thread_trace_dump(n); // THROWAWAY: per-thread recv/send snapshot to find the frozen thread
-    if (!g_first_vi.exchange(true)) LAMBO_LOG("probe", "FIRST VI retrace\n");
+    if (lambo::replay_runtime::should_exit()) {
+        const lambo::replay_runtime::Status replay = lambo::replay_runtime::status();
+        const std::string reason = lambo::replay_runtime::terminal_reason();
+        harness_summary_and_exit(reason.empty() ? "replay_failed" : reason.c_str(),
+                                 replay.failed ? 3 : 0);
+    }
     if (n == kQuitAfterVis) {
         LAMBO_LOG("probe", "reached %d VIs; quitting\n", n);
         boot_summary_and_exit();
@@ -664,10 +618,10 @@ static void input_sample() {
     lambo::input_gate::publish_physical_snapshot(gated_snap);
     const float throttle = lambo::input_gate::guest_input_suppressed()
         ? 0.0f : physical_throttle;
-    lambo::analog_throttle::publish(0, analog_mode, throttle);
     const float brake = lambo::input_gate::guest_input_suppressed()
         ? 0.0f : physical_brake;
-    lambo::analog_brake::publish(0, brake_analog_mode, brake);
+    lambo::replay_runtime::publish_physical_analog(
+        analog_mode, throttle, brake_analog_mode, brake);
 }
 
 static void input_poll_stub() {}
@@ -678,7 +632,7 @@ static bool input_get_input(int controller_num, uint16_t* buttons, float* x, flo
     uint16_t b = suppressed ? 0 : (uint16_t)(snap & 0xFFFF);
     if (!suppressed) b |= g_held_buttons;                       // env mask is a guest input source
     if (!suppressed && g_pulse_period > 0) {                    // scripted pulse (harness knob)
-        int vi = g_vis.load(std::memory_order_relaxed);
+        const int vi = lambo::harness::vis_count();
         if (vi >= g_pulse_start && ((vi - g_pulse_start) % g_pulse_period) < g_pulse_duty
             && (g_pulse_count == 0 || (vi - g_pulse_start) / g_pulse_period < g_pulse_count))
             b |= g_pulse_buttons;
@@ -687,6 +641,13 @@ static bool input_get_input(int controller_num, uint16_t* buttons, float* x, flo
     int8_t   sy = (int8_t)((snap >> 24) & 0xFF);
     if (!suppressed && sx == 0) sx = g_held_sx;                  // env stick fills in when live stick idle
     if (!suppressed && sy == 0) sy = g_held_sy;
+
+    lambo::replay::InputFrame replay_frame{};
+    if (lambo::replay_runtime::playback_frame(replay_frame)) {
+        b = replay_frame.buttons;
+        sx = replay_frame.stick_x;
+        sy = replay_frame.stick_y;
+    }
     if (buttons) *buttons = b;
     // ultramodern does stick_x = (int8_t)(127 * x), so divide by 127 (NOT N64_STICK_MAX) to
     // preserve our authentic +-80 range through that re-scale instead of re-expanding to +-127.
@@ -935,6 +896,19 @@ static int application_main(int argc, char** argv) {
     }
     LAMBO_LOG("probe", "ROM validated; rom_hash matches\n");
 
+    if (!lambo::replay_runtime::initialize_from_environment()) {
+        const std::string error = lambo::replay_runtime::last_error();
+        LAMBO_LOG_ERROR("replay", "cannot initialize input record/replay: %s\n", error.c_str());
+        lambo::replay_runtime::finalize();
+        const std::string reason = lambo::replay_runtime::terminal_reason();
+        const lambo::harness::Outcome outcome = lambo::harness::finalize_outcome(
+            reason.empty() ? "invalid_configuration" : reason.c_str(), 2);
+        lambo::harness::write_result(outcome);
+        (void)lambo_pak_storage_flush();
+        lambo_log_shutdown();
+        return 2;
+    }
+
     // Track Lab corrections are parsed and fully validated before the game starts;
     // the transactional memory-application routine performs no file I/O or allocation.
     // A CLI path wins so launchers can override a developer's shell setting.
@@ -993,11 +967,12 @@ static int application_main(int argc, char** argv) {
             if (startup_controller.state() == lambo::StartupState::Exiting) return;
             std::this_thread::sleep_for(std::chrono::seconds(wd_sec));
             if (startup_controller.state() == lambo::StartupState::Exiting) return;
+            const lambo::harness::Snapshot metrics = lambo::harness::snapshot();
             LAMBO_LOG("probe", "WATCHDOG %ds: threads=%d vis=%d first_vi=%d\n",
-                         wd_sec, g_threads.load(), g_vis.load(), (int)g_first_vi.load());
+                      wd_sec, metrics.threads, metrics.vis, static_cast<int>(metrics.first_vi));
             // Exit deterministically (same as the VI-cap path) rather than ultramodern::quit(),
             // whose teardown munmaps RDRAM out from under the live game threads (SIGSEGV race).
-            boot_summary_and_exit();
+            harness_summary_and_exit("watchdog", 2);
         });
         watchdog.detach();
     }
@@ -1090,7 +1065,7 @@ static int application_main(int argc, char** argv) {
     recomp::start(cfg);
     // Reached only via the watchdog quit path (a boot stall before the VI cap): the VI-cap
     // path exits from vi_cb via boot_summary_and_exit() and never returns here.
-    boot_summary_and_exit();
+    harness_summary_and_exit("runtime_return", lambo::harness::snapshot().first_vi ? 0 : 2);
 }
 
 #if defined(_WIN32)

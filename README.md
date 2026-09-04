@@ -151,6 +151,24 @@ only the default warning/error output, while `--verbose` still records a file
 when the game is launched by double-click. The older `--lambo-debug` flag remains
 accepted as an alias for `--verbose`.
 
+## Automated game harness
+
+The port can record the final N64 input seen by the game and replay it on the
+30 Hz game-dispatch clock, including analog throttle and brake. Combined with
+the developer warp, headless renderer, bounded runs, and machine-readable result
+files, this lets an automated agent reproduce a drive and collect evidence with
+no window focus or controller attached.
+
+Run the checked-in end-to-end smoke scenario with:
+
+```sh
+python tools/run_game_scenario.py scenarios/harness-smoke.json
+```
+
+See **[docs/automation-harness.md](./docs/automation-harness.md)** for recording
+a lap, replaying from a settled save-state, the trace format, scenario assertions,
+and the trade-offs between open-loop replay and future closed-loop driving.
+
 ## Track Lab (experimental)
 
 The repository includes a headless track-data lab that extracts a settled race

@@ -78,6 +78,12 @@ Same approach as [Snowboard Kids 2 Recompiled](https://github.com/cdlewis/snowbo
 ## Test discipline
 
 Gate on what changed. Recompilation-config / runtime-glue changes → build + boot smoke.
+For an autonomous race/render smoke after building, run
+`python tools/run_game_scenario.py scenarios/harness-smoke.json`; it isolates config/Pak
+artifacts and verifies the requested track actually loaded, 30 Hz guest input consumption,
+vehicle motion, framebuffer swaps, and a complete BMP. See `docs/automation-harness.md`.
+Replay EOF proves the recorded controls ran, not that a lap completed. Keep neutral pre-roll
+and use the same warp or settled save-state when recording/replaying a regression fixture.
 
 ## Tracker
 Use Github Issues

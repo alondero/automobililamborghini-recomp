@@ -60,6 +60,35 @@ static const char* const lambo_scene_table[6] = {
 // 16-23 car, 24-27 players. Published by the SDL main thread / env parse,
 // exchanged to 0 by the game-thread tick.
 static _Atomic uint32_t g_warp_request;
+static _Atomic int g_warp_applied;
+static _Atomic int g_warp_failed;
+static _Atomic int g_warp_circuit;
+static _Atomic int g_warp_laps;
+static _Atomic int g_warp_car;
+static _Atomic int g_warp_players;
+static _Atomic int g_warp_mode;
+
+int lambo_warp_env_applied(void) {
+    return atomic_load_explicit(&g_warp_applied, memory_order_acquire);
+}
+int lambo_warp_env_failed(void) {
+    return atomic_load_explicit(&g_warp_failed, memory_order_acquire);
+}
+int lambo_warp_env_circuit(void) {
+    return atomic_load_explicit(&g_warp_circuit, memory_order_relaxed);
+}
+int lambo_warp_env_laps(void) {
+    return atomic_load_explicit(&g_warp_laps, memory_order_relaxed);
+}
+int lambo_warp_env_car(void) {
+    return atomic_load_explicit(&g_warp_car, memory_order_relaxed);
+}
+int lambo_warp_env_players(void) {
+    return atomic_load_explicit(&g_warp_players, memory_order_relaxed);
+}
+int lambo_warp_env_mode(void) {
+    return atomic_load_explicit(&g_warp_mode, memory_order_relaxed);
+}
 
 static uint32_t pack_request(int circuit0, int laps, int car, int players) {
     return 0x80000000u | (uint32_t)(circuit0 & 0xFF) | ((uint32_t)(laps & 0xFF) << 8)
@@ -87,6 +116,7 @@ static void parse_env_request(void) {
         if (p != NULL) p++;
     }
     if (v[0] < 1 || v[0] > 6) {
+        atomic_store_explicit(&g_warp_failed, 1, memory_order_release);
         LAMBO_LOG("warp", "LAMBO_WARP=%s invalid: circuit must be 1-6\n", env);
         return;
     }
@@ -137,6 +167,9 @@ void lambo_warp_tick(uint8_t* rdram, recomp_context* ctx) {
     // for testing the non-arcade HUD variants (issue #42); defaults to single race.
     int mode = MODE_SINGLE_RACE;
     { const char* m = getenv("LAMBO_WARP_MODE"); if (m != NULL) mode = atoi(m); }
+    // Report the exact signed halfword written to guest RAM, even for direct
+    // environment use outside the stricter scenario runner.
+    mode = (int)(int16_t)mode;
     MEM_H(0, (gpr)(int32_t)WARP_PLAYERS)    = (int16_t)players;
     MEM_H(0, (gpr)(int32_t)WARP_TRACK_FLAG) = 1;
     MEM_H(0, (gpr)(int32_t)WARP_MODE)       = (int16_t)mode;
@@ -148,6 +181,13 @@ void lambo_warp_tick(uint8_t* rdram, recomp_context* ctx) {
     func_800676B4(rdram, ctx);
     func_80008ECC(rdram, ctx);
     MEM_H(0, (gpr)(int32_t)WARP_STATE) = 7;
+
+    atomic_store_explicit(&g_warp_circuit, circuit0 + 1, memory_order_relaxed);
+    atomic_store_explicit(&g_warp_laps, laps, memory_order_relaxed);
+    atomic_store_explicit(&g_warp_car, car, memory_order_relaxed);
+    atomic_store_explicit(&g_warp_players, players, memory_order_relaxed);
+    atomic_store_explicit(&g_warp_mode, mode, memory_order_relaxed);
+    atomic_store_explicit(&g_warp_applied, 1, memory_order_release);
 
     LAMBO_LOG("warp", "%s: single race, %d lap(s), car %d, %d player(s) (from state %d)\n",
             lambo_scene_table[circuit0], laps, car, players, state);

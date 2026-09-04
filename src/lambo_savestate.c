@@ -68,6 +68,10 @@
 // covers them, but any thread the snapshot captured that this process lacks keeps a dangling
 // context and the scheduler would fault on it -- another reason to snapshot only settled scenes.
 extern void ultramodern_relink_thread_contexts(uint8_t* rdram);
+// Host-side replay state is deliberately not part of the RDRAM snapshot. Notify the
+// deterministic input harness so a load can arm an as-yet-unstarted replay, while a
+// mid-replay load is reported as an explicit determinism failure.
+extern void lambo_replay_state_loaded(void);
 // Track Lab packages are process configuration, not guest RAM. Re-apply the
 // active correction after restoring guest RAM, but keep this general-purpose
 // save-state header independent of optional runtime packages.
@@ -97,6 +101,15 @@ typedef struct {
 #define REQ_SAVE 0x1u
 #define REQ_LOAD 0x2u
 static _Atomic uint32_t g_req;
+static _Atomic int g_env_load_applied;
+static _Atomic int g_env_load_failed;
+
+int lambo_savestate_env_load_applied(void) {
+    return atomic_load_explicit(&g_env_load_applied, memory_order_acquire);
+}
+int lambo_savestate_env_load_failed(void) {
+    return atomic_load_explicit(&g_env_load_failed, memory_order_acquire);
+}
 
 static const char* slot_path(void) {
     const char* p = getenv("LAMBO_STATE_FILE");
@@ -151,30 +164,30 @@ static void do_save(uint8_t* rdram, const char* path) {
 // Load <path> fully into a scratch buffer and validate BEFORE overwriting any live RAM, so
 // a bad/short file aborts the load with the game untouched. Only on full success do we
 // memcpy the payload over rdram[0..8MiB).
-static void do_load(uint8_t* rdram, const char* path) {
+static int do_load(uint8_t* rdram, const char* path) {
     FILE* f = fopen(path, "rb");
     if (f == NULL) {
         LAMBO_LOG("state", "load: cannot open %s\n", path);
-        return;
+        return 0;
     }
     state_header_t h;
     if (fread(&h, 1, sizeof(h), f) != sizeof(h) ||
         memcmp(h.magic, STATE_MAGIC, 8) != 0) {
         LAMBO_LOG("state", "load: %s is not a save-state (bad magic)\n", path);
         fclose(f);
-        return;
+        return 0;
     }
     if (h.version != STATE_VERSION || h.rdram_size != RDRAM_SNAP_SIZE) {
         LAMBO_LOG("state", "load: %s version/size mismatch (v%u size %u)\n",
                 path, h.version, h.rdram_size);
         fclose(f);
-        return;
+        return 0;
     }
     uint8_t* buf = (uint8_t*)malloc(RDRAM_SNAP_SIZE);
     if (buf == NULL) {
         LAMBO_LOG("state", "load: out of memory\n");
         fclose(f);
-        return;
+        return 0;
     }
     size_t got = fread(buf, 1, RDRAM_SNAP_SIZE, f);
     fclose(f);
@@ -182,19 +195,21 @@ static void do_load(uint8_t* rdram, const char* path) {
         LAMBO_LOG("state", "load: %s truncated (%zu/%u bytes)\n",
                 path, got, RDRAM_SNAP_SIZE);
         free(buf);
-        return;
+        return 0;
     }
     memcpy(rdram, buf, RDRAM_SNAP_SIZE);
     free(buf);
     // Repair the native OSThread.context pointers the memcpy just clobbered with the save
     // process's addresses; without this the scheduler dereferences garbage on the next tick.
     ultramodern_relink_thread_contexts(rdram);
+    lambo_replay_state_loaded();
     // An active package is reapplied idempotently after the wholesale copy;
     // the patch hook decides whether the restored table is a known base or is
     // already corrected, without making the general save-state format package-aware.
     lambo_track_patch_on_savestate_loaded(rdram);
     LAMBO_LOG("state", "loaded %u bytes from %s (state=%u)\n",
             RDRAM_SNAP_SIZE, path, h.state);
+    return 1;
 }
 
 // SDL-thread entry points (edge-detected in main.cpp). Only flip the request bit; the copy
@@ -246,7 +261,11 @@ void lambo_savestate_tick(uint8_t* rdram, recomp_context* ctx) {
         if (load_ticks++ >= load_delay) {
             const char* p = env_load;
             env_load = NULL;      // fire once
-            do_load(rdram, p);
+            if (do_load(rdram, p)) {
+                atomic_store_explicit(&g_env_load_applied, 1, memory_order_release);
+            } else {
+                atomic_store_explicit(&g_env_load_failed, 1, memory_order_release);
+            }
             return;               // don't also process a same-frame save/hotkey request
         }
     }
@@ -267,6 +286,6 @@ void lambo_savestate_tick(uint8_t* rdram, recomp_context* ctx) {
     if (state < 3) return;
     uint32_t req = atomic_exchange_explicit(&g_req, 0, memory_order_relaxed);
     if (req == 0) return;
-    if (req & REQ_LOAD) do_load(rdram, slot_path());   // load wins if both somehow set
+    if (req & REQ_LOAD) (void)do_load(rdram, slot_path()); // load wins if both somehow set
     else if (req & REQ_SAVE) do_save(rdram, slot_path());
 }
