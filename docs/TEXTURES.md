@@ -6,6 +6,10 @@ one-texture experiment all use the same runtime facility, and the replacement ar
 live in a separate repository. Everything below was verified with a config-driven texture dump,
 an offline decode, a loose replacement directory, and a packaged `.rtz` loaded in-game.
 
+For the companion-repository layout, metadata contract, and GitHub Release workflow, see
+[GitHub storage and distribution for texture packs](./TEXTURE_PACKS_GITHUB.md) and the
+[pack repository seed](../texture-pack/).
+
 ## What RT64 already gives us (and what the port adds)
 
 RT64 (`lib/rt64`) ships the texture-replacement system: hashing, a dump mode, a pack
@@ -128,6 +132,38 @@ build/rt64/src/tools/texture_packer/texture_packer.exe /path/to/pack --create-pa
 ```
 
 (The low-mip cache is only meaningful for DDS mipmaps; with PNG it is empty, which is fine.)
+
+## Companion repository build and GitHub Action
+
+The editable artwork belongs in the separate companion repository, not in this
+port checkout. From that repository, regenerate the manifest and validate it
+before building the archive:
+
+```powershell
+python tools/make_pack.py textures `
+  --manifest rt64.json `
+  --policy texture-policy.json
+
+python tools/validate_pack.py `
+  --pack-json pack.json `
+  --source-dir textures `
+  --rt64-json rt64.json
+
+python tools/build_pack.py `
+  --texconv C:/tools/texconv.exe `
+  --rt64-packer C:/tools/texture_packer.exe
+```
+
+The builder writes the end-user `.rtz`, checksums, release metadata, and a
+`dist/loose/` directory for local testing. Point `LAMBO_TEXTURE_PACK` at either
+the loose directory or the `.rtz` archive and restart the port.
+
+The companion repository's `.github/workflows/release.yml` can also be run from
+the Actions tab. Pushing a tag that matches `pack.json`'s `pack_version` (for
+example `v0.1.1`) builds the pack and opens a draft release; a manual run keeps
+the generated files as a short-lived workflow artifact. Both paths run the
+release validation gate, so a public build must have a resolved artwork license,
+completed credits, and `rights_confirmed: true`.
 
 ## The F1 developer overlay (optional)
 

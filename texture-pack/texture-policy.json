@@ -1,0 +1,114 @@
+{
+  "default_operation": "stream",
+  "default_shift": "none",
+  "protected": [
+    {
+      "hash": "0467526e2c639126",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "10a7dfbc9d43a6f5",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "1423eadc0889b0ed",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "34e8b23d7b7308b7",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "3751e36042f86cc8",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "4361d6b8bda94550",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "4ae710b8e4bf6820",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "525a79f815b712ca",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "535a88599fb9bdda",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "5b29cad6e2f48841",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "6095de90a5c983d6",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "6f3e4f277ede9f1a",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "7073d7843c614efc",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "874c55f326c1826d",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "921ff71849267fb9",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "aec011878342c59d",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "c0999a24447bdfdb",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    },
+    {
+      "hash": "f023ddb950de90d5",
+      "format": "R8G8B8A8_UNORM",
+      "operation": "preload",
+      "mipmaps": false
+    }
+  ]
+}

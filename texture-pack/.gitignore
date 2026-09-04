@@ -1,0 +1,9 @@
+# Generated build output.  Keep editable PNG sources and metadata tracked.
+generated/
+dist/
+raw-dumps/
+decoded/
+__pycache__/
+*.py[cod]
+*.rtz
+*.sha256
