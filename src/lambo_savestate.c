@@ -68,6 +68,11 @@
 // covers them, but any thread the snapshot captured that this process lacks keeps a dangling
 // context and the scheduler would fault on it -- another reason to snapshot only settled scenes.
 extern void ultramodern_relink_thread_contexts(uint8_t* rdram);
+// Track Lab packages are process configuration, not guest RAM. Persist their
+// deterministic package id in the reserved header words so a snapshot can never
+// silently restore track bytes under a different (or disabled) correction.
+extern uint64_t lambo_track_patch_active_package_id(void);
+extern void lambo_track_patch_on_savestate_loaded(uint8_t* rdram);
 
 #define STATE_VAR   0x800CE6ACu       // game-state halfword (see lambo_warp.c cluster map)
 #define RDRAM_SNAP_SIZE 0x800000u     // low 8 MiB = guest-addressable N64 RAM (osMemSize)
@@ -78,11 +83,13 @@ extern void ultramodern_relink_thread_contexts(uint8_t* rdram);
 #define STATE_MAGIC "LMBOSTAT"
 #define STATE_VERSION 1u
 typedef struct {
-    char     magic[8];      // "LMBOSTAT"
-    uint32_t version;       // STATE_VERSION
-    uint32_t rdram_size;    // RDRAM_SNAP_SIZE
-    uint32_t state;         // captured state-machine word (informational)
-    uint32_t reserved[3];
+    char     magic[8];             // "LMBOSTAT"
+    uint32_t version;              // STATE_VERSION
+    uint32_t rdram_size;           // RDRAM_SNAP_SIZE
+    uint32_t state;                // captured state-machine word (informational)
+    uint32_t track_package_id_lo;  // zero when Track Lab is disabled
+    uint32_t track_package_id_hi;
+    uint32_t reserved;
 } state_header_t;
 
 // Default file for the F7/F8 slot; LAMBO_STATE_FILE overrides. LAMBO_STATE_LOAD names a
@@ -118,6 +125,11 @@ static void do_save(uint8_t* rdram, const char* path) {
     h.version    = STATE_VERSION;
     h.rdram_size = RDRAM_SNAP_SIZE;
     h.state      = (uint16_t)MEM_H(0, (gpr)(int32_t)STATE_VAR);
+    {
+        const uint64_t package_id = lambo_track_patch_active_package_id();
+        h.track_package_id_lo = (uint32_t)package_id;
+        h.track_package_id_hi = (uint32_t)(package_id >> 32);
+    }
     int ok = (fwrite(&h, 1, sizeof(h), f) == sizeof(h)) &&
              (fwrite(rdram, 1, RDRAM_SNAP_SIZE, f) == RDRAM_SNAP_SIZE);
     // Flush before rename so the rename publishes a fully-written file.
@@ -166,6 +178,26 @@ static void do_load(uint8_t* rdram, const char* path) {
         fclose(f);
         return;
     }
+    {
+        const uint64_t saved_package_id =
+            (uint64_t)h.track_package_id_lo |
+            ((uint64_t)h.track_package_id_hi << 32);
+        const uint64_t active_package_id = lambo_track_patch_active_package_id();
+        if (h.reserved != 0) {
+            LAMBO_LOG("state", "load: %s has unsupported header metadata\n", path);
+            fclose(f);
+            return;
+        }
+        if (saved_package_id != active_package_id) {
+            LAMBO_LOG("state",
+                    "load: %s Track Lab package mismatch "
+                    "(saved=%016llx active=%016llx)\n",
+                    path, (unsigned long long)saved_package_id,
+                    (unsigned long long)active_package_id);
+            fclose(f);
+            return;
+        }
+    }
     uint8_t* buf = (uint8_t*)malloc(RDRAM_SNAP_SIZE);
     if (buf == NULL) {
         LAMBO_LOG("state", "load: out of memory\n");
@@ -185,6 +217,9 @@ static void do_load(uint8_t* rdram, const char* path) {
     // Repair the native OSThread.context pointers the memcpy just clobbered with the save
     // process's addresses; without this the scheduler dereferences garbage on the next tick.
     ultramodern_relink_thread_contexts(rdram);
+    // A matching package is reapplied idempotently after the wholesale copy,
+    // preserving the all-or-nothing loader checks even if the saved bytes drift.
+    lambo_track_patch_on_savestate_loaded(rdram);
     LAMBO_LOG("state", "loaded %u bytes from %s (state=%u)\n",
             RDRAM_SNAP_SIZE, path, h.state);
 }

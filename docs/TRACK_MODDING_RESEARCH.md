@@ -1,11 +1,13 @@
 # Track modding research
 
-**Status:** ROM/decomp audit, 2026-08-29
+**Status:** ROM/decomp/port-runtime audit plus Track Lab v0; ares parity pending,
+2026-09-03
 
 This is a working map of the data and runtime contracts that have to move
 together to add or edit a circuit. It combines direct inspection of
 `Automobili Lamborghini (USA).z64`, the companion disassembly, live-RDRAM
-captures, and the recomp port's no-LOD instrumentation. It is intentionally
+captures from the recomp port, and the port's no-LOD instrumentation. It is
+intentionally
 explicit about uncertainty: a plausible binary pattern is not treated as a
 confirmed game-system fact until a consumer or runtime behavior supports it.
 
@@ -27,9 +29,10 @@ bundle of:
 The important separation is that rendering visibility and AI navigation are
 different systems. Widening the renderer's segment walk does not give AI a new
 road, and editing waypoint coordinates does not create road geometry or
-collision. A first modding prototype should therefore reuse the existing
-closed-loop segment renderer and replace a complete set of parallel data
-tables, rather than attempt to replace only the visible mesh.
+collision. Track Lab v0 therefore exposes only the confirmed, same-size PVS
+table as writable and exports segment anchors and waypoint-like records for
+inspection. A later full-track importer must replace a complete set of parallel
+data tables rather than replace only the visible mesh.
 
 The port's current no-LOD features are useful as an investigative tool. They
 remove or widen several author-time visibility assumptions, making omitted
@@ -39,8 +42,9 @@ remaining cull or physics contract.
 
 ## Confidence and address conventions
 
-* **Confirmed** means directly read from code/data, or reproduced in a live
-  capture.
+* **Confirmed** means directly read from a static code/data consumer.
+* **Port-confirmed** means reproduced in the recomp port's live RDRAM; it does
+  not imply that the same observation has yet converged with the ares reference.
 * **Strong** means the format or relationship is repeatedly supported, but a
   final consumer/cross-reference is missing.
 * **Candidate** means useful for investigation, not safe to edit as fact.
@@ -83,8 +87,9 @@ physics code needs a compatible surface representation.
 
 ### 2.1 Track context
 
-**Confirmed:** the global at runtime `0x80098238` points at the active track
-context during a race. The setup code initializes it from a race context around
+**Port-confirmed and statically supported:** the global at runtime `0x80098238`
+points at the active track context during a race. The setup code initializes it
+from a race context around
 `0x80251800`, then copies context fields into per-viewport globals. The known
 context fields are:
 
@@ -483,6 +488,44 @@ mechanisms, not one global switch.
 
 ## 8. Proposed modding data contract
 
+### 8.1 Implemented correction contract (Track Lab v0)
+
+The first implemented vertical slice is documented in `docs/TRACK_LAB.md`.
+`tools/track_lab.py` extracts a settled 8 MiB word-swapped RDRAM image or local
+`LMBOSTAT` v1 snapshot into an `al-track-document` v1 JSON file. It exports the
+complete PVS baseline plus raw/decoded segment records, referenced cull anchors,
+and one explicitly assumed waypoint record per PVS row. Only
+`visibility.rows` is editable.
+
+The tool validates the complete evidence-bearing document, prints a sparse
+diff, and compiles a portable little-endian `ALTRKPV1` package. The native port
+loads that package before startup and applies it immediately after the stock
+track loader publishes `D_80098238`. The verified port-runtime hook is `0x80006094`
+(companion overlay label `0x80006C94`, shifted by `-0xC00`); the preceding
+runtime instruction at `0x80006090` stores the active context pointer.
+
+Application is all-or-nothing and guarded by ROM identity, circuit, context
+bounds, row shape, complete base/result fingerprints, and per-cell expected old
+values. Developer savestates also carry the active package identity. This makes
+stock visibility corrections useful now without implying that the unknown
+geometry, navigation, or collision contracts are safe to write.
+
+Fresh settled recomp-port captures now cover all six circuits. Their PVS row
+counts are `25, 29, 30, 75, 55, 67`, and their respective baseline hashes are
+`46c9dcf0e2ecd291`, `37cb277ebc479b88`, `004aa02c02db17de`,
+`e03944e6281e71df`, `6dbc155bc809e069`, and `09c24da181ce6745`.
+Each capture extracted and validated, and a compiled zero-edit package reached
+the guarded hook as already applied. Menu Circuit 1 (internal circuit 0)
+additionally passed a one-cell live edit and matching/mismatched savestate
+checks.
+
+No ares executable was available in this worktree, so these are not yet
+ares-convergence claims. Before removing the experimental label, capture the
+same context, table bounds, row counts, and PVS hashes in ares and retain the
+port/reference comparisons as fixtures.
+
+### 8.2 Future full-track contract
+
 A first external format should describe a stock-compatible closed-loop track
 in logical units, then have a loader/compiler produce the original runtime
 arrays. A useful minimum schema is:
@@ -524,8 +567,11 @@ replace native display lists with host-renderer meshes, but it should preserve
 the same logical segment and waypoint identifiers for debugging.
 
 Important binary requirements are big-endian word/float encoding, 16-byte
-alignment for waypoint and plane-like records, valid runtime pointers after
-loading, and explicit bounds for every table. Adding more data than the
+record strides for waypoint and plane-like records, naturally aligned fields,
+valid runtime pointers after loading, and explicit bounds for every table.
+Stride must not be confused with base alignment: a fresh circuit-1 capture used
+segment base `0x80288160` (not 64-byte aligned) and waypoint/PVS-end base
+`0x80252D8C` (not 16-byte aligned). Adding more data than the
 original ROM loaded requires a new loader/swizzle path; the current graphics
 configuration only changes behavior and does not stream arbitrary external
 track assets.
@@ -601,9 +647,9 @@ failure from a FOV-cone failure.
    ranking, lap, and AI code, then generate both from one logical loop model.
 7. Measure the maximum safe segment count and replace the 21-slot drawn-list
    limitation with a dynamically sized host-side structure in the port.
-8. Build a small known-good “track dump” containing all pointers, table sizes,
-   segment IDs, waypoint records, links, and display-list references before
-   attempting novel geometry.
+8. Extend the known-good Track Lab dump with the unresolved link tables,
+   display-list dependency closure, setup descriptors, and proven collision
+   records before attempting novel geometry.
 
 ## Sources and reproducibility
 
@@ -616,6 +662,9 @@ Primary local sources used for this audit:
 * `tools/pvs_distance_audit.py` in this worktree, which replays the observed
   segment-anchor distance calculation from a captured RDRAM image.
 * `lamborghini.us.toml`, including the live hook addresses and comments.
+* `tools/track_lab.py`, `src/lambo_track_patch.cpp`, and the circuit-1 runtime
+  capture used to verify the active context, its 25-row PVS, and the
+  post-loader hook at runtime `0x80006094`.
 * The sibling companion decomp checkout
   `automobililamborghini-decomp/asm/race_full_functions/`, especially
   `func_8000A6C0.s`, `func_80015044.s`, `func_800291CC.s`,

@@ -37,6 +37,8 @@ dma_validation/
 *.log
 *.stackdump
 scratch/
+# Local Track Lab snapshots, editable exports, and compiled corrections.
+track-lab-work/
 # gdb batch backtrace/logging dumps from native port debugging
 gdb_bt*.txt
 # framebuffer / display-list render captures from the port
@@ -59,6 +61,7 @@ nextsessionprompt.md
 # RDRAM dump per saved spot. Local debug artefacts, regenerable, never in tree.
 *.lstate
 *.lstate.tmp
+*.altrk
 # Controller-pak temp write (.mpk.tmp before rename) -- emitted by the
 # si/joybus path; deleted on successful write. Ephemeral.
 *.mpk.tmp
