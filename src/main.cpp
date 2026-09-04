@@ -59,6 +59,7 @@
 #include "lambo_harness_report.h"
 #include "lambo_replay_runtime.h"
 #include "lambo_startup.h"
+#include "lambo_track_patch.h"
 #include "controls/lambo_controls_sdl.h"
 #include "ui/lambo_ui.h"
 // ultramodern's native VI API (events.cpp), used by the promote_vi_context RT64 bridge.
@@ -732,6 +733,7 @@ static int application_main(int argc, char** argv) {
     const char* rom_path = "Automobili Lamborghini (USA).z64";
     const char* import_path = nullptr;
     const char* controller_pak_path = nullptr;
+    std::filesystem::path track_patch_path;
     bool rom_was_selected = false;
     for (int i = 1; i < argc; ++i) {
         if (argv[i] && std::strcmp(argv[i], "--import-save") == 0) {
@@ -748,6 +750,13 @@ static int application_main(int argc, char** argv) {
                 return 2;
             }
             controller_pak_path = argv[++i];
+        } else if (argv[i] && std::strcmp(argv[i], "--track-patch") == 0) {
+            if (i + 1 >= argc || argv[i + 1] == nullptr || argv[i + 1][0] == '\0') {
+                std::fprintf(stderr,
+                             "[error] [cli] --track-patch requires a Track Lab .altrk file\n");
+                return 2;
+            }
+            track_patch_path = path_from_utf8(argv[++i]);
         } else if (argv[i] && std::strcmp(argv[i], "--log-level") == 0) {
             // lambo_log_parse_args already validated and consumed this value;
             // keep the ROM selector from mistaking it for a ROM path.
@@ -898,6 +907,38 @@ static int application_main(int argc, char** argv) {
         (void)lambo_pak_storage_flush();
         lambo_log_shutdown();
         return 2;
+    }
+
+    // Track Lab corrections are parsed and fully validated before the game starts;
+    // the transactional memory-application routine performs no file I/O or allocation.
+    // A CLI path wins so launchers can override a developer's shell setting.
+    if (track_patch_path.empty()) {
+#if defined(_WIN32)
+        if (const wchar_t* environment_path = _wgetenv(L"LAMBO_TRACK_PATCH");
+            environment_path != nullptr && environment_path[0] != L'\0') {
+            track_patch_path = environment_path;
+        }
+#else
+        if (const char* environment_path = std::getenv("LAMBO_TRACK_PATCH");
+            environment_path != nullptr && environment_path[0] != '\0') {
+            track_patch_path = path_from_utf8(environment_path);
+        }
+#endif
+    }
+    if (!track_patch_path.empty()) {
+        const std::string track_patch_path_string = path_to_utf8(track_patch_path);
+        const auto result = lambo::track_patch::load_package(track_patch_path);
+        if (result != lambo::track_patch::LoadResult::Loaded) {
+            const char* const error = lambo::track_patch::last_error();
+            LAMBO_LOG_ERROR("track", "cannot load %s: %s\n",
+                            track_patch_path_string.c_str(),
+                            error != nullptr ? error : "unknown error");
+            return 2;
+        }
+        LAMBO_LOG_INFO("track", "loaded Track Lab correction %s\n",
+                       track_patch_path_string.c_str());
+    } else {
+        lambo::track_patch::disable();
     }
 
     lambo::StartupMode startup_mode = lambo::startup_mode_from_environment();

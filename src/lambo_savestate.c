@@ -72,6 +72,10 @@ extern void ultramodern_relink_thread_contexts(uint8_t* rdram);
 // deterministic input harness so a load can arm an as-yet-unstarted replay, while a
 // mid-replay load is reported as an explicit determinism failure.
 extern void lambo_replay_state_loaded(void);
+// Track Lab packages are process configuration, not guest RAM. Re-apply the
+// active correction after restoring guest RAM, but keep this general-purpose
+// save-state header independent of optional runtime packages.
+extern void lambo_track_patch_on_savestate_loaded(uint8_t* rdram);
 
 #define STATE_VAR   0x800CE6ACu       // game-state halfword (see lambo_warp.c cluster map)
 #define RDRAM_SNAP_SIZE 0x800000u     // low 8 MiB = guest-addressable N64 RAM (osMemSize)
@@ -82,10 +86,10 @@ extern void lambo_replay_state_loaded(void);
 #define STATE_MAGIC "LMBOSTAT"
 #define STATE_VERSION 1u
 typedef struct {
-    char     magic[8];      // "LMBOSTAT"
-    uint32_t version;       // STATE_VERSION
-    uint32_t rdram_size;    // RDRAM_SNAP_SIZE
-    uint32_t state;         // captured state-machine word (informational)
+    char     magic[8];             // "LMBOSTAT"
+    uint32_t version;              // STATE_VERSION
+    uint32_t rdram_size;           // RDRAM_SNAP_SIZE
+    uint32_t state;                // captured state-machine word (informational)
     uint32_t reserved[3];
 } state_header_t;
 
@@ -199,6 +203,10 @@ static int do_load(uint8_t* rdram, const char* path) {
     // process's addresses; without this the scheduler dereferences garbage on the next tick.
     ultramodern_relink_thread_contexts(rdram);
     lambo_replay_state_loaded();
+    // An active package is reapplied idempotently after the wholesale copy;
+    // the patch hook decides whether the restored table is a known base or is
+    // already corrected, without making the general save-state format package-aware.
+    lambo_track_patch_on_savestate_loaded(rdram);
     LAMBO_LOG("state", "loaded %u bytes from %s (state=%u)\n",
             RDRAM_SNAP_SIZE, path, h.state);
     return 1;
