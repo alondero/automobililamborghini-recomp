@@ -151,6 +151,20 @@ only the default warning/error output, while `--verbose` still records a file
 when the game is launched by double-click. The older `--lambo-debug` flag remains
 accepted as an alias for `--verbose`.
 
+## Track Lab (experimental)
+
+The repository includes a headless track-data lab that extracts a settled race
+snapshot, records segment cull anchors and provisionally decoded AI waypoint
+coordinates, and compiles edits to the stock circuit's ten-slot visibility
+rows. Guarded `.altrk` corrections can be loaded with `--track-patch <file>` or
+`LAMBO_TRACK_PATCH`.
+
+This first version does **not** claim support for arbitrary playable tracks:
+geometry and collision import are unsupported, while AI/navigation data is
+inspect-only until its remaining contracts are decoded. See
+**[Track Lab](./docs/TRACK_LAB.md)** for the workflow, safety model, current
+format, and implementation roadmap.
+
 ## Building
 
 See **[BUILDING.md](./BUILDING.md)**. In brief: clone with submodules, supply your ROM, run the recompile step, then configure and build with CMake.
