@@ -93,6 +93,7 @@ if(BUILD_TESTING)
     )
     target_include_directories(lambo_track_patch_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/N64Recomp/include
     )
     target_link_libraries(lambo_track_patch_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_track_patch_safety COMMAND lambo_track_patch_tests)
@@ -275,10 +276,6 @@ if(BUILD_TESTING)
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 -m unittest tests.test_track_lab
         )
-        add_test(NAME lambo_track_lab_web_contract
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
-                -m unittest tests.test_track_lab_web
-        )
         add_test(NAME lambo_track_patch_python_interop
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 -m tests.test_track_patch_interop
@@ -286,7 +283,6 @@ if(BUILD_TESTING)
         )
         set_tests_properties(
             lambo_track_lab_codec
-            lambo_track_lab_web_contract
             lambo_track_patch_python_interop
             PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         )

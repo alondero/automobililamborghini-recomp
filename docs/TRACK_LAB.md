@@ -1,9 +1,10 @@
 # Track Lab
 
 Track Lab is the first safe track-modding workflow for this port. It extracts a
-loaded stock circuit into readable JSON, visualises the decoded segment anchors
-and assumed AI waypoints, edits the circuit's authored visibility rows, and
-compiles those edits into a guarded `.altrk` package that the port can apply.
+loaded stock circuit into readable JSON, records decoded segment anchors and
+assumed AI waypoints for inspection, edits the circuit's authored visibility
+rows, and compiles those edits into a guarded `.altrk` package that the port can
+apply.
 
 This is intentionally a **stock-circuit correction editor**, not yet an
 arbitrary playable-track editor. Geometry, collision, waypoint data, segment
@@ -55,17 +56,16 @@ python tools\track_lab.py extract "$env:TEMP\circuit-1.lstate" track-lab-work\ci
 python tools\track_lab.py validate track-lab-work\circuit-1.json
 ```
 
-Open `tools/track_lab_web/index.html` in a browser and choose the JSON file. The
-editor provides:
+The core port keeps Track Lab headless: edit only `visibility.rows` with a
+JSON-aware tool, preserving `base_rows` and `raw_base_rows` from the capture.
+The Python validator accepts a full evidence-bearing document for inspection, or
+a reduced patch document containing only `format`, `version`, `target`, and
+`visibility`; read-only segment, anchor, and waypoint records are never needed
+by the compiler. A companion visual editor can consume the same JSON contract
+without becoming part of the native port.
 
-- a fitted spatial view using cull anchors or assumed AI waypoint coordinates;
-- selection of a segment and its ten visibility slots;
-- Shift-click insertion into the first hole;
-- read-only decoded and raw records;
-- row reset, undo/redo, document validation, and JSON download.
-
-The browser never patches a ROM or running process. Download the edited JSON,
-then use the Python validator as the authoritative format check:
+After editing the JSON, use the Python validator as the authoritative format
+check:
 
 ```powershell
 python tools\track_lab.py validate track-lab-work\circuit-1-edited.json
@@ -105,8 +105,9 @@ circuit:
 
 Menu Circuit 1 (internal circuit 0) also passed a nontrivial live correction:
 row 0 slot 8 changed from the raw `-1` hole to segment 5, producing result hash
-`9b10faba9efe8d94` in the saved RDRAM. A matching-package savestate restored
-idempotently, while the same savestate was rejected with no package active.
+`9b10faba9efe8d94` in the saved RDRAM. A savestate restored with the active
+correction idempotently, and the same snapshot remained loadable when no package
+was active.
 
 These are recomp-port results, not an ares-reference comparison. The generated
 snapshots and packages live under the git-ignored `track-lab-work/` directory
@@ -124,15 +125,14 @@ load hook applies it transactionally only when all of these conditions hold:
 4. the live row count matches and every row still has exactly ten slots;
 5. the complete live PVS fingerprint matches the extracted baseline;
 6. every edited cell contains its recorded old signed-halfword value; and
-7. the prospective complete result matches the package's result fingerprint.
+7. the package's sorted sparse edits are the only writes performed.
 
 Any rejection is read-only. The transactional table inspection and write path
 performs no file I/O or allocation, and it never changes table sizes or
 pointers. The hook reports its result through the port's normal logger after
-that operation. Packages are reapplied after a matching developer savestate is
-restored. Savestates record the active package
-identity and are rejected when loaded with a different package (or with no
-package), preventing a snapshot from silently mixing track configurations.
+that operation. An active package is reapplied after any developer savestate is
+restored. Savestates retain their general-purpose reserved header fields and do
+not become coupled to a particular optional track package.
 
 Packages are corrections, not ROM patches: the original ROM and its assets are
 unchanged. The loader also refuses a package made for another ROM revision.
@@ -168,23 +168,26 @@ fields are:
 ```
 
 Only `visibility.rows` is editable. Each entry is either a segment index in
-`0..row_count-1` or `null` for a hole. `base_rows`, `raw_base_rows`, decoded
-inspection fields, raw records, provenance, and capability declarations are
-validated as immutable evidence. `raw_base_rows` retains unusual negative hole
-values even though the editor displays every negative value as `null`.
+`0..row_count-1` or `null` for a hole. A full extracted document validates
+`base_rows`, `raw_base_rows`, decoded inspection fields, raw records, provenance,
+and capability declarations as immutable evidence. The patch compiler needs the
+target and visibility fields only, so clients may omit inspection-only records.
+`raw_base_rows` retains unusual negative hole values even though the editor
+displays every negative value as `null`.
 
 The extractor accepts either exactly 8 MiB of raw N64Recomp word-swapped RDRAM
-or the port's 32-byte `LMBOSTAT` v1 header followed by that payload. A savestate
-captured while a Track Lab package is active is not accepted as a new baseline.
+or the port's 32-byte `LMBOSTAT` v1 header followed by that payload. Header
+reserved words remain opaque to Track Lab; the capture's table fingerprint is
+the baseline guard.
 
 ## Portable package layout
 
 `.altrk` v1 is little-endian and independent of host pointer values. Its
 64-byte header contains the magic `ALTRKPV1`, format/header/file sizes, target
 ROM hash, PVS-only capability flag, circuit, ten-slot row shape, edit count,
-payload size, complete base/result FNV-1a fingerprints, and zeroed reserved
-bytes. Each sorted eight-byte edit stores a row, slot, expected old `s16`, and
-replacement `s16` (`-1` means a hole).
+payload size, and complete base/result FNV-1a fingerprints. Each sorted
+eight-byte edit stores a row, slot, expected old `s16`, and replacement `s16`
+(`-1` means a hole).
 
 The fingerprints are computed over the logical big-endian PVS halfword byte
 stream. They protect the whole table; the per-edit old values provide a second,

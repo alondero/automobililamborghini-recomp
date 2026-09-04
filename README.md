@@ -153,11 +153,11 @@ accepted as an alias for `--verbose`.
 
 ## Track Lab (experimental)
 
-The repository includes a local track-data lab that extracts a settled race
-snapshot, maps segment cull anchors and the provisionally decoded AI waypoint
-coordinates, and edits the stock circuit's ten-slot visibility rows. The
-compiler produces guarded `.altrk` corrections that can be loaded with
-`--track-patch <file>` or `LAMBO_TRACK_PATCH`.
+The repository includes a headless track-data lab that extracts a settled race
+snapshot, records segment cull anchors and provisionally decoded AI waypoint
+coordinates, and compiles edits to the stock circuit's ten-slot visibility
+rows. Guarded `.altrk` corrections can be loaded with `--track-patch <file>` or
+`LAMBO_TRACK_PATCH`.
 
 This first version does **not** claim support for arbitrary playable tracks:
 geometry and collision import are unsupported, while AI/navigation data is

@@ -208,7 +208,7 @@ def read_snapshot(path: str | os.PathLike[str]) -> Snapshot:
     elif blob[:8] == b"LMBOSTAT":
         if len(blob) < 32:
             raise TrackLabError("LMBOSTAT file is truncated before its 32-byte header")
-        magic, version, rdram_size, state, r0, r1, r2 = struct.unpack(
+        magic, version, rdram_size, state, *_reserved = struct.unpack(
             "<8s6I", blob[:32]
         )
         if magic != b"LMBOSTAT":
@@ -219,15 +219,6 @@ def read_snapshot(path: str | os.PathLike[str]) -> Snapshot:
             raise TrackLabError(
                 f"LMBOSTAT declares {rdram_size} RDRAM bytes; expected {RDRAM_SIZE}"
             )
-        package_id = r0 | (r1 << 32)
-        if package_id:
-            raise TrackLabError(
-                "LMBOSTAT was captured with Track Lab package "
-                f"{package_id:016x} active; capture a stock baseline without "
-                "--track-patch or LAMBO_TRACK_PATCH"
-            )
-        if r2:
-            raise TrackLabError("LMBOSTAT v1 final reserved header word must be zero")
         expected_size = 32 + RDRAM_SIZE
         if len(blob) != expected_size:
             raise TrackLabError(
@@ -762,23 +753,31 @@ def _validate_inspection_data(document: dict[str, Any], row_count: int) -> None:
                 )
 
 
-def validate_document(document: dict[str, Any]) -> ValidatedDocument:
-    """Validate all v1 structure and return the deterministic sparse edit set."""
+def validate_document(
+    document: dict[str, Any], *, include_inspection: bool = True
+) -> ValidatedDocument:
+    """Validate a document and return the deterministic sparse edit set.
+
+    The full document validator checks the evidence-bearing inspection records.
+    Patch consumers can set ``include_inspection=False`` because those records
+    are not part of the compiled package and may be stripped before compilation.
+    """
     document = _require_object(document, "document")
+    required_keys = {"format", "version", "target", "visibility"}
+    optional_keys = set()
+    if include_inspection:
+        required_keys.update(
+            {"provenance", "capabilities", "segments", "anchors", "waypoints"}
+        )
+    else:
+        optional_keys.update(
+            {"provenance", "capabilities", "segments", "anchors", "waypoints"}
+        )
     _require_keys(
         document,
-        {
-            "format",
-            "version",
-            "target",
-            "provenance",
-            "capabilities",
-            "visibility",
-            "segments",
-            "anchors",
-            "waypoints",
-        },
+        required_keys,
         "document",
+        optional=optional_keys,
     )
     if document["format"] != DOCUMENT_FORMAT:
         raise TrackLabError(
@@ -798,96 +797,97 @@ def validate_document(document: dict[str, Any]) -> ValidatedDocument:
         )
     _require_int(target["circuit"], "target.circuit", 0, 5)
 
-    provenance = _require_object(document["provenance"], "provenance")
-    _require_keys(
-        provenance,
-        {
-            "snapshot_format",
-            "snapshot_sha256",
-            "rdram_sha256",
-            "rdram_size",
-            "savestate_state",
-            "active_context_pointer_address",
-            "active_context",
-            "context_pointers",
-        },
-        "provenance",
-    )
-    if provenance["snapshot_format"] not in {
-        "raw-word-swapped-rdram",
-        "lmbostat-v1",
-    }:
-        raise TrackLabError("provenance.snapshot_format is not a supported snapshot type")
-    _require_hex(provenance["snapshot_sha256"], _SHA256_RE, "provenance.snapshot_sha256")
-    _require_hex(provenance["rdram_sha256"], _SHA256_RE, "provenance.rdram_sha256")
-    if provenance["rdram_size"] != RDRAM_SIZE:
-        raise TrackLabError(f"provenance.rdram_size must be {RDRAM_SIZE}")
-    if provenance["savestate_state"] is not None:
-        _require_int(
-            provenance["savestate_state"],
-            "provenance.savestate_state",
-            0,
-            0xFFFFFFFF,
+    if include_inspection:
+        provenance = _require_object(document["provenance"], "provenance")
+        _require_keys(
+            provenance,
+            {
+                "snapshot_format",
+                "snapshot_sha256",
+                "rdram_sha256",
+                "rdram_size",
+                "savestate_state",
+                "active_context_pointer_address",
+                "active_context",
+                "context_pointers",
+            },
+            "provenance",
         )
-    context_pointer_address = _require_pointer(
-        provenance["active_context_pointer_address"],
-        "provenance.active_context_pointer_address",
-    )
-    if context_pointer_address != ACTIVE_CONTEXT_PTR:
-        raise TrackLabError(
-            f"provenance.active_context_pointer_address must be 0x{ACTIVE_CONTEXT_PTR:08x}"
+        if provenance["snapshot_format"] not in {
+            "raw-word-swapped-rdram",
+            "lmbostat-v1",
+        }:
+            raise TrackLabError("provenance.snapshot_format is not a supported snapshot type")
+        _require_hex(provenance["snapshot_sha256"], _SHA256_RE, "provenance.snapshot_sha256")
+        _require_hex(provenance["rdram_sha256"], _SHA256_RE, "provenance.rdram_sha256")
+        if provenance["rdram_size"] != RDRAM_SIZE:
+            raise TrackLabError(f"provenance.rdram_size must be {RDRAM_SIZE}")
+        if provenance["savestate_state"] is not None:
+            _require_int(
+                provenance["savestate_state"],
+                "provenance.savestate_state",
+                0,
+                0xFFFFFFFF,
+            )
+        context_pointer_address = _require_pointer(
+            provenance["active_context_pointer_address"],
+            "provenance.active_context_pointer_address",
         )
-    _require_pointer(provenance["active_context"], "provenance.active_context")
-    context_pointers = _require_object(
-        provenance["context_pointers"], "provenance.context_pointers"
-    )
-    _require_keys(
-        context_pointers,
-        {
+        if context_pointer_address != ACTIVE_CONTEXT_PTR:
+            raise TrackLabError(
+                f"provenance.active_context_pointer_address must be 0x{ACTIVE_CONTEXT_PTR:08x}"
+            )
+        _require_pointer(provenance["active_context"], "provenance.active_context")
+        context_pointers = _require_object(
+            provenance["context_pointers"], "provenance.context_pointers"
+        )
+        _require_keys(
+            context_pointers,
+            {
+                "segments",
+                "visibility_base",
+                "visibility_end_waypoints",
+                "unknown_table",
+                "anchors",
+            },
+            "provenance.context_pointers",
+        )
+        for field in (
             "segments",
             "visibility_base",
             "visibility_end_waypoints",
             "unknown_table",
             "anchors",
-        },
-        "provenance.context_pointers",
-    )
-    for field in (
-        "segments",
-        "visibility_base",
-        "visibility_end_waypoints",
-        "unknown_table",
-        "anchors",
-    ):
-        _require_pointer(
-            context_pointers[field], f"provenance.context_pointers.{field}"
-        )
+        ):
+            _require_pointer(
+                context_pointers[field], f"provenance.context_pointers.{field}"
+            )
 
-    capabilities = _require_object(document["capabilities"], "capabilities")
-    _require_keys(capabilities, {"editable", "inspect_only", "unsupported"}, "capabilities")
-    editable = _validate_string_array(capabilities["editable"], "capabilities.editable")
-    unknown_editable = set(editable) - set(CAPABILITIES_EDITABLE)
-    if unknown_editable:
-        raise TrackLabError(
-            "capabilities.editable contains unsupported label(s): "
-            + ", ".join(sorted(unknown_editable))
+        capabilities = _require_object(document["capabilities"], "capabilities")
+        _require_keys(capabilities, {"editable", "inspect_only", "unsupported"}, "capabilities")
+        editable = _validate_string_array(capabilities["editable"], "capabilities.editable")
+        unknown_editable = set(editable) - set(CAPABILITIES_EDITABLE)
+        if unknown_editable:
+            raise TrackLabError(
+                "capabilities.editable contains unsupported label(s): "
+                + ", ".join(sorted(unknown_editable))
+            )
+        if set(editable) != set(CAPABILITIES_EDITABLE):
+            raise TrackLabError("capabilities.editable must declare visibility")
+        inspect_only = _validate_string_array(
+            capabilities["inspect_only"], "capabilities.inspect_only"
         )
-    if set(editable) != set(CAPABILITIES_EDITABLE):
-        raise TrackLabError("capabilities.editable must declare visibility")
-    inspect_only = _validate_string_array(
-        capabilities["inspect_only"], "capabilities.inspect_only"
-    )
-    if set(inspect_only) != set(CAPABILITIES_INSPECT_ONLY):
-        raise TrackLabError(
-            "capabilities.inspect_only must declare segments, anchors, and waypoints"
+        if set(inspect_only) != set(CAPABILITIES_INSPECT_ONLY):
+            raise TrackLabError(
+                "capabilities.inspect_only must declare segments, anchors, and waypoints"
+            )
+        unsupported = _validate_string_array(
+            capabilities["unsupported"], "capabilities.unsupported"
         )
-    unsupported = _validate_string_array(
-        capabilities["unsupported"], "capabilities.unsupported"
-    )
-    if set(unsupported) != set(CAPABILITIES_UNSUPPORTED):
-        raise TrackLabError(
-            "capabilities.unsupported must declare geometry, collision, and new_track"
-        )
+        if set(unsupported) != set(CAPABILITIES_UNSUPPORTED):
+            raise TrackLabError(
+                "capabilities.unsupported must declare geometry, collision, and new_track"
+            )
 
     visibility = _require_object(document["visibility"], "visibility")
     _require_keys(
@@ -959,7 +959,8 @@ def validate_document(document: dict[str, Any]) -> ValidatedDocument:
             patched_rows[row_index][slot] = replacement
     patched_hash = fnv1a64_pvs(patched_rows)
 
-    _validate_inspection_data(document, row_count)
+    if include_inspection:
+        _validate_inspection_data(document, row_count)
     return ValidatedDocument(
         document=document,
         row_count=row_count,
@@ -970,8 +971,13 @@ def validate_document(document: dict[str, Any]) -> ValidatedDocument:
     )
 
 
+def validate_patch_document(document: dict[str, Any]) -> ValidatedDocument:
+    """Validate only fields consumed by the portable visibility patch."""
+    return validate_document(document, include_inspection=False)
+
+
 def diff_document(document: dict[str, Any]) -> dict[str, Any]:
-    validated = validate_document(document)
+    validated = validate_patch_document(document)
     return {
         "base_fnv1a64": _fnv_hex(validated.base_hash),
         "patched_fnv1a64": _fnv_hex(validated.patched_hash),
@@ -991,8 +997,8 @@ def diff_document(document: dict[str, Any]) -> dict[str, Any]:
 
 
 def compile_document(document: dict[str, Any]) -> bytes:
-    """Compile deterministic, guarded, row-major PVS edits to portable ``.altrk``."""
-    validated = validate_document(document)
+    """Compile patch-relevant fields to deterministic portable ``.altrk`` bytes."""
+    validated = validate_patch_document(document)
     edit_count = len(validated.edits)
     payload_size = edit_count * PATCH_EDIT.size
     file_size = PATCH_HEADER_SIZE + payload_size

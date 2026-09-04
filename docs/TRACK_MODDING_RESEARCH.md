@@ -497,18 +497,22 @@ complete PVS baseline plus raw/decoded segment records, referenced cull anchors,
 and one explicitly assumed waypoint record per PVS row. Only
 `visibility.rows` is editable.
 
-The tool validates the complete evidence-bearing document, prints a sparse
-diff, and compiles a portable little-endian `ALTRKPV1` package. The native port
-loads that package before startup and applies it immediately after the stock
+The tool validates the complete evidence-bearing document for inspection, while
+the diff/compiler path validates only the patch-relevant target and visibility
+fields, so read-only metadata can be stripped. It compiles a portable
+little-endian `ALTRKPV1` package. The native port loads that package before
+startup and applies it immediately after the stock
 track loader publishes `D_80098238`. The verified port-runtime hook is `0x80006094`
 (companion overlay label `0x80006C94`, shifted by `-0xC00`); the preceding
 runtime instruction at `0x80006090` stores the active context pointer.
 
 Application is all-or-nothing and guarded by ROM identity, circuit, context
-bounds, row shape, complete base/result fingerprints, and per-cell expected old
-values. Developer savestates also carry the active package identity. This makes
-stock visibility corrections useful now without implying that the unknown
-geometry, navigation, or collision contracts are safe to write.
+bounds, row shape, the complete baseline fingerprint, and per-cell expected old
+values. Developer savestates remain package-agnostic; the active correction is
+reapplied after the guest RAM copy and can safely report a mismatch without
+aborting the restore. This makes stock visibility corrections useful now
+without implying that the unknown geometry, navigation, or collision contracts
+are safe to write.
 
 Fresh settled recomp-port captures now cover all six circuits. Their PVS row
 counts are `25, 29, 30, 75, 55, 67`, and their respective baseline hashes are

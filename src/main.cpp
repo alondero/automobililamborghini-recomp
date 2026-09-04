@@ -955,9 +955,10 @@ static int application_main(int argc, char** argv) {
         const std::string track_patch_path_string = path_to_utf8(track_patch_path);
         const auto result = lambo::track_patch::load_package(track_patch_path);
         if (result != lambo::track_patch::LoadResult::Loaded) {
+            const char* const error = lambo::track_patch::last_error();
             LAMBO_LOG_ERROR("track", "cannot load %s: %s\n",
                             track_patch_path_string.c_str(),
-                            lambo::track_patch::last_error().c_str());
+                            error != nullptr ? error : "unknown error");
             return 2;
         }
         LAMBO_LOG_INFO("track", "loaded Track Lab correction %s\n",

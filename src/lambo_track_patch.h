@@ -3,7 +3,6 @@
 
 #include <cstdint>
 #include <filesystem>
-#include <string>
 
 namespace lambo::track_patch {
 
@@ -35,9 +34,9 @@ ApplyResult apply_to_active_track(uint8_t* rdram) noexcept;
 uint64_t active_package_id() noexcept;
 const char* apply_result_name(ApplyResult result) noexcept;
 
-// Diagnostic for the most recent load_package call. Runtime application uses
-// ApplyResult so that the hook never has to construct an error string.
-const std::string& last_error() noexcept;
+// Diagnostic for the most recent load_package call. The returned pointer names
+// a static message and remains valid until the next load/disable call.
+const char* last_error() noexcept;
 
 } // namespace lambo::track_patch
 

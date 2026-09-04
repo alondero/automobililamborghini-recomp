@@ -183,8 +183,8 @@ class TestExtraction(TrackLabFixture):
             self.document["provenance"]["rdram_sha256"],
         )
 
-    def test_rejects_lmbostat_captured_with_active_track_package(self):
-        path = self.directory / "patched.lstate"
+    def test_accepts_lmbostat_reserved_words_for_forward_compatibility(self):
+        path = self.directory / "reserved.lstate"
         path.write_bytes(
             struct.pack(
                 "<8s6I",
@@ -198,11 +198,8 @@ class TestExtraction(TrackLabFixture):
             )
             + self.raw_bytes
         )
-        with self.assertRaisesRegex(
-            tl.TrackLabError,
-            "Track Lab package 5566778811223344 active",
-        ):
-            tl.extract_document(path)
+        document = tl.extract_document(path)
+        self.assertEqual(document["provenance"]["snapshot_format"], "lmbostat-v1")
 
     def test_canonical_json_is_stable(self):
         first = self.directory / "first.json"
@@ -307,6 +304,17 @@ class TestValidationAndDiff(TrackLabFixture):
 
 
 class TestCompile(TrackLabFixture):
+    def test_compile_accepts_document_without_inspection_metadata(self):
+        document = self.fresh_document()
+        for key in ("provenance", "capabilities", "segments", "anchors", "waypoints"):
+            document.pop(key)
+
+        self.assertEqual(
+            tl.compile_document(document),
+            tl.compile_document(self.fresh_document()),
+        )
+        self.assertEqual(tl.diff_document(document)["edit_count"], 0)
+
     def test_noop_is_exact_64_byte_patch_and_preserves_negative_holes(self):
         document = self.fresh_document()
         patch = tl.compile_document(document)

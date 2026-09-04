@@ -1,15 +1,17 @@
 #include "lambo_track_patch.h"
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
-#include <limits>
+#include <memory>
 #include <utility>
 #include <vector>
 
 #include "lambo_log.h"
+#include "recomp.h"
 
 namespace lambo::track_patch {
 namespace {
@@ -49,7 +51,6 @@ struct Edit {
 };
 
 struct Package {
-    bool enabled = false;
     uint8_t circuit = 0;
     uint16_t row_count = 0;
     uint64_t base_hash = 0;
@@ -58,8 +59,8 @@ struct Package {
     std::vector<Edit> edits;
 };
 
-Package g_package;
-std::string g_last_error;
+std::atomic<std::shared_ptr<const Package>> g_package;
+std::atomic<const char*> g_last_error{nullptr};
 
 uint16_t read_le_u16(const uint8_t* bytes) noexcept {
     return static_cast<uint16_t>(
@@ -95,8 +96,8 @@ uint64_t hash_bytes(const uint8_t* bytes, size_t size) noexcept {
     return hash;
 }
 
-LoadResult load_error(LoadResult result, const char* message) {
-    g_last_error = message;
+LoadResult load_error(LoadResult result, const char* message) noexcept {
+    g_last_error.store(message, std::memory_order_release);
     return result;
 }
 
@@ -110,22 +111,15 @@ bool is_kseg0_range(uint32_t address, uint32_t size) noexcept {
 }
 
 uint32_t read_guest_word(const uint8_t* rdram, uint32_t address) noexcept {
-    // N64ModernRuntime stores word-swapped RDRAM: aligned guest words are
-    // native little-endian values, while guest halfwords use address XOR 2.
-    const uint32_t offset = address - kRdramBase;
-    return read_le_u32(rdram + offset);
+    return static_cast<uint32_t>(MEM_W(0, static_cast<gpr>(static_cast<int32_t>(address))));
 }
 
 int16_t read_guest_halfword(const uint8_t* rdram, uint32_t address) noexcept {
-    const uint32_t offset = (address - kRdramBase) ^ 2u;
-    return read_le_s16(rdram + offset);
+    return static_cast<int16_t>(MEM_H(0, static_cast<gpr>(static_cast<int32_t>(address))));
 }
 
 void write_guest_halfword(uint8_t* rdram, uint32_t address, int16_t value) noexcept {
-    const uint32_t offset = (address - kRdramBase) ^ 2u;
-    const uint16_t bits = static_cast<uint16_t>(value);
-    rdram[offset] = static_cast<uint8_t>(bits);
-    rdram[offset + 1] = static_cast<uint8_t>(bits >> 8);
+    MEM_H(0, static_cast<gpr>(static_cast<int32_t>(address))) = value;
 }
 
 uint64_t hash_live_pvs(const uint8_t* rdram, uint32_t pvs_base,
@@ -140,30 +134,6 @@ uint64_t hash_live_pvs(const uint8_t* rdram, uint32_t pvs_base,
         // host's word-swapped RDRAM representation.
         hash = fnv_byte(hash, static_cast<uint8_t>(value >> 8));
         hash = fnv_byte(hash, static_cast<uint8_t>(value));
-    }
-    return hash;
-}
-
-uint64_t hash_patched_pvs(const uint8_t* rdram, uint32_t pvs_base,
-                          const Package& package) noexcept {
-    uint64_t hash = kFnvOffsetBasis;
-    size_t next_edit = 0;
-    const uint32_t value_count =
-        static_cast<uint32_t>(package.row_count) * kSlotsPerRow;
-    for (uint32_t index = 0; index < value_count; ++index) {
-        int16_t value = read_guest_halfword(rdram, pvs_base + index * 2u);
-        if (next_edit < package.edits.size()) {
-            const Edit& edit = package.edits[next_edit];
-            const uint32_t edit_index =
-                static_cast<uint32_t>(edit.row) * kSlotsPerRow + edit.slot;
-            if (edit_index == index) {
-                value = edit.replacement;
-                ++next_edit;
-            }
-        }
-        const uint16_t bits = static_cast<uint16_t>(value);
-        hash = fnv_byte(hash, static_cast<uint8_t>(bits >> 8));
-        hash = fnv_byte(hash, static_cast<uint8_t>(bits));
     }
     return hash;
 }
@@ -184,10 +154,6 @@ LoadResult load_package(const std::filesystem::path& path) {
     if (file_size < kHeaderSize || file_size > kMaxPackageSize) {
         return load_error(LoadResult::InvalidFormat, "package size is outside format limits");
     }
-    if (file_size > static_cast<uint64_t>(std::numeric_limits<std::streamsize>::max())) {
-        return load_error(LoadResult::InvalidFormat, "package is too large to read");
-    }
-
     std::vector<uint8_t> bytes(static_cast<size_t>(file_size));
     input.seekg(0, std::ios::beg);
     input.read(reinterpret_cast<char*>(bytes.data()),
@@ -286,20 +252,21 @@ LoadResult load_package(const std::filesystem::path& path) {
     if (candidate.id == 0) {
         candidate.id = 1;
     }
-    candidate.enabled = true;
-    g_package = std::move(candidate);
-    g_last_error.clear();
+    auto next_package = std::make_shared<const Package>(std::move(candidate));
+    g_package.store(std::move(next_package), std::memory_order_release);
+    g_last_error.store(nullptr, std::memory_order_release);
     return LoadResult::Loaded;
 }
 
 void disable() {
-    g_package = Package{};
-    g_last_error.clear();
+    g_package.store(std::shared_ptr<const Package>{}, std::memory_order_release);
+    g_last_error.store(nullptr, std::memory_order_release);
 }
 
 ApplyResult apply_to_active_track(uint8_t* rdram) noexcept {
-    const Package& package = g_package;
-    if (!package.enabled) {
+    const std::shared_ptr<const Package> package =
+        g_package.load(std::memory_order_acquire);
+    if (!package) {
         return ApplyResult::Disabled;
     }
     if (rdram == nullptr) {
@@ -308,7 +275,7 @@ ApplyResult apply_to_active_track(uint8_t* rdram) noexcept {
 
     const int16_t live_circuit =
         read_guest_halfword(rdram, kCurrentCircuitAddress);
-    if (live_circuit != package.circuit) {
+    if (live_circuit != package->circuit) {
         return ApplyResult::WrongCircuit;
     }
 
@@ -330,20 +297,20 @@ ApplyResult apply_to_active_track(uint8_t* rdram) noexcept {
     }
     const uint32_t live_row_count = pvs_bytes / kPvsRowSize;
     if (live_row_count < kMinRows || live_row_count > kMaxRows ||
-        live_row_count != package.row_count) {
+        live_row_count != package->row_count) {
         return ApplyResult::BadContext;
     }
 
     const uint64_t live_hash =
-        hash_live_pvs(rdram, pvs_base, package.row_count);
-    if (live_hash != package.base_hash) {
-        return live_hash == package.patched_hash
+        hash_live_pvs(rdram, pvs_base, package->row_count);
+    if (live_hash != package->base_hash) {
+        return live_hash == package->patched_hash
                    ? ApplyResult::AlreadyApplied
                    : ApplyResult::BaseMismatch;
     }
 
     bool changes_value = false;
-    for (const Edit& edit : package.edits) {
+    for (const Edit& edit : package->edits) {
         const uint32_t address = pvs_base +
             static_cast<uint32_t>(edit.row) * kPvsRowSize +
             static_cast<uint32_t>(edit.slot) * 2u;
@@ -354,17 +321,11 @@ ApplyResult apply_to_active_track(uint8_t* rdram) noexcept {
         changes_value = changes_value || live_value != edit.replacement;
     }
 
-    // Compute the complete result before touching memory. This catches a
-    // malformed/tampered package even when its declared base fingerprint is
-    // correct and guarantees all-or-nothing writes.
-    if (hash_patched_pvs(rdram, pvs_base, package) != package.patched_hash) {
-        return ApplyResult::BaseMismatch;
-    }
     if (!changes_value) {
         return ApplyResult::AlreadyApplied;
     }
 
-    for (const Edit& edit : package.edits) {
+    for (const Edit& edit : package->edits) {
         const uint32_t address = pvs_base +
             static_cast<uint32_t>(edit.row) * kPvsRowSize +
             static_cast<uint32_t>(edit.slot) * 2u;
@@ -374,7 +335,9 @@ ApplyResult apply_to_active_track(uint8_t* rdram) noexcept {
 }
 
 uint64_t active_package_id() noexcept {
-    return g_package.enabled ? g_package.id : 0;
+    const std::shared_ptr<const Package> package =
+        g_package.load(std::memory_order_acquire);
+    return package ? package->id : 0;
 }
 
 const char* apply_result_name(ApplyResult result) noexcept {
@@ -389,8 +352,8 @@ const char* apply_result_name(ApplyResult result) noexcept {
     return "unknown result";
 }
 
-const std::string& last_error() noexcept {
-    return g_last_error;
+const char* last_error() noexcept {
+    return g_last_error.load(std::memory_order_acquire);
 }
 
 } // namespace lambo::track_patch

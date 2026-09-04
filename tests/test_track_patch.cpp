@@ -186,7 +186,10 @@ int run_python_interop(const std::filesystem::path& package_path) {
     const auto load_result = lambo::track_patch::load_package(package_path);
     if (load_result != LoadResult::Loaded) {
         std::cerr << "FAIL: native loader rejected Python package: "
-                  << lambo::track_patch::last_error() << '\n';
+                  << (lambo::track_patch::last_error() != nullptr
+                          ? lambo::track_patch::last_error()
+                          : "<none>")
+                  << '\n';
         return 1;
     }
 
@@ -250,7 +253,8 @@ int main(int argc, char** argv) {
            "disabled patch does not inspect RDRAM");
     expect(lambo::track_patch::load_package(package_path) == LoadResult::IoError,
            "missing package reports I/O error");
-    expect(!lambo::track_patch::last_error().empty(),
+    expect(lambo::track_patch::last_error() != nullptr &&
+               lambo::track_patch::last_error()[0] != '\0',
            "failed package load records a diagnostic");
 
     const uint16_t rows = 3;
@@ -317,7 +321,7 @@ int main(int argc, char** argv) {
     expect(write_file(package_path, valid_package), "writes valid package fixture");
     expect(lambo::track_patch::load_package(package_path) == LoadResult::Loaded,
            "valid portable package loads");
-    expect(lambo::track_patch::last_error().empty(),
+    expect(lambo::track_patch::last_error() == nullptr,
            "successful load clears the load diagnostic");
     const uint64_t valid_id = fnv_bytes(valid_package.data(), valid_package.size());
     expect(valid_id != 0 && lambo::track_patch::active_package_id() == valid_id,
@@ -395,11 +399,15 @@ int main(int argc, char** argv) {
     expect(lambo::track_patch::load_package(package_path) == LoadResult::Loaded,
            "result fingerprint is checked against live data at apply time");
     set_live_track(rdram, circuit, base_table, rows);
-    before = rdram;
+    expect(lambo::track_patch::apply_to_active_track(rdram.data()) ==
+               ApplyResult::Applied,
+           "per-edit expected values are sufficient to authorize writes");
+    expect(read_halfword(rdram, kPvsAddress + 0u * 20u + 2u * 2u) == 2 &&
+               read_halfword(rdram, kPvsAddress + 1u * 20u) == -1,
+           "a declared result fingerprint is not a second pre-write table scan");
     expect(lambo::track_patch::apply_to_active_track(rdram.data()) ==
                ApplyResult::BaseMismatch,
-           "simulated patched fingerprint must match before writes");
-    expect(rdram == before, "result-fingerprint rejection is transactional");
+           "a wrong result fingerprint rejects a later idempotence check");
 
     expect(write_file(package_path, valid_package), "restores valid fixture");
     expect(lambo::track_patch::load_package(package_path) == LoadResult::Loaded,
