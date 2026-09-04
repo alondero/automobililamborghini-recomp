@@ -19,17 +19,6 @@ out/
 CMakeUserPresets.json
 compile_commands.json
 
-# --- Optional companion texture-pack staging -------------------------------
-# The port repository stays asset-free.  The tracked texture-pack directory
-# contains only the release template and tooling; source art is staged locally
-# and pushed from the separate companion repository.
-/texture-pack/textures/*
-!/texture-pack/textures/README.md
-/texture-pack/rt64.json
-/texture-pack/generated/
-/texture-pack/dist/
-/texture-pack/raw-dumps/
-
 # --- Editor / OS -----------------------------------------------------------
 .vs/
 .vscode/

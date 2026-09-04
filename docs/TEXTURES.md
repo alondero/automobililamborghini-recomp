@@ -6,9 +6,10 @@ one-texture experiment all use the same runtime facility, and the replacement ar
 live in a separate repository. Everything below was verified with a config-driven texture dump,
 an offline decode, a loose replacement directory, and a packaged `.rtz` loaded in-game.
 
-For the companion-repository layout, metadata contract, and GitHub Release workflow, see
-[GitHub storage and distribution for texture packs](./TEXTURE_PACKS_GITHUB.md) and the
-[pack repository seed](../texture-pack/).
+The editable source, metadata, and GitHub Release workflow live in the private
+[Automobili Lamborghini texture repository](https://github.com/alondero/automobili-lamborghini-textures);
+ask the project maintainer for access. This checkout owns the runtime interface
+and the standalone manifest generator, but deliberately does not store replacement artwork.
 
 ## What RT64 already gives us (and what the port adds)
 
@@ -101,9 +102,9 @@ track textures may use unrelated formats and dimensions.
   dump filename prefix.
 - **PNG** loads directly and is fine for iteration. **DDS** (BC7 + mipmaps, e.g. via Texconv
   / Compressonator's *CPU* encoder) is what you ship — never ship PNG.
-- The default `shift: half` is appropriate for modern-tool exports that bake a half-texel
-  origin offset. A grid-aligned integer upscale of the decoded PNG instead needs
-  `python tools/make_pack.py /path/to/pack --shift none`; test atlas and tiled textures
+- The companion pack policy uses `default_shift: none` for grid-aligned integer upscales.
+  Modern-tool exports that bake a half-texel origin offset can opt into
+  `python tools/make_pack.py /path/to/pack --shift half`; test atlas and tiled textures
   carefully because the wrong shift produces sampling offsets or neighbouring-texel bleed.
 - Paletted textures re-hash when their palette changes (for example, highlighted versus normal
   menu art), so visually identical pixels can require replacements under several hashes.

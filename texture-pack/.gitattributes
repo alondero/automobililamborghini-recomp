@@ -1,5 +1,0 @@
-# Keep ordinary PNG source reviewable in Git. Use LFS only for layered masters.
-*.blend filter=lfs diff=lfs merge=lfs -text
-*.kra filter=lfs diff=lfs merge=lfs -text
-*.psd filter=lfs diff=lfs merge=lfs -text
-*.xcf filter=lfs diff=lfs merge=lfs -text
