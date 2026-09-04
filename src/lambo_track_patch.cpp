@@ -371,8 +371,11 @@ void log_hook_result(const char* hook,
         lambo::track_patch::active_package_id());
     const char* const result_name =
         lambo::track_patch::apply_result_name(result);
-    if (result == ApplyResult::BadContext ||
-        result == ApplyResult::BaseMismatch) {
+    const bool savestate_mismatch =
+        result == ApplyResult::BaseMismatch &&
+        std::strcmp(hook, "post-savestate-load") == 0;
+    if ((result == ApplyResult::BadContext ||
+         result == ApplyResult::BaseMismatch) && !savestate_mismatch) {
         LAMBO_LOG_WARN("track", "%s package %016llx: %s\n",
                        hook, id, result_name);
     } else {
