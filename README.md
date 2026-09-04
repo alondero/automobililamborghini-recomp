@@ -103,6 +103,9 @@ On Linux, use `LAMBO_TEXTURE_DUMP=/path/to/dump ./lamborghini_modern`. Exercise 
 menu, HUD, vehicle, and track that the pack should cover because dumping is runtime-driven.
 See **[Texture packs](./docs/TEXTURES.md)** for decoding the dump, authoring replacements,
 generating `rt64.json`, testing a loose pack, and packaging it as `.rtz`.
+The maintained source and tagged-release workflow live in the private
+[Automobili Lamborghini texture repository](https://github.com/alondero/automobili-lamborghini-textures);
+ask the project maintainer for access. This port checkout remains asset-free.
 
 ## In-Game Configuration & Controls
 

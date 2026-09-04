@@ -6,6 +6,11 @@ one-texture experiment all use the same runtime facility, and the replacement ar
 live in a separate repository. Everything below was verified with a config-driven texture dump,
 an offline decode, a loose replacement directory, and a packaged `.rtz` loaded in-game.
 
+The editable source, metadata, and GitHub Release workflow live in the private
+[Automobili Lamborghini texture repository](https://github.com/alondero/automobili-lamborghini-textures);
+ask the project maintainer for access. This checkout owns the runtime interface
+and the standalone manifest generator, but deliberately does not store replacement artwork.
+
 ## What RT64 already gives us (and what the port adds)
 
 RT64 (`lib/rt64`) ships the texture-replacement system: hashing, a dump mode, a pack
@@ -97,9 +102,9 @@ track textures may use unrelated formats and dimensions.
   dump filename prefix.
 - **PNG** loads directly and is fine for iteration. **DDS** (BC7 + mipmaps, e.g. via Texconv
   / Compressonator's *CPU* encoder) is what you ship — never ship PNG.
-- The default `shift: half` is appropriate for modern-tool exports that bake a half-texel
-  origin offset. A grid-aligned integer upscale of the decoded PNG instead needs
-  `python tools/make_pack.py /path/to/pack --shift none`; test atlas and tiled textures
+- The companion pack policy uses `default_shift: none` for grid-aligned integer upscales.
+  Modern-tool exports that bake a half-texel origin offset can opt into
+  `python tools/make_pack.py /path/to/pack --shift half`; test atlas and tiled textures
   carefully because the wrong shift produces sampling offsets or neighbouring-texel bleed.
 - Paletted textures re-hash when their palette changes (for example, highlighted versus normal
   menu art), so visually identical pixels can require replacements under several hashes.
@@ -128,6 +133,38 @@ build/rt64/src/tools/texture_packer/texture_packer.exe /path/to/pack --create-pa
 ```
 
 (The low-mip cache is only meaningful for DDS mipmaps; with PNG it is empty, which is fine.)
+
+## Companion repository build and GitHub Action
+
+The editable artwork belongs in the separate companion repository, not in this
+port checkout. From that repository, regenerate the manifest and validate it
+before building the archive:
+
+```powershell
+python tools/make_pack.py textures `
+  --manifest rt64.json `
+  --policy texture-policy.json
+
+python tools/validate_pack.py `
+  --pack-json pack.json `
+  --source-dir textures `
+  --rt64-json rt64.json
+
+python tools/build_pack.py `
+  --texconv C:/tools/texconv.exe `
+  --rt64-packer C:/tools/texture_packer.exe
+```
+
+The builder writes the end-user `.rtz`, checksums, release metadata, and a
+`dist/loose/` directory for local testing. Point `LAMBO_TEXTURE_PACK` at either
+the loose directory or the `.rtz` archive and restart the port.
+
+The companion repository's `.github/workflows/release.yml` can also be run from
+the Actions tab. Pushing a tag that matches `pack.json`'s `pack_version` (for
+example `v0.1.1`) builds the pack and opens a draft release; a manual run keeps
+the generated files as a short-lived workflow artifact. Both paths run the
+release validation gate, so a public build must have a resolved artwork license,
+completed credits, and `rights_confirmed: true`.
 
 ## The F1 developer overlay (optional)
 
