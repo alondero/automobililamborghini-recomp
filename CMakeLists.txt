@@ -540,8 +540,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_menu.cpp     # lightweight native Win32 menu bar; live config actions + persistence
         src/lambo_startup.cpp  # runtime-ready -> Play startup state machine (issue #126)
         src/lambo_input_gate.cpp # controller capture/neutral-release barrier (issue #126)
-        src/lambo_replay.cpp    # versioned effective-input trace parser/recorder
-        src/lambo_replay_runtime.cpp # game-dispatch-clock record/replay harness
+        src/lambo_replay.cpp
+        src/lambo_replay_runtime.cpp
         src/lambo_harness_report.cpp
         src/lambo_file.cpp
         src/lambo_analog_throttle.cpp # issue #128: atomic native-port throttle bridge + race hook
