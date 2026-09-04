@@ -14,12 +14,12 @@
 #include <chrono>
 #include <cctype>
 #include <cmath>
-#include <condition_variable>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <latch>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -77,7 +77,7 @@ int run_lighting_selftest();
 }
 
 static std::mutex g_termination_mutex;
-static std::condition_variable g_termination_latch;
+static std::latch g_termination_latch{1};
 static bool g_termination_claimed = false;
 
 // LAMBO_CRASH_TEST: when set, the test thread's 2 s sleep must outlast
@@ -117,7 +117,8 @@ static void claim_immediate_exit() {
         g_termination_claimed = true;
         return;
     }
-    g_termination_latch.wait(lock, [] { return false; });
+    lock.unlock();
+    g_termination_latch.wait();
 }
 
 // Print the one-line boot summary the runtime guard (tests/pivot/test_boot_smoke.py) parses,
