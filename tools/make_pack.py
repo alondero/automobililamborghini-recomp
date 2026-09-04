@@ -25,19 +25,11 @@ from pathlib import Path
 HASH_RE = re.compile(r"^([0-9a-fA-F]{16})$")
 
 
-def main():
-    ap = argparse.ArgumentParser(description="Write rt64.json from hash-named replacement images.")
-    ap.add_argument("pack_dir", type=Path)
-    ap.add_argument("--auto-path", choices=["rt64", "rice"], default="rt64",
-                    help="which hash names the files on disk (default rt64)")
-    ap.add_argument("--shift", choices=["half", "none", "auto"], default="half",
-                    help="default texel shift; 'half' suits modern-tool exports (default)")
-    ap.add_argument("--operation", choices=["stream", "preload", "auto"], default="stream",
-                    help="default load operation (default stream)")
-    args = ap.parse_args()
-
+def write_manifest(pack_dir, auto_path="rt64", shift="half", operation="stream"):
+    """Write and return an RT64 replacement database for hash-named images."""
+    pack_dir = Path(pack_dir)
     textures = []
-    for p in sorted(args.pack_dir.iterdir()):
+    for p in sorted(pack_dir.iterdir()):
         if p.suffix.lower() not in (".png", ".dds"):
             continue
         m = HASH_RE.match(p.stem)
@@ -53,21 +45,39 @@ def main():
         })
 
     if not textures:
-        print(f"No <hash>.png/.dds files in {args.pack_dir}")
-        return 1
+        raise ValueError(f"No <hash>.png/.dds files in {pack_dir}")
 
     db = {
         "configuration": {
-            "autoPath": args.auto_path,
-            "defaultOperation": args.operation,
-            "defaultShift": args.shift,
+            "autoPath": auto_path,
+            "defaultOperation": operation,
+            "defaultShift": shift,
             "hashVersion": 5,  # TMEMHasher::CurrentHashVersion
         },
         "textures": textures,
     }
-    out = args.pack_dir / "rt64.json"
+    out = pack_dir / "rt64.json"
     out.write_text(json.dumps(db, indent=2))
     print(f"wrote {out} with {len(textures)} texture(s)")
+    return db
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Write rt64.json from hash-named replacement images.")
+    ap.add_argument("pack_dir", type=Path)
+    ap.add_argument("--auto-path", choices=["rt64", "rice"], default="rt64",
+                    help="which hash names the files on disk (default rt64)")
+    ap.add_argument("--shift", choices=["half", "none", "auto"], default="half",
+                    help="default texel shift; 'half' suits modern-tool exports (default)")
+    ap.add_argument("--operation", choices=["stream", "preload", "auto"], default="stream",
+                    help="default load operation (default stream)")
+    args = ap.parse_args()
+
+    try:
+        write_manifest(args.pack_dir, args.auto_path, args.shift, args.operation)
+    except ValueError as error:
+        print(error)
+        return 1
     return 0
 
 
