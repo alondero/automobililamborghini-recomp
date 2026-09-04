@@ -42,9 +42,7 @@ void finalize();
 
 } // namespace lambo::replay_runtime
 
-// The input hook stages a frame immediately after controller decoding and
-// before the ROM derives its held/pressed masks. The dispatcher hooks verify
-// and delimit the exact subsequent game update that consumes that frame.
+// Generated guest calls require a non-throwing hook boundary.
 extern "C" void lambo_replay_dispatch_begin(std::uint8_t* rdram) noexcept;
 extern "C" void lambo_replay_dispatch_end(std::uint8_t* rdram) noexcept;
 extern "C" void lambo_replay_input_tick(std::uint8_t* rdram) noexcept;

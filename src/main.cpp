@@ -110,10 +110,7 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
     lambo::harness::note_thread_created();
 }
 
-// VI EOF/max-vis, the watchdog, and a UI close can converge on the immediate
-// exit paths from different native threads. Let exactly one thread publish the
-// result and shut down shared logging/storage; the winner's _Exit terminates
-// any losing waiter a few instructions later.
+// Multiple native threads can request finalization; serialize the publisher.
 static void claim_immediate_exit() {
     std::unique_lock lock(g_termination_mutex);
     if (!g_termination_claimed) {

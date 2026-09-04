@@ -10,9 +10,7 @@
 
 namespace lambo::replay {
 
-// Controller state observed at one game-dispatch tick. Values deliberately
-// retain the N64 controller's native widths; traces still validate every
-// field before exposing any frame to playback.
+// Native widths preserve guest comparisons; traces validate every field before playback.
 struct InputFrame {
     std::uint16_t buttons{};
     std::int8_t stick_x{};
@@ -30,8 +28,7 @@ struct LoadResult;
 
 LoadResult load_trace(const std::filesystem::path& path);
 
-// An immutable, run-length encoded trace. frame_at() uses a zero-based frame
-// index and returns false when the index is outside the trace.
+// Immutable storage keeps playback stable while the game advances.
 class Trace {
 public:
     Trace() = default;

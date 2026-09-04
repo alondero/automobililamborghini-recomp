@@ -924,10 +924,6 @@ func = "func_800028D0"
 before_vram = 0x80001CD4
 text = "extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_savestate_tick(rdram, ctx);"
 
-# Deterministic input record/replay harness. The controller hook replaces/records
-# the decoded pad before the ROM derives its held/pressed masks. The following
-# dispatcher entry verifies that staged pad and freezes its analog channels; the
-# common epilogue counts it only after the 30 Hz game update has returned.
 [[patches.hook]]
 func = "func_800028D0"
 before_vram = 0x80001CD8
