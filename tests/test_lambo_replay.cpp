@@ -1,15 +1,16 @@
 #include "lambo_replay.h"
+#include "lambo_input_quantize.h"
 
 #include "json/json.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -114,22 +115,17 @@ void test_valid_boundaries_and_lookup() {
 
     expect(!loaded.trace->empty(), "loaded trace is not empty");
     expect(loaded.trace->total_frames() == 3, "run lengths produce total frame count");
-    expect(loaded.trace->frame_at(0) ==
-               InputFrame{0, -80, 80, false, 0, true, 65535},
+    InputFrame actual{};
+    expect(loaded.trace->frame_at(0, actual) &&
+               actual == InputFrame{0, -80, 80, false, 0, true, 65535},
            "first run maps to frame zero");
     const InputFrame expected_second{65535, 80, -80, true, 65535, false, 0};
-    expect(loaded.trace->frame_at(1) == expected_second,
+    expect(loaded.trace->frame_at(1, actual) && actual == expected_second,
            "second run maps to its first frame");
-    expect(loaded.trace->frame_at(2) == expected_second,
+    expect(loaded.trace->frame_at(2, actual) && actual == expected_second,
            "second run maps to its last frame");
-
-    try {
-        (void)loaded.trace->frame_at(3);
-        expect(false, "frame_at(total_frames) throws");
-    } catch (const std::out_of_range& exception) {
-        expect(std::string{exception.what()}.find("3-frame trace") != std::string::npos,
-               "out-of-range error states trace length");
-    }
+    expect(!loaded.trace->frame_at(3, actual),
+           "frame_at(total_frames) returns false without throwing");
 
     const std::uint64_t maximum = std::numeric_limits<std::uint64_t>::max();
     const auto maximum_path = test_directory / "maximum-run.jsonl";
@@ -139,7 +135,7 @@ void test_valid_boundaries_and_lookup() {
     if (maximum_loaded) {
         expect(maximum_loaded.trace->total_frames() == maximum,
                "UINT64_MAX total is represented exactly");
-        expect(maximum_loaded.trace->frame_at(maximum - 1) == InputFrame{},
+        expect(maximum_loaded.trace->frame_at(maximum - 1, actual) && actual == InputFrame{},
                "last addressable frame of maximum run is available");
     }
 }
@@ -263,8 +259,9 @@ void test_recorder_round_trip_and_atomic_publish() {
     const InputFrame second{0x0001, 12, -34, false, 7, true, 4096};
     {
         lambo::replay::Recorder recorder(path);
-        expect(recorder.ready(), "recorder opens its temporary file");
-        expect(std::filesystem::exists(temporary), "recorder uses the .tmp sibling");
+        expect(recorder.ready(), "recorder accepts a destination before recording");
+        expect(!std::filesystem::exists(temporary),
+               "recorder does not touch disk before finalize");
         expect(read_text(path) == "old trace stays visible\n",
                "existing destination stays untouched while recording");
         expect(recorder.observe(first), "recorder accepts first observation");
@@ -285,9 +282,12 @@ void test_recorder_round_trip_and_atomic_publish() {
     expect(static_cast<bool>(loaded), "recorded trace loads again");
     if (loaded) {
         expect(loaded.trace->total_frames() == 5, "round trip preserves frame total");
-        expect(loaded.trace->frame_at(0) == first && loaded.trace->frame_at(1) == first,
+        InputFrame actual{};
+        expect(loaded.trace->frame_at(0, actual) && actual == first &&
+                   loaded.trace->frame_at(1, actual) && actual == first,
                "round trip preserves first RLE run");
-        expect(loaded.trace->frame_at(2) == second && loaded.trace->frame_at(4) == second,
+        expect(loaded.trace->frame_at(2, actual) && actual == second &&
+                   loaded.trace->frame_at(4, actual) && actual == second,
                "round trip preserves second RLE run");
     }
 
@@ -313,7 +313,7 @@ void test_recorder_failure_and_abandon_paths() {
     }
     expect(!std::filesystem::exists(abandoned), "destructor does not publish implicitly");
     expect(!std::filesystem::exists(abandoned_temporary),
-           "destructor removes unpublished temporary file");
+           "destructor leaves no unpublished temporary file");
 
     const auto empty = test_directory / "empty-recording.jsonl";
     std::filesystem::path empty_temporary = empty;
@@ -341,7 +341,7 @@ void test_recorder_failure_and_abandon_paths() {
     expect(invalid_recorder.error().find("stick_x") != std::string::npos,
            "invalid observation identifies its field");
     expect(!std::filesystem::exists(invalid_temporary),
-           "invalid observation removes temporary file");
+           "invalid observation has not created a temporary file");
     expect(!invalid_recorder.finalize(), "failed recorder cannot publish");
 
     lambo::replay::Recorder empty_path(std::filesystem::path{});
@@ -361,7 +361,9 @@ void test_recorder_failure_and_abandon_paths() {
     std::filesystem::create_directory(occupied_temporary);
     {
         lambo::replay::Recorder occupied(occupied_temporary_destination);
-        expect(!occupied.ready(), "non-file temporary path prevents recording");
+        expect(occupied.ready() && occupied.observe(InputFrame{}),
+               "recording remains in memory despite an occupied temporary path");
+        expect(!occupied.finalize(), "occupied temporary path fails only at finalize");
     }
     expect(std::filesystem::is_directory(occupied_temporary),
            "recorder does not remove a temporary path it never opened");
@@ -382,6 +384,19 @@ void test_recorder_failure_and_abandon_paths() {
            "publish failure removes temporary file");
 }
 
+void test_quantize_normalized_is_finite_and_bounded() {
+    expect(lambo::input::quantize_normalized(-1.0f) == 0,
+           "negative normalized input clamps to zero");
+    expect(lambo::input::quantize_normalized(0.5f) == 32768,
+           "midpoint normalized input rounds to the nearest u16");
+    expect(lambo::input::quantize_normalized(2.0f) == UINT16_MAX,
+           "normalized input above one clamps to UINT16_MAX");
+    expect(lambo::input::quantize_normalized(std::numeric_limits<float>::quiet_NaN()) == 0,
+           "NaN normalized input safely clamps to zero");
+    expect(lambo::input::quantize_normalized(std::numeric_limits<float>::infinity()) == 0,
+           "positive infinity normalized input safely clamps to zero");
+}
+
 } // namespace
 
 int main() {
@@ -395,6 +410,7 @@ int main() {
     test_invalid_run_fields();
     test_recorder_round_trip_and_atomic_publish();
     test_recorder_failure_and_abandon_paths();
+    test_quantize_normalized_is_finite_and_bounded();
 
     std::error_code cleanup_error;
     std::filesystem::remove_all(test_directory, cleanup_error);

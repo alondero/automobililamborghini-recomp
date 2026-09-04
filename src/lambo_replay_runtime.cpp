@@ -9,10 +9,12 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "lambo_analog_brake.h"
 #include "lambo_analog_throttle.h"
 #include "lambo_input_gate.h"
+#include "lambo_input_quantize.h"
 #include "lambo_log.h"
 #include "recomp.h"
 
@@ -23,53 +25,70 @@ constexpr gpr kPortZeroPadAddress = (gpr)(int32_t)0x800A39E0u;
 constexpr gpr kPortZeroHeldAddress = (gpr)(int32_t)0x800A39F8u;
 constexpr gpr kPortZeroPressedAddress = (gpr)(int32_t)0x800A3A00u;
 
-std::optional<lambo::replay::Trace> g_trace;
-std::unique_ptr<lambo::replay::Recorder> g_recorder;
+struct RuntimeState {
+    std::mutex mutex;
+    std::optional<lambo::replay::Trace> trace;
+    std::unique_ptr<lambo::replay::Recorder> recorder;
+    lambo::replay::InputFrame playback_input{};
+    lambo::replay::InputFrame record_input{};
+    std::string error;
+    std::string terminal_reason;
 
-std::atomic<bool> g_configured{false};
-std::atomic<bool> g_recording{false};
-std::atomic<bool> g_active{false};
-std::atomic<bool> g_owns_input{false};
-std::atomic<bool> g_complete{false};
-std::atomic<bool> g_failed{false};
-std::atomic<bool> g_exit_on_end{true};
-std::atomic<bool> g_block_physical_analog{false};
-std::atomic<std::uint64_t> g_frames_consumed{0};
-std::atomic<std::uint64_t> g_guest_frames_verified{0};
-std::atomic<std::uint64_t> g_dispatcher_ticks{0};
-std::atomic<std::uint64_t> g_load_generation{0};
+    bool configured{};
+    bool recording{};
+    bool active{};
+    bool owns_input{};
+    bool complete{};
+    bool failed{};
+    bool exit_on_end{true};
+    bool block_physical_analog{};
+    bool finalized{};
 
-std::mutex g_input_mutex;
-lambo::replay::InputFrame g_playback_input{};
-lambo::replay::InputFrame g_record_input{};
-std::mutex g_analog_mutex;
+    std::uint64_t frames_consumed{};
+    std::uint64_t guest_frames_verified{};
+    std::uint64_t dispatcher_ticks{};
+    std::uint64_t load_generation{};
 
-std::mutex g_error_mutex;
-std::string g_error;
-std::string g_terminal_reason;
+    int start_state{8};
+    std::uint64_t start_delay{};
+    std::uint64_t eligible_ticks{};
+    std::uint64_t cursor{};
+    std::uint64_t seen_load_generation{};
+    bool frame_staged{};
+    bool frame_in_dispatch{};
+    bool frame_verified{};
+    bool bootstrap_neutral_in_dispatch{};
+    bool input_was_suppressed{};
+};
 
-std::mutex g_recorder_mutex;
-bool g_finalized = false;
+RuntimeState g_state;
 
-// The fields below are owned by the game-dispatch thread.
-int g_start_state = 8;
-std::uint64_t g_start_delay = 0;
-std::uint64_t g_eligible_ticks = 0;
-std::uint64_t g_cursor = 0;
-std::uint64_t g_seen_load_generation = 0;
-bool g_frame_staged = false;
-bool g_frame_in_dispatch = false;
-bool g_frame_verified = false;
-bool g_bootstrap_neutral_in_dispatch = false;
-bool g_input_was_suppressed = false;
+// A single atomic is reserved for the exceptional path because a guest hook
+// must never let a C++ exception escape into recompiled code.
+std::atomic<bool> g_hook_exception{false};
+
+void set_error_locked(std::string message, std::string reason) {
+    g_state.error = std::move(message);
+    g_state.terminal_reason = std::move(reason);
+    g_state.failed = true;
+}
 
 void set_error(std::string message, std::string reason) {
-    {
-        std::lock_guard lock(g_error_mutex);
-        g_error = std::move(message);
-        g_terminal_reason = std::move(reason);
+    std::lock_guard lock(g_state.mutex);
+    set_error_locked(std::move(message), std::move(reason));
+}
+
+void mark_hook_exception() noexcept {
+    g_hook_exception.store(true, std::memory_order_release);
+}
+
+template <typename Function>
+void invoke_guest_hook(Function&& function) noexcept {
+    try {
+        std::forward<Function>(function)();
+    } catch (...) {
+        mark_hook_exception();
     }
-    g_failed.store(true, std::memory_order_release);
 }
 
 bool parse_integer_env(const char* name, long long default_value,
@@ -115,19 +134,12 @@ bool parse_bool_env(const char* name, bool default_value, bool& output) {
     return false;
 }
 
-void publish_analog_unlocked(const lambo::replay::InputFrame& input) {
+void publish_analog(const lambo::replay::InputFrame& input) {
     constexpr float kU16Max = 65535.0f;
     lambo::analog_throttle::publish(0, input.throttle_analog,
-        static_cast<float>(input.throttle) / kU16Max);
+                                    static_cast<float>(input.throttle) / kU16Max);
     lambo::analog_brake::publish(0, input.brake_analog,
-        static_cast<float>(input.brake) / kU16Max);
-}
-
-std::uint16_t normalized_u16(float value) {
-    constexpr float kU16Max = 65535.0f;
-    if (value <= 0.0f) return 0;
-    if (value >= 1.0f) return UINT16_MAX;
-    return static_cast<std::uint16_t>(value * kU16Max + 0.5f);
+                                 static_cast<float>(input.brake) / kU16Max);
 }
 
 lambo::replay::InputFrame read_guest_input(std::uint8_t* rdram) {
@@ -137,10 +149,10 @@ lambo::replay::InputFrame read_guest_input(std::uint8_t* rdram) {
     input.stick_y = static_cast<std::int8_t>(MEM_B(3, kPortZeroPadAddress));
     float analog = 0.0f;
     input.throttle_analog = lambo::analog_throttle::sample(0, analog);
-    input.throttle = normalized_u16(analog);
+    input.throttle = lambo::input::quantize_normalized(analog);
     analog = 0.0f;
     input.brake_analog = lambo::analog_brake::sample(0, analog);
-    input.brake = normalized_u16(analog);
+    input.brake = lambo::input::quantize_normalized(analog);
     return input;
 }
 
@@ -161,9 +173,6 @@ void write_guest_input(std::uint8_t* rdram, const lambo::replay::InputFrame& inp
 
 bool effective_input_matches(const lambo::replay::InputFrame& expected,
                              const lambo::replay::InputFrame& observed) {
-    // In aggregate-controller mode the stock decoder may fold stick directions
-    // into the raw button halfword after our staging hook. Accept only that
-    // measured transform; all other fields must remain exact.
     const bool buttons_match = observed.buttons == expected.buttons ||
         observed.buttons == button_mask_with_stick(expected);
     return buttons_match &&
@@ -175,86 +184,244 @@ bool effective_input_matches(const lambo::replay::InputFrame& expected,
            (!expected.brake_analog || expected.brake == observed.brake);
 }
 
-void install_playback_frame(std::uint8_t* rdram, std::uint64_t frame,
-                            bool acquire_ownership = false) {
-    const lambo::replay::InputFrame input = g_trace->frame_at(frame);
-    {
-        std::lock_guard lock(g_input_mutex);
-        g_playback_input = input;
-    }
-    std::lock_guard analog_lock(g_analog_mutex);
-    if (acquire_ownership) {
-        g_owns_input.store(true, std::memory_order_release);
-    }
-    publish_analog_unlocked(input);
-    write_guest_input(rdram, input);
-}
-
-void install_neutral_playback_frame(std::uint8_t* rdram = nullptr) {
+void install_neutral_playback_frame_locked(std::uint8_t* rdram = nullptr) {
     const lambo::replay::InputFrame neutral{};
-    {
-        std::lock_guard lock(g_input_mutex);
-        g_playback_input = neutral;
-    }
-    std::lock_guard analog_lock(g_analog_mutex);
-    publish_analog_unlocked(neutral);
+    g_state.playback_input = neutral;
+    publish_analog(neutral);
     if (rdram != nullptr) write_guest_input(rdram, neutral);
 }
 
-void neutralize_guest_for_dispatch(std::uint8_t* rdram) {
-    const lambo::replay::InputFrame neutral{};
-    {
-        std::lock_guard analog_lock(g_analog_mutex);
-        publish_analog_unlocked(neutral);
+bool install_playback_frame_locked(std::uint8_t* rdram, std::uint64_t frame,
+                                   bool acquire_ownership = false) {
+    lambo::replay::InputFrame input{};
+    if (!g_state.trace->frame_at(frame, input)) {
+        install_neutral_playback_frame_locked(rdram);
+        set_error_locked("replay frame " + std::to_string(frame) +
+                             " is outside the loaded trace",
+                         "replay_frame_out_of_range");
+        return false;
     }
+    g_state.playback_input = input;
+    if (acquire_ownership) g_state.owns_input = true;
+    publish_analog(input);
+    write_guest_input(rdram, input);
+    return true;
+}
+
+void neutralize_guest_for_dispatch_locked(std::uint8_t* rdram) {
+    const lambo::replay::InputFrame neutral{};
+    publish_analog(neutral);
     write_guest_input(rdram, neutral);
     MEM_H(0, kPortZeroHeldAddress) = 0;
     MEM_H(0, kPortZeroPressedAddress) = 0;
 }
 
-bool recorder_observe_and_publish(const lambo::replay::InputFrame& input) {
-    std::lock_guard lock(g_recorder_mutex);
-    if (g_recorder == nullptr || g_finalized) return false;
-    if (!g_recorder->observe(input)) {
-        set_error(g_recorder->error(), "record_failed");
+void release_recording_frame_locked() {
+    g_state.block_physical_analog = false;
+}
+
+void stage_recording_frame_locked(std::uint8_t* rdram) {
+    g_state.record_input = read_guest_input(rdram);
+    g_state.block_physical_analog = true;
+    g_state.frame_staged = true;
+}
+
+bool recorder_observe_locked(const lambo::replay::InputFrame& input) {
+    if (g_state.recorder == nullptr || g_state.finalized) {
+        set_error_locked("recording is no longer accepting input", "record_failed");
         return false;
     }
-    // Finalization takes the same mutex. Publish every observable counter
-    // before releasing it so an immediate-exit thread cannot serialize N
-    // frames but snapshot N-1 consumed/verified frames in the result.
-    const std::uint64_t count = g_recorder->total_frames();
-    g_frames_consumed.store(count, std::memory_order_release);
-    g_guest_frames_verified.store(count, std::memory_order_release);
+    if (!g_state.recorder->observe(input)) {
+        set_error_locked(g_state.recorder->error(), "record_failed");
+        return false;
+    }
+    const std::uint64_t count = g_state.recorder->total_frames();
+    g_state.frames_consumed = count;
+    g_state.guest_frames_verified = count;
     return true;
 }
 
-void stage_recording_frame(std::uint8_t* rdram) {
-    // Freeze the final pedal values atomically with the sample. The dispatcher
-    // consumes them later than the controller decoder; without this ownership
-    // window, a main-thread publication could make the trace disagree with the
-    // physics update it claims to represent.
-    {
-        std::lock_guard analog_lock(g_analog_mutex);
-        g_record_input = read_guest_input(rdram);
-        g_block_physical_analog.store(true, std::memory_order_release);
-    }
-    g_frame_staged = true;
-}
-
-void release_recording_frame() {
-    std::lock_guard analog_lock(g_analog_mutex);
-    g_block_physical_analog.store(false, std::memory_order_release);
-}
-
-void update_start_eligibility(std::uint8_t* rdram) {
-    if (g_active.load(std::memory_order_acquire)) return;
-
+void update_start_eligibility_locked(std::uint8_t* rdram) {
+    if (g_state.active) return;
     const int state = static_cast<std::int16_t>(MEM_H(0, kGameStateAddress));
-    if (lambo::input_gate::guest_input_suppressed() || state != g_start_state) {
-        g_eligible_ticks = 0;
+    if (lambo::input_gate::guest_input_suppressed() || state != g_state.start_state) {
+        g_state.eligible_ticks = 0;
         return;
     }
-    if (g_eligible_ticks != UINT64_MAX) ++g_eligible_ticks;
+    if (g_state.eligible_ticks != UINT64_MAX) ++g_state.eligible_ticks;
+    (void)rdram;
+}
+
+void dispatch_begin_impl(std::uint8_t* rdram) {
+    std::lock_guard lock(g_state.mutex);
+    if (!g_state.configured) return;
+
+    ++g_state.dispatcher_ticks;
+    if (g_state.failed) return;
+
+    const bool state_was_loaded = g_state.load_generation != g_state.seen_load_generation;
+    const bool input_session_active = g_state.owns_input ||
+        (g_state.recording && g_state.active);
+    if (state_was_loaded && input_session_active) {
+        g_state.frame_staged = false;
+        g_state.frame_in_dispatch = false;
+        g_state.frame_verified = false;
+        if (g_state.trace) {
+            install_neutral_playback_frame_locked(rdram);
+            set_error_locked("a save-state was loaded after replay playback started",
+                             "state_loaded_during_replay");
+        } else {
+            release_recording_frame_locked();
+            set_error_locked("a save-state was loaded after input recording started",
+                             "state_loaded_during_recording");
+        }
+        return;
+    }
+    g_state.seen_load_generation = g_state.load_generation;
+
+    if (g_state.complete) {
+        if (g_state.trace) neutralize_guest_for_dispatch_locked(rdram);
+        return;
+    }
+
+    const bool input_suppressed = lambo::input_gate::guest_input_suppressed();
+    const int state = static_cast<std::int16_t>(MEM_H(0, kGameStateAddress));
+    if (g_state.trace && !g_state.active) {
+        if (state_was_loaded && !input_suppressed && state == g_state.start_state) {
+            g_state.block_physical_analog = true;
+            g_state.bootstrap_neutral_in_dispatch = true;
+            neutralize_guest_for_dispatch_locked(rdram);
+        }
+        return;
+    }
+
+    if (g_state.trace && input_suppressed) {
+        g_state.input_was_suppressed = true;
+        neutralize_guest_for_dispatch_locked(rdram);
+        return;
+    }
+
+    if (g_state.trace && g_state.input_was_suppressed) {
+        g_state.input_was_suppressed = false;
+        g_state.frame_staged = false;
+        neutralize_guest_for_dispatch_locked(rdram);
+        return;
+    }
+
+    if (!g_state.active) return;
+    if (!g_state.frame_staged) {
+        if (g_state.trace) install_neutral_playback_frame_locked(rdram);
+        else release_recording_frame_locked();
+        set_error_locked("an active input session reached the dispatcher without a staged frame",
+                         "replay_clock_error");
+        return;
+    }
+    if (g_state.frame_in_dispatch) {
+        if (g_state.trace) install_neutral_playback_frame_locked(rdram);
+        else release_recording_frame_locked();
+        set_error_locked("dispatcher re-entered before the previous input frame completed",
+                         "replay_clock_error");
+        return;
+    }
+
+    const lambo::replay::InputFrame expected = g_state.trace
+        ? g_state.playback_input : g_state.record_input;
+    if (!effective_input_matches(expected, read_guest_input(rdram))) {
+        g_state.frame_staged = false;
+        if (g_state.trace) install_neutral_playback_frame_locked(rdram);
+        else release_recording_frame_locked();
+        set_error_locked("staged input changed before the game dispatcher consumed it",
+                         "replay_input_overwritten");
+        return;
+    }
+    g_state.frame_verified = true;
+    g_state.frame_in_dispatch = true;
+}
+
+void dispatch_end_impl(std::uint8_t* rdram) {
+    std::lock_guard lock(g_state.mutex);
+    if (!g_state.configured) return;
+
+    if (g_state.bootstrap_neutral_in_dispatch) {
+        g_state.bootstrap_neutral_in_dispatch = false;
+        release_recording_frame_locked();
+    }
+    update_start_eligibility_locked(rdram);
+    if (g_state.failed || !g_state.frame_in_dispatch) return;
+
+    g_state.frame_in_dispatch = false;
+    if (!g_state.frame_verified) {
+        if (!g_state.trace) release_recording_frame_locked();
+        set_error_locked("dispatcher completed an unverified input frame",
+                         "replay_clock_error");
+        return;
+    }
+    g_state.frame_verified = false;
+    g_state.frame_staged = false;
+
+    if (g_state.trace) {
+        const std::uint64_t consumed = g_state.cursor + 1;
+        g_state.frames_consumed = consumed;
+        g_state.guest_frames_verified = consumed;
+        if (consumed >= g_state.trace->total_frames()) {
+            g_state.complete = true;
+            install_neutral_playback_frame_locked();
+            LAMBO_LOG_INFO("replay", "playback complete after %llu game frame(s)\n",
+                           static_cast<unsigned long long>(consumed));
+        }
+        return;
+    }
+
+    (void)recorder_observe_locked(g_state.record_input);
+    release_recording_frame_locked();
+}
+
+void input_tick_impl(std::uint8_t* rdram) {
+    std::lock_guard lock(g_state.mutex);
+    if (!g_state.configured || g_state.failed) return;
+
+    if (g_state.trace && g_state.complete) {
+        install_neutral_playback_frame_locked(rdram);
+        return;
+    }
+
+    if (g_state.trace && lambo::input_gate::guest_input_suppressed()) {
+        if (g_state.owns_input) {
+            g_state.input_was_suppressed = true;
+            neutralize_guest_for_dispatch_locked(rdram);
+        }
+        return;
+    }
+    g_state.input_was_suppressed = false;
+
+    if (!g_state.active) {
+        if (g_state.eligible_ticks <= g_state.start_delay) return;
+        g_state.active = true;
+        const int state = static_cast<std::int16_t>(MEM_H(0, kGameStateAddress));
+        LAMBO_LOG_INFO("replay", "%s started at game state %d\n",
+                       g_state.trace ? "playback" : "recording", state);
+        if (g_state.trace) g_state.cursor = 0;
+    }
+
+    if (g_state.frame_staged) {
+        if (g_state.trace) {
+            (void)install_playback_frame_locked(rdram, g_state.cursor);
+        } else {
+            write_guest_input(rdram, g_state.record_input);
+            publish_analog(g_state.record_input);
+        }
+        return;
+    }
+
+    if (g_state.trace) {
+        g_state.cursor = g_state.frames_consumed;
+        if (!install_playback_frame_locked(rdram, g_state.cursor, !g_state.owns_input)) {
+            return;
+        }
+        g_state.frame_staged = true;
+    } else {
+        stage_recording_frame_locked(rdram);
+    }
 }
 
 } // namespace
@@ -262,341 +429,168 @@ void update_start_eligibility(std::uint8_t* rdram) {
 namespace lambo::replay_runtime {
 
 bool initialize_from_environment() {
-    const char* replay_path = std::getenv("LAMBO_INPUT_REPLAY");
-    const char* record_path = std::getenv("LAMBO_INPUT_RECORD");
-    const bool wants_replay = replay_path != nullptr && replay_path[0] != '\0';
-    const bool wants_record = record_path != nullptr && record_path[0] != '\0';
-
-    if (wants_replay && wants_record) {
-        set_error("LAMBO_INPUT_REPLAY and LAMBO_INPUT_RECORD are mutually exclusive",
-                  "invalid_configuration");
-        return false;
-    }
-    if (!wants_replay && !wants_record) return true;
-
-    long long start_state = 8;
-    long long start_delay = 0;
-    if (!parse_integer_env("LAMBO_INPUT_START_STATE", 8, INT16_MIN, INT16_MAX, start_state) ||
-        !parse_integer_env("LAMBO_INPUT_START_DELAY", 0, 0, LLONG_MAX, start_delay)) {
-        return false;
-    }
-    g_start_state = static_cast<int>(start_state);
-    g_start_delay = static_cast<std::uint64_t>(start_delay);
-    bool exit_on_end = true;
-    if (!parse_bool_env("LAMBO_INPUT_EXIT_ON_END", true, exit_on_end)) return false;
-    g_exit_on_end.store(exit_on_end, std::memory_order_relaxed);
-
-    if (wants_replay) {
-        replay::LoadResult loaded = replay::load_trace(std::filesystem::path(replay_path));
-        if (!loaded) {
-            set_error(loaded.error, "invalid_trace");
+    try {
+        const char* replay_path = std::getenv("LAMBO_INPUT_REPLAY");
+        const char* record_path = std::getenv("LAMBO_INPUT_RECORD");
+        const bool wants_replay = replay_path != nullptr && replay_path[0] != '\0';
+        const bool wants_record = record_path != nullptr && record_path[0] != '\0';
+        if (wants_replay && wants_record) {
+            set_error("LAMBO_INPUT_REPLAY and LAMBO_INPUT_RECORD are mutually exclusive",
+                      "invalid_configuration");
             return false;
         }
-        g_trace.emplace(std::move(*loaded.trace));
-        LAMBO_LOG_INFO("replay", "armed %llu game frame(s) from %s; start_state=%d delay=%llu\n",
-            static_cast<unsigned long long>(g_trace->total_frames()), replay_path,
-            g_start_state, static_cast<unsigned long long>(g_start_delay));
-    } else {
-        g_recorder = std::make_unique<replay::Recorder>(std::filesystem::path(record_path));
-        if (!g_recorder->ready()) {
-            set_error(g_recorder->error(), "record_open_failed");
-            g_recorder.reset();
+        if (!wants_replay && !wants_record) return true;
+
+        long long start_state = 8;
+        long long start_delay = 0;
+        if (!parse_integer_env("LAMBO_INPUT_START_STATE", 8, INT16_MIN, INT16_MAX,
+                               start_state) ||
+            !parse_integer_env("LAMBO_INPUT_START_DELAY", 0, 0, LLONG_MAX, start_delay)) {
             return false;
         }
-        g_recording.store(true, std::memory_order_release);
-        LAMBO_LOG_INFO("replay", "recording armed for %s; start_state=%d delay=%llu\n",
-            record_path, g_start_state, static_cast<unsigned long long>(g_start_delay));
-    }
+        bool exit_on_end = true;
+        if (!parse_bool_env("LAMBO_INPUT_EXIT_ON_END", true, exit_on_end)) return false;
 
-    g_configured.store(true, std::memory_order_release);
-    return true;
+        std::optional<replay::Trace> trace;
+        std::unique_ptr<replay::Recorder> recorder;
+        if (wants_replay) {
+            replay::LoadResult loaded = replay::load_trace(std::filesystem::path(replay_path));
+            if (!loaded) {
+                set_error(loaded.error, "invalid_trace");
+                return false;
+            }
+            trace.emplace(std::move(*loaded.trace));
+        } else {
+            recorder = std::make_unique<replay::Recorder>(std::filesystem::path(record_path));
+            if (!recorder->ready()) {
+                set_error(recorder->error(), "record_open_failed");
+                return false;
+            }
+        }
+
+        std::lock_guard lock(g_state.mutex);
+        g_state.start_state = static_cast<int>(start_state);
+        g_state.start_delay = static_cast<std::uint64_t>(start_delay);
+        g_state.exit_on_end = exit_on_end;
+        g_state.trace = std::move(trace);
+        g_state.recorder = std::move(recorder);
+        g_state.recording = wants_record;
+        g_state.configured = true;
+        if (g_state.trace) {
+            LAMBO_LOG_INFO("replay", "armed %llu game frame(s) from %s; start_state=%d delay=%llu\n",
+                           static_cast<unsigned long long>(g_state.trace->total_frames()),
+                           replay_path, g_state.start_state,
+                           static_cast<unsigned long long>(g_state.start_delay));
+        } else {
+            LAMBO_LOG_INFO("replay", "recording armed for %s; start_state=%d delay=%llu\n",
+                           record_path, g_state.start_state,
+                           static_cast<unsigned long long>(g_state.start_delay));
+        }
+        return true;
+    } catch (...) {
+        set_error("unexpected exception while initializing replay", "invalid_configuration");
+        return false;
+    }
 }
 
 std::string last_error() {
-    std::lock_guard lock(g_error_mutex);
-    return g_error;
+    if (g_hook_exception.load(std::memory_order_acquire)) {
+        return "replay runtime exception was contained at the guest hook boundary";
+    }
+    std::lock_guard lock(g_state.mutex);
+    return g_state.error;
 }
 
 bool playback_owns_input() {
-    return g_owns_input.load(std::memory_order_acquire);
+    std::lock_guard lock(g_state.mutex);
+    return g_state.owns_input;
 }
 
 bool playback_frame(replay::InputFrame& output) {
-    if (!playback_owns_input()) return false;
-    {
-        std::lock_guard lock(g_input_mutex);
-        output = g_playback_input;
-    }
-    // Refresh at the controller-read seam as well as the dispatcher tick. This closes the
-    // one-frame ownership handoff race with the SDL input publisher.
-    {
-        std::lock_guard analog_lock(g_analog_mutex);
-        publish_analog_unlocked(output);
-    }
+    std::lock_guard lock(g_state.mutex);
+    if (!g_state.owns_input) return false;
+    output = g_state.playback_input;
+    publish_analog(output);
     return true;
 }
 
 void publish_physical_analog(bool throttle_analog, float throttle,
                              bool brake_analog, float brake) {
-    std::lock_guard analog_lock(g_analog_mutex);
-    if (g_owns_input.load(std::memory_order_acquire) ||
-        g_block_physical_analog.load(std::memory_order_acquire)) return;
+    std::lock_guard lock(g_state.mutex);
+    if (g_state.owns_input || g_state.block_physical_analog) return;
     lambo::analog_throttle::publish(0, throttle_analog, throttle);
     lambo::analog_brake::publish(0, brake_analog, brake);
 }
 
 Status status() {
+    std::lock_guard lock(g_state.mutex);
     Status output;
-    output.configured = g_configured.load(std::memory_order_acquire);
-    output.recording = g_recording.load(std::memory_order_acquire);
-    output.active = g_active.load(std::memory_order_acquire);
-    output.complete = g_complete.load(std::memory_order_acquire);
-    output.failed = g_failed.load(std::memory_order_acquire);
-    output.exit_on_end = g_exit_on_end.load(std::memory_order_acquire);
-    if (g_trace) {
-        output.total_frames = g_trace->total_frames();
-    } else {
-        std::lock_guard lock(g_recorder_mutex);
-        output.total_frames = g_recorder ? g_recorder->total_frames() : 0;
-    }
-    output.frames_consumed = g_frames_consumed.load(std::memory_order_acquire);
-    output.guest_frames_verified =
-        g_guest_frames_verified.load(std::memory_order_acquire);
-    output.dispatcher_ticks = g_dispatcher_ticks.load(std::memory_order_acquire);
+    output.configured = g_state.configured;
+    output.recording = g_state.recording;
+    output.active = g_state.active;
+    output.complete = g_state.complete;
+    output.failed = g_state.failed || g_hook_exception.load(std::memory_order_acquire);
+    output.exit_on_end = g_state.exit_on_end;
+    output.total_frames = g_state.trace
+        ? g_state.trace->total_frames()
+        : (g_state.recorder ? g_state.recorder->total_frames() : 0);
+    output.frames_consumed = g_state.frames_consumed;
+    output.guest_frames_verified = g_state.guest_frames_verified;
+    output.dispatcher_ticks = g_state.dispatcher_ticks;
     return output;
 }
 
 bool should_exit() {
-    if (g_failed.load(std::memory_order_acquire)) return true;
-    return g_complete.load(std::memory_order_acquire) &&
-           g_exit_on_end.load(std::memory_order_acquire);
+    if (g_hook_exception.load(std::memory_order_acquire)) return true;
+    std::lock_guard lock(g_state.mutex);
+    return g_state.failed || (g_state.complete && g_state.exit_on_end);
 }
 
 std::string terminal_reason() {
-    std::lock_guard lock(g_error_mutex);
-    if (!g_terminal_reason.empty()) return g_terminal_reason;
-    if (g_complete.load(std::memory_order_acquire)) return "replay_complete";
+    if (g_hook_exception.load(std::memory_order_acquire)) {
+        return "replay_runtime_exception";
+    }
+    std::lock_guard lock(g_state.mutex);
+    if (!g_state.terminal_reason.empty()) return g_state.terminal_reason;
+    if (g_state.complete) return "replay_complete";
     return {};
 }
 
 void finalize() {
-    std::lock_guard lock(g_recorder_mutex);
-    if (g_finalized) return;
-    g_finalized = true;
-    if (g_recorder == nullptr) return;
-
-    if (!g_recorder->finalize()) {
-        set_error(g_recorder->error(), "record_finalize_failed");
-        return;
+    std::lock_guard lock(g_state.mutex);
+    if (g_state.finalized) return;
+    g_state.finalized = true;
+    if (g_state.recorder == nullptr) return;
+    try {
+        if (!g_state.recorder->finalize()) {
+            set_error_locked(g_state.recorder->error(), "record_finalize_failed");
+            return;
+        }
+        LAMBO_LOG_INFO("replay", "recording finalized: %llu game frame(s)\n",
+                       static_cast<unsigned long long>(g_state.recorder->total_frames()));
+    } catch (...) {
+        set_error_locked("unexpected exception while finalizing recording",
+                         "record_finalize_failed");
     }
-    LAMBO_LOG_INFO("replay", "recording finalized: %llu game frame(s)\n",
-        static_cast<unsigned long long>(g_recorder->total_frames()));
 }
 
 } // namespace lambo::replay_runtime
 
-extern "C" void lambo_replay_state_loaded() {
-    g_load_generation.fetch_add(1, std::memory_order_acq_rel);
+extern "C" void lambo_replay_state_loaded() noexcept {
+    invoke_guest_hook([] {
+        std::lock_guard lock(g_state.mutex);
+        ++g_state.load_generation;
+    });
 }
 
-extern "C" void lambo_replay_dispatch_begin(std::uint8_t* rdram) {
-    using namespace lambo::replay_runtime;
-    if (!g_configured.load(std::memory_order_acquire)) return;
-
-    g_dispatcher_ticks.fetch_add(1, std::memory_order_relaxed);
-    if (g_failed.load(std::memory_order_acquire)) return;
-
-    const std::uint64_t load_generation =
-        g_load_generation.load(std::memory_order_acquire);
-    const bool state_was_loaded = load_generation != g_seen_load_generation;
-    const bool input_session_active =
-        g_owns_input.load(std::memory_order_acquire) ||
-        (g_recording.load(std::memory_order_acquire) &&
-         g_active.load(std::memory_order_acquire));
-    if (state_was_loaded && input_session_active) {
-        g_frame_staged = false;
-        g_frame_in_dispatch = false;
-        g_frame_verified = false;
-        if (g_trace) {
-            install_neutral_playback_frame(rdram);
-            set_error("a save-state was loaded after replay playback started",
-                      "state_loaded_during_replay");
-        } else {
-            release_recording_frame();
-            set_error("a save-state was loaded after input recording started",
-                      "state_loaded_during_recording");
-        }
-        return;
-    }
-    g_seen_load_generation = load_generation;
-
-    if (g_complete.load(std::memory_order_acquire)) {
-        // exit_on_end=0 deliberately leaves the game running. The normal pad
-        // decoder executes between dispatcher calls, so reassert neutral input
-        // on every later update rather than letting its final sample leak in.
-        if (g_trace) neutralize_guest_for_dispatch(rdram);
-        return;
-    }
-
-    const bool input_suppressed = lambo::input_gate::guest_input_suppressed();
-    const int state = static_cast<std::int16_t>(MEM_H(0, kGameStateAddress));
-    if (g_trace && !g_active.load(std::memory_order_acquire)) {
-        // Playback frames are staged at the controller-decode seam later in
-        // the outer loop. If a load lands directly on start_state (or the game
-        // was already there), make this one bootstrap update explicitly
-        // neutral instead of consuming stale input from the loaded RAM.
-        if (state_was_loaded && !input_suppressed && state == g_start_state) {
-            g_block_physical_analog.store(true, std::memory_order_release);
-            g_bootstrap_neutral_in_dispatch = true;
-            neutralize_guest_for_dispatch(rdram);
-        }
-        return;
-    }
-
-    if (g_trace && input_suppressed) {
-        // Once active, the overlay pauses movie consumption. This update is
-        // neutral; the staged frame is re-applied after the overlay closes.
-        g_input_was_suppressed = true;
-        neutralize_guest_for_dispatch(rdram);
-        return;
-    }
-
-    if (g_trace && g_input_was_suppressed) {
-        // Suppression can end after the last controller decode. Keep that
-        // transition update neutral, discard only the staging claim (not the
-        // trace cursor), and let the following decoder install the same frame
-        // through the stock held/pressed synthesis path.
-        g_input_was_suppressed = false;
-        g_frame_staged = false;
-        neutralize_guest_for_dispatch(rdram);
-        return;
-    }
-
-    if (!g_active.load(std::memory_order_acquire)) return;
-    if (!g_frame_staged) {
-        if (g_trace) install_neutral_playback_frame(rdram);
-        else release_recording_frame();
-        set_error("an active input session reached the dispatcher without a staged frame",
-                  "replay_clock_error");
-        return;
-    }
-    if (g_frame_in_dispatch) {
-        if (g_trace) install_neutral_playback_frame(rdram);
-        else release_recording_frame();
-        set_error("dispatcher re-entered before the previous input frame completed",
-                  "replay_clock_error");
-        return;
-    }
-
-    lambo::replay::InputFrame expected;
-    if (g_trace) {
-        std::lock_guard lock(g_input_mutex);
-        expected = g_playback_input;
-    } else {
-        expected = g_record_input;
-    }
-    if (!effective_input_matches(expected, read_guest_input(rdram))) {
-        g_frame_staged = false;
-        if (g_trace) install_neutral_playback_frame(rdram);
-        else release_recording_frame();
-        set_error("staged input changed before the game dispatcher consumed it",
-                  "replay_input_overwritten");
-        return;
-    }
-    g_frame_verified = true;
-    g_frame_in_dispatch = true;
+extern "C" void lambo_replay_dispatch_begin(std::uint8_t* rdram) noexcept {
+    invoke_guest_hook([rdram] { dispatch_begin_impl(rdram); });
 }
 
-extern "C" void lambo_replay_dispatch_end(std::uint8_t* rdram) {
-    if (!g_configured.load(std::memory_order_acquire)) return;
-
-    if (g_bootstrap_neutral_in_dispatch) {
-        g_bootstrap_neutral_in_dispatch = false;
-        release_recording_frame();
-    }
-    update_start_eligibility(rdram);
-    if (g_failed.load(std::memory_order_acquire) || !g_frame_in_dispatch) return;
-
-    g_frame_in_dispatch = false;
-    if (!g_frame_verified) {
-        if (!g_trace) release_recording_frame();
-        set_error("dispatcher completed an unverified input frame", "replay_clock_error");
-        return;
-    }
-    g_frame_verified = false;
-
-    g_frame_staged = false;
-    if (g_trace) {
-        const std::uint64_t consumed = g_cursor + 1;
-        g_frames_consumed.store(consumed, std::memory_order_release);
-        g_guest_frames_verified.store(consumed, std::memory_order_release);
-        if (consumed >= g_trace->total_frames()) {
-            g_complete.store(true, std::memory_order_release);
-            install_neutral_playback_frame();
-            LAMBO_LOG_INFO("replay", "playback complete after %llu game frame(s)\n",
-                static_cast<unsigned long long>(consumed));
-        }
-        return;
-    }
-
-    (void)recorder_observe_and_publish(g_record_input);
-    release_recording_frame();
+extern "C" void lambo_replay_dispatch_end(std::uint8_t* rdram) noexcept {
+    invoke_guest_hook([rdram] { dispatch_end_impl(rdram); });
 }
 
-extern "C" void lambo_replay_input_tick(std::uint8_t* rdram) {
-    using namespace lambo::replay_runtime;
-    if (!g_configured.load(std::memory_order_acquire) ||
-        g_failed.load(std::memory_order_acquire)) return;
-
-    if (g_trace && g_complete.load(std::memory_order_acquire)) {
-        install_neutral_playback_frame(rdram);
-        return;
-    }
-
-    if (g_trace && lambo::input_gate::guest_input_suppressed()) {
-        if (playback_owns_input()) {
-            g_input_was_suppressed = true;
-            neutralize_guest_for_dispatch(rdram);
-        }
-        return;
-    }
-
-    // If an unsuppressed controller decode occurs before the next dispatcher,
-    // it is itself the safe re-staging seam; no extra neutral transition update
-    // is needed.
-    g_input_was_suppressed = false;
-
-    if (!g_active.load(std::memory_order_acquire)) {
-        if (g_eligible_ticks <= g_start_delay) return;
-
-        g_active.store(true, std::memory_order_release);
-        const int state = static_cast<std::int16_t>(MEM_H(0, kGameStateAddress));
-        if (g_trace) {
-            g_cursor = 0;
-            LAMBO_LOG_INFO("replay", "playback started at game state %d\n", state);
-        } else {
-            LAMBO_LOG_INFO("replay", "recording started at game state %d\n", state);
-        }
-    }
-
-    if (g_frame_staged) {
-        // A controller decode happened without an intervening dispatcher.
-        // Preserve the pending frame instead of advancing the trace/recording.
-        if (g_trace) {
-            install_playback_frame(rdram, g_cursor);
-        } else {
-            write_guest_input(rdram, g_record_input);
-            std::lock_guard analog_lock(g_analog_mutex);
-            publish_analog_unlocked(g_record_input);
-        }
-        return;
-    }
-
-    if (g_trace) {
-        g_cursor = g_frames_consumed.load(std::memory_order_acquire);
-        install_playback_frame(rdram, g_cursor, !playback_owns_input());
-    } else {
-        stage_recording_frame(rdram);
-    }
-    g_frame_staged = true;
+extern "C" void lambo_replay_input_tick(std::uint8_t* rdram) noexcept {
+    invoke_guest_hook([rdram] { input_tick_impl(rdram); });
 }

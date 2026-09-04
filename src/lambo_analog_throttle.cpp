@@ -3,12 +3,11 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <cmath>
-#include <cstdio>
 #include <cstdint>
 
 #include "recomp.h"
 #include "lambo_log.h"
+#include "lambo_input_quantize.h"
 
 namespace {
 
@@ -32,12 +31,6 @@ std::array<std::atomic<unsigned>, lambo::analog_throttle::kPortCount> g_probe_fr
 std::array<int16_t, lambo::analog_throttle::kPortCount> g_previous_demand{};
 std::array<bool, lambo::analog_throttle::kPortCount> g_previous_valid{};
 
-uint16_t quantize(float value) {
-    if (!std::isfinite(value) || value <= 0.0f) return 0;
-    if (value >= 1.0f) return UINT16_MAX;
-    return static_cast<uint16_t>(std::lround(value * static_cast<float>(UINT16_MAX)));
-}
-
 } // namespace
 
 namespace lambo::analog_throttle {
@@ -45,7 +38,7 @@ namespace lambo::analog_throttle {
 void publish(unsigned port, bool analog_mode, float effective_value) {
     if (port >= kPortCount) return;
     const uint32_t packed = analog_mode
-        ? kAnalogEnabled | static_cast<uint32_t>(quantize(effective_value))
+        ? kAnalogEnabled | static_cast<uint32_t>(lambo::input::quantize_normalized(effective_value))
         : 0u;
     g_ports[port].store(packed, std::memory_order_release);
 }

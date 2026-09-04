@@ -31,18 +31,18 @@ struct LoadResult;
 LoadResult load_trace(const std::filesystem::path& path);
 
 // An immutable, run-length encoded trace. frame_at() uses a zero-based frame
-// index and throws std::out_of_range when index >= total_frames().
+// index and returns false when the index is outside the trace.
 class Trace {
 public:
     Trace() = default;
 
     [[nodiscard]] bool empty() const noexcept { return total_frames_ == 0; }
     [[nodiscard]] std::uint64_t total_frames() const noexcept { return total_frames_; }
-    [[nodiscard]] const InputFrame& frame_at(std::uint64_t index) const;
+    [[nodiscard]] bool frame_at(std::uint64_t index, InputFrame& output) const noexcept;
 
 private:
     struct Run {
-        std::uint64_t end_frame{}; // Exclusive cumulative frame index.
+        std::uint64_t end_frame{};
         InputFrame input{};
     };
 
@@ -63,9 +63,7 @@ struct LoadResult {
     [[nodiscard]] explicit operator bool() const noexcept { return trace.has_value(); }
 };
 
-// Streams a trace to <path>.tmp, coalescing consecutive identical frames. The
-// destination is only replaced by finalize(); every other exit removes the
-// temporary file and leaves an existing destination untouched.
+// Finalization is the publication boundary, so an abandoned capture cannot replace a prior trace.
 class Recorder {
 public:
     explicit Recorder(std::filesystem::path path);
@@ -76,8 +74,6 @@ public:
     Recorder(Recorder&&) = delete;
     Recorder& operator=(Recorder&&) = delete;
 
-    // True only while observations are accepted. It becomes false after either
-    // a failure or successful finalization; error() distinguishes those cases.
     [[nodiscard]] bool ready() const noexcept;
     [[nodiscard]] bool observe(const InputFrame& input);
     [[nodiscard]] bool finalize();

@@ -3,12 +3,11 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <cmath>
-#include <cstdio>
 #include <cstdint>
 
 #include "recomp.h"
 #include "lambo_log.h"
+#include "lambo_input_quantize.h"
 
 // Guest seam (measured live, see docs/analog-brake.md):
 // - Brake demand is the float at vehicle offset 0xA0. Stock digital play ramps
@@ -43,12 +42,6 @@ std::atomic<bool> g_probe_enabled{false};
 std::array<float, lambo::analog_brake::kPortCount> g_ramp{};
 std::array<std::atomic<unsigned>, lambo::analog_brake::kPortCount> g_probe_frames{};
 
-uint16_t quantize(float value) {
-    if (!std::isfinite(value) || value <= 0.0f) return 0;
-    if (value >= 1.0f) return UINT16_MAX;
-    return static_cast<uint16_t>(std::lround(value * static_cast<float>(UINT16_MAX)));
-}
-
 float bits_to_float(uint32_t bits) {
     static_assert(sizeof(float) == sizeof(uint32_t));
     float out;
@@ -69,7 +62,7 @@ namespace lambo::analog_brake {
 void publish(unsigned port, bool analog_mode, float effective_value) {
     if (port >= kPortCount) return;
     const uint32_t packed = analog_mode
-        ? kAnalogEnabled | static_cast<uint32_t>(quantize(effective_value))
+        ? kAnalogEnabled | static_cast<uint32_t>(lambo::input::quantize_normalized(effective_value))
         : 0u;
     g_ports[port].store(packed, std::memory_order_release);
 }

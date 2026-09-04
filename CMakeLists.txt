@@ -106,6 +106,7 @@ if(BUILD_TESTING)
         src/libultra_stubs.c
         src/lambo_pak_io.c
         src/lambo_pak_storage.cpp
+        src/lambo_log.cpp
     )
     target_include_directories(lambo_controller_pak_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -127,6 +128,7 @@ if(BUILD_TESTING)
         tests/test_pak_storage.cpp
         src/lambo_pak_storage.cpp
         src/lambo_pak_io.c
+        src/lambo_log.cpp
     )
     target_include_directories(lambo_controller_pak_storage_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -170,6 +172,7 @@ if(BUILD_TESTING)
     add_executable(lambo_input_replay_tests
         tests/test_lambo_replay.cpp
         src/lambo_replay.cpp
+        src/lambo_file.cpp
     )
     target_include_directories(lambo_input_replay_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -182,6 +185,7 @@ if(BUILD_TESTING)
         src/controls/lambo_controls.cpp
         src/lambo_config.cpp
         src/lambo_log.cpp
+        src/lambo_file.cpp
     )
     target_include_directories(lambo_controls_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -195,6 +199,7 @@ if(BUILD_TESTING)
         src/controls/lambo_controls.cpp
         src/lambo_config.cpp
         src/lambo_log.cpp
+        src/lambo_file.cpp
     )
     target_include_directories(lambo_controls_capture_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -209,6 +214,7 @@ if(BUILD_TESTING)
         src/controls/lambo_controls.cpp
         src/lambo_config.cpp
         src/lambo_log.cpp
+        src/lambo_file.cpp
     )
     target_include_directories(lambo_ui_controls_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -220,21 +226,25 @@ if(BUILD_TESTING)
     add_executable(lambo_analog_throttle_tests
         tests/test_analog_throttle.cpp
         src/lambo_analog_throttle.cpp
+        src/lambo_log.cpp
     )
     target_include_directories(lambo_analog_throttle_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${N64MR}/N64Recomp/include
     )
+    target_link_libraries(lambo_analog_throttle_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_analog_throttle_bridge COMMAND lambo_analog_throttle_tests)
 
     add_executable(lambo_analog_brake_tests
         tests/test_analog_brake.cpp
         src/lambo_analog_brake.cpp
+        src/lambo_log.cpp
     )
     target_include_directories(lambo_analog_brake_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${N64MR}/N64Recomp/include
     )
+    target_link_libraries(lambo_analog_brake_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_analog_brake_bridge COMMAND lambo_analog_brake_tests)
 
     add_executable(lambo_ui_input_tests
@@ -436,6 +446,7 @@ if(BUILD_TESTING)
         src/controls/lambo_controls_sdl.cpp
         src/lambo_config.cpp
         src/lambo_log.cpp
+        src/lambo_file.cpp
     )
     target_include_directories(lambo_controls_sdl_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -505,6 +516,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_input_gate.cpp # controller capture/neutral-release barrier (issue #126)
         src/lambo_replay.cpp    # versioned effective-input trace parser/recorder
         src/lambo_replay_runtime.cpp # game-dispatch-clock record/replay harness
+        src/lambo_harness_report.cpp
+        src/lambo_file.cpp
         src/lambo_analog_throttle.cpp # issue #128: atomic native-port throttle bridge + race hook
         src/lambo_analog_brake.cpp    # issue #152: atomic native-port brake bridge + race hook
         src/controls/lambo_controls.cpp

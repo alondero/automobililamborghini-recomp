@@ -40,7 +40,7 @@ python tools/run_game_scenario.py scenarios/harness-smoke.json
 Use `--exe PATH` for a non-default build and `--artifacts-dir DIR` to choose the
 artifact parent. Each invocation gets a unique directory containing the original
 scenario, a rerunnable `scenario-resolved.json`, copied replay/save fixtures with
-SHA-256 hashes, the managed environment, stdout/stderr, the native
+a small size manifest, the managed environment, stdout/stderr, the native
 `harness-result.json`, and the runner's final `runner-result.json`. A wall-clock
 timeout is only a deadlock backstop; input timing never uses it.
 
@@ -89,8 +89,8 @@ cannot consume or overwrite each other's evidence. The runner clears inherited
 input/warp/state variables and redirects graphics config and Controller Pak
 storage into the same isolated directory. It also runs from copied replay/save
 fixtures, so changing the source file during a run cannot change its evidence.
-The strict scenario wrapper currently accepts only runtime-verified car `0`;
-measure another car-select value before widening that validation.
+The scenario wrapper currently accepts only runtime-verified car `0`; measure
+another car-select value before widening that validation.
 The developer warp also accepts 1–2 laps for short tests even though the normal
 single-race menu starts at 3; this is an explicit harness extension, not a claim
 about menu options.
@@ -176,8 +176,10 @@ top-level state, the loader's live circuit, the applied warp or save-state
 bootstrap, player-channel vehicle/speed, and replay/guest-pad progress. The
 runner verifies requested warp values against both the cursor writes and the
 track actually loaded, every consumed replay frame's guest-pad application, state 8,
-EOF, sustained swaps, nonzero vehicle speed, and structurally complete renderer
-BMP captures (including their declared byte size).
+EOF, sustained swaps, nonzero vehicle speed, and a non-empty renderer capture.
+The headless renderer itself writes complete 24-bit BMPs; the runner deliberately
+keeps capture validation shallow so it remains a glue script rather than a second
+image parser.
 
 There is not yet a verified lap-counter/finish oracle. Trace EOF proves the
 recorded control sequence ran, not that a lap completed. A real lap recording is

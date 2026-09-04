@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cerrno>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -11,16 +10,11 @@
 #include <fstream>
 #include <limits>
 #include <sstream>
-#include <system_error>
-
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#endif
 
 #include "json/json.hpp"
 
 #include "lambo_config.h"
+#include "lambo_file.h"
 
 namespace {
 
@@ -305,20 +299,6 @@ void merge_profile(json& destination, const Profile& profile) {
     }
 }
 
-bool atomic_replace(const std::filesystem::path& temporary,
-                    const std::filesystem::path& destination, std::string& error) {
-#ifdef _WIN32
-    if (MoveFileExW(temporary.c_str(), destination.c_str(),
-                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) return true;
-    error = "MoveFileExW failed (" + std::to_string(GetLastError()) + ")";
-    return false;
-#else
-    if (::rename(temporary.c_str(), destination.c_str()) == 0) return true;
-    error = std::strerror(errno);
-    return false;
-#endif
-}
-
 } // namespace
 
 namespace lambo::controls {
@@ -597,7 +577,7 @@ SaveResult save_config(ControlsConfig& config, const std::filesystem::path& path
         output.flush();
         if (!output) { result.error = "could not flush temporary file"; output.close(); std::filesystem::remove(temporary, ec); return result; }
     }
-    if (!atomic_replace(temporary, path, result.error)) {
+    if (!lambo::file::atomic_replace(temporary, path, result.error)) {
         std::filesystem::remove(temporary, ec);
         return result;
     }

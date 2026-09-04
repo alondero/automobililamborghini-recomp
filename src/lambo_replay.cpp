@@ -1,30 +1,18 @@
 #include "lambo_replay.h"
 
 #include "json/json.hpp"
+#include "lambo_file.h"
 
 #include <algorithm>
-#include <cerrno>
-#include <cstdio>
 #include <fstream>
 #include <initializer_list>
 #include <limits>
 #include <sstream>
-#include <stdexcept>
-#include <string_view>
 #include <system_error>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 #include <vector>
-
-#if defined(_WIN32)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
 
 namespace lambo::replay {
 namespace {
@@ -279,39 +267,19 @@ json run_record(std::uint64_t frames, const InputFrame& input) {
                 {"brake", input.brake}};
 }
 
-bool atomic_replace(const std::filesystem::path& source,
-                    const std::filesystem::path& destination, std::string& error) {
-#if defined(_WIN32)
-    if (MoveFileExW(source.c_str(), destination.c_str(),
-                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0) {
-        return true;
-    }
-    const std::error_code ec{static_cast<int>(GetLastError()), std::system_category()};
-#else
-    if (std::rename(source.c_str(), destination.c_str()) == 0) return true;
-    const std::error_code ec{errno, std::generic_category()};
-#endif
-    error = "could not publish temporary trace '" + display_path(source) + "' as '" +
-            display_path(destination) + "': " + ec.message();
-    return false;
-}
-
 } // namespace
 
 Trace::Trace(std::vector<Run> runs, std::uint64_t total_frames)
     : runs_(std::move(runs)), total_frames_(total_frames) {}
 
-const InputFrame& Trace::frame_at(std::uint64_t index) const {
-    if (index >= total_frames_) {
-        std::ostringstream error;
-        error << "replay frame " << index << " is out of range for " << total_frames_
-              << "-frame trace";
-        throw std::out_of_range(error.str());
-    }
+bool Trace::frame_at(std::uint64_t index, InputFrame& output) const noexcept {
+    if (index >= total_frames_) return false;
     const auto run = std::lower_bound(
         runs_.begin(), runs_.end(), index,
         [](const Run& candidate, std::uint64_t frame) { return candidate.end_frame <= frame; });
-    return run->input;
+    if (run == runs_.end()) return false;
+    output = run->input;
+    return true;
 }
 
 LoadResult load_trace(const std::filesystem::path& path) {
@@ -408,13 +376,11 @@ struct Recorder::Impl {
     enum class State { Failed, Writing, Finalized };
 
     explicit Impl(std::filesystem::path path)
-        : destination(std::move(path)), temporary(destination) {
+        : destination(std::move(path)) {
         if (destination.empty()) {
             error_message = "trace destination path is empty";
             return;
         }
-        temporary += ".tmp";
-
         const std::filesystem::path parent = destination.parent_path();
         if (!parent.empty()) {
             std::error_code ec;
@@ -425,61 +391,27 @@ struct Recorder::Impl {
                 return;
             }
         }
-
-        output.open(temporary, std::ios::binary | std::ios::out | std::ios::trunc);
-        if (!output.is_open()) {
-            error_message = "could not open temporary trace '" + display_path(temporary) + "'";
-            return;
-        }
-        owns_temporary = true;
-        output << header_record().dump() << '\n';
-        if (!output.good()) {
-            fail("could not write header to temporary trace '" + display_path(temporary) + "'");
-            return;
-        }
         state = State::Writing;
     }
 
-    ~Impl() {
-        if (state != State::Finalized) discard_temporary();
-    }
+    ~Impl() = default;
 
     bool fail(std::string message) {
         if (error_message.empty()) error_message = std::move(message);
         state = State::Failed;
-        discard_temporary();
         return false;
     }
 
-    void discard_temporary() noexcept {
-        if (output.is_open()) output.close();
-        if (owns_temporary && !temporary.empty()) {
-            std::error_code ignored;
-            std::filesystem::remove(temporary, ignored);
-            owns_temporary = false;
-        }
-    }
-
-    bool flush_pending() {
-        if (!pending.has_value()) return true;
-        output << run_record(pending_frames, *pending).dump() << '\n';
-        if (!output.good()) {
-            return fail("could not write run to temporary trace '" +
-                        display_path(temporary) + "'");
-        }
-        pending.reset();
-        pending_frames = 0;
-        return true;
-    }
-
     std::filesystem::path destination;
-    std::filesystem::path temporary;
-    std::ofstream output;
     std::optional<InputFrame> pending;
     std::uint64_t pending_frames{};
     std::uint64_t observed_frames{};
+    struct Run {
+        std::uint64_t frames{};
+        InputFrame input{};
+    };
+    std::vector<Run> runs;
     State state{State::Failed};
-    bool owns_temporary{};
     std::string error_message;
 };
 
@@ -513,7 +445,7 @@ bool Recorder::observe(const InputFrame& input) {
     } else if (*impl_->pending == input) {
         ++impl_->pending_frames;
     } else {
-        if (!impl_->flush_pending()) return false;
+        impl_->runs.push_back(Impl::Run{impl_->pending_frames, *impl_->pending});
         impl_->pending = input;
         impl_->pending_frames = 1;
     }
@@ -527,26 +459,60 @@ bool Recorder::finalize() {
     if (impl_->observed_frames == 0) {
         return impl_->fail("cannot finalize a trace with no input frames");
     }
-    if (!impl_->flush_pending()) return false;
 
-    impl_->output << json{{"type", "end"}, {"frames", impl_->observed_frames}}.dump()
-                  << '\n';
-    impl_->output.flush();
-    if (!impl_->output.good()) {
-        return impl_->fail("could not finish temporary trace '" +
-                           display_path(impl_->temporary) + "'");
+    if (impl_->pending.has_value()) {
+        impl_->runs.push_back(Impl::Run{impl_->pending_frames, *impl_->pending});
+        impl_->pending.reset();
+        impl_->pending_frames = 0;
     }
-    impl_->output.close();
-    if (impl_->output.fail()) {
-        return impl_->fail("could not close temporary trace '" +
-                           display_path(impl_->temporary) + "'");
+
+    const std::filesystem::path parent = impl_->destination.parent_path();
+    if (!parent.empty()) {
+        std::error_code directory_error;
+        std::filesystem::create_directories(parent, directory_error);
+        if (directory_error) {
+            return impl_->fail("could not create trace directory '" + display_path(parent) +
+                               "': " + directory_error.message());
+        }
+    }
+
+    std::filesystem::path temporary = impl_->destination;
+    temporary += ".tmp";
+    struct TemporaryCleanup {
+        const std::filesystem::path& path;
+        bool owned{};
+        bool published{};
+        ~TemporaryCleanup() {
+            if (owned && !published) {
+                std::error_code ignored;
+                std::filesystem::remove(path, ignored);
+            }
+        }
+    } cleanup{temporary};
+    std::ofstream output(temporary, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!output.is_open()) {
+        return impl_->fail("could not open temporary trace '" + display_path(temporary) + "'");
+    }
+    cleanup.owned = true;
+    output << header_record().dump() << '\n';
+    for (const Impl::Run& run : impl_->runs) {
+        output << run_record(run.frames, run.input).dump() << '\n';
+    }
+    output << json{{"type", "end"}, {"frames", impl_->observed_frames}}.dump() << '\n';
+    output.flush();
+    const bool write_ok = output.good();
+    output.close();
+    const bool close_ok = !output.fail();
+    if (!write_ok || !close_ok) {
+        return impl_->fail("could not finish temporary trace '" +
+                           display_path(temporary) + "'");
     }
 
     std::string publish_error;
-    if (!atomic_replace(impl_->temporary, impl_->destination, publish_error)) {
+    if (!lambo::file::atomic_replace(temporary, impl_->destination, publish_error)) {
         return impl_->fail(std::move(publish_error));
     }
-    impl_->owns_temporary = false;
+    cleanup.published = true;
     impl_->state = Impl::State::Finalized;
     return true;
 }
