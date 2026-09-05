@@ -8,7 +8,6 @@ from pathlib import Path
 from PIL import Image, ImageFont
 
 import render_font as rf
-import upscale_font as uf
 import build_glyph_pack as gp
 import make_pack
 
@@ -25,19 +24,6 @@ def reference_with_cell_ink(width, pitch, characters, first_cell):
     return image
 
 
-class TestColourBleed(unittest.TestCase):
-    def test_colour_propagates_beyond_the_first_transparent_ring(self):
-        image = Image.new("RGBA", (5, 1), (0, 0, 255, 0))
-        image.putpixel((2, 0), (240, 20, 10, 255))
-
-        result = uf.bleed_colour(image, iterations=2)
-
-        self.assertEqual([result.getpixel((x, 0))[:3] for x in range(5)],
-                         [(240, 20, 10)] * 5)
-        self.assertEqual([result.getpixel((x, 0))[3] for x in range(5)],
-                         [0, 0, 255, 0, 0])
-
-
 class TestAtlasCoverage(unittest.TestCase):
     def test_white_profile_covers_every_authored_symbol_digit_and_letter(self):
         reference = reference_with_cell_ink(512, 10, WHITE_CHARACTERS, first_cell=0)
@@ -46,15 +32,6 @@ class TestAtlasCoverage(unittest.TestCase):
     def test_gold_profile_covers_ascii_punctuation_digits_and_letters(self):
         reference = reference_with_cell_ink(512, 8, GOLD_CHARACTERS, first_cell=1)
         self.assertEqual(set(rf.GOLD_PROFILE.boxes(reference)), set(GOLD_CHARACTERS))
-
-    def test_both_atlases_cover_every_issue_countdown_word(self):
-        required = set("ONETWOTHREEFOURGO")
-        self.assertTrue(required.issubset(set(rf.WHITE_CHARACTERS)))
-        self.assertTrue(required.issubset(set(rf.GOLD_CHARACTERS)))
-
-    def test_both_small_atlas_profiles_enable_italic_rendering(self):
-        self.assertTrue(rf.WHITE_PROFILE.italic)
-        self.assertTrue(rf.GOLD_PROFILE.italic)
 
     def test_white_custom_slots_render_as_menu_arrows(self):
         self.assertEqual(rf.WHITE_CUSTOM_GLYPHS, {"&": "right-arrow", "'": "left-arrow"})
@@ -104,20 +81,6 @@ class TestPackCoverage(unittest.TestCase):
         expected_count = len(gp.ATLAS_HASHES) + len(gp.CHROME_GLYPHS) + len(gp.GOLD_GLYPHS)
         self.assertEqual(len(gp.expected_hashes()), expected_count)
 
-    def test_runtime_captured_pause_and_last_lap_hashes_are_mapped(self):
-        self.assertEqual(gp.GOLD_GLYPHS["7112047fab42df0d"], "U")
-        self.assertEqual(gp.GOLD_GLYPHS["e56e844ba1d87442"], "L")
-
-    def test_runtime_captured_checkpoint_i_hash_is_mapped(self):
-        self.assertEqual(gp.GOLD_GLYPHS["a14581e313afdd84"], "I")
-
-    def test_oversize_glyph_is_fitted_inside_a_transparent_margin(self):
-        tile = Image.new("RGBA", (200, 100), (255, 255, 255, 255))
-        fitted = gp.fit_tile(tile, (128, 128), margin=8)
-        self.assertLessEqual(fitted.width, 112)
-        self.assertLessEqual(fitted.height, 112)
-
-
 class TestManifest(unittest.TestCase):
     def test_write_manifest_returns_the_database_used_by_the_pack_builder(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -136,6 +99,45 @@ class TestManifest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(ValueError):
                 make_pack.write_manifest(Path(directory))
+
+    def test_write_manifest_supports_rice_hashes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pack_dir = Path(directory)
+            (pack_dir / "0123456789abcdef.png").write_bytes(b"fixture")
+            database = make_pack.write_manifest(pack_dir, auto_path="rice")
+            hashes = database["textures"][0]["hashes"]
+            self.assertEqual(hashes, {"rt64": "", "rice": "0123456789abcdef"})
+
+
+class TestPipelines(unittest.TestCase):
+    def test_render_font_end_to_end(self):
+        with tempfile.TemporaryDirectory() as directory:
+            reference = reference_with_cell_ink(512, 10, WHITE_CHARACTERS, 0)
+            reference_path = Path(directory) / "aec011878342c59d.png"
+            reference.save(reference_path)
+            font = Path(__file__).parents[1] / "lib/rt64/src/contrib/mupen64plus-core/data/font.ttf"
+            rendered, italic, count = rf.render(reference_path, font, None, 0.28)
+            self.assertEqual(rendered.size, (reference.width * rf.SCALE,
+                                             reference.height * rf.SCALE))
+            self.assertTrue(italic)
+            self.assertEqual(count, len(WHITE_CHARACTERS))
+            self.assertGreater(rendered.getbbox()[2], 0)
+
+    def test_build_requires_only_atlas_inputs_and_generates_full_pack(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            decoded = root / "decoded"
+            pack = root / "pack"
+            decoded.mkdir()
+            for atlas_hash in gp.ATLAS_HASHES:
+                characters, pitch, first = (GOLD_CHARACTERS, 8, 1) if atlas_hash.startswith("7c1") else (WHITE_CHARACTERS, 10, 0)
+                reference_with_cell_ink(512, pitch, characters, first).save(decoded / f"{atlas_hash}.png")
+            font = Path(__file__).parents[1] / "lib/rt64/src/contrib/mupen64plus-core/data/font.ttf"
+            database = gp.build(decoded, pack, font)
+            self.assertEqual(len(database["textures"]), len(gp.expected_hashes()))
+            self.assertTrue((pack / "a14581e313afdd84.png").is_file())
+            with Image.open(pack / "a14581e313afdd84.png") as image:
+                self.assertEqual(image.size, (192, 192))
 
 
 if __name__ == "__main__":

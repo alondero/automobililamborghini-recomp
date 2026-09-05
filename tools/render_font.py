@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Re-render the game's small font atlases from a vector (TTF) font (issue #52).
 
-`upscale_font.py` only smooths the original 8px glyphs -- it cannot add detail an 8px
+Bitmap interpolation only smooths the original 8px glyphs -- it cannot add detail an 8px
 source never had, so the text stays soft. HD texture packs instead replace the atlas at
 HIGHER RESOLUTION (RT64 remaps the game's UVs onto any-size replacement, see
 `lib/rt64/src/render/rt64_texture_cache.cpp`), so the real readability win is to *re-draw*
@@ -49,6 +49,7 @@ Requires Pillow. No numpy.
 
 import argparse
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -87,11 +88,17 @@ def position_in_cell(ideal_x, tile_width, cell_x, cell_width, gutter):
     return min(max(round(ideal_x), left), right)
 
 
-def vertical_position(character, canvas_height, tile_height, punctuation_inset, top_inset=None):
-    """Place punctuation on a shared baseline and vertically centre normal glyphs."""
-    if character in ".,":
+class Alignment(Enum):
+    CENTER = "center"
+    BASELINE = "baseline"
+    TOP = "top"
+
+
+def vertical_position(canvas_height, tile_height, alignment, punctuation_inset, top_inset=None):
+    """Place a glyph according to an explicit alignment role."""
+    if alignment is Alignment.BASELINE:
         return canvas_height - tile_height - punctuation_inset
-    if character in "\"'":
+    if alignment is Alignment.TOP:
         return punctuation_inset if top_inset is None else top_inset
     return round((canvas_height - tile_height) / 2)
 
@@ -107,15 +114,15 @@ def apply_gradient(tile, mask, gradient):
     """Paint a vertical colour ramp through a supplied coverage mask."""
     if gradient is None:
         return tile
-    ramp = Image.new("RGBA", tile.size, (0, 0, 0, 0))
-    ramp_draw = ImageDraw.Draw(ramp)
+    ramp = Image.new("RGBA", (1, tile.height), (0, 0, 0, 0))
     top, bottom = gradient
     denominator = max(1, tile.height - 1)
     for y in range(tile.height):
         amount = y / denominator
         row = tuple(round(top[i] * (1.0 - amount) + bottom[i] * amount)
                     for i in range(3))
-        ramp_draw.line((0, y, tile.width, y), fill=row + (255,))
+        ramp.putpixel((0, y), row + (255,))
+    ramp = ramp.resize(tile.size, Image.Resampling.BILINEAR)
     tile.paste(ramp, (0, 0), mask)
     return tile
 
@@ -187,7 +194,7 @@ def profile_for(name):
     for key, prof in PROFILES.items():
         if key in name:
             return prof
-    raise SystemExit(f"no atlas profile matches '{name}' (known: {list(PROFILES)})")
+    raise ValueError(f"no atlas profile matches '{name}' (known: {list(PROFILES)})")
 
 
 def make_font(ttf, cap=None):
@@ -249,7 +256,8 @@ def ink_colour(ref, x0, x1):
 
 
 def render(ref_path, ttf, ttf_italic, shear_amt, extra_shear=0.08):
-    ref = Image.open(ref_path).convert("RGBA")
+    with Image.open(ref_path) as source:
+        ref = source.convert("RGBA")
     w, h = ref.size
     profile = profile_for(Path(ref_path).name)
     boxes = profile.boxes(ref)
@@ -294,8 +302,15 @@ def render(ref_path, ttf, ttf_italic, shear_amt, extra_shear=0.08):
         px = position_in_cell(cx - tile.width / 2, tile.width,
                               cell_index * profile.pitch * SCALE,
                               profile.pitch * SCALE, gutter)
-        placement_character = "" if (profile is WHITE_PROFILE and ch in WHITE_CUSTOM_GLYPHS) else ch
-        py = vertical_position(placement_character, h * SCALE, tile.height,
+        if profile is WHITE_PROFILE and ch in WHITE_CUSTOM_GLYPHS:
+            alignment = Alignment.CENTER
+        elif ch in ".,":
+            alignment = Alignment.BASELINE
+        elif ch in "\"'":
+            alignment = Alignment.TOP
+        else:
+            alignment = Alignment.CENTER
+        py = vertical_position(h * SCALE, tile.height, alignment,
                                round(0.4 * SCALE))
         out.alpha_composite(tile, (px, max(0, py)))
     return out, italic, len(boxes)

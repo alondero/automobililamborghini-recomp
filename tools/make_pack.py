@@ -23,6 +23,37 @@ DEFAULT_OPERATION = "stream"
 DEFAULT_SHIFT = "half"
 
 
+def _build_database(paths, root, auto_path, shift, operation):
+    textures = []
+    seen_hashes = set()
+    for path in sorted(paths):
+        if not path.is_file() or path.suffix.lower() not in (".png", ".dds"):
+            continue
+        match = HASH_RE.match(path.stem)
+        if not match:
+            raise ValueError(f"image stem is not a 16-hex RT64 hash: {path}")
+        texture_hash = match.group(1).lower()
+        if texture_hash in seen_hashes:
+            raise ValueError(f"duplicate RT64 hash in source directory: {texture_hash}")
+        seen_hashes.add(texture_hash)
+        hashes = {"rt64": texture_hash, "rice": ""}
+        if auto_path == "rice":
+            hashes = {"rt64": "", "rice": texture_hash}
+        textures.append({"path": path.relative_to(root).as_posix(), "hashes": hashes})
+    if not textures:
+        raise ValueError(f"No <hash>.png/.dds files in {root}")
+    return {
+        "configuration": {
+            "autoPath": auto_path,
+            "configurationVersion": 3,
+            "defaultOperation": operation,
+            "defaultShift": shift,
+            "hashVersion": 5,
+        },
+        "textures": textures,
+    }
+
+
 def write_manifest(pack_dir, auto_path="rt64", shift=DEFAULT_SHIFT,
                    operation=DEFAULT_OPERATION):
     """Write and return a manifest for a generated flat replacement directory."""
@@ -35,34 +66,7 @@ def write_manifest(pack_dir, auto_path="rt64", shift=DEFAULT_SHIFT,
     pack_dir = Path(pack_dir).resolve()
     if not pack_dir.is_dir():
         raise ValueError(f"replacement directory does not exist: {pack_dir}")
-    textures = []
-    seen_hashes = set()
-    for path in sorted(pack_dir.iterdir()):
-        if not path.is_file() or path.suffix.lower() not in (".png", ".dds"):
-            continue
-        match = HASH_RE.match(path.stem)
-        if not match:
-            raise ValueError(f"image stem is not a 16-hex RT64 hash: {path}")
-        texture_hash = match.group(1).lower()
-        if texture_hash in seen_hashes:
-            raise ValueError(f"duplicate RT64 hash in replacement directory: {texture_hash}")
-        seen_hashes.add(texture_hash)
-        hashes = {"rt64": texture_hash, "rice": ""}
-        if auto_path == "rice":
-            hashes = {"rt64": "", "rice": texture_hash}
-        textures.append({"path": path.name, "hashes": hashes})
-    if not textures:
-        raise ValueError(f"No <hash>.png/.dds files in {pack_dir}")
-    database = {
-        "configuration": {
-            "autoPath": auto_path,
-            "configurationVersion": 3,
-            "defaultOperation": operation,
-            "defaultShift": shift,
-            "hashVersion": 5,
-        },
-        "textures": textures,
-    }
+    database = _build_database(pack_dir.iterdir(), pack_dir, auto_path, shift, operation)
     (pack_dir / "rt64.json").write_text(
         json.dumps(database, indent=2) + "\n", encoding="utf-8"
     )
@@ -95,42 +99,11 @@ def main() -> int:
     except OSError as exc:
         ap.error(f"cannot create manifest directory {out.parent}: {exc}")
 
-    textures = []
-    seen_hashes = set()
-    for path in sorted(source_dir.rglob("*")):
-        if not path.is_file() or path.suffix.lower() not in (".png", ".dds"):
-            continue
-        match = HASH_RE.match(path.stem)
-        if not match:
-            ap.error(f"image stem is not a 16-hex RT64 hash: {path}")
-        texture_hash = match.group(1).lower()
-        if texture_hash in seen_hashes:
-            ap.error(f"duplicate RT64 hash in source directory: {texture_hash}")
-        seen_hashes.add(texture_hash)
-        try:
-            relative_path = path.relative_to(out.parent).as_posix()
-        except ValueError:
-            ap.error(f"manifest must be in or above source directory: {out}")
-        hashes = {"rt64": texture_hash, "rice": ""}
-        if args.auto_path == "rice":
-            hashes = {"rt64": "", "rice": texture_hash}
-        texture = {"path": relative_path, "hashes": hashes}
-        textures.append(texture)
-
-    if not textures:
-        print(f"No <hash>.png/.dds files in {source_dir}")
-        return 1
-
-    database = {
-        "configuration": {
-            "autoPath": args.auto_path,
-            "configurationVersion": 3,
-            "defaultOperation": operation,
-            "defaultShift": shift,
-            "hashVersion": 5,
-        },
-        "textures": textures,
-    }
+    try:
+        database = _build_database(source_dir.rglob("*"), out.parent,
+                                   args.auto_path, shift, operation)
+    except ValueError as exc:
+        ap.error(str(exc))
     out.write_text(json.dumps(database, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {out} with {len(textures)} texture(s)")
     return 0
