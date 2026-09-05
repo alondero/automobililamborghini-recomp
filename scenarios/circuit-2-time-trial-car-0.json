@@ -1,18 +1,18 @@
 {
   "schema": 1,
-  "name": "circuit-6-lap",
+  "name": "circuit-2-lap",
   "headless": true,
-  "warp": "6:1:0:1",
+  "warp": "2:1:0:1",
   "warp_mode": 0,
-  "max_vis": 10000,
+  "max_vis": 7000,
   "input": {
-    "replay": "../recordings/circuit-6-lap.jsonl",
+    "replay": "../recordings/circuit-2-time-trial-car-0.jsonl",
     "start_state": 8,
     "start_delay": 0,
     "exit_on_end": true
   },
   "capture": {
-    "path": "circuit-6-last.bmp",
+    "path": "circuit-2-last.bmp",
     "state": 8,
     "every": 300
   },

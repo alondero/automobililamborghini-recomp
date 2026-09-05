@@ -259,6 +259,33 @@ if(BUILD_TESTING)
     target_link_libraries(lambo_analog_brake_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_analog_brake_bridge COMMAND lambo_analog_brake_tests)
 
+    add_executable(lambo_analog_override_tests
+        tests/test_analog_override.cpp
+        src/lambo_analog_override.cpp
+    )
+    target_include_directories(lambo_analog_override_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    add_test(NAME lambo_analog_override_parser COMMAND lambo_analog_override_tests)
+
+    add_executable(lambo_replay_runtime_tests
+        tests/test_lambo_replay_runtime.cpp
+        src/lambo_replay_runtime.cpp
+        src/lambo_replay.cpp
+        src/lambo_file.cpp
+        src/lambo_analog_throttle.cpp
+        src/lambo_analog_brake.cpp
+        src/lambo_input_gate.cpp
+        src/lambo_log.cpp
+    )
+    target_include_directories(lambo_replay_runtime_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/N64Recomp/include
+        ${N64MR}/thirdparty
+    )
+    target_link_libraries(lambo_replay_runtime_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_replay_runtime_capture COMMAND lambo_replay_runtime_tests)
+
     add_executable(lambo_ui_input_tests
         tests/test_ui_input.cpp
         src/ui/lambo_ui_input.cpp
@@ -542,6 +569,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_input_gate.cpp # controller capture/neutral-release barrier (issue #126)
         src/lambo_replay.cpp
         src/lambo_replay_runtime.cpp
+        src/lambo_analog_override.cpp
         src/lambo_harness_report.cpp
         src/lambo_file.cpp
         src/lambo_analog_throttle.cpp # issue #128: atomic native-port throttle bridge + race hook

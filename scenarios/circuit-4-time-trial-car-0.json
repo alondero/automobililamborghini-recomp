@@ -1,18 +1,18 @@
 {
   "schema": 1,
-  "name": "circuit-1-lap-fixed",
+  "name": "circuit-4-lap",
   "headless": true,
-  "warp": "1:1:0:1",
+  "warp": "4:1:0:1",
   "warp_mode": 0,
-  "max_vis": 6000,
+  "max_vis": 9000,
   "input": {
-    "replay": "../recordings/circuit-1-lap-fixed.jsonl",
+    "replay": "../recordings/circuit-4-time-trial-car-0.jsonl",
     "start_state": 8,
     "start_delay": 0,
     "exit_on_end": true
   },
   "capture": {
-    "path": "circuit-1-last.bmp",
+    "path": "circuit-4-last.bmp",
     "state": 8,
     "every": 300
   },

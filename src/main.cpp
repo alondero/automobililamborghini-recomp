@@ -56,6 +56,7 @@
 #include "lambo_input_gate.h"
 #include "lambo_analog_throttle.h"
 #include "lambo_analog_brake.h"
+#include "lambo_analog_override.h"
 #include "lambo_harness_report.h"
 #include "lambo_replay_runtime.h"
 #include "lambo_startup.h"
@@ -1007,34 +1008,26 @@ static int application_main(int argc, char** argv) {
             }
         }
     }
-    if (const char* analog = std::getenv("LAMBO_ANALOG_THROTTLE")) {
-        char* end = nullptr;
-        const float parsed = std::strtof(analog, &end);
-        if (end != analog && end != nullptr && *end == '\0' && std::isfinite(parsed)) {
-            g_held_throttle = std::clamp(parsed, 0.0f, 1.0f);
-            // Headless mode has no SDL event pump, so publish the deterministic
-            // harness value here as well as from input_sample's normal main-thread path.
-            lambo::replay_runtime::publish_physical_analog(g_held_throttle >= 0.0f,
-                                                            g_held_throttle,
-                                                            false, 0.0f);
-            LAMBO_LOG("probe", "analog throttle override: %.3f\n", g_held_throttle);
-        }
+    const lambo::analog_override::Values analog_overrides =
+        lambo::analog_override::parse(std::getenv("LAMBO_ANALOG_THROTTLE"),
+                                      std::getenv("LAMBO_ANALOG_BRAKE"));
+    const bool throttle_override = analog_overrides.throttle.has_value();
+    const bool brake_override = analog_overrides.brake.has_value();
+    if (throttle_override) {
+        g_held_throttle = *analog_overrides.throttle;
+        LAMBO_LOG("probe", "analog throttle override: %.3f\n", g_held_throttle);
     }
     lambo::analog_throttle::set_probe(std::getenv("LAMBO_ANALOG_THROTTLE_PROBE") != nullptr);
-    if (const char* analog = std::getenv("LAMBO_ANALOG_BRAKE")) {
-        char* end = nullptr;
-        const float parsed = std::strtof(analog, &end);
-        if (end != analog && end != nullptr && *end == '\0' && std::isfinite(parsed)) {
-            g_held_brake = std::clamp(parsed, 0.0f, 1.0f);
-            // Headless mode has no SDL event pump, so publish the deterministic
-            // harness value here as well as from input_sample's normal main-thread path.
-            lambo::replay_runtime::publish_physical_analog(false, 0.0f,
-                                                            g_held_brake >= 0.0f,
-                                                            g_held_brake);
-            LAMBO_LOG("probe", "analog brake override: %.3f\n", g_held_brake);
-        }
+    if (brake_override) {
+        g_held_brake = *analog_overrides.brake;
+        LAMBO_LOG("probe", "analog brake override: %.3f\n", g_held_brake);
     }
     lambo::analog_brake::set_probe(std::getenv("LAMBO_ANALOG_BRAKE_PROBE") != nullptr);
+    if (throttle_override || brake_override) {
+        lambo::replay_runtime::publish_physical_analog(
+            throttle_override, throttle_override ? g_held_throttle : 0.0f,
+            brake_override, brake_override ? g_held_brake : 0.0f);
+    }
     if (const char* pu = std::getenv("LAMBO_INPUT_PULSE")) {
         // BTNHEX:PERIOD:DUTY[:STARTVI[:COUNT]], VI units. e.g. 1000:150:4:300 taps START for 4 VIs
         // every 150 VIs starting at VI 300 -- enough edges to walk the whole menu chain headless.
