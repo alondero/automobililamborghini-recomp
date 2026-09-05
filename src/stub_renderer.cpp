@@ -1277,20 +1277,23 @@ static bool write_bmp(const char* path, const Framebuffer& fb) {
     *(uint16_t*)(hdr + 26) = 1;       // planes
     *(uint16_t*)(hdr + 28) = 24;      // bpp
     *(uint32_t*)(hdr + 34) = img_size;
-    std::fwrite(hdr, 1, 54, f);
+    bool ok = std::fwrite(hdr, 1, 54, f) == 54;
     std::unique_ptr<uint8_t[]> row = std::make_unique<uint8_t[]>(row_bytes + pad);
     for (int i = 0; i < pad; ++i) row[row_bytes + i] = 0;
-    for (int y = fb.H - 1; y >= 0; --y) {          // bottom-up
+    for (int y = fb.H - 1; ok && y >= 0; --y) {    // bottom-up
         for (int x = 0; x < fb.W; ++x) {
             int idx = y * fb.W + x;
             row[x * 3 + 0] = fb.rgb[idx * 3 + 2];  // B
             row[x * 3 + 1] = fb.rgb[idx * 3 + 1];  // G
             row[x * 3 + 2] = fb.rgb[idx * 3 + 0];  // R
         }
-        std::fwrite(row.get(), 1, row_bytes + pad, f);
+        ok = std::fwrite(row.get(), 1, row_bytes + pad, f) ==
+             static_cast<std::size_t>(row_bytes + pad);
     }
-    std::fclose(f);
-    return true;
+    ok = ok && std::fflush(f) == 0;
+    if (std::fclose(f) != 0) ok = false;
+    if (!ok) std::remove(path);
+    return ok;
 }
 
 struct RenderStats {
@@ -1563,10 +1566,10 @@ create_render_context(uint8_t* rdram, ultramodern::renderer::WindowHandle window
     if (lambo_rt64::enabled()) {
         auto rt64_ctx = lambo_rt64::create_render_context(rdram, window_handle, developer_mode);
         if (rt64_ctx) {
-            LAMBO_LOG("rt64", "RT64 renderer ACTIVE (default presenter)\n");
+            LAMBO_LOG_INFO("rt64", "RT64 renderer ACTIVE (default presenter)\n");
             return rt64_ctx;
         }
-        LAMBO_LOG("rt64", "RT64 setup failed -- falling back to headless swrender\n");
+        LAMBO_LOG_WARN("rt64", "RT64 setup failed -- falling back to headless swrender\n");
     }
     (void)window_handle;
     (void)developer_mode;

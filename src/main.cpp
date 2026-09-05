@@ -12,15 +12,20 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <latch>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "librecomp/game.hpp"
 #include "librecomp/rsp.hpp"
@@ -35,6 +40,9 @@
 #include <SDL.h>          // RT64 default presenter (#58): real window + event pump under WSLg
 #if defined(_WIN32)
 #include <SDL_syswm.h>    // native Windows (#68): unwrap the HWND for ultramodern/RT64-D3D12
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <shellapi.h>
 #endif
 #include "lambo_rt64.h"
 #include "lambo_audio.h"
@@ -42,11 +50,16 @@
 #include "lambo_crash.h"   // issue #13 / A14
 #include "lambo_gpu_advisory.h"  // issue #109: outdated-driver popup handoff
 #include "lambo_log.h"   
+#include "lambo_pak_io.h"
+#include "lambo_pak_storage.h"
 #include "lambo_menu.h"
 #include "lambo_input_gate.h"
 #include "lambo_analog_throttle.h"
 #include "lambo_analog_brake.h"
+#include "lambo_harness_report.h"
+#include "lambo_replay_runtime.h"
 #include "lambo_startup.h"
+#include "lambo_track_patch.h"
 #include "controls/lambo_controls_sdl.h"
 #include "ui/lambo_ui.h"
 // ultramodern's native VI API (events.cpp), used by the promote_vi_context RT64 bridge.
@@ -64,15 +77,9 @@ create_render_context(uint8_t* rdram, ultramodern::renderer::WindowHandle window
 int run_lighting_selftest();
 }
 
-// --- probe instrumentation ---------------------------------------------------
-static std::atomic<int>  g_threads{0};
-static std::atomic<int>  g_vis{0};
-static std::atomic<bool> g_first_vi{false};
-// Highest stage3 state-machine value (D_800CE6AC) observed during the run. Lets the boot
-// smoke test assert the init cascade reaches the title state machine rather than just
-// "didn't crash". See state_probe(). (0 = never read; the cold-boot seed is state 1.)
-static std::atomic<int>  g_max_state{0};
-static std::atomic<int>  g_swaps{0};
+static std::mutex g_termination_mutex;
+static std::latch g_termination_latch{1};
+static bool g_termination_claimed = false;
 
 // LAMBO_CRASH_TEST: when set, the test thread's 2 s sleep must outlast
 // boot_summary_and_exit() so its deliberate crash fires. Disable the VI cap.
@@ -101,8 +108,18 @@ static void on_init_cb(uint8_t*, recomp_context*) {
 }
 
 static void thread_create_cb(uint8_t*, recomp_context*) {
-    int n = ++g_threads;
-    if (n <= 12) LAMBO_LOG("probe", "game thread #%d started (osCreateThread)\n", n);
+    lambo::harness::note_thread_created();
+}
+
+// Multiple native threads can request finalization; serialize the publisher.
+static void claim_immediate_exit() {
+    std::unique_lock lock(g_termination_mutex);
+    if (!g_termination_claimed) {
+        g_termination_claimed = true;
+        return;
+    }
+    lock.unlock();
+    g_termination_latch.wait();
 }
 
 // Print the one-line boot summary the runtime guard (tests/pivot/test_boot_smoke.py) parses,
@@ -112,16 +129,35 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
 // thread actually runs its per-frame dispatch loop, those threads are live in native
 // osRecvMesg and race the munmap into a SIGSEGV. This is a headless boot/probe harness that is
 // quitting anyway, so skip the unwind and let process exit tear the game threads down.
-// (Graceful game-thread shutdown is RT64-integration work, #58.)
+    // (Graceful game-thread shutdown is RT64-integration work, #58.)
 [[noreturn]] static void boot_summary_and_exit() {
-    LAMBO_LOG("probe", "boot summary; threads=%d vis=%d first_vi=%d max_state=%d swaps=%d\n",
-                 g_threads.load(), g_vis.load(), (int)g_first_vi.load(), g_max_state.load(),
-                 g_swaps.load());
+    claim_immediate_exit();
+    lambo::harness::log_boot_summary();
+    const lambo::harness::Snapshot metrics = lambo::harness::snapshot();
+    const lambo::harness::Outcome outcome = lambo::harness::finalize_outcome(
+        "max_vis", metrics.first_vi ? 0 : 2);
+    lambo::harness::write_result(outcome);
+    (void)lambo_pak_storage_flush();
+    lambo_log_shutdown();
     std::fflush(nullptr);
-    std::_Exit(g_first_vi.load() ? 0 : 2);
+    std::_Exit(outcome.exit_code);
+}
+
+[[noreturn]] static void harness_summary_and_exit(const char* reason, int exit_code) {
+    claim_immediate_exit();
+    const lambo::harness::Outcome outcome = lambo::harness::finalize_outcome(reason, exit_code);
+    LAMBO_LOG("harness", "scenario finished; reason=%s status=%d\n",
+              outcome.reason.c_str(), outcome.exit_code);
+    lambo::harness::log_boot_summary();
+    lambo::harness::write_result(outcome);
+    (void)lambo_pak_storage_flush();
+    lambo_log_shutdown();
+    std::fflush(nullptr);
+    std::_Exit(outcome.exit_code);
 }
 
 [[noreturn]] static void application_exit_success() {
+    claim_immediate_exit();
     LAMBO_LOG("probe", "application exit requested; status=success\n");
     // update_gfx_stub runs on librecomp's primary thread, while RT64 invokes the
     // UI render hooks on its presentation thread. Calling ui::shutdown() here
@@ -129,8 +165,13 @@ static void thread_create_cb(uint8_t*, recomp_context*) {
     // down RmlUi while a draw hook can still be using it. This path deliberately
     // terminates the process below, so there is no cleanup benefit that can
     // justify touching either subsystem first.
+    const lambo::harness::Outcome outcome = lambo::harness::finalize_outcome("runtime_exit", 0);
+    lambo::harness::write_result(outcome);
+    (void)lambo_pak_storage_flush();
+    lambo_log_shutdown();
     std::fflush(nullptr);
-    std::_Exit(0);
+    if (outcome.exit_code == 0) std::_Exit(0);
+    std::_Exit(outcome.exit_code);
 }
 
 // Set by headless::create_render_context (stub_renderer.cpp) so this retrace hook can reach RDRAM.
@@ -189,92 +230,17 @@ static void promote_vi_context() {
     }
 }
 
-// Stage3 state-machine progression tracker (PERMANENT harness instrumentation, not a
-// throwaway diagnostic). The ROM's per-frame dispatcher (func_800028D0) walks a state
-// register at D_800CE6AC and advances copyright(2)->...->title(6)->demo-race(8). We sample
-// it each VI, record the max reached (g_max_state, asserted by the boot smoke test) and log
-// each transition, so a run reports "stuck vs progressing" instead of just "didn't crash".
-//
-// Addressing (measured 2026-06-28, ares-cross-checked): the register lives at its LITERAL
-// address 0x800CE6AC (NOT the -0xC00 boot shift -- that applies to IPL3-loaded code, not this
-// BSS global; 0x800CDAAC stays 0). ultramodern stores RDRAM so a native u32 load yields the
-// N64 word, but a halfword needs the MEM_H XOR-2 swizzle -- hence the (a&2) extract below,
-// which matches recomp.h's MEM_H exactly. The progression is 0->1->2->3->4->5->6 then (as of
-// 2026-06-28) STUCK at 6 (ares walks 0..6->7->8). The 6->7 advance lives in func_80038D6C
-// (state-6 worker, guest 0x8003816C): the hold counter 0x800985AC expires and the fade
-// D_800A2D08 reaches 0 -- the SAME gate values ares has at state 7 -- yet a hardware watchpoint
-// confirms `state = 7` is never written. Mechanism not yet isolated (the recomp body is
-// auto-generated computed-goto C; -O2 + multithread make gdb line-tracing unreliable). #53.
-static void state_probe() {
-    uint8_t* rdram = g_lambo_rdram;
-    if (rdram == nullptr) return;
-    auto h = [&](uint32_t a) -> uint32_t { // N64 big-endian halfword at literal addr (MEM_H)
-        uint32_t w = *(uint32_t*)(rdram + ((a & ~3u) - 0x80000000u));
-        return (a & 2u) ? (w & 0xFFFF) : ((w >> 16) & 0xFFFF);
-    };
-    int state = (int)h(0x800CE6AC);
-    if (state > g_max_state.load()) g_max_state.store(state);
-    static int s_last = -1;
-    if (state != s_last) {
-        LAMBO_LOG("state", "vi=%d  state=%d (was %d)\n", g_vis.load(), state, s_last);
-        s_last = state;
-    }
-}
-
-// Menu-screen probe (PERMANENT harness instrumentation, same class as state_probe): samples the
-// menu overlay's current-screen id D_80098562 (set by the "request menu screen" API func_800383A8,
-// docs/notes/menu.md) plus its neighbour D_80098560 each VI and logs transitions -- the menu chain
-// (players/mode/series/car/name/pak-message, #69) all runs under top-level state 6, so state_probe
-// alone cannot show menu navigation.
-static void menu_probe() {
-    uint8_t* rdram = g_lambo_rdram;
-    if (rdram == nullptr) return;
-    auto h = [&](uint32_t a) -> uint32_t { // N64 big-endian halfword at literal addr (MEM_H)
-        uint32_t w = *(uint32_t*)(rdram + ((a & ~3u) - 0x80000000u));
-        return (a & 2u) ? (w & 0xFFFF) : ((w >> 16) & 0xFFFF);
-    };
-    int scr = (int)(int16_t)h(0x80098562);
-    int sub = (int)(int16_t)h(0x80098560);
-    static int s_scr = -9999, s_sub = -9999;
-    if (scr != s_scr || sub != s_sub) {
-        LAMBO_LOG("menu", "vi=%d  screen=%d sub=%d (was %d/%d)\n",
-                     g_vis.load(), scr, sub, s_scr, s_sub);
-        s_scr = scr; s_sub = sub;
-    }
-}
-
-// Frame-pace probe (PERMANENT harness instrumentation, same class as state_probe): counts game
-// framebuffer swaps by sampling __osViNext->buffer (ctx at *(0x8008D1A4), buffer field +0x4) once
-// per VI. The scheduler gate admits at most one swap per retrace, so per-VI sampling cannot miss
-// one. Real hardware runs this game at ~30fps = 0.5 swaps/VI (ares state-8 dwell 3094 VIs, W102);
-// ~1.0 swaps/VI means the port is running the game 2x fast (#58 pacing).
-static void pace_probe(int vi_n) {
-    uint8_t* rdram = g_lambo_rdram;
-    if (rdram == nullptr) return;
-    auto gw = [&](uint32_t a) -> uint32_t { return *(uint32_t*)(rdram + (a - 0x80000000u)); };
-    uint32_t next = gw(0x8008D1A4); // __osViNext
-    if (next < 0x80000000u || next >= 0x80800000u) return;
-    uint32_t buf = gw(next + 0x4);
-    static uint32_t s_last_buf = 0;
-    if (buf != s_last_buf) { s_last_buf = buf; g_swaps.fetch_add(1); }
-    if ((vi_n % 600) == 0) {
-        static int s_prev_total = 0;
-        int total = g_swaps.load();
-        LAMBO_LOG("pace", "vi=%d swaps_last_600vi=%d (~%.1f fps)\n",
-                     vi_n, total - s_prev_total, (total - s_prev_total) / 10.0);
-        s_prev_total = total;
-    }
-}
-
 extern "C" void lambo_thread_trace_dump(int vi); // THROWAWAY diag (mesgqueue.cpp), gated by LAMBO_THREAD_TRACE
 static void vi_cb() {
     promote_vi_context();
-    state_probe();
-    menu_probe();
-    int n = ++g_vis;
-    pace_probe(n);
+    const int n = lambo::harness::sample_vi();
     if ((n % 50) == 0) lambo_thread_trace_dump(n); // THROWAWAY: per-thread recv/send snapshot to find the frozen thread
-    if (!g_first_vi.exchange(true)) LAMBO_LOG("probe", "FIRST VI retrace\n");
+    if (lambo::replay_runtime::should_exit()) {
+        const lambo::replay_runtime::Status replay = lambo::replay_runtime::status();
+        const std::string reason = lambo::replay_runtime::terminal_reason();
+        harness_summary_and_exit(reason.empty() ? "replay_failed" : reason.c_str(),
+                                 replay.failed ? 3 : 0);
+    }
     if (n == kQuitAfterVis) {
         LAMBO_LOG("probe", "reached %d VIs; quitting\n", n);
         boot_summary_and_exit();
@@ -418,6 +384,8 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
 }
 
 static void update_gfx_stub(void* /*gfx_data*/) {
+    lambo::audio::pump();
+
     static bool runtime_ready_announced = false;
     if (!runtime_ready_announced && g_startup_controller != nullptr) {
         const bool render_ready = lambo::ui::is_initialized();
@@ -650,10 +618,10 @@ static void input_sample() {
     lambo::input_gate::publish_physical_snapshot(gated_snap);
     const float throttle = lambo::input_gate::guest_input_suppressed()
         ? 0.0f : physical_throttle;
-    lambo::analog_throttle::publish(0, analog_mode, throttle);
     const float brake = lambo::input_gate::guest_input_suppressed()
         ? 0.0f : physical_brake;
-    lambo::analog_brake::publish(0, brake_analog_mode, brake);
+    lambo::replay_runtime::publish_physical_analog(
+        analog_mode, throttle, brake_analog_mode, brake);
 }
 
 static void input_poll_stub() {}
@@ -664,7 +632,7 @@ static bool input_get_input(int controller_num, uint16_t* buttons, float* x, flo
     uint16_t b = suppressed ? 0 : (uint16_t)(snap & 0xFFFF);
     if (!suppressed) b |= g_held_buttons;                       // env mask is a guest input source
     if (!suppressed && g_pulse_period > 0) {                    // scripted pulse (harness knob)
-        int vi = g_vis.load(std::memory_order_relaxed);
+        const int vi = lambo::harness::vis_count();
         if (vi >= g_pulse_start && ((vi - g_pulse_start) % g_pulse_period) < g_pulse_duty
             && (g_pulse_count == 0 || (vi - g_pulse_start) / g_pulse_period < g_pulse_count))
             b |= g_pulse_buttons;
@@ -673,6 +641,13 @@ static bool input_get_input(int controller_num, uint16_t* buttons, float* x, flo
     int8_t   sy = (int8_t)((snap >> 24) & 0xFF);
     if (!suppressed && sx == 0) sx = g_held_sx;                  // env stick fills in when live stick idle
     if (!suppressed && sy == 0) sy = g_held_sy;
+
+    lambo::replay::InputFrame replay_frame{};
+    if (lambo::replay_runtime::playback_frame(replay_frame)) {
+        b = replay_frame.buttons;
+        sx = replay_frame.stick_x;
+        sy = replay_frame.stick_y;
+    }
     if (buttons) *buttons = b;
     // ultramodern does stick_x = (int8_t)(127 * x), so divide by 127 (NOT N64_STICK_MAX) to
     // preserve our authentic +-80 range through that re-scale instead of re-expanding to +-127.
@@ -686,23 +661,115 @@ static ultramodern::input::connected_device_info_t input_device_info(int control
     return { Device::None, Pak::None };
 }
 
-int main(int argc, char** argv) {
+static bool is_controller_pak_container(const char* path) {
+    const char* extension_start = std::strrchr(path, '.');
+    const char* forward_slash = std::strrchr(path, '/');
+    const char* back_slash = std::strrchr(path, '\\');
+    const char* slash = forward_slash == nullptr ? back_slash :
+        (back_slash == nullptr || forward_slash > back_slash ? forward_slash : back_slash);
+    if (extension_start == nullptr || (slash != nullptr && extension_start < slash)) return false;
+    std::string extension = extension_start;
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    if (extension != ".mpk" && extension != ".pak" &&
+        extension != ".srm" && extension != ".n64") return false;
+    const LamboPakIoResult result = lambo_pak_probe_file(path);
+    if (!result.ok) return false;
+    switch (result.format) {
+    case LAMBO_PAK_FORMAT_RAW:
+    case LAMBO_PAK_FORMAT_FOUR_PORT:
+        return extension == ".mpk" || extension == ".pak";
+    case LAMBO_PAK_FORMAT_RETROARCH:
+        return extension == ".srm";
+    case LAMBO_PAK_FORMAT_DEXDRIVE:
+        return extension == ".n64";
+    default:
+        return false;
+    }
+}
+
+static std::string path_to_utf8(const std::filesystem::path& path) {
+    const std::u8string value = path.u8string();
+    return {reinterpret_cast<const char*>(value.data()), value.size()};
+}
+
+static std::filesystem::path path_from_utf8(const char* path) {
+    const auto* begin = reinterpret_cast<const char8_t*>(path);
+    return std::filesystem::path(std::u8string(begin, begin + std::strlen(path)));
+}
+
+static std::filesystem::path unused_backup_path(const std::filesystem::path& path) {
+    std::filesystem::path candidate = path;
+    candidate += ".bak";
+    for (unsigned index = 1; std::filesystem::exists(candidate); ++index) {
+        candidate = path;
+        candidate += ".bak." + std::to_string(index);
+    }
+    return candidate;
+}
+
+static int application_main(int argc, char** argv) {
+    // Parse and initialise logging before any startup path can emit a message.
+    // The Windows target is GUI-subsystem, so --console is responsible for
+    // attaching/allocating the live stderr sink.
+    if (!lambo_log_parse_args(argc, argv)) {
+        (void)lambo_log_initialize();
+        // Command-line syntax errors must remain visible even when the user
+        // did not request a console or the log directory is unavailable.
+        std::fprintf(stderr, "[error] [log] %s\n", lambo_log_last_error());
+        return 2;
+    }
+    (void)lambo_log_initialize();
+#if defined(_WIN32)
+    // SDL2main normally performs this when it owns WinMain. This target owns
+    // WinMain because it is a GUI-subsystem executable.
+    SDL_SetMainReady();
+#endif
     // Deterministic lighting self-test: no ROM, no runtime -- exercises the swrender
     // light-decode + lambert path on a synthetic DL and exits (tests/pivot/test_lighting.py).
     if (std::getenv("LAMBO_LIGHTING_SELFTEST")) {
         return headless::run_lighting_selftest();
     }
-    // Parse --lambo-debug BEFORE anything else that might print a [probe] line.
-    // The flag is read by every LAMBO_LOG() site via the lambo_log_enabled bool.
-    lambo_log_parse_flag(argc, argv);
-    // The ROM path is the first non-flag positional arg; skip argv entries that
-    // start with "--" so e.g. `lamborghini_modern --lambo-debug` still finds the
-    // bundled ROM at argv[2] (or falls back to the default when no path given).
     const char* rom_path = "Automobili Lamborghini (USA).z64";
+    const char* import_path = nullptr;
+    const char* controller_pak_path = nullptr;
+    std::filesystem::path track_patch_path;
+    bool rom_was_selected = false;
     for (int i = 1; i < argc; ++i) {
-        if (argv[i] && argv[i][0] != '-' && argv[i][0] != '\0') {
+        if (argv[i] && std::strcmp(argv[i], "--import-save") == 0) {
+            if (i + 1 >= argc || argv[i + 1] == nullptr || argv[i + 1][0] == '\0') {
+                std::fprintf(stderr,
+                             "[error] [cli] --import-save requires an MPK, SRM, or DexDrive N64 file\n");
+                return 2;
+            }
+            import_path = argv[++i];
+        } else if (argv[i] && std::strcmp(argv[i], "--controller-pak") == 0) {
+            if (i + 1 >= argc || argv[i + 1] == nullptr || argv[i + 1][0] == '\0') {
+                std::fprintf(stderr,
+                             "[error] [cli] --controller-pak requires an MPK, SRM, or DexDrive N64 file\n");
+                return 2;
+            }
+            controller_pak_path = argv[++i];
+        } else if (argv[i] && std::strcmp(argv[i], "--track-patch") == 0) {
+            if (i + 1 >= argc || argv[i + 1] == nullptr || argv[i + 1][0] == '\0') {
+                std::fprintf(stderr,
+                             "[error] [cli] --track-patch requires a Track Lab .altrk file\n");
+                return 2;
+            }
+            track_patch_path = path_from_utf8(argv[++i]);
+        } else if (argv[i] && std::strcmp(argv[i], "--log-level") == 0) {
+            // lambo_log_parse_args already validated and consumed this value;
+            // keep the ROM selector from mistaking it for a ROM path.
+            ++i;
+        } else if (argv[i] && argv[i][0] != '-' && argv[i][0] != '\0' &&
+                   is_controller_pak_container(argv[i])) {
+            import_path = argv[i];
+        } else if (!rom_was_selected && argv[i] && argv[i][0] != '-' && argv[i][0] != '\0') {
             rom_path = argv[i];
-            break;
+            rom_was_selected = true;
+        } else if (argv[i] && argv[i][0] == '-') {
+            // Logging and future switches are parsed by their owning subsystem;
+            // they must never be mistaken for a ROM or save path here.
         }
     }
     LAMBO_LOG("probe", "ROM: %s\n", rom_path);
@@ -736,6 +803,78 @@ int main(int argc, char** argv) {
     std::filesystem::path config_dir = lambo::config::app_config_dir();
     std::filesystem::create_directories(config_dir);
     recomp::register_config_path(config_dir);
+
+    const std::filesystem::path pak_path = config_dir / "lambo_controller_pak.mpk";
+    const std::string pak_path_string = path_to_utf8(pak_path);
+    std::filesystem::path active_pak_path = pak_path;
+    if (controller_pak_path != nullptr) {
+        active_pak_path = path_from_utf8(controller_pak_path);
+    } else {
+#if defined(_WIN32)
+        if (const wchar_t* environment_path = _wgetenv(L"LAMBO_CONTROLLER_PAK_FILE");
+            environment_path != nullptr && environment_path[0] != L'\0')
+            active_pak_path = environment_path;
+#else
+        if (const char* environment_path = std::getenv("LAMBO_CONTROLLER_PAK_FILE");
+            environment_path != nullptr && environment_path[0] != '\0')
+            active_pak_path = path_from_utf8(environment_path);
+#endif
+    }
+    const std::string active_pak_path_string = path_to_utf8(active_pak_path);
+    lambo_pak_storage_configure(active_pak_path_string.c_str());
+
+    if (import_path != nullptr && controller_pak_path != nullptr) {
+        LAMBO_LOG_ERROR("cli", "--import-save and --controller-pak cannot be used together\n");
+        return 2;
+    } else if (import_path != nullptr) {
+        std::error_code error;
+        const LamboPakIoResult source = lambo_pak_probe_file(import_path);
+        if (!source.ok) {
+            LAMBO_LOG_ERROR("pak", "import failed: %s\n", source.error);
+            return 2;
+        }
+        const bool source_is_destination =
+            std::filesystem::equivalent(path_from_utf8(import_path), pak_path, error);
+        if (source_is_destination && !error) {
+            LAMBO_LOG_INFO("pak", "selected save is already the active Controller Pak: %s\n",
+                           pak_path_string.c_str());
+        } else {
+            error.clear();
+            if (std::filesystem::exists(pak_path)) {
+                const auto backup = unused_backup_path(pak_path);
+                std::filesystem::copy_file(pak_path, backup, error);
+                if (error) {
+                    const std::string backup_string = path_to_utf8(backup);
+                    LAMBO_LOG_ERROR("pak", "cannot back up existing save to %s: %s\n",
+                                     backup_string.c_str(), error.message().c_str());
+                    return 2;
+                }
+                const std::string backup_string = path_to_utf8(backup);
+                LAMBO_LOG_INFO("pak", "backed up existing save to %s\n", backup_string.c_str());
+            }
+            const LamboPakIoResult imported = lambo_pak_import_file(import_path, pak_path_string.c_str());
+            if (!imported.ok) {
+                LAMBO_LOG_ERROR("pak", "import failed: %s\n", imported.error);
+                return 2;
+            }
+            LAMBO_LOG_INFO("pak", "imported %s to %s\n",
+                           lambo_pak_format_name(imported.format), pak_path_string.c_str());
+        }
+    } else if (controller_pak_path == nullptr && !std::filesystem::exists(pak_path)) {
+        // One-time migration for builds before #176, which accidentally stored the
+        // default Controller Pak beside the executable/current working directory.
+        const std::filesystem::path legacy = "lambo_controller_pak.mpk";
+        if (std::filesystem::exists(legacy)) {
+            const std::string legacy_string = path_to_utf8(legacy);
+            const LamboPakIoResult migrated =
+                lambo_pak_import_file(legacy_string.c_str(), pak_path_string.c_str());
+            if (migrated.ok)
+                LAMBO_LOG_INFO("pak", "migrated legacy %s save to %s\n",
+                               lambo_pak_format_name(migrated.format), pak_path_string.c_str());
+            else
+                LAMBO_LOG_WARN("pak", "legacy save migration failed: %s\n", migrated.error);
+        }
+    }
     g_controls = std::make_unique<lambo::controls::SdlAdapter>();
 
     recomp::GameEntry game{};
@@ -752,10 +891,55 @@ int main(int argc, char** argv) {
     std::u8string game_id = u8"lamborghini.us";
     recomp::RomValidationError verr = recomp::select_rom(rom_path, game_id);
     if (verr != recomp::RomValidationError::Good) {
-        LAMBO_LOG("probe", "select_rom FAILED (RomValidationError=%d)\n", (int)verr);
+        LAMBO_LOG_ERROR("rom", "select_rom FAILED (RomValidationError=%d)\n", (int)verr);
         return 1;
     }
     LAMBO_LOG("probe", "ROM validated; rom_hash matches\n");
+
+    if (!lambo::replay_runtime::initialize_from_environment()) {
+        const std::string error = lambo::replay_runtime::last_error();
+        LAMBO_LOG_ERROR("replay", "cannot initialize input record/replay: %s\n", error.c_str());
+        lambo::replay_runtime::finalize();
+        const std::string reason = lambo::replay_runtime::terminal_reason();
+        const lambo::harness::Outcome outcome = lambo::harness::finalize_outcome(
+            reason.empty() ? "invalid_configuration" : reason.c_str(), 2);
+        lambo::harness::write_result(outcome);
+        (void)lambo_pak_storage_flush();
+        lambo_log_shutdown();
+        return 2;
+    }
+
+    // Track Lab corrections are parsed and fully validated before the game starts;
+    // the transactional memory-application routine performs no file I/O or allocation.
+    // A CLI path wins so launchers can override a developer's shell setting.
+    if (track_patch_path.empty()) {
+#if defined(_WIN32)
+        if (const wchar_t* environment_path = _wgetenv(L"LAMBO_TRACK_PATCH");
+            environment_path != nullptr && environment_path[0] != L'\0') {
+            track_patch_path = environment_path;
+        }
+#else
+        if (const char* environment_path = std::getenv("LAMBO_TRACK_PATCH");
+            environment_path != nullptr && environment_path[0] != '\0') {
+            track_patch_path = path_from_utf8(environment_path);
+        }
+#endif
+    }
+    if (!track_patch_path.empty()) {
+        const std::string track_patch_path_string = path_to_utf8(track_patch_path);
+        const auto result = lambo::track_patch::load_package(track_patch_path);
+        if (result != lambo::track_patch::LoadResult::Loaded) {
+            const char* const error = lambo::track_patch::last_error();
+            LAMBO_LOG_ERROR("track", "cannot load %s: %s\n",
+                            track_patch_path_string.c_str(),
+                            error != nullptr ? error : "unknown error");
+            return 2;
+        }
+        LAMBO_LOG_INFO("track", "loaded Track Lab correction %s\n",
+                       track_patch_path_string.c_str());
+    } else {
+        lambo::track_patch::disable();
+    }
 
     lambo::StartupMode startup_mode = lambo::startup_mode_from_environment();
     if (startup_mode == lambo::StartupMode::Automatic && lambo::config::show_launcher()) {
@@ -768,7 +952,7 @@ int main(int argc, char** argv) {
     g_startup_controller = &startup_controller;
     lambo::ui::set_startup_controller(&startup_controller);
     lambo::ui::install_render_hooks();
-    LAMBO_LOG("probe", "startup mode: %s\n",
+    LAMBO_LOG_INFO("startup", "startup mode: %s\n",
               startup_mode == lambo::StartupMode::Automatic ? "automatic" : "interactive");
 
     // Watchdog: guarantee automatic probes terminate and report. Only started for
@@ -783,11 +967,12 @@ int main(int argc, char** argv) {
             if (startup_controller.state() == lambo::StartupState::Exiting) return;
             std::this_thread::sleep_for(std::chrono::seconds(wd_sec));
             if (startup_controller.state() == lambo::StartupState::Exiting) return;
+            const lambo::harness::Snapshot metrics = lambo::harness::snapshot();
             LAMBO_LOG("probe", "WATCHDOG %ds: threads=%d vis=%d first_vi=%d\n",
-                         wd_sec, g_threads.load(), g_vis.load(), (int)g_first_vi.load());
+                      wd_sec, metrics.threads, metrics.vis, static_cast<int>(metrics.first_vi));
             // Exit deterministically (same as the VI-cap path) rather than ultramodern::quit(),
             // whose teardown munmaps RDRAM out from under the live game threads (SIGSEGV race).
-            boot_summary_and_exit();
+            harness_summary_and_exit("watchdog", 2);
         });
         watchdog.detach();
     }
@@ -864,11 +1049,12 @@ int main(int argc, char** argv) {
     cfg.input_callbacks.get_connected_device_info = input_device_info;
     LAMBO_LOG("probe", "input: controller0 connected (default), buttons=%04x\n", g_held_buttons);
 
-    // Audio epic #53 (PR 1 of 3): populate the host audio sink. ultramodern
+    // Audio epic #53 (PR 1 of 3): initialize the host audio sink. ultramodern
     // reads cfg.audio_callbacks inside recomp::start (recomp.cpp:743), before
     // preinit (recomp.cpp:809) calls init_audio() -> set_audio_frequency(48000).
-    // Opening the SDL device now means the runtime's first set_frequency call
-    // hits a live queue; the per-game osAiSetNextBuffer_recomp calls later
+    // init() makes the initial main-thread attempt; update_gfx_stub() pumps
+    // later discovery/recovery before the per-game AI buffers are submitted.
+    // The per-game osAiSetNextBuffer_recomp calls later
     // (recomp/funcs_8.c lines 2186, 2828, 3755, 3764, 4075) route the AI buffer
     // into SDL via ultramodern's shim.
     lambo::audio::init(48000);
@@ -879,5 +1065,45 @@ int main(int argc, char** argv) {
     recomp::start(cfg);
     // Reached only via the watchdog quit path (a boot stall before the VI cap): the VI-cap
     // path exits from vi_cb via boot_summary_and_exit() and never returns here.
-    boot_summary_and_exit();
+    harness_summary_and_exit("runtime_return", lambo::harness::snapshot().first_vi ? 0 : 2);
 }
+
+#if defined(_WIN32)
+static int windows_command_line_main() {
+    int argument_count = 0;
+    wchar_t** wide_arguments = CommandLineToArgvW(GetCommandLineW(), &argument_count);
+    if (wide_arguments == nullptr) return 2;
+    std::vector<std::string> arguments;
+    std::vector<char*> argument_pointers;
+    arguments.reserve(static_cast<size_t>(argument_count));
+    argument_pointers.reserve(static_cast<size_t>(argument_count) + 1);
+    for (int index = 0; index < argument_count; ++index) {
+        const int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_arguments[index],
+                                             -1, nullptr, 0, nullptr, nullptr);
+        if (size == 0) {
+            LocalFree(wide_arguments);
+            return 2;
+        }
+        std::string converted(static_cast<size_t>(size), '\0');
+        WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_arguments[index], -1,
+                            converted.data(), size, nullptr, nullptr);
+        converted.pop_back();
+        arguments.push_back(std::move(converted));
+    }
+    LocalFree(wide_arguments);
+    for (std::string& argument : arguments) argument_pointers.push_back(argument.data());
+    argument_pointers.push_back(nullptr);
+    return application_main(argument_count, argument_pointers.data());
+}
+
+// The release executable uses the GUI subsystem so Explorer launches do not
+// create a console.  Keep argument parsing in one place and let application
+// logging decide whether --console needs to allocate a window.
+int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
+    return windows_command_line_main();
+}
+#else
+int main(int argc, char** argv) {
+    return application_main(argc, argv);
+}
+#endif

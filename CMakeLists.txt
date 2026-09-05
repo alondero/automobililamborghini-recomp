@@ -21,6 +21,7 @@ cmake_minimum_required(VERSION 3.20)
 project(lamborghini_modern VERSION 0.5.0 LANGUAGES C CXX)
 
 include(CTest)
+find_package(Threads REQUIRED)
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_CXX_STANDARD 20)
@@ -55,7 +56,18 @@ if(BUILD_TESTING)
         ${N64MR}/N64Recomp/include
         ${N64MR}/thirdparty
     )
+    target_link_libraries(lambo_config_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_config_live_updates COMMAND lambo_config_tests)
+
+    add_executable(lambo_log_tests
+        tests/test_lambo_log.cpp
+        src/lambo_log.cpp
+    )
+    target_include_directories(lambo_log_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(lambo_log_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_logging_policy COMMAND lambo_log_tests)
 
     add_executable(lambo_camera_projection_tests
         tests/test_camera_projection.cpp
@@ -64,6 +76,27 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
     add_test(NAME lambo_camera_projection_policy COMMAND lambo_camera_projection_tests)
+
+    add_executable(lambo_no_lod_policy_tests
+        tests/test_no_lod_policy.cpp
+        src/lambo_no_lod_policy.cpp
+    )
+    target_include_directories(lambo_no_lod_policy_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    add_test(NAME lambo_no_lod_policy COMMAND lambo_no_lod_policy_tests)
+
+    add_executable(lambo_track_patch_tests
+        tests/test_track_patch.cpp
+        src/lambo_track_patch.cpp
+        src/lambo_log.cpp
+    )
+    target_include_directories(lambo_track_patch_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/N64Recomp/include
+    )
+    target_link_libraries(lambo_track_patch_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_track_patch_safety COMMAND lambo_track_patch_tests)
 
     add_executable(lambo_rt64_angular_velocity_tests
         tests/test_rt64_angular_velocity.cpp
@@ -83,11 +116,40 @@ if(BUILD_TESTING)
     add_executable(lambo_controller_pak_tests
         tests/test_controller_pak.c
         src/libultra_stubs.c
+        src/lambo_pak_io.c
+        src/lambo_pak_storage.cpp
+        src/lambo_log.cpp
     )
     target_include_directories(lambo_controller_pak_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${N64MR}/N64Recomp/include
     )
+    target_link_libraries(lambo_controller_pak_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_controller_pak_identity COMMAND lambo_controller_pak_tests)
+
+    add_executable(lambo_controller_pak_io_tests
+        tests/test_pak_io.c
+        src/lambo_pak_io.c
+    )
+    target_include_directories(lambo_controller_pak_io_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    add_test(NAME lambo_controller_pak_emulator_formats COMMAND lambo_controller_pak_io_tests)
+
+    add_executable(lambo_controller_pak_storage_tests
+        tests/test_pak_storage.cpp
+        src/lambo_pak_storage.cpp
+        src/lambo_pak_io.c
+        src/lambo_log.cpp
+    )
+    target_include_directories(lambo_controller_pak_storage_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_compile_definitions(lambo_controller_pak_storage_tests PRIVATE
+        LAMBO_PAK_STORAGE_TESTING=1
+    )
+    target_link_libraries(lambo_controller_pak_storage_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_controller_pak_batched_storage COMMAND lambo_controller_pak_storage_tests)
 
     add_executable(lambo_startup_tests
         tests/test_startup.cpp
@@ -119,11 +181,23 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_input_capture_gate COMMAND lambo_input_gate_tests)
 
+    add_executable(lambo_input_replay_tests
+        tests/test_lambo_replay.cpp
+        src/lambo_replay.cpp
+        src/lambo_file.cpp
+    )
+    target_include_directories(lambo_input_replay_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/thirdparty
+    )
+    add_test(NAME lambo_input_record_replay COMMAND lambo_input_replay_tests)
+
     add_executable(lambo_controls_tests
         tests/test_controls.cpp
         src/controls/lambo_controls.cpp
         src/lambo_config.cpp
         src/lambo_log.cpp
+        src/lambo_file.cpp
     )
     target_include_directories(lambo_controls_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -137,6 +211,7 @@ if(BUILD_TESTING)
         src/controls/lambo_controls.cpp
         src/lambo_config.cpp
         src/lambo_log.cpp
+        src/lambo_file.cpp
     )
     target_include_directories(lambo_controls_capture_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -151,6 +226,7 @@ if(BUILD_TESTING)
         src/controls/lambo_controls.cpp
         src/lambo_config.cpp
         src/lambo_log.cpp
+        src/lambo_file.cpp
     )
     target_include_directories(lambo_ui_controls_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -162,21 +238,25 @@ if(BUILD_TESTING)
     add_executable(lambo_analog_throttle_tests
         tests/test_analog_throttle.cpp
         src/lambo_analog_throttle.cpp
+        src/lambo_log.cpp
     )
     target_include_directories(lambo_analog_throttle_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${N64MR}/N64Recomp/include
     )
+    target_link_libraries(lambo_analog_throttle_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_analog_throttle_bridge COMMAND lambo_analog_throttle_tests)
 
     add_executable(lambo_analog_brake_tests
         tests/test_analog_brake.cpp
         src/lambo_analog_brake.cpp
+        src/lambo_log.cpp
     )
     target_include_directories(lambo_analog_brake_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${N64MR}/N64Recomp/include
     )
+    target_link_libraries(lambo_analog_brake_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_analog_brake_bridge COMMAND lambo_analog_brake_tests)
 
     add_executable(lambo_ui_input_tests
@@ -212,6 +292,24 @@ if(BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_quit_path.py
                 ${CMAKE_CURRENT_SOURCE_DIR}
         )
+        add_test(NAME lambo_game_scenario_runner
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_game_scenario.py
+        )
+        add_test(NAME lambo_track_lab_codec
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+                -m unittest tests.test_track_lab
+        )
+        add_test(NAME lambo_track_patch_python_interop
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+                -m tests.test_track_patch_interop
+                $<TARGET_FILE:lambo_track_patch_tests>
+        )
+        set_tests_properties(
+            lambo_track_lab_codec
+            lambo_track_patch_python_interop
+            PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        )
     else()
         message(WARNING "Python not found; Python-based tests will not be registered")
     endif()
@@ -234,6 +332,23 @@ if(WIN32)
     set(FREETYPE_LIBRARY ${LAMBO_FREETYPE_ROOT}/lib/x64/freetype.lib CACHE FILEPATH "" FORCE)
     set(FREETYPE_LIBRARY_RELEASE ${LAMBO_FREETYPE_ROOT}/lib/x64/freetype.lib CACHE FILEPATH "" FORCE)
 endif()
+
+# lambo_config.cpp coalesces menu persistence on a portable std::thread. Keep
+# every executable that compiles it explicitly linked to the platform thread
+# implementation; relying on a transitive SDL/runtime dependency breaks test
+# targets and older Linux toolchains.
+foreach(lambo_config_thread_target
+        lambo_config_tests
+        lambo_controls_tests
+        lambo_controls_capture_tests
+        lambo_ui_controls_tests
+        lambo_ui_settings_tests
+        lambo_controls_sdl_tests
+        lamborghini_modern)
+    if(TARGET ${lambo_config_thread_target})
+        target_link_libraries(${lambo_config_thread_target} PRIVATE Threads::Threads)
+    endif()
+endforeach()
 if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/RmlUi/CMakeLists.txt)
     message(FATAL_ERROR "lib/RmlUi submodule is missing. Initialise it first:\n"
         "  git submodule update --init --recursive")
@@ -289,6 +404,20 @@ else()
     set(NFD_PORTAL ON CACHE BOOL "" FORCE)
 endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64 ${CMAKE_BINARY_DIR}/rt64)
+# SDL2main owns the Windows entry point, but this project provides its own
+# WinMain wrapper so it can build as a GUI executable while still accepting
+# normal command-line arguments. RT64's bundled CMake adds SDL2main to its
+# direct link list; remove only that transitive entry-point library while
+# retaining SDL2 for the renderer and input backends.
+if(WIN32 AND TARGET rt64)
+    get_target_property(RT64_LINK_LIBRARIES rt64 LINK_LIBRARIES)
+    list(REMOVE_ITEM RT64_LINK_LIBRARIES SDL2main)
+    set_target_properties(rt64 PROPERTIES LINK_LIBRARIES "${RT64_LINK_LIBRARIES}")
+    get_target_property(RT64_INTERFACE_LINK_LIBRARIES rt64 INTERFACE_LINK_LIBRARIES)
+    list(REMOVE_ITEM RT64_INTERFACE_LINK_LIBRARIES SDL2main)
+    set_target_properties(rt64 PROPERTIES
+        INTERFACE_LINK_LIBRARIES "${RT64_INTERFACE_LINK_LIBRARIES}")
+endif()
 # Generated shader headers land in the rt64 binary dir (Zelda64Recomp does the same).
 target_include_directories(rt64 PRIVATE ${CMAKE_BINARY_DIR}/rt64/src)
 if(WIN32)
@@ -315,12 +444,35 @@ if(NOT WIN32)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(lambo_audio_recovery_tests
+        tests/test_audio_recovery.cpp
+        src/lambo_audio.cpp
+        src/lambo_log.cpp
+    )
+    target_include_directories(lambo_audio_recovery_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/ultramodern/include
+        ${N64MR}/librecomp/include
+        ${N64MR}/N64Recomp/include
+        ${N64MR}/thirdparty
+        ${N64MR}/thirdparty/concurrentqueue
+        ${SDL2_INCLUDE_DIRS}
+    )
+    target_compile_definitions(lambo_audio_recovery_tests PRIVATE
+        SDL_MAIN_HANDLED
+        LAMBO_AUDIO_RETRY_INTERVAL_MS=0
+    )
+    target_link_libraries(lambo_audio_recovery_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_audio_recovers_from_device_failures
+        COMMAND lambo_audio_recovery_tests)
+
     add_executable(lambo_controls_sdl_tests
         tests/test_controls_sdl.cpp
         src/controls/lambo_controls.cpp
         src/controls/lambo_controls_sdl.cpp
         src/lambo_config.cpp
         src/lambo_log.cpp
+        src/lambo_file.cpp
     )
     target_include_directories(lambo_controls_sdl_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -334,6 +486,7 @@ if(BUILD_TESTING)
     else()
         target_link_libraries(lambo_controls_sdl_tests PRIVATE ${SDL2_LIBRARIES})
     endif()
+    target_link_libraries(lambo_controls_sdl_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_controls_sdl_registry COMMAND lambo_controls_sdl_tests)
 endif()
 
@@ -381,11 +534,16 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/register_overlays.cpp
         src/stub_renderer.cpp
         src/lambo_audio.cpp    # SDL2 push-audio sink for the AI buffer (audio epic #53, PR 1 of 3)
+        src/lambo_audio_override.cpp # audio status getter override (W135)
         src/lambo_config.cpp   # persistent graphics.json -> ultramodern GraphicsConfig (enhancements #1/#2)
         src/lambo_player_name.cpp # remember player one's confirmed name for later name-entry screens
         src/lambo_menu.cpp     # lightweight native Win32 menu bar; live config actions + persistence
         src/lambo_startup.cpp  # runtime-ready -> Play startup state machine (issue #126)
         src/lambo_input_gate.cpp # controller capture/neutral-release barrier (issue #126)
+        src/lambo_replay.cpp
+        src/lambo_replay_runtime.cpp
+        src/lambo_harness_report.cpp
+        src/lambo_file.cpp
         src/lambo_analog_throttle.cpp # issue #128: atomic native-port throttle bridge + race hook
         src/lambo_analog_brake.cpp    # issue #152: atomic native-port brake bridge + race hook
         src/controls/lambo_controls.cpp
@@ -401,22 +559,33 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
                                # function-lookup trace ring. No deps beyond libc + DbgHelp (Win) /
                                # libc backtrace(3) (POSIX).
         src/libultra_stubs.c   # no-op symbols for ignored libultra CP0 helpers (e.g. __osSetSR)
+        src/lambo_pak_io.c
+        src/lambo_pak_storage.cpp
         src/lambo_hud_widescreen.c  # issue #2: gEXSetRectAlign brackets around the race-HUD dials
         src/lambo_flare_widescreen.c  # issue #40: gEXSetRectAspect(STRETCH) bracket around the sun lens-flare ghosts
         src/lambo_fog_widescreen.cpp  # issue #83: widen dense 3P/4P fog to the 1P window/colour (DL rewrite, players>=3)
         src/lambo_sky_widescreen.cpp  # issue #84: draw the 1P/2P sky panorama in 3P/4P (patches.hook branch guard)
         src/lambo_no_lod.cpp   # issues #87/#91: emit the per-segment scenery layer in 2P-4P like 1P (patches.hook branch guards)
+        src/lambo_no_lod_policy.cpp # measured exceptions for synthesized PVS extras
+        src/lambo_track_patch.cpp # Track Lab: guarded sparse PVS corrections applied after the stock track loader
         src/lambo_camera.cpp   # sense of speed: chase-camera distance/height + FOV delta float-bit shims for the hooks
         src/lambo_gpu_advisory.cpp  # issue #109: outdated-Intel-driver detection + user-facing fix advisory
         src/lambo_warp.c       # issue #12: developer warp menu (F1-F6 / LAMBO_WARP race-track warp)
         src/lambo_savestate.c  # issue #22: developer save-state (F7/F8 / LAMBO_STATE_LOAD RDRAM snapshot)
-        src/lambo_log.cpp      # first-party debug-logging gate (--lambo-debug CLI flag)
+        src/lambo_log.cpp      # file-first levelled logging + --console/--verbose CLI policy
     )
     if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/aspMain.cpp)
         list(APPEND LAMBO_SOURCES src/aspMain.cpp)
     endif()
 
-    add_executable(lamborghini_modern ${LAMBO_SOURCES})
+    # The shipped Windows application is a GUI-subsystem executable.  Its
+    # WinMain wrapper still accepts normal command-line arguments; lambo_log
+    # allocates a console only when --console is requested.
+    if(WIN32)
+        add_executable(lamborghini_modern WIN32 ${LAMBO_SOURCES})
+    else()
+        add_executable(lamborghini_modern ${LAMBO_SOURCES})
+    endif()
     target_compile_definitions(lamborghini_modern PRIVATE
         HLSL_CPU
         LAMBO_VERSION="${PROJECT_VERSION}"
@@ -424,6 +593,9 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         LAMBO_VERSION_MINOR=${PROJECT_VERSION_MINOR}
         LAMBO_VERSION_PATCH=${PROJECT_VERSION_PATCH}
     )
+    if(WIN32)
+        target_compile_definitions(lamborghini_modern PRIVATE SDL_MAIN_HANDLED)
+    endif()
     if(NOT WIN32 AND NOT APPLE)
         target_compile_definitions(lamborghini_modern PRIVATE
             PLUME_SDL_VULKAN_ENABLED
@@ -461,6 +633,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     target_link_libraries(lamborghini_modern PRIVATE
         librecomp
         ultramodern
+        Threads::Threads
     )
     if(TARGET RecompiledFuncs)
         target_link_libraries(lamborghini_modern PRIVATE RecompiledFuncs)
@@ -521,8 +694,14 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         rt64
         RmlUi::Core
         RmlUi::Debugger
-        ${SDL2_LIBRARIES}
     )
+    if(WIN32)
+        # We own WinMain for the GUI-subsystem executable; SDL2main supplies
+        # its own entrypoint and would conflict with it.
+        target_link_libraries(lamborghini_modern PRIVATE SDL2)
+    else()
+        target_link_libraries(lamborghini_modern PRIVATE ${SDL2_LIBRARIES})
+    endif()
 
     add_custom_command(TARGET lamborghini_modern POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -558,7 +737,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         # dbghelp.dll. MinGW64 ships the import lib (libdbghelp.a) so an explicit
         # target_link_libraries entry is enough; we don't ship the DLL — the
         # system one is fine.
-        target_link_libraries(lamborghini_modern PRIVATE dbghelp)
+        target_link_libraries(lamborghini_modern PRIVATE dbghelp shell32)
         # Self-contained exe dir: RT64 dlopen()s dxcompiler/dxil at runtime and SDL2 is
         # a dynamic dep; MinGW's own runtime is linked statically so the exe runs
         # outside an MSYS/MinGW shell.

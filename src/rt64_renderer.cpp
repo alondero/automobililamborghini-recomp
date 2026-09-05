@@ -197,7 +197,7 @@ void warn_about_gpu_driver(RT64::Application* app, ultramodern::renderer::Graphi
     lambo_gpu_advisory_message(severity, desc.name.c_str(), driver_version,
                                lambo::config::graphics_config_path().string().c_str(),
                                text, sizeof text);
-    LAMBO_LOG("gpu", "driver advisory:\n%s\n", text);
+    LAMBO_LOG_WARN("gpu", "driver advisory:\n%s\n", text);
     if (severity == LAMBO_GPU_ADVISORY_SEVERE) {
         // The affected user sees only a black window; a console line is not enough.
         // Post to the main thread's event pump, which owns showing the message box.
@@ -293,7 +293,7 @@ public:
         };
 
         if (!try_setup(to_rt64_api(cur_config.api_option))) {
-            LAMBO_LOG("rt64", "RT64::Application::setup FAILED (SetupResult=%d, api=%d)\n",
+            LAMBO_LOG_ERROR("rt64", "RT64::Application::setup FAILED (SetupResult=%d, api=%d)\n",
                          (int)setup_result, (int)cur_config.api_option);
             // RT64 auto-retries the other backend itself only when the API choice is
             // Automatic. For an EXPLICIT choice that fails to initialise we flip once
@@ -311,16 +311,16 @@ public:
                 app = nullptr;
                 return;
             }
-            LAMBO_LOG("rt64", "retrying with the other graphics API...\n");
+            LAMBO_LOG_WARN("rt64", "retrying with the other graphics API...\n");
             if (!try_setup(fallback)) {
-                LAMBO_LOG("rt64", "retry also FAILED (SetupResult=%d)\n", (int)setup_result);
+                LAMBO_LOG_ERROR("rt64", "retry also FAILED (SetupResult=%d)\n", (int)setup_result);
                 app = nullptr;
                 return;
             }
-            LAMBO_LOG("rt64", "retry succeeded (api=%d)\n", (int)chosen_api);
+            LAMBO_LOG_INFO("rt64", "retry succeeded (api=%d)\n", (int)chosen_api);
         }
 
-        LAMBO_LOG("rt64", "RT64 renderer initialised (api=%d)\n", (int)chosen_api);
+        LAMBO_LOG_INFO("rt64", "RT64 renderer initialised (api=%d)\n", (int)chosen_api);
 
         warn_about_gpu_driver(app.get(), chosen_api);
 
@@ -339,14 +339,14 @@ public:
             // Setting this non-empty makes TextureManager::dumpTexture write every
             // uploaded texture (raw TMEM + RDRAM + tile JSON) to the directory.
             app->state->dumpingTexturesDirectory = std::filesystem::path(dump_dir);
-            LAMBO_LOG("rt64", "texture dump enabled -> %s\n", dump_dir.c_str());
+            LAMBO_LOG_INFO("rt64", "texture dump enabled -> %s\n", dump_dir.c_str());
         }
 
         const std::string pack = lambo::config::texture_pack_path();
         if (!pack.empty()) {
             const bool ok = app->textureCache->loadReplacementDirectory(
                 RT64::ReplacementDirectory(std::filesystem::path(pack)));
-            LAMBO_LOG("rt64", "texture pack %s: %s\n",
+            LAMBO_LOG_INFO("rt64", "texture pack %s: %s\n",
                          ok ? "loaded" : "FAILED to load", pack.c_str());
         }
     }

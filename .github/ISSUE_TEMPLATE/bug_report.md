@@ -79,18 +79,27 @@ A clear and concise description of what you expected to happen.
 
 ## Logs
 
-**Stderr.** Paste the **last ~30–50 lines of stderr** from `./build/lamborghini_modern`. The port logs warp lines (`[warp] CIRCUIT N: …`), audio warnings, and crash breadcrumbs to stderr — a single `[error]` line often names the function.
+**Session log.** On Windows, reproduce once with:
 
-> **On Windows**, stderr only appears in the launching terminal by default. Run the binary from a `cmd` / PowerShell window so you can copy the output. If you launched by double-click, re-launch from a terminal.
+```
+lamborghini_modern.exe --console --verbose
+```
 
-**Crash output.** If the port hit a native crash, the crash block is **text on stderr** delimited by a banner like:
+Then attach the newest `logs/lamborghini-*.log` from
+`%LOCALAPPDATA%\LamborghiniRecomp` (or the portable launch directory). The
+preferred `--verbose` flag is equivalent to `--log-level=debug`; use
+`--log-level=trace` only when a maintainer requests the noisier trace.
+
+**Crash output.** If the port hit a native crash, attach the newest
+`crashes/crash-*.txt` from the same directory. The crash report is written
+even when no console was visible and contains a banner like:
 
 ```
 ========================= NATIVE CRASH =========================
 Reason: ...
 ```
 
-Paste that whole block. *(The port does not produce a `.dmp` file — it prints a textual backtrace to stderr and `_Exit`s.)* Screenshot the OS crash dialog if one appeared.
+Attach that whole file. Screenshot the OS crash dialog if one appeared.
 
 ## Triage helpers
 

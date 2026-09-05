@@ -15,6 +15,34 @@ Only the **North American (USA) release** is currently supported. The build read
 
 This is an in-progress port. It boots, presents the attract/title sequence and menus, and goes in-race. Input, audio, and rendering are wired through RT64. Expect rough edges — see the issue tracker.
 
+## Controller Pak save compatibility
+
+Automobili Lamborghini stores its records and progress on a Controller Pak, not in
+cartridge EEPROM. The port's normal save is `lambo_controller_pak.mpk` in its config
+directory. It is a standard raw 32 KiB Controller Pak image and can be opened by
+Controller Pak tools or used by emulators that accept `.mpk` files.
+
+The port recognises these common containers and uses controller port 1:
+
+| Format | Size | Compatibility |
+| --- | ---: | --- |
+| Raw `.mpk` / `.pak` | 32 KiB | Emulators, flash carts, and tools that accept raw Controller Pak images |
+| Four-port `.mpk` | 128 KiB | Wii64/not64 and multi-controller dumps |
+| Mupen64Plus-Next `.srm` | exactly 290 KiB | RetroArch combined save; Pak 1 begins at offset `0x800` |
+| DexDrive `.n64` | 36,928 bytes | DexDrive Controller Pak backup |
+
+To import a save, drag one of those files onto the game executable, or run
+`lamborghini_modern --import-save "path/to/save.srm"`. The source is left untouched;
+an existing port save is backed up before the imported Pak replaces it. A 2 KiB `.eep`
+file is cartridge EEPROM and does not contain this game's Controller Pak progress.
+
+For a save that remains shared with an emulator, launch with
+`--controller-pak "path/to/save.srm"` (or set `LAMBO_CONTROLLER_PAK_FILE`). Writes update
+only Pak 1 inside an existing Mupen64Plus-Next, four-port, or DexDrive container and preserve
+all unrelated bytes. Joybus write bursts are coalesced and atomically published by a background
+writer instead of blocking the emulation thread. Do not have both programs open on the shared
+file at once.
+
 ## Graphics options
 
 Graphics settings persist in `graphics.json` (in `%LOCALAPPDATA%\LamborghiniRecomp` on
@@ -38,7 +66,7 @@ N64Recomp ports (Zelda 64: Recompiled et al.):
 | `hpfb_option` | `Auto`, `On`, `Off` | `Auto` | High-precision framebuffer. |
 | `wm_option` | `Windowed`, `Fullscreen` | `Windowed` | Window mode. **F11** or **Alt+Enter** toggles at runtime (and is remembered). |
 | `window_width` / `window_height` | pixels | `1600`/`900` | Windowed-mode size. |
-| `api_option` | `Auto`, `D3D12`, `Vulkan`, `Metal` | `Auto` | Graphics API. |
+| `api_option` | `Auto`, `D3D12`, `Vulkan`, `Metal` | `Auto` | Graphics API; takes effect on the next launch. |
 | `texture_pack` | path to a directory or `.rtz` | `""` | Loads one native RT64 texture pack at startup. An empty value keeps the original textures. |
 | `texture_dump` | directory path | `""` | Dumps each texture used during play as RT64 TMEM/RDRAM data for pack authors. |
 | `widescreen_fog_match` | `true`, `false` | `true` | Widens the dense 3P/4P split-screen fog to the open 1P fog window/colour so the extra draw distance shows. Only affects 3+ player races. |
@@ -110,7 +138,50 @@ For development it is useful to jump straight into a race without driving the me
 
 The warp performs the same stores the game's own menu makes when you confirm RACE
 (selection cursors + audio quiesce + game-state 7), so the race it starts is a normal
-single race. Each warp is logged to stderr as `[warp] CIRCUIT N: ...`.
+single race. Warp and other diagnostic output is written to a per-session log
+file. By default only warnings and errors are retained; use `--log-level=debug`
+(or the shorter `--verbose`) for a bug report. On Windows logs are stored in
+`%LOCALAPPDATA%\LamborghiniRecomp\logs`; on Linux/macOS they use
+`$XDG_STATE_HOME/LamborghiniRecomp/logs` (or `~/.local/state/LamborghiniRecomp/logs`).
+With `portable.txt`, they are kept under the launch directory. On Windows,
+launch with `--console --verbose` to mirror the verbose log live in a console.
+
+The console, verbosity, and log file are independent: `--console` alone shows
+only the default warning/error output, while `--verbose` still records a file
+when the game is launched by double-click. The older `--lambo-debug` flag remains
+accepted as an alias for `--verbose`.
+
+## Automated game harness
+
+The port can record the final N64 input seen by the game and replay it on the
+30 Hz game-dispatch clock, including analog throttle and brake. Combined with
+the developer warp, headless renderer, bounded runs, and machine-readable result
+files, this lets an automated agent reproduce a drive and collect evidence with
+no window focus or controller attached.
+
+Run the checked-in end-to-end smoke scenario with:
+
+```sh
+python tools/run_game_scenario.py scenarios/harness-smoke.json
+```
+
+See **[docs/automation-harness.md](./docs/automation-harness.md)** for recording
+a lap, replaying from a settled save-state, the trace format, scenario assertions,
+and the trade-offs between open-loop replay and future closed-loop driving.
+
+## Track Lab (experimental)
+
+The repository includes a headless track-data lab that extracts a settled race
+snapshot, records segment cull anchors and provisionally decoded AI waypoint
+coordinates, and compiles edits to the stock circuit's ten-slot visibility
+rows. Guarded `.altrk` corrections can be loaded with `--track-patch <file>` or
+`LAMBO_TRACK_PATCH`.
+
+This first version does **not** claim support for arbitrary playable tracks:
+geometry and collision import are unsupported, while AI/navigation data is
+inspect-only until its remaining contracts are decoded. See
+**[Track Lab](./docs/TRACK_LAB.md)** for the workflow, safety model, current
+format, and implementation roadmap.
 
 ## Building
 

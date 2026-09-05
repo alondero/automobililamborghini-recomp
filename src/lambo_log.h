@@ -1,10 +1,5 @@
-// First-party debug-logging gate (--lambo-debug). C/C++ portable; routed from
-// C TUs via plain C-linkage symbols (no namespace gymnastics).
-//
-// C-linkage chosen so C TUs (lambo_savestate.c, lambo_warp.c, libultra_stubs.c)
-// can use the same gate as C++ without a wrapper. lambo_crash.cpp and the
-// opt-in env-var features (LAMBO_PAK_TRACE, LAMBO_DL_INSPECT, ...) are NOT
-// routed through this header.
+// First-party logging and Windows console policy. C-linkage keeps this API
+// usable from the small C translation units as well as C++.
 
 #ifndef LAMBO_LOG_H
 #define LAMBO_LOG_H
@@ -16,18 +11,51 @@
 extern "C" {
 #endif
 
+typedef enum LamboLogLevel {
+    LAMBO_LEVEL_ERROR = 0,
+    LAMBO_LEVEL_WARN  = 1,
+    LAMBO_LEVEL_INFO  = 2,
+    LAMBO_LEVEL_DEBUG = 3,
+    LAMBO_LEVEL_TRACE = 4
+} LamboLogLevel;
+
+// Source-compatible fast path for existing hot-loop probes. It is true when
+// the selected threshold includes debug messages.
 extern bool lambo_log_enabled;
-void lambo_log_parse_flag(int argc, char** argv);
+extern volatile int g_log_threshold;
+bool lambo_log_parse_args(int argc, char** argv);
+void lambo_log_parse_flag(int argc, char** argv); // compatibility entry point
+const char* lambo_log_last_error(void);
+bool lambo_log_initialize(void);
+void lambo_log_shutdown(void);
+const char* lambo_log_path(void);
+bool lambo_log_console_requested(void);
+LamboLogLevel lambo_log_level(void);
+void lambo_log_write(LamboLogLevel level, const char* tag, const char* format, ...);
 
 #ifdef __cplusplus
 } // extern "C"
 #endif
 
-// `tag` MUST be a string literal -- concatenation happens here, not via printf
-// format. Args are NOT evaluated when the gate is closed (they live inside an
-// untaken if branch).
-#define LAMBO_LOG(tag, ...) \
-    do { if (lambo_log_enabled) fprintf(stderr, "[" tag "] " __VA_ARGS__); } while (0)
+// `tag` MUST be a string literal. Arguments remain inside the untaken branch,
+// so expensive formatting expressions are not evaluated at a disabled level.
+#define LAMBO_LOG_AT(level, tag, ...) \
+    do { if (lambo_log_would_emit(level)) lambo_log_write(level, tag, __VA_ARGS__); } while (0)
+
+// Keep disabled probes to one inlined atomic load/compare. GCC/Clang are the
+// supported native toolchains for this project (including MinGW on Windows).
+static inline bool lambo_log_would_emit(LamboLogLevel level) {
+    return (int)level <=
+        __atomic_load_n(&g_log_threshold, __ATOMIC_RELAXED);
+}
+
+// Existing diagnostics are debug-level by design.
+#define LAMBO_LOG(tag, ...) LAMBO_LOG_AT(LAMBO_LEVEL_DEBUG, tag, __VA_ARGS__)
+#define LAMBO_LOG_ERROR(tag, ...) LAMBO_LOG_AT(LAMBO_LEVEL_ERROR, tag, __VA_ARGS__)
+#define LAMBO_LOG_WARN(tag, ...) LAMBO_LOG_AT(LAMBO_LEVEL_WARN, tag, __VA_ARGS__)
+#define LAMBO_LOG_INFO(tag, ...) LAMBO_LOG_AT(LAMBO_LEVEL_INFO, tag, __VA_ARGS__)
+#define LAMBO_LOG_DEBUG(tag, ...) LAMBO_LOG_AT(LAMBO_LEVEL_DEBUG, tag, __VA_ARGS__)
+#define LAMBO_LOG_TRACE(tag, ...) LAMBO_LOG_AT(LAMBO_LEVEL_TRACE, tag, __VA_ARGS__)
 
 // Crash dumps and fatal early-init errors only -- never gate a line behind
 // this for convenience.

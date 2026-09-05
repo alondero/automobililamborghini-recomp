@@ -33,7 +33,12 @@ nlohmann::json read_json(const std::filesystem::path& path) {
 // lambo_config.cpp normally calls into the runtime. This focused test only needs
 // to verify the port-owned snapshot and persistent representation.
 namespace ultramodern::renderer {
-void set_graphics_config(const GraphicsConfig&) {}
+int graphics_config_apply_count = 0;
+GraphicsConfig last_live_graphics{};
+void set_graphics_config(const GraphicsConfig& cfg) {
+    ++graphics_config_apply_count;
+    last_live_graphics = cfg;
+}
 }
 
 int main() {
@@ -55,13 +60,42 @@ int main() {
     expect(cfg.ar_option == ultramodern::renderer::AspectRatio::Expand,
            "enhancement-oriented aspect default is preserved");
 
+    // Runtime updates must merge over hand edits rather than reconstructing the
+    // whole document from the fixed C++ schema.
+    auto hand_edited = read_json(path);
+    hand_edited["custom_renderer_tweak"] = "keep me";
+    hand_edited["texture_pack"] = "manual-texture-pack";
+    {
+        std::ofstream output(path);
+        output << hand_edited.dump(4) << '\n';
+    }
+
     cfg.msaa_option = ultramodern::renderer::Antialiasing::MSAA4X;
     cfg.rr_option = ultramodern::renderer::RefreshRate::Manual;
     cfg.rr_manual_value = 120;
     lambo::config::apply_graphics(cfg);
+    lambo::config::flush_pending_graphics_updates();
     expect(lambo::config::current_graphics().msaa_option ==
                ultramodern::renderer::Antialiasing::MSAA4X,
            "graphics menu changes update the live snapshot");
+    expect(read_json(path).at("custom_renderer_tweak") == "keep me" &&
+               read_json(path).at("texture_pack") == "manual-texture-pack",
+           "graphics menu changes preserve unrelated hand edits");
+
+    const int live_apply_count_before_api_change = ultramodern::renderer::graphics_config_apply_count;
+    cfg.api_option = ultramodern::renderer::GraphicsApi::Vulkan;
+    lambo::config::apply_graphics(cfg, false);
+    lambo::config::flush_pending_graphics_updates();
+    expect(ultramodern::renderer::graphics_config_apply_count == live_apply_count_before_api_change,
+           "restart-only graphics API changes do not reconfigure the live renderer");
+    expect(read_json(path).at("api_option") == "Vulkan",
+           "restart-only graphics API changes persist");
+
+    cfg.hpfb_option = ultramodern::renderer::HighPrecisionFramebuffer::On;
+    lambo::config::apply_graphics(cfg);
+    expect(ultramodern::renderer::last_live_graphics.api_option ==
+               ultramodern::renderer::GraphicsApi::Auto,
+           "later live updates retain the renderer's startup API");
 
     lambo::config::set_widescreen_fog_match(false);
     lambo::config::set_widescreen_sky_match(false);
@@ -83,6 +117,7 @@ int main() {
     expect(lambo::config::camera_fov_add() == 10.0, "camera FOV delta updates live");
 
     lambo::config::update_saved_window_mode(ultramodern::renderer::WindowMode::Fullscreen);
+    lambo::config::flush_pending_graphics_updates();
     const auto json = read_json(path);
     expect(json.at("wm_option") == "Fullscreen", "fullscreen selection persists");
     expect(json.at("msaa_option") == "MSAA4X", "graphics selection persists");
@@ -108,6 +143,7 @@ int main() {
     expect(lambo::config::camera_fov_add() == 60.0, "camera FOV delta clamps high");
 
     lambo::config::set_show_launcher(true);
+    lambo::config::flush_pending_graphics_updates();
     expect(lambo::config::show_launcher() == true, "show_launcher toggle updates snapshot");
     expect(read_json(path).at("show_launcher") == true, "show_launcher persists to json");
 

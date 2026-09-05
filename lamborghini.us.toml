@@ -553,11 +553,26 @@ text = "extern void lambo_warp_tick(uint8_t*, recomp_context*); lambo_warp_tick(
 # Issue #22 — developer save-state. Same top-level dispatcher (runs every frame in every
 # state), one instruction past the warp hook: N64Recomp rejects two hooks on the exact same
 # vram, and 0x80001CD4 is still the frame-boundary entry. Snapshots/restores rdram[0..8MiB)
-# on an F5/F9 or LAMBO_STATE_LOAD request; native in src/lambo_savestate.c.
+# on an F7/F8 or LAMBO_STATE_LOAD request; native in src/lambo_savestate.c.
 [[patches.hook]]
 func = "func_800028D0"
 before_vram = 0x80001CD4
 text = "extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_savestate_tick(rdram, ctx);"
+
+[[patches.hook]]
+func = "func_800028D0"
+before_vram = 0x80001CD8
+text = "extern void lambo_replay_dispatch_begin(uint8_t*); lambo_replay_dispatch_begin(rdram);"
+
+[[patches.hook]]
+func = "func_800028D0"
+before_vram = 0x800024E8
+text = "extern void lambo_replay_dispatch_end(uint8_t*); lambo_replay_dispatch_end(rdram);"
+
+[[patches.hook]]
+func = "BootLoadInitialAssets"
+before_vram = 0x8000193C
+text = "extern void lambo_replay_input_tick(uint8_t*); lambo_replay_input_tick(rdram);"
 
 # Issue #128 — true analog throttle. Capture the pedal demand immediately before the
 # stock human-driver A/Z branch, then apply the selected native port's continuous target
@@ -674,6 +689,17 @@ func = "func_800030F8"
 before_vram = 0x80005308
 text = "{ extern void lambo_sky_backdrop_end(uint8_t*); lambo_sky_backdrop_end(rdram); }"
 
+# Track Lab v0 -- apply a guarded, same-size PVS correction after the stock track
+# loader has populated the active context. Companion disassembly labels this point
+# 0x80006C94; the whole-ROM recomp uses runtime addresses (splat - 0xC00), hence
+# 0x80006094 here. The preceding runtime instruction at 0x80006090 stores the newly
+# loaded 0x80251800 context in D_80098238. Applying here keeps the stock downstream
+# initialization authoritative and never replaces geometry, navigation, or collision.
+[[patches.hook]]
+func = "boot_pad_apply_calibration"
+before_vram = 0x80006094
+text = "{ extern void lambo_track_patch_on_track_loaded(uint8_t*); lambo_track_patch_on_track_loaded(rdram); }"
+
 # Issues #87/#91 -- no_lod: emit the per-segment scenery layer in 2P-4P like 1P. The scene
 # builder func_8000A6C0 draws each track segment as up to three sub-DLs from the 64-byte
 # segment record (+0x4 road, +0x8 walls, +0xC far scenery) but gates the scenery emit on
@@ -694,7 +720,7 @@ text = "{ extern uint32_t lambo_no_lod_scenery_guard(uint8_t*, uint32_t); ctx->r
 
 # no_lod follow-up -- distance pop-in inside a mode (worst on the city circuits). The same
 # scene builder walks the camera segment's 10-slot visibility list (table ptr 0x800CE678,
-# 20-byte rows, -1 terminated) and culls each entry against a per-circuit, per-player-count
+# fixed 20-byte rows with negative holes) and culls each entry against a per-circuit, per-player-count
 # radius from a float[6][5] table at 0x80088FD0 (coarse test 0x8000D370 with a 0.886
 # forward-cone; fine 16-sub-point half-plane test 0x8000D568; circuit index 0x800CE794,
 # players 0x800CE6A4). The radii are N64 fill-rate budgets -- circuits 5/6 are authored at
