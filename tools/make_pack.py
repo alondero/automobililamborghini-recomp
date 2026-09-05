@@ -23,6 +23,46 @@ DEFAULT_OPERATION = "stream"
 DEFAULT_SHIFT = "half"
 
 
+def write_manifest(pack_dir, auto_path="rt64", shift=DEFAULT_SHIFT,
+                   operation=DEFAULT_OPERATION):
+    """Write and return a manifest for a generated flat replacement directory."""
+    pack_dir = Path(pack_dir).resolve()
+    if not pack_dir.is_dir():
+        raise ValueError(f"replacement directory does not exist: {pack_dir}")
+    textures = []
+    seen_hashes = set()
+    for path in sorted(pack_dir.iterdir()):
+        if not path.is_file() or path.suffix.lower() not in (".png", ".dds"):
+            continue
+        match = HASH_RE.match(path.stem)
+        if not match:
+            raise ValueError(f"image stem is not a 16-hex RT64 hash: {path}")
+        texture_hash = match.group(1).lower()
+        if texture_hash in seen_hashes:
+            raise ValueError(f"duplicate RT64 hash in replacement directory: {texture_hash}")
+        seen_hashes.add(texture_hash)
+        hashes = {"rt64": texture_hash, "rice": ""}
+        if auto_path == "rice":
+            hashes = {"rt64": "", "rice": texture_hash}
+        textures.append({"path": path.name, "hashes": hashes})
+    if not textures:
+        raise ValueError(f"No <hash>.png/.dds files in {pack_dir}")
+    database = {
+        "configuration": {
+            "autoPath": auto_path,
+            "configurationVersion": 3,
+            "defaultOperation": operation,
+            "defaultShift": shift,
+            "hashVersion": 5,
+        },
+        "textures": textures,
+    }
+    (pack_dir / "rt64.json").write_text(
+        json.dumps(database, indent=2) + "\n", encoding="utf-8"
+    )
+    return database
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Write rt64.json from hash-named replacement images.")
     ap.add_argument("source_dir", type=Path,
