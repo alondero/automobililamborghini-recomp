@@ -7,7 +7,8 @@
 #include <iostream>
 
 int main() {
-    lambo::replay_runtime::publish_physical_analog(true, 0.5f, true, 0.25f);
+    lambo::replay_runtime::publish_physical_throttle(true, 0.5f);
+    lambo::replay_runtime::publish_physical_brake(true, 0.25f);
     float throttle = 0.0f;
     float brake = 0.0f;
     const bool throttle_analog = lambo::analog_throttle::sample(0, throttle);

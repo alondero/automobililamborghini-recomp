@@ -56,7 +56,6 @@
 #include "lambo_input_gate.h"
 #include "lambo_analog_throttle.h"
 #include "lambo_analog_brake.h"
-#include "lambo_analog_override.h"
 #include "lambo_harness_report.h"
 #include "lambo_replay_runtime.h"
 #include "lambo_startup.h"
@@ -621,8 +620,8 @@ static void input_sample() {
         ? 0.0f : physical_throttle;
     const float brake = lambo::input_gate::guest_input_suppressed()
         ? 0.0f : physical_brake;
-    lambo::replay_runtime::publish_physical_analog(
-        analog_mode, throttle, brake_analog_mode, brake);
+    lambo::replay_runtime::publish_physical_throttle(analog_mode, throttle);
+    lambo::replay_runtime::publish_physical_brake(brake_analog_mode, brake);
 }
 
 static void input_poll_stub() {}
@@ -1008,26 +1007,30 @@ static int application_main(int argc, char** argv) {
             }
         }
     }
-    const lambo::analog_override::Values analog_overrides =
-        lambo::analog_override::parse(std::getenv("LAMBO_ANALOG_THROTTLE"),
-                                      std::getenv("LAMBO_ANALOG_BRAKE"));
-    const bool throttle_override = analog_overrides.throttle.has_value();
-    const bool brake_override = analog_overrides.brake.has_value();
+    char* end = nullptr;
+    const char* throttle_text = std::getenv("LAMBO_ANALOG_THROTTLE");
+    const float parsed_throttle = throttle_text ? std::strtof(throttle_text, &end) : 0.0f;
+    const bool throttle_override = throttle_text && end != throttle_text && end && *end == '\0' &&
+                                   std::isfinite(parsed_throttle);
     if (throttle_override) {
-        g_held_throttle = *analog_overrides.throttle;
+        g_held_throttle = std::clamp(parsed_throttle, 0.0f, 1.0f);
         LAMBO_LOG("probe", "analog throttle override: %.3f\n", g_held_throttle);
     }
+    end = nullptr;
     lambo::analog_throttle::set_probe(std::getenv("LAMBO_ANALOG_THROTTLE_PROBE") != nullptr);
+    const char* brake_text = std::getenv("LAMBO_ANALOG_BRAKE");
+    const float parsed_brake = brake_text ? std::strtof(brake_text, &end) : 0.0f;
+    const bool brake_override = brake_text && end != brake_text && end && *end == '\0' &&
+                                std::isfinite(parsed_brake);
     if (brake_override) {
-        g_held_brake = *analog_overrides.brake;
+        g_held_brake = std::clamp(parsed_brake, 0.0f, 1.0f);
         LAMBO_LOG("probe", "analog brake override: %.3f\n", g_held_brake);
     }
     lambo::analog_brake::set_probe(std::getenv("LAMBO_ANALOG_BRAKE_PROBE") != nullptr);
-    if (throttle_override || brake_override) {
-        lambo::replay_runtime::publish_physical_analog(
-            throttle_override, throttle_override ? g_held_throttle : 0.0f,
-            brake_override, brake_override ? g_held_brake : 0.0f);
-    }
+    if (throttle_override)
+        lambo::replay_runtime::publish_physical_throttle(true, g_held_throttle);
+    if (brake_override)
+        lambo::replay_runtime::publish_physical_brake(true, g_held_brake);
     if (const char* pu = std::getenv("LAMBO_INPUT_PULSE")) {
         // BTNHEX:PERIOD:DUTY[:STARTVI[:COUNT]], VI units. e.g. 1000:150:4:300 taps START for 4 VIs
         // every 150 VIs starting at VI 300 -- enough edges to walk the whole menu chain headless.

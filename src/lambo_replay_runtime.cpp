@@ -359,7 +359,7 @@ void dispatch_begin_impl(std::uint8_t* rdram) {
         ? g_state.playback_input : g_state.record_input;
     const lambo::replay::InputFrame observed = compose_input(
         read_guest_pad(rdram),
-        g_state.trace ? sample_physical_analog() : g_state.physical_analog);
+        sample_physical_analog());
     if (!effective_input_matches(expected, observed)) {
         g_state.frame_staged = false;
         if (g_state.trace) install_neutral_playback_frame_locked(rdram);
@@ -548,15 +548,20 @@ bool playback_frame(replay::InputFrame& output) {
     return true;
 }
 
-void publish_physical_analog(bool throttle_analog, float throttle,
-                             bool brake_analog, float brake) {
+void publish_physical_throttle(bool analog, float value) {
     std::lock_guard lock(g_state.mutex);
-    g_state.physical_analog = RuntimeState::PhysicalAnalog{
-        throttle_analog, lambo::input::quantize_normalized(throttle),
-        brake_analog, lambo::input::quantize_normalized(brake)};
+    g_state.physical_analog.throttle_analog = analog;
+    g_state.physical_analog.throttle = lambo::input::quantize_normalized(value);
     if (g_state.owns_input || g_state.block_physical_analog) return;
-    lambo::analog_throttle::publish(0, throttle_analog, throttle);
-    lambo::analog_brake::publish(0, brake_analog, brake);
+    lambo::analog_throttle::publish(0, analog, value);
+}
+
+void publish_physical_brake(bool analog, float value) {
+    std::lock_guard lock(g_state.mutex);
+    g_state.physical_analog.brake_analog = analog;
+    g_state.physical_analog.brake = lambo::input::quantize_normalized(value);
+    if (g_state.owns_input || g_state.block_physical_analog) return;
+    lambo::analog_brake::publish(0, analog, value);
 }
 
 Status status() {
