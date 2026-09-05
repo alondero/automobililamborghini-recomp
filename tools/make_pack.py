@@ -105,10 +105,10 @@ def main() -> int:
             relative_path = path.relative_to(out.parent).as_posix()
         except ValueError:
             ap.error(f"manifest must be in or above source directory: {out}")
-        texture = {
-            "path": relative_path,
-            "hashes": {"rt64": texture_hash, "rice": ""},
-        }
+        hashes = {"rt64": texture_hash, "rice": ""}
+        if args.auto_path == "rice":
+            hashes = {"rt64": "", "rice": texture_hash}
+        texture = {"path": relative_path, "hashes": hashes}
         textures.append(texture)
 
     if not textures:
@@ -127,25 +127,6 @@ def main() -> int:
     }
     out.write_text(json.dumps(database, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {out} with {len(textures)} texture(s)")
-    return db
-
-
-def main():
-    ap = argparse.ArgumentParser(description="Write rt64.json from hash-named replacement images.")
-    ap.add_argument("pack_dir", type=Path)
-    ap.add_argument("--auto-path", choices=["rt64", "rice"], default="rt64",
-                    help="which hash names the files on disk (default rt64)")
-    ap.add_argument("--shift", choices=["half", "none", "auto"], default="half",
-                    help="default texel shift; 'half' suits modern-tool exports (default)")
-    ap.add_argument("--operation", choices=["stream", "preload", "auto"], default="stream",
-                    help="default load operation (default stream)")
-    args = ap.parse_args()
-
-    try:
-        write_manifest(args.pack_dir, args.auto_path, args.shift, args.operation)
-    except ValueError as error:
-        print(error)
-        return 1
     return 0
 
 
