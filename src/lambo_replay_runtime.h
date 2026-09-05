@@ -28,11 +28,8 @@ std::string last_error();
 bool playback_owns_input();
 bool playback_frame(replay::InputFrame& output);
 
-// Publish both physical pedal channels only if playback has not acquired them.
-// The ownership check and writes are serialized with replay activation so a
-// main-thread sample cannot overwrite frame zero after observing stale ownership.
-void publish_physical_analog(bool throttle_analog, float throttle,
-                             bool brake_analog, float brake);
+void publish_physical_throttle(bool analog, float value);
+void publish_physical_brake(bool analog, float value);
 
 Status status();
 bool should_exit();
