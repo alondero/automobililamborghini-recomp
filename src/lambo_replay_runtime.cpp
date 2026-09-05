@@ -31,6 +31,7 @@ struct RuntimeState {
     std::unique_ptr<lambo::replay::Recorder> recorder;
     lambo::replay::InputFrame playback_input{};
     lambo::replay::InputFrame record_input{};
+    lambo::replay::InputFrame physical_analog{};
     std::string error;
     std::string terminal_reason;
 
@@ -142,17 +143,25 @@ void publish_analog(const lambo::replay::InputFrame& input) {
                                  static_cast<float>(input.brake) / kU16Max);
 }
 
-lambo::replay::InputFrame read_guest_input(std::uint8_t* rdram) {
+lambo::replay::InputFrame read_guest_input(std::uint8_t* rdram,
+                                           const lambo::replay::InputFrame* analog_override = nullptr) {
     lambo::replay::InputFrame input{};
     input.buttons = static_cast<std::uint16_t>(MEM_HU(0, kPortZeroPadAddress));
     input.stick_x = static_cast<std::int8_t>(MEM_B(2, kPortZeroPadAddress));
     input.stick_y = static_cast<std::int8_t>(MEM_B(3, kPortZeroPadAddress));
-    float analog = 0.0f;
-    input.throttle_analog = lambo::analog_throttle::sample(0, analog);
-    input.throttle = lambo::input::quantize_normalized(analog);
-    analog = 0.0f;
-    input.brake_analog = lambo::analog_brake::sample(0, analog);
-    input.brake = lambo::input::quantize_normalized(analog);
+    if (analog_override != nullptr) {
+        input.throttle_analog = analog_override->throttle_analog;
+        input.throttle = analog_override->throttle;
+        input.brake_analog = analog_override->brake_analog;
+        input.brake = analog_override->brake;
+    } else {
+        float analog = 0.0f;
+        input.throttle_analog = lambo::analog_throttle::sample(0, analog);
+        input.throttle = lambo::input::quantize_normalized(analog);
+        analog = 0.0f;
+        input.brake_analog = lambo::analog_brake::sample(0, analog);
+        input.brake = lambo::input::quantize_normalized(analog);
+    }
     return input;
 }
 
@@ -221,7 +230,8 @@ void release_recording_frame_locked() {
 }
 
 void stage_recording_frame_locked(std::uint8_t* rdram) {
-    g_state.record_input = read_guest_input(rdram);
+    g_state.record_input = read_guest_input(rdram, &g_state.physical_analog);
+    publish_analog(g_state.record_input);
     g_state.block_physical_analog = true;
     g_state.frame_staged = true;
 }
@@ -326,7 +336,10 @@ void dispatch_begin_impl(std::uint8_t* rdram) {
 
     const lambo::replay::InputFrame expected = g_state.trace
         ? g_state.playback_input : g_state.record_input;
-    if (!effective_input_matches(expected, read_guest_input(rdram))) {
+    const lambo::replay::InputFrame observed = g_state.trace
+        ? read_guest_input(rdram)
+        : read_guest_input(rdram, &g_state.record_input);
+    if (!effective_input_matches(expected, observed)) {
         g_state.frame_staged = false;
         if (g_state.trace) install_neutral_playback_frame_locked(rdram);
         else release_recording_frame_locked();
@@ -517,6 +530,10 @@ bool playback_frame(replay::InputFrame& output) {
 void publish_physical_analog(bool throttle_analog, float throttle,
                              bool brake_analog, float brake) {
     std::lock_guard lock(g_state.mutex);
+    g_state.physical_analog.throttle_analog = throttle_analog;
+    g_state.physical_analog.throttle = lambo::input::quantize_normalized(throttle);
+    g_state.physical_analog.brake_analog = brake_analog;
+    g_state.physical_analog.brake = lambo::input::quantize_normalized(brake);
     if (g_state.owns_input || g_state.block_physical_analog) return;
     lambo::analog_throttle::publish(0, throttle_analog, throttle);
     lambo::analog_brake::publish(0, brake_analog, brake);

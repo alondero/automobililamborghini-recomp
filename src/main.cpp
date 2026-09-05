@@ -1014,7 +1014,9 @@ static int application_main(int argc, char** argv) {
             g_held_throttle = std::clamp(parsed, 0.0f, 1.0f);
             // Headless mode has no SDL event pump, so publish the deterministic
             // harness value here as well as from input_sample's normal main-thread path.
-            lambo::analog_throttle::publish(0, true, g_held_throttle);
+            lambo::replay_runtime::publish_physical_analog(g_held_throttle >= 0.0f,
+                                                            g_held_throttle,
+                                                            false, 0.0f);
             LAMBO_LOG("probe", "analog throttle override: %.3f\n", g_held_throttle);
         }
     }
@@ -1026,7 +1028,9 @@ static int application_main(int argc, char** argv) {
             g_held_brake = std::clamp(parsed, 0.0f, 1.0f);
             // Headless mode has no SDL event pump, so publish the deterministic
             // harness value here as well as from input_sample's normal main-thread path.
-            lambo::analog_brake::publish(0, true, g_held_brake);
+            lambo::replay_runtime::publish_physical_analog(false, 0.0f,
+                                                            g_held_brake >= 0.0f,
+                                                            g_held_brake);
             LAMBO_LOG("probe", "analog brake override: %.3f\n", g_held_brake);
         }
     }
