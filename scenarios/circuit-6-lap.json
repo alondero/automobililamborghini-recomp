@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "name": "circuit-6-lap",
+  "headless": true,
+  "warp": "6:1:0:1",
+  "warp_mode": 0,
+  "max_vis": 10000,
+  "input": {
+    "replay": "../recordings/circuit-6-lap.jsonl",
+    "start_state": 8,
+    "start_delay": 0,
+    "exit_on_end": true
+  },
+  "capture": {
+    "path": "circuit-6-last.bmp",
+    "state": 8,
+    "every": 300
+  },
+  "expect": {
+    "max_state_at_least": 8,
+    "replay_complete": true,
+    "min_swaps": 60,
+    "min_abs_player_speed": 10,
+    "capture": true
+  }
+}
