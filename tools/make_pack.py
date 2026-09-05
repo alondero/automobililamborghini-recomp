@@ -20,7 +20,8 @@ HASH_RE = re.compile(r"^([0-9a-fA-F]{16})$")
 VALID_OPERATIONS = {"stream", "preload", "stall"}
 VALID_SHIFTS = {"half", "none"}
 DEFAULT_OPERATION = "stream"
-DEFAULT_SHIFT = "none"
+# Keep the generic tool's established default independent of any pack's policy.
+DEFAULT_SHIFT = "half"
 
 
 def _load_policy(ap: argparse.ArgumentParser, path: Optional[Path]) -> Dict[str, Any]:
@@ -84,7 +85,7 @@ def main() -> int:
     ap.add_argument("--auto-path", choices=["rt64", "rice"], default="rt64",
                     help="which hash names the files on disk (default rt64)")
     ap.add_argument("--shift", choices=sorted(VALID_SHIFTS), default=None,
-                    help="default texel shift (policy value or none)")
+                    help="default texel shift (policy value or half)")
     ap.add_argument("--operation", choices=sorted(VALID_OPERATIONS), default=None,
                     help="default load operation (policy value or stream)")
     ap.add_argument("--policy", type=Path,

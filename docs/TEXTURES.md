@@ -99,9 +99,9 @@ track textures may use unrelated formats and dimensions.
   dump filename prefix.
 - **PNG** loads directly and is fine for iteration. **DDS** (BC7 + mipmaps, e.g. via Texconv
   / Compressonator's *CPU* encoder) is what you ship — never ship PNG.
-- Grid-aligned integer upscales use `--shift none` (the generator default). Modern-tool
-  exports that bake a half-texel origin offset can opt into
-  `python tools/make_pack.py /path/to/pack --shift half`; test atlas and tiled textures
+- Modern-tool exports that bake a half-texel origin offset use the generator default,
+  `shift: half`. Grid-aligned integer upscales can opt into
+  `python tools/make_pack.py /path/to/pack --shift none`; test atlas and tiled textures
   carefully because the wrong shift produces sampling offsets or neighbouring-texel bleed.
 - Paletted textures re-hash when their palette changes (for example, highlighted versus normal
   menu art), so visually identical pixels can require replacements under several hashes.
