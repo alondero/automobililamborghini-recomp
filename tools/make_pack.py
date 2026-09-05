@@ -13,67 +13,14 @@ import argparse
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
 
 
 HASH_RE = re.compile(r"^([0-9a-fA-F]{16})$")
 VALID_OPERATIONS = {"stream", "preload", "stall"}
 VALID_SHIFTS = {"half", "none"}
 DEFAULT_OPERATION = "stream"
-# Keep the generic tool's established default independent of any pack's policy.
+# Keep the generic tool's established default independent of any pack.
 DEFAULT_SHIFT = "half"
-
-
-def _load_policy(ap: argparse.ArgumentParser, path: Optional[Path]) -> Dict[str, Any]:
-    if path is None:
-        return {}
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        ap.error(f"cannot read policy {path}: {exc}")
-    if not isinstance(value, dict):
-        ap.error(f"policy must be a JSON object: {path}")
-    return value
-
-
-def _policy_overrides(
-    ap: argparse.ArgumentParser, policy: Dict[str, Any]
-) -> Tuple[Dict[str, str], Dict[str, str]]:
-    operations: Dict[str, str] = {}
-    shifts: Dict[str, str] = {}
-    preload = policy.get("preload", [])
-    shift_none = policy.get("shift_none", [])
-    if not isinstance(preload, list) or not isinstance(shift_none, list):
-        ap.error("policy 'preload' and 'shift_none' must be arrays")
-    for value in preload:
-        if not isinstance(value, str) or not HASH_RE.fullmatch(value):
-            ap.error("policy preload entries must be 16-hex hashes")
-        operations[str(value).lower()] = "preload"
-    for value in shift_none:
-        if not isinstance(value, str) or not HASH_RE.fullmatch(value):
-            ap.error("policy shift_none entries must be 16-hex hashes")
-        shifts[str(value).lower()] = "none"
-    protected = policy.get("protected", [])
-    if not isinstance(protected, list):
-        ap.error("policy 'protected' must be an array")
-    for entry in protected:
-        if not isinstance(entry, dict):
-            ap.error("each policy 'protected' entry must be an object")
-        texture_hash = entry.get("hash")
-        if not isinstance(texture_hash, str) or not HASH_RE.fullmatch(texture_hash):
-            ap.error("each policy 'protected' entry needs a 16-hex hash")
-        texture_hash = texture_hash.lower()
-        operation = entry.get("operation")
-        if operation is not None:
-            if not isinstance(operation, str) or operation not in VALID_OPERATIONS:
-                ap.error(f"unsupported policy operation: {operation!r}")
-            operations[texture_hash] = operation
-        shift = entry.get("shift")
-        if shift is not None:
-            if not isinstance(shift, str) or shift not in VALID_SHIFTS:
-                ap.error(f"unsupported policy shift: {shift!r}")
-            shifts[texture_hash] = shift
-    return operations, shifts
 
 
 def main() -> int:
@@ -85,21 +32,13 @@ def main() -> int:
     ap.add_argument("--auto-path", choices=["rt64", "rice"], default="rt64",
                     help="which hash names the files on disk (default rt64)")
     ap.add_argument("--shift", choices=sorted(VALID_SHIFTS), default=None,
-                    help="default texel shift (policy value or half)")
+                    help="default texel shift (default half)")
     ap.add_argument("--operation", choices=sorted(VALID_OPERATIONS), default=None,
-                    help="default load operation (policy value or stream)")
-    ap.add_argument("--policy", type=Path,
-                    help="optional JSON policy with protected texture entries")
+                    help="default load operation (default stream)")
     args = ap.parse_args()
 
-    policy = _load_policy(ap, args.policy)
-    operations, shifts = _policy_overrides(ap, policy)
-    operation = args.operation or policy.get("default_operation", DEFAULT_OPERATION)
-    shift = args.shift or policy.get("default_shift", DEFAULT_SHIFT)
-    if not isinstance(operation, str) or operation not in VALID_OPERATIONS:
-        ap.error(f"policy default_operation is invalid: {operation!r}")
-    if not isinstance(shift, str) or shift not in VALID_SHIFTS:
-        ap.error(f"policy default_shift is invalid: {shift!r}")
+    operation = args.operation or DEFAULT_OPERATION
+    shift = args.shift or DEFAULT_SHIFT
 
     source_dir = args.source_dir.resolve()
     if not source_dir.is_dir():
@@ -131,12 +70,6 @@ def main() -> int:
             "path": relative_path,
             "hashes": {"rt64": texture_hash, "rice": ""},
         }
-        # Ordinary entries inherit valid defaults; protected entries carry their
-        # explicit policy overrides for behavior that must not drift.
-        if texture_hash in operations:
-            texture["operation"] = operations[texture_hash]
-        if texture_hash in shifts:
-            texture["shift"] = shifts[texture_hash]
         textures.append(texture)
 
     if not textures:
