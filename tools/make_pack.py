@@ -26,6 +26,12 @@ DEFAULT_SHIFT = "half"
 def write_manifest(pack_dir, auto_path="rt64", shift=DEFAULT_SHIFT,
                    operation=DEFAULT_OPERATION):
     """Write and return a manifest for a generated flat replacement directory."""
+    if auto_path not in {"rt64", "rice"}:
+        raise ValueError(f"invalid auto_path: {auto_path}")
+    if shift not in VALID_SHIFTS:
+        raise ValueError(f"invalid shift: {shift}")
+    if operation not in VALID_OPERATIONS:
+        raise ValueError(f"invalid operation: {operation}")
     pack_dir = Path(pack_dir).resolve()
     if not pack_dir.is_dir():
         raise ValueError(f"replacement directory does not exist: {pack_dir}")
