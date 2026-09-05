@@ -2,9 +2,11 @@
 
 This is the end-to-end guide for creating native RT64 replacement packs for the port.
 Texture-pack support is content-agnostic: an HD-art pack, a readable-text pack, or a small
-one-texture experiment all use the same runtime facility, and the replacement artwork can
-live in a separate repository. Everything below was verified with a config-driven texture dump,
-an offline decode, a loose replacement directory, and a packaged `.rtz` loaded in-game.
+one-texture experiment all use the same runtime facility. Everything below was verified with
+a config-driven texture dump, an offline decode, a loose replacement directory, and a packaged
+`.rtz` loaded in-game.
+
+This guide covers the generic RT64 dump, authoring, manifest, and loading contract.
 
 ## What RT64 already gives us (and what the port adds)
 
@@ -95,10 +97,12 @@ track textures may use unrelated formats and dimensions.
 
 - Name each file by the RT64 hash: `<16-hex-hash>.png` (or `.dds`). That hash is exactly the
   dump filename prefix.
+- Keep every PNG/DDS in the source directory hash-named; `make_pack.py` rejects an image with
+  any other stem so a typo cannot silently drop a replacement from the manifest.
 - **PNG** loads directly and is fine for iteration. **DDS** (BC7 + mipmaps, e.g. via Texconv
   / Compressonator's *CPU* encoder) is what you ship — never ship PNG.
-- The default `shift: half` is appropriate for modern-tool exports that bake a half-texel
-  origin offset. A grid-aligned integer upscale of the decoded PNG instead needs
+- Modern-tool exports that bake a half-texel origin offset use the generator default,
+  `shift: half`. Grid-aligned integer upscales can opt into
   `python tools/make_pack.py /path/to/pack --shift none`; test atlas and tiled textures
   carefully because the wrong shift produces sampling offsets or neighbouring-texel bleed.
 - Paletted textures re-hash when their palette changes (for example, highlighted versus normal

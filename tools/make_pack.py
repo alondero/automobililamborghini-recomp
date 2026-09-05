@@ -1,18 +1,10 @@
 #!/usr/bin/env python3
 """Generate an RT64 texture-pack manifest (rt64.json) from replacement images.
 
-RT64 loads a texture pack by reading rt64.json from the pack directory (or .rtz) -- it
-does NOT auto-scan for hash-named files. RT64's own `texture_hasher` only *upgrades* an
-existing rt64.json; it will not create one from scratch. This tool fills that gap: point
-it at a directory of replacement images named by the RT64 texture hash
-(`<16-hex-hash>.png` or `.dds`, the same hash RT64 writes as the dump filename) and it
-writes a valid rt64.json listing each.
-
-    python tools/make_pack.py <pack_dir> [--auto-path rt64|rice]
-                                         [--shift half|none] [--operation stream|preload]
-
-Then either point the port at <pack_dir> directly (graphics.json `texture_pack` /
-LAMBO_TEXTURE_PACK), or zip it into a shippable .rtz with RT64's texture_packer.
+RT64 loads a texture pack by reading rt64.json from the pack directory (or .rtz); it
+does not auto-scan for hash-named files. This tool fills that gap: point it at a
+directory of replacement images named by the RT64 texture hash
+(`<16-hex-hash>.png` or `.dds`) and it writes a valid rt64.json listing each.
 
 Self-contained: standard library only.
 """
@@ -22,51 +14,78 @@ import json
 import re
 from pathlib import Path
 
+
 HASH_RE = re.compile(r"^([0-9a-fA-F]{16})$")
+VALID_OPERATIONS = {"stream", "preload", "stall"}
+VALID_SHIFTS = {"half", "none"}
+DEFAULT_OPERATION = "stream"
+# Keep the generic tool's established default independent of any pack.
+DEFAULT_SHIFT = "half"
 
 
-def main():
+def main() -> int:
     ap = argparse.ArgumentParser(description="Write rt64.json from hash-named replacement images.")
-    ap.add_argument("pack_dir", type=Path)
+    ap.add_argument("source_dir", type=Path,
+                    help="directory containing hash-named replacement images")
+    ap.add_argument("--manifest", type=Path,
+                    help="manifest path (default: <source_dir>/rt64.json)")
     ap.add_argument("--auto-path", choices=["rt64", "rice"], default="rt64",
                     help="which hash names the files on disk (default rt64)")
-    ap.add_argument("--shift", choices=["half", "none", "auto"], default="half",
-                    help="default texel shift; 'half' suits modern-tool exports (default)")
-    ap.add_argument("--operation", choices=["stream", "preload", "auto"], default="stream",
+    ap.add_argument("--shift", choices=sorted(VALID_SHIFTS), default=None,
+                    help="default texel shift (default half)")
+    ap.add_argument("--operation", choices=sorted(VALID_OPERATIONS), default=None,
                     help="default load operation (default stream)")
     args = ap.parse_args()
 
+    operation = args.operation or DEFAULT_OPERATION
+    shift = args.shift or DEFAULT_SHIFT
+
+    source_dir = args.source_dir.resolve()
+    if not source_dir.is_dir():
+        ap.error(f"source directory does not exist: {source_dir}")
+    out = (args.manifest or (source_dir / "rt64.json")).resolve()
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        ap.error(f"cannot create manifest directory {out.parent}: {exc}")
+
     textures = []
-    for p in sorted(args.pack_dir.iterdir()):
-        if p.suffix.lower() not in (".png", ".dds"):
+    seen_hashes = set()
+    for path in sorted(source_dir.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in (".png", ".dds"):
             continue
-        m = HASH_RE.match(p.stem)
-        if not m:
-            print(f"skip {p.name}: stem is not a 16-hex RT64 hash")
-            continue
-        h = m.group(1).lower()
-        textures.append({
-            "path": p.name,
-            "hashes": {"rt64": h, "rice": ""},
-            "operation": "auto",
-            "shift": "auto",
-        })
+        match = HASH_RE.match(path.stem)
+        if not match:
+            ap.error(f"image stem is not a 16-hex RT64 hash: {path}")
+        texture_hash = match.group(1).lower()
+        if texture_hash in seen_hashes:
+            ap.error(f"duplicate RT64 hash in source directory: {texture_hash}")
+        seen_hashes.add(texture_hash)
+        try:
+            relative_path = path.relative_to(out.parent).as_posix()
+        except ValueError:
+            ap.error(f"manifest must be in or above source directory: {out}")
+        texture = {
+            "path": relative_path,
+            "hashes": {"rt64": texture_hash, "rice": ""},
+        }
+        textures.append(texture)
 
     if not textures:
-        print(f"No <hash>.png/.dds files in {args.pack_dir}")
+        print(f"No <hash>.png/.dds files in {source_dir}")
         return 1
 
-    db = {
+    database = {
         "configuration": {
             "autoPath": args.auto_path,
-            "defaultOperation": args.operation,
-            "defaultShift": args.shift,
-            "hashVersion": 5,  # TMEMHasher::CurrentHashVersion
+            "configurationVersion": 3,
+            "defaultOperation": operation,
+            "defaultShift": shift,
+            "hashVersion": 5,
         },
         "textures": textures,
     }
-    out = args.pack_dir / "rt64.json"
-    out.write_text(json.dumps(db, indent=2))
+    out.write_text(json.dumps(database, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {out} with {len(textures)} texture(s)")
     return 0
 
