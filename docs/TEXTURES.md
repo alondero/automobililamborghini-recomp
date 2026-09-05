@@ -2,8 +2,8 @@
 
 This is the end-to-end guide for creating native RT64 replacement packs for the port.
 Texture-pack support is content-agnostic: an HD-art pack, a readable-text pack, or a small
-one-texture experiment all use the same runtime facility, and the replacement artwork can
-live in a separate repository. Everything below was verified with a config-driven texture dump,
+one-texture experiment all use the same runtime facility. Everything below was verified with a
+config-driven texture dump,
 an offline decode, a loose replacement directory, and a packaged `.rtz` loaded in-game.
 
 This guide covers the generic RT64 dump, authoring, manifest, and loading contract.
