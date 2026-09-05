@@ -116,6 +116,8 @@ class TestPipelines(unittest.TestCase):
             reference_path = Path(directory) / "aec011878342c59d.png"
             reference.save(reference_path)
             font = Path(__file__).parents[1] / "lib/rt64/src/contrib/mupen64plus-core/data/font.ttf"
+            if not font.is_file():
+                self.skipTest("repository font fixture is unavailable")
             rendered, italic, count = rf.render(reference_path, font, None, 0.28)
             self.assertEqual(rendered.size, (reference.width * rf.SCALE,
                                              reference.height * rf.SCALE))
@@ -133,6 +135,8 @@ class TestPipelines(unittest.TestCase):
                 characters, pitch, first = (GOLD_CHARACTERS, 8, 1) if atlas_hash.startswith("7c1") else (WHITE_CHARACTERS, 10, 0)
                 reference_with_cell_ink(512, pitch, characters, first).save(decoded / f"{atlas_hash}.png")
             font = Path(__file__).parents[1] / "lib/rt64/src/contrib/mupen64plus-core/data/font.ttf"
+            if not font.is_file():
+                self.skipTest("repository font fixture is unavailable")
             database = gp.build(decoded, pack, font)
             self.assertEqual(len(database["textures"]), len(gp.expected_hashes()))
             self.assertTrue((pack / "a14581e313afdd84.png").is_file())

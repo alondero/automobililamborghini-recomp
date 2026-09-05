@@ -86,15 +86,11 @@ def expected_hashes():
     return set(ATLAS_HASHES) | set(CHROME_GLYPHS) | set(GOLD_GLYPHS)
 
 
-def render_single(character, font, source_size, shear, style, scale=1.0):
-    """Render one glyph into an 8x integer-scaled replacement canvas."""
+def place_tile(tile, source_size, scale=1.0):
+    """Place an already-rendered glyph tile into an 8x replacement canvas."""
     width, height = source_size
     canvas = Image.new("RGBA", (width * render_font.SCALE, height * render_font.SCALE),
                        (0, 0, 0, 0))
-    tile = render_font.glyph_tile(character, font, shear, style)
-    if tile is None:
-        raise ValueError(f"font did not render {character!r}")
-    margin = render_font.SCALE
     if scale < 1.0:
         tile = tile.resize((max(1, round(tile.width * scale)),
                             max(1, round(tile.height * scale))), Image.Resampling.LANCZOS)
@@ -121,8 +117,8 @@ def render_family(glyphs, font, source_size, shear, style):
     widest = max(tile.width for _character, tile in tiles.values())
     tallest = max(tile.height for _character, tile in tiles.values())
     scale = min(1.0, usable_width / widest, usable_height / tallest)
-    return {texture_hash: render_single(character, font, source_size, shear, style, scale)
-            for texture_hash, (character, _tile) in tiles.items()}
+    return {texture_hash: place_tile(tile, source_size, scale)
+            for texture_hash, (_character, tile) in tiles.items()}
 
 
 def build(decoded_dir, pack_dir, ttf, ttf_italic=None):
@@ -144,14 +140,14 @@ def build(decoded_dir, pack_dir, ttf, ttf_italic=None):
         image, _italic, _count = render_font.render(reference, ttf, ttf_italic, 0.28)
         image.save(pack_dir / f"{atlas_hash}.png")
 
-    chrome_ttf = ttf_italic or ttf
+    family_ttf = ttf_italic or ttf
     chrome_shear = 0.08 if ttf_italic else 0.28
-    chrome_font = render_font.make_font(chrome_ttf, cap=round(16 * render_font.SCALE * 0.70))
+    chrome_font = render_font.make_font(family_ttf, cap=round(16 * render_font.SCALE * 0.70))
     for texture_hash, image in render_family(CHROME_GLYPHS, chrome_font, (16, 16),
                                              chrome_shear, CHROME_STYLE).items():
         image.save(pack_dir / f"{texture_hash}.png")
 
-    gold_font = render_font.make_font(chrome_ttf, cap=round(24 * render_font.SCALE * 0.70))
+    gold_font = render_font.make_font(family_ttf, cap=round(24 * render_font.SCALE * 0.70))
     gold_shear = 0.08 if ttf_italic else 0.28
     for texture_hash, image in render_family(GOLD_GLYPHS, gold_font, (24, 24),
                                              gold_shear, GOLD_STYLE).items():

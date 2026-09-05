@@ -105,7 +105,7 @@ def main() -> int:
     except ValueError as exc:
         ap.error(str(exc))
     out.write_text(json.dumps(database, indent=2) + "\n", encoding="utf-8")
-    print(f"wrote {out} with {len(textures)} texture(s)")
+    print(f"wrote {out} with {len(database['textures'])} texture(s)")
     return 0
 
 
