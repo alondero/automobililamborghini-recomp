@@ -56,8 +56,7 @@ def main() -> int:
             continue
         match = HASH_RE.match(path.stem)
         if not match:
-            print(f"skip {path.name}: stem is not a 16-hex RT64 hash")
-            continue
+            ap.error(f"image stem is not a 16-hex RT64 hash: {path}")
         texture_hash = match.group(1).lower()
         if texture_hash in seen_hashes:
             ap.error(f"duplicate RT64 hash in source directory: {texture_hash}")

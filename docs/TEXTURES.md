@@ -97,6 +97,8 @@ track textures may use unrelated formats and dimensions.
 
 - Name each file by the RT64 hash: `<16-hex-hash>.png` (or `.dds`). That hash is exactly the
   dump filename prefix.
+- Keep every PNG/DDS in the source directory hash-named; `make_pack.py` rejects an image with
+  any other stem so a typo cannot silently drop a replacement from the manifest.
 - **PNG** loads directly and is fine for iteration. **DDS** (BC7 + mipmaps, e.g. via Texconv
   / Compressonator's *CPU* encoder) is what you ship — never ship PNG.
 - Modern-tool exports that bake a half-texel origin offset use the generator default,
