@@ -49,6 +49,8 @@ __pycache__/
 
 # --- Local AI Artefacts ----------------------------------------------------
 .codex/
+.commandcode/
+.agents/
 .claude/settings.local.json
 .claude/worktrees/
 CLAUDE.local.md
