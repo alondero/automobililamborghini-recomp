@@ -47,7 +47,6 @@ if(BUILD_TESTING)
     add_executable(lambo_config_tests
         tests/test_live_config.cpp
         src/lambo_config.cpp
-        src/lambo_player_name.cpp
         src/lambo_log.cpp
     )
     target_include_directories(lambo_config_tests PRIVATE
@@ -68,6 +67,21 @@ if(BUILD_TESTING)
     )
     target_link_libraries(lambo_log_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_logging_policy COMMAND lambo_log_tests)
+
+    add_executable(lambo_player_name_tests
+        tests/test_player_name.cpp
+        src/lambo_player_name.cpp
+        src/lambo_config.cpp
+        src/lambo_log.cpp
+    )
+    target_include_directories(lambo_player_name_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/ultramodern/include
+        ${N64MR}/N64Recomp/include
+        ${N64MR}/thirdparty
+    )
+    target_link_libraries(lambo_player_name_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_player_name_persistence COMMAND lambo_player_name_tests)
 
     add_executable(lambo_camera_projection_tests
         tests/test_camera_projection.cpp
