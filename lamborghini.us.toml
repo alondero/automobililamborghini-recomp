@@ -1155,3 +1155,20 @@ text = "{ extern void lambo_player_name_seed(uint8_t*); lambo_player_name_seed(r
 func = "func_800400EC"
 before_vram = 0x8003F4EC
 text = "{ extern void lambo_player_name_save(uint8_t*); lambo_player_name_save(rdram); }"
+
+# No-edit runs never enter the name screen. Restore the source buffer before
+# both independent ROM record writers; do not write leaderboard/history rows.
+# Lap completion: 0x80029628 (symbol func_8002A228). At 0x80029C48 the
+# faster-lap branch has resolved vehicle ownership to a zero-based player in
+# s16[sp+0x2E]. All four mode/direction name-copy branches follow this point.
+[[patches.hook]]
+func = "func_8002A228"
+before_vram = 0x80029C48
+text = "{ extern void lambo_player_name_restore_for_record(uint8_t*, int); lambo_player_name_restore_for_record(rdram, MEM_H(0x2E, ctx->r29)); }"
+
+# Results leaderboard: 0x8003F5F0 (symbol func_800401F0), a0 = zero-based player.
+# The ROM ranks/shifts/inserts into the normal or mirrored five-entry table.
+[[patches.hook]]
+func = "func_800401F0"
+before_vram = 0x8003F5F0
+text = "{ extern void lambo_player_name_restore_for_record(uint8_t*, int); lambo_player_name_restore_for_record(rdram, (int16_t)ctx->r4); }"
