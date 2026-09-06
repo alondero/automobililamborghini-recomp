@@ -51,6 +51,10 @@ std::string load_saved_name() {
         const auto field = json.find("name");
         if (field == json.end() || !field->is_string()) return {};
         std::string name = field->get<std::string>();
+        // player.json can be edited outside the ROM's uppercase-only keyboard.
+        for (char& ch : name) {
+            if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 'a' + 'A');
+        }
         return valid_name(name) ? name : std::string{};
     } catch (const nlohmann::json::exception& e) {
         LAMBO_LOG_WARN("name", "%s unparseable (%s); keeping ROM default\n",
@@ -100,6 +104,14 @@ int current_driver(uint8_t* rdram) {
 
 extern "C" void lambo_player_name_seed(uint8_t* rdram) {
     if (current_driver(rdram) != kPlayerOne) return;
+
+    lambo_player_name_restore_for_record(rdram, 0);
+}
+
+extern "C" void lambo_player_name_restore_for_record(uint8_t* rdram, int player_index) {
+    // Record writers use zero-based player indices, independently of the name
+    // editor's current-driver selector (which may never have been initialized).
+    if (player_index != 0) return;
 
     const std::string saved = load_saved_name();
     if (!valid_name(saved)) return;
