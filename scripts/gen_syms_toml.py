@@ -924,10 +924,13 @@ func = "func_800028D0"
 before_vram = 0x80001CD4
 text = "extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_savestate_tick(rdram, ctx);"
 
+# Car-differences measurement campaign: per-frame vehicle-record trace (one
+# instruction past the savestate hook). Gated behind LAMBO_CAR_TRACE; native in
+# src/lambo_car_trace.c. It shares the frame-boundary hook with replay setup.
 [[patches.hook]]
 func = "func_800028D0"
 before_vram = 0x80001CD8
-text = "extern void lambo_replay_dispatch_begin(uint8_t*); lambo_replay_dispatch_begin(rdram);"
+text = "extern void lambo_replay_dispatch_begin(uint8_t*); extern void lambo_car_trace_tick(uint8_t*, recomp_context*); lambo_replay_dispatch_begin(rdram); lambo_car_trace_tick(rdram, ctx);"
 
 [[patches.hook]]
 func = "func_800028D0"

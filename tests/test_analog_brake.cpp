@@ -7,17 +7,13 @@
 #include <vector>
 
 #include "lambo_analog_brake.h"
+#include "lambo_vehicle.h"
 
 namespace {
 
-constexpr uint32_t kCurrentVehicleAddr = 0x80098398u;
 constexpr uint32_t kCurrentChannelAddr = 0x800CE6AAu;
 constexpr uint32_t kSelectedPadPtrAddr = 0x800A39DCu;
 constexpr uint32_t kPadBase = 0x800A39E0u;
-constexpr uint32_t kVehicleBase = 0x800B69A8u;
-constexpr uint32_t kVehicleStride = 0x10Cu;
-constexpr uint32_t kBrakeOffset = 0xA0u;
-constexpr uint32_t kLatchOffset = 0xACu;
 
 int failures = 0;
 
@@ -37,12 +33,14 @@ int32_t& word(std::vector<uint8_t>& rdram, uint32_t address) {
 }
 
 uint32_t latch_address(int vehicle) {
-    return kVehicleBase + static_cast<uint32_t>(vehicle) * kVehicleStride + kLatchOffset;
+    return LAMBO_VEHICLE_BASE + static_cast<uint32_t>(vehicle) * sizeof(LamboVehicleRecord) +
+           offsetof(LamboVehicleRecord, brake_latch);
 }
 
 float read_brake(const std::vector<uint8_t>& rdram, int vehicle) {
     const uint32_t address =
-        kVehicleBase + static_cast<uint32_t>(vehicle) * kVehicleStride + kBrakeOffset;
+        LAMBO_VEHICLE_BASE + static_cast<uint32_t>(vehicle) * sizeof(LamboVehicleRecord) +
+        offsetof(LamboVehicleRecord, brake_demand);
     uint32_t bits = static_cast<uint32_t>(
         word(const_cast<std::vector<uint8_t>&>(rdram), address));
     float out;
@@ -52,14 +50,15 @@ float read_brake(const std::vector<uint8_t>& rdram, int vehicle) {
 
 void write_brake(std::vector<uint8_t>& rdram, int vehicle, float value) {
     const uint32_t address =
-        kVehicleBase + static_cast<uint32_t>(vehicle) * kVehicleStride + kBrakeOffset;
+        LAMBO_VEHICLE_BASE + static_cast<uint32_t>(vehicle) * sizeof(LamboVehicleRecord) +
+        offsetof(LamboVehicleRecord, brake_demand);
     uint32_t bits;
     std::memcpy(&bits, &value, sizeof(bits));
     word(rdram, address) = static_cast<int32_t>(bits);
 }
 
 void set_context(std::vector<uint8_t>& rdram, int vehicle, int channel) {
-    halfword(rdram, kCurrentVehicleAddr) = static_cast<int16_t>(vehicle);
+    halfword(rdram, LAMBO_GUEST_CURRENT_VEHICLE_ADDR) = static_cast<int16_t>(vehicle);
     halfword(rdram, kCurrentChannelAddr) = static_cast<int16_t>(channel);
     word(rdram, kSelectedPadPtrAddr) = static_cast<int32_t>(kPadBase +
         static_cast<uint32_t>(channel - 1) * 6u);
@@ -114,12 +113,12 @@ int main() {
     expect((halfword(rdram, latch_address(1)) & 0x0001) != 0,
            "analog braking latches the physics gate like held digital B");
 
-    halfword(rdram, kCurrentVehicleAddr) = -1;
+    halfword(rdram, LAMBO_GUEST_CURRENT_VEHICLE_ADDR) = -1;
     write_brake(rdram, 1, 3.0f);
     lambo_analog_brake_apply(rdram.data());
     expect(read_brake(rdram, 1) == 3.0f,
            "inactive ROM vehicle sentinel leaves guest memory untouched");
-    halfword(rdram, kCurrentVehicleAddr) = 1;
+    halfword(rdram, LAMBO_GUEST_CURRENT_VEHICLE_ADDR) = 1;
 
     halfword(rdram, kPadBase) = static_cast<int16_t>(0x4000u);
     for (int frame = 0; frame < 20; ++frame) race_step(rdram, 1, true);

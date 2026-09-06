@@ -6,16 +6,13 @@
 #include <vector>
 
 #include "lambo_analog_throttle.h"
+#include "lambo_vehicle.h"
 
 namespace {
 
-constexpr uint32_t kCurrentVehicleAddr = 0x80098398u;
 constexpr uint32_t kCurrentChannelAddr = 0x800CE6AAu;
 constexpr uint32_t kSelectedPadPtrAddr = 0x800A39DCu;
 constexpr uint32_t kPadBase = 0x800A39E0u;
-constexpr uint32_t kVehicleBase = 0x800B69A8u;
-constexpr uint32_t kVehicleStride = 0x10Cu;
-constexpr uint32_t kThrottleOffset = 0xAAu;
 constexpr uint32_t kLimitBase = 0x800A5F2Cu;
 constexpr uint32_t kLimitStride = 0x84u;
 
@@ -37,11 +34,12 @@ int32_t& word(std::vector<uint8_t>& rdram, uint32_t address) {
 }
 
 uint32_t demand_address(int vehicle) {
-    return kVehicleBase + static_cast<uint32_t>(vehicle) * kVehicleStride + kThrottleOffset;
+    return LAMBO_VEHICLE_BASE + static_cast<uint32_t>(vehicle) * sizeof(LamboVehicleRecord) +
+           offsetof(LamboVehicleRecord, throttle_demand);
 }
 
 void set_context(std::vector<uint8_t>& rdram, int vehicle, int channel, int limit) {
-    halfword(rdram, kCurrentVehicleAddr) = static_cast<int16_t>(vehicle);
+    halfword(rdram, LAMBO_GUEST_CURRENT_VEHICLE_ADDR) = static_cast<int16_t>(vehicle);
     halfword(rdram, kCurrentChannelAddr) = static_cast<int16_t>(channel);
     word(rdram, kSelectedPadPtrAddr) = static_cast<int32_t>(kPadBase +
         static_cast<uint32_t>(channel - 1) * 6u);
@@ -89,13 +87,13 @@ int main() {
     expect(halfword(rdram, demand_address(1)) == 25,
            "analog mode settles at the normalized demand");
 
-    halfword(rdram, kCurrentVehicleAddr) = -1;
+    halfword(rdram, LAMBO_GUEST_CURRENT_VEHICLE_ADDR) = -1;
     halfword(rdram, demand_address(1)) = 26;
     lambo_analog_throttle_begin(rdram.data());
     lambo_analog_throttle_apply(rdram.data());
     expect(halfword(rdram, demand_address(1)) == 26,
            "inactive ROM vehicle sentinel leaves guest memory untouched");
-    halfword(rdram, kCurrentVehicleAddr) = 1;
+    halfword(rdram, LAMBO_GUEST_CURRENT_VEHICLE_ADDR) = 1;
 
     halfword(rdram, kPadBase) = static_cast<int16_t>(0x8000u);
     for (int frame = 0; frame < 8; ++frame) race_step(rdram, 1, 100, true);
