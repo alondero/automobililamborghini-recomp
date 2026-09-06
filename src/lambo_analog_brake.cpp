@@ -8,6 +8,7 @@
 #include "recomp.h"
 #include "lambo_log.h"
 #include "lambo_input_quantize.h"
+#include "lambo_vehicle.h"
 
 // Guest seam (measured live, see docs/analog-brake.md):
 // - Brake demand is the float at vehicle offset 0xA0. Stock digital play ramps
@@ -24,14 +25,13 @@ namespace {
 
 constexpr uint32_t kAnalogEnabled = 0x80000000u;
 constexpr uint32_t kValueMask = 0x0000FFFFu;
-constexpr gpr kCurrentVehicleAddr = (gpr)(int32_t)0x80098398u;
 constexpr gpr kCurrentChannelAddr = (gpr)(int32_t)0x800CE6AAu;
 constexpr gpr kSelectedPadPtrAddr = (gpr)(int32_t)0x800A39DCu;
-constexpr uint32_t kVehicleBase = 0x800B69A8u;
-constexpr uint32_t kVehicleStride = 0x10Cu;
-constexpr uint32_t kSpeedOffset = 0x90u;
-constexpr uint32_t kBrakeOffset = 0xA0u;
-constexpr uint32_t kBrakeLatchOffset = 0xACu;
+constexpr uint32_t kVehicleBase = LAMBO_VEHICLE_BASE;
+constexpr uint32_t kVehicleStride = sizeof(LamboVehicleRecord);
+constexpr uint32_t kSpeedOffset = offsetof(LamboVehicleRecord, speed);
+constexpr uint32_t kBrakeOffset = offsetof(LamboVehicleRecord, brake_demand);
+constexpr uint32_t kBrakeLatchOffset = offsetof(LamboVehicleRecord, brake_latch);
 constexpr uint16_t kBrakeLatchBit = 0x0001u;
 constexpr float kBrakeMax = 16.0f;
 constexpr float kBrakeStep = 1.0f;
@@ -98,7 +98,8 @@ extern "C" void lambo_analog_brake_apply(uint8_t* rdram) {
     const bool probing = g_probe_enabled.load(std::memory_order_acquire);
     if (!analog_mode && !probing) return;
 
-    const int vehicle = static_cast<int16_t>(MEM_H(0, kCurrentVehicleAddr));
+    const int vehicle = static_cast<int16_t>(MEM_H(0,
+        (gpr)(int32_t)LAMBO_GUEST_CURRENT_VEHICLE_ADDR));
     // -1 is the ROM's inactive-vehicle sentinel (same meaning as the throttle hook).
     if (vehicle < 0) return;
 

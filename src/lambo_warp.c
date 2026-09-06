@@ -19,7 +19,8 @@
 // Cluster map (all halfwords; MEM_H handles guest byte order):
 //   0x800CE6A4 players (1-4)          0x800CE6C0 track cursor (0-5; 0-2 if 3+ players)
 //   0x800CE6A6 track-select-entered   0x800CE6E0 laps cursor (menu range 3-30)
-//   0x800CE6B4 mode (2 = SINGLE RACE) 0x800CE7A4 car cursor
+//   0x800CE6B4 mode (2 = SINGLE RACE) 0x800CE7E8 player model cursors (0-23, +2 per player)
+//   0x800CE7A4 difficulty (0 = NOVICE, 1 = EXPERT), NOT a car selector
 //   0x800CE6BA race counter (0)       0x800CE6AC game state (7 = load race)
 
 #include <stdatomic.h>
@@ -29,6 +30,7 @@
 
 #include "lambo_log.h"
 #include "recomp.h"
+#include "lambo_vehicle.h"
 
 // Audio quiesce pair the ROM runs before every state->7 write (menu RACE action,
 // pause-restart, championship next-race). Recompiled bodies; safe to call from a
@@ -37,15 +39,12 @@
 void func_800676B4(uint8_t* rdram, recomp_context* ctx);
 void func_80008ECC(uint8_t* rdram, recomp_context* ctx);
 
-#define WARP_STATE      0x800CE6ACu
 #define WARP_PLAYERS    0x800CE6A4u
 #define WARP_TRACK_FLAG 0x800CE6A6u
 #define WARP_MODE       0x800CE6B4u
 #define WARP_COUNTER    0x800CE6BAu
 #define WARP_TRACK_CUR  0x800CE6C0u
 #define WARP_LAPS_CUR   0x800CE6E0u
-#define WARP_CAR_CUR    0x800CE7A4u
-
 #define MODE_SINGLE_RACE 2
 
 // The game's circuits are unnamed (menu shows "CIRCUIT" + a numbered map preview;
@@ -89,6 +88,10 @@ int lambo_warp_env_players(void) {
 int lambo_warp_env_mode(void) {
     return atomic_load_explicit(&g_warp_mode, memory_order_relaxed);
 }
+static int g_warp_options_parsed;
+static int g_warp_options_valid = 1;
+static int g_warp_mode_option = MODE_SINGLE_RACE;
+static int g_warp_difficulty = -1;
 
 static uint32_t pack_request(int circuit0, int laps, int car, int players) {
     return 0x80000000u | (uint32_t)(circuit0 & 0xFF) | ((uint32_t)(laps & 0xFF) << 8)
@@ -120,8 +123,40 @@ static void parse_env_request(void) {
         LAMBO_LOG("warp", "LAMBO_WARP=%s invalid: circuit must be 1-6\n", env);
         return;
     }
+    if (v[2] < 0 || v[2] >= 24) {
+        LAMBO_LOG("warp", "LAMBO_WARP=%s invalid: model must be 0-23\n", env);
+        return;
+    }
     atomic_store_explicit(&g_warp_request, pack_request(v[0] - 1, v[1], v[2], v[3]),
                           memory_order_relaxed);
+}
+
+// Environment options are process configuration, not per-frame state. Parse them
+// once before looking at the atomic request so a bad difficulty cannot consume a
+// valid request and leave the menu half-transitioned.
+static void parse_env_options(void) {
+    const char* mode = getenv("LAMBO_WARP_MODE");
+    if (mode != NULL && mode[0] != '\0') {
+        char* end = NULL;
+        long value = strtol(mode, &end, 10);
+        if (end == mode || *end != '\0' || value < -32768 || value > 32767) {
+            LAMBO_LOG("warp", "LAMBO_WARP_MODE=%s invalid: expected an integer\n", mode);
+            g_warp_options_valid = 0;
+        } else {
+            g_warp_mode_option = (int)value;
+        }
+    }
+
+    const char* difficulty = getenv("LAMBO_WARP_DIFFICULTY");
+    if (difficulty != NULL) {
+        if (strcmp(difficulty, "0") != 0 && strcmp(difficulty, "1") != 0) {
+            LAMBO_LOG("warp", "LAMBO_WARP_DIFFICULTY must be 0 or 1\n");
+            g_warp_options_valid = 0;
+            atomic_store_explicit(&g_warp_failed, 1, memory_order_release);
+        } else {
+            g_warp_difficulty = difficulty[0] - '0';
+        }
+    }
 }
 
 // States a warp is allowed to fire from, mirroring where the ROM itself issues the
@@ -136,15 +171,16 @@ static int warpable(int state) {
 // Per-frame tick, injected at the entry of func_800030F8 (see the [[patches.hook]]
 // block carried by scripts/gen_syms_toml.py). Runs on the game thread.
 void lambo_warp_tick(uint8_t* rdram, recomp_context* ctx) {
-    static int env_parsed;
-    if (!env_parsed) {
-        env_parsed = 1;
+    if (!g_warp_options_parsed) {
+        g_warp_options_parsed = 1;
+        parse_env_options();
         parse_env_request();
     }
+    if (!g_warp_options_valid) return;
     uint32_t req = atomic_load_explicit(&g_warp_request, memory_order_relaxed);
     if (!(req & 0x80000000u)) return;
 
-    int state = (int16_t)MEM_H(0, (gpr)(int32_t)WARP_STATE);
+    int state = (int16_t)MEM_H(0, (gpr)(int32_t)LAMBO_GUEST_GAME_STATE_ADDR);
     if (!warpable(state)) return;
     if (!atomic_compare_exchange_strong_explicit(&g_warp_request, &req, 0,
                                                  memory_order_relaxed,
@@ -165,22 +201,29 @@ void lambo_warp_tick(uint8_t* rdram, recomp_context* ctx) {
     // 0x800CE6B4 selects the race mode the state-7 finalizer builds: 2 = single race
     // (LAP/RANK HUD), 0 = time trial (PREVIOUS/RECORD/BEST-LAP HUD, no rank). Overridable
     // for testing the non-arcade HUD variants (issue #42); defaults to single race.
-    int mode = MODE_SINGLE_RACE;
-    { const char* m = getenv("LAMBO_WARP_MODE"); if (m != NULL) mode = atoi(m); }
-    // Report the exact signed halfword written to guest RAM, even for direct
-    // environment use outside the stricter scenario runner.
-    mode = (int)(int16_t)mode;
+    const int mode = g_warp_mode_option;
+    // The retail difficulty callback XORs this halfword with 1. Keep the
+    // existing setting unless explicitly overridden for a controlled run.
+    if (g_warp_difficulty >= 0)
+        MEM_H(0, (gpr)(int32_t)LAMBO_GUEST_MENU_DIFFICULTY_ADDR) = (int16_t)g_warp_difficulty;
     MEM_H(0, (gpr)(int32_t)WARP_PLAYERS)    = (int16_t)players;
     MEM_H(0, (gpr)(int32_t)WARP_TRACK_FLAG) = 1;
     MEM_H(0, (gpr)(int32_t)WARP_MODE)       = (int16_t)mode;
     MEM_H(0, (gpr)(int32_t)WARP_COUNTER)    = 0;
     MEM_H(0, (gpr)(int32_t)WARP_TRACK_CUR)  = (int16_t)circuit0;
     MEM_H(0, (gpr)(int32_t)WARP_LAPS_CUR)   = (int16_t)laps;
-    MEM_H(0, (gpr)(int32_t)WARP_CAR_CUR)    = (int16_t)car;
-
     func_800676B4(rdram, ctx);
     func_80008ECC(rdram, ctx);
-    MEM_H(0, (gpr)(int32_t)WARP_STATE) = 7;
+    // The menu maintains one model cursor per player.  A warp request carries a
+    // single model selector, so mirror it to every requested player rather than
+    // silently leaving players 2-4 on stale menu selections.
+    for (int player = 0; player < players; ++player) {
+        MEM_H(0, (gpr)(int32_t)(LAMBO_GUEST_PLAYER_MODEL_CURSOR_ADDR +
+                                (uint32_t)player * LAMBO_GUEST_PLAYER_MODEL_CURSOR_STRIDE)) =
+            (int16_t)car;
+    }
+
+    MEM_H(0, (gpr)(int32_t)LAMBO_GUEST_GAME_STATE_ADDR) = 7;
 
     atomic_store_explicit(&g_warp_circuit, circuit0 + 1, memory_order_relaxed);
     atomic_store_explicit(&g_warp_laps, laps, memory_order_relaxed);
@@ -189,6 +232,8 @@ void lambo_warp_tick(uint8_t* rdram, recomp_context* ctx) {
     atomic_store_explicit(&g_warp_mode, mode, memory_order_relaxed);
     atomic_store_explicit(&g_warp_applied, 1, memory_order_release);
 
-    LAMBO_LOG("warp", "%s: single race, %d lap(s), car %d, %d player(s) (from state %d)\n",
-            lambo_scene_table[circuit0], laps, car, players, state);
+    const char* mode_name = mode == 0 ? "time trial" :
+                            mode == MODE_SINGLE_RACE ? "single race" : "custom mode";
+    LAMBO_LOG("warp", "%s: %s (mode %d), %d lap(s), car %d, %d player(s) (from state %d)\n",
+            lambo_scene_table[circuit0], mode_name, mode, laps, car, players, state);
 }

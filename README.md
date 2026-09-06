@@ -135,6 +135,11 @@ For development it is useful to jump straight into a race without driving the me
   (3 laps, first car).
 - **`LAMBO_WARP=circuit[:laps[:car[:players]]]`** (environment variable, circuit `1`–`6`)
   performs the warp automatically at boot — handy for headless/scripted runs.
+  `car` is the model cursor `0`-`23` (three variants per category), copied to
+  every requested player; this development path can select locked models. See
+  [car data](docs/CAR_DIFFERENCES.md).
+- **`LAMBO_WARP_DIFFICULTY=0|1`** fixes Novice/Expert difficulty for a warp.
+  When unset, the current difficulty is retained.
 
 The warp performs the same stores the game's own menu makes when you confirm RACE
 (selection cursors + audio quiesce + game-state 7), so the race it starts is a normal
