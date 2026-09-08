@@ -1468,6 +1468,29 @@ text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gp
 func = "func_800030F8"
 before_vram = 0x80004374
 text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6); }"
+
+# Player-one persistence: editor setup/Done and both independent record writers.
+# Keep these hooks aligned with lamborghini.us.toml; record writers use zero-based
+# player indices, unlike the name editor's one-based current-driver selector.
+[[patches.hook]]
+func = "func_8003CD84"
+before_vram = 0x8003CE68
+text = "{ extern void lambo_player_name_seed(uint8_t*); lambo_player_name_seed(rdram); }"
+
+[[patches.hook]]
+func = "func_800400EC"
+before_vram = 0x8003F4EC
+text = "{ extern void lambo_player_name_save(uint8_t*); lambo_player_name_save(rdram); }"
+
+[[patches.hook]]
+func = "func_8002A228"
+before_vram = 0x80029C48
+text = "{ extern void lambo_player_name_restore_for_record(uint8_t*, int); lambo_player_name_restore_for_record(rdram, MEM_H(0x2E, ctx->r29)); }"
+
+[[patches.hook]]
+func = "func_800401F0"
+before_vram = 0x8003F5F0
+text = "{ extern void lambo_player_name_restore_for_record(uint8_t*, int); lambo_player_name_restore_for_record(rdram, (int16_t)ctx->r4); }"
 """
 
 UNSTUB = [

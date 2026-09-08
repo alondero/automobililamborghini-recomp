@@ -12,6 +12,10 @@ extern "C" {
 void lambo_player_name_seed(uint8_t* rdram);
 void lambo_player_name_save(uint8_t* rdram);
 
+// Restore before the ROM copies a newly earned record. The record routines use
+// zero-based indices; only player zero owns the native persisted identity.
+void lambo_player_name_restore_for_record(uint8_t* rdram, int player_index);
+
 #ifdef __cplusplus
 }
 #endif
