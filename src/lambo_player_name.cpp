@@ -123,6 +123,15 @@ extern "C" void lambo_player_name_restore_for_record(uint8_t* rdram, int player_
     LAMBO_LOG_INFO("name", "seeded player name: %s\n", saved.c_str());
 }
 
+extern "C" uint32_t lambo_player_name_record_byte(uintptr_t source_base) {
+    const uint32_t base = static_cast<uint32_t>(source_base);
+    if (base < 0x800A4160u || base >= 0x800A416Du) return 0xFFFFFFFFu;
+    const std::string saved = load_saved_name();
+    if (!valid_name(saved)) return 0xFFFFFFFFu;
+    const size_t index = base - 0x800A4160u;
+    return index < saved.size() ? static_cast<uint8_t>(saved[index]) : 0;
+}
+
 extern "C" void lambo_player_name_save(uint8_t* rdram) {
     if (current_driver(rdram) != kPlayerOne) return;
 

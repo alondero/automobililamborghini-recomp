@@ -15,7 +15,7 @@ selector at `0x800CE6A6` is instead one-based).
 | Writer | Runtime entry / generated symbol | Restoration boundary |
 | --- | --- | --- |
 | Lap completion | `0x80029628` / `func_8002A228` | `0x80029C48`, after eligibility and player ownership have been resolved; player index is `s16[sp+0x2E]` |
-| Five-entry leaderboard | `0x8003F5F0` / `func_800401F0` | Entry, with the signed zero-based player index in `a0` |
+| Five-entry leaderboard | `0x8003F5F0` / `func_800401F0` | Name-byte copy sites `0x8003F924` and `0x8003FC0C`; the ROM walks a mode-specific source one byte at a time |
 
 Lap completion has four name destinations relative to the records base: `0x72`
 (race), `0x17A` (mirrored race), `0x516` (Time Trial), and `0x61E` (mirrored Time
@@ -34,6 +34,11 @@ hook changes:
 cmake --build build --target lambo_player_records_tests
 ctest --test-dir build -R '^lambo_player_records$' --output-on-failure
 ```
+
+The leaderboard hooks override only player one's name bytes at those copy sites;
+guest source ranges are left untouched. This is necessary because restoring the
+editor buffer at the leaderboard entry is too early—the ROM's ranking pass can
+select a different stale profile source before it copies the name.
 
 This deterministic test verifies the record-writing code, not driving, rendering,
 Controller Pak serialization, or complete gameplay traversal.

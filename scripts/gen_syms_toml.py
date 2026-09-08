@@ -1489,8 +1489,12 @@ text = "{ extern void lambo_player_name_restore_for_record(uint8_t*, int); lambo
 
 [[patches.hook]]
 func = "func_800401F0"
-before_vram = 0x8003F5F0
-text = "{ extern void lambo_player_name_restore_for_record(uint8_t*, int); lambo_player_name_restore_for_record(rdram, (int16_t)ctx->r4); }"
+before_vram = 0x8003F924
+text = "{ extern uint32_t lambo_player_name_record_byte(uintptr_t); uint32_t ch = lambo_player_name_record_byte((uintptr_t)ctx->r15); if (ch != 0xFFFFFFFFu) ctx->r9 = ch; }"
+[[patches.hook]]
+func = "func_800401F0"
+before_vram = 0x8003FC0C
+text = "{ extern uint32_t lambo_player_name_record_byte(uintptr_t); uint32_t ch = lambo_player_name_record_byte((uintptr_t)ctx->r12); if (ch != 0xFFFFFFFFu) ctx->r8 = ch; }"
 """
 
 UNSTUB = [
