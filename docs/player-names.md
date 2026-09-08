@@ -1,10 +1,10 @@
 # Persisted player names and records
 
-Issue #170 had two independent causes: restoration ran only when the name editor
-opened, and `player.json` values such as `Adam` failed the uppercase-only validator.
-A no-edit run therefore left the ROM's player-one buffer as `TITUS`. Loading now
-normalizes ASCII lowercase to the ROM keyboard's uppercase alphabet, and record
-writers restore the saved identity without requiring a visit to the editor.
+Issue #170 is caused by the leaderboard ranking pass reading a mode-specific
+profile source after the editor buffer has been bypassed or overwritten. Loading
+also normalizes ASCII lowercase in `player.json` to the ROM keyboard's uppercase
+alphabet as defensive input handling. Record writers now restore the saved
+identity without requiring a visit to the editor.
 
 The records header at `0x800A4160` is not the player's name. Do not overwrite it or
 pre-populate leaderboard rows. Both ROM record writers copy from
