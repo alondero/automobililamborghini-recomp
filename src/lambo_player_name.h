@@ -15,7 +15,6 @@ void lambo_player_name_save(uint8_t* rdram);
 // Restore before the ROM copies a newly earned record. The record routines use
 // zero-based indices; only player zero owns the native persisted identity.
 void lambo_player_name_restore_for_record(uint8_t* rdram, int player_index);
-uint32_t lambo_player_name_record_byte(uintptr_t source_base);
 
 #ifdef __cplusplus
 }

@@ -13,7 +13,7 @@ found = {}
 for path in source.glob("funcs_*.c"):
     for match in re.finditer(
         r"^RECOMP_FUNC void (\w+)\(.*?(?=^RECOMP_FUNC void |\Z)",
-        path.read_text(), re.MULTILINE | re.DOTALL,
+        path.read_text(encoding="utf-8"), re.MULTILINE | re.DOTALL,
     ):
         if match[1] in wanted:
             if match[1] in found:
@@ -23,4 +23,4 @@ if found.keys() != wanted:
     raise RuntimeError(f"Missing generated functions: {wanted - found.keys()}")
 output.parent.mkdir(parents=True, exist_ok=True)
 output.write_text('#include "recomp.h"\n#include "funcs.h"\n' +
-                  "\n".join(found[name] for name in sorted(wanted)))
+                  "\n".join(found[name] for name in sorted(wanted)), encoding="utf-8")

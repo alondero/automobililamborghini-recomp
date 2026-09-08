@@ -1,10 +1,9 @@
 # Persisted player names and records
 
-Issue #170 is caused by the leaderboard ranking pass reading a mode-specific
-profile source after the editor buffer has been bypassed or overwritten. Loading
-also normalizes ASCII lowercase in `player.json` to the ROM keyboard's uppercase
-alphabet as defensive input handling. Record writers now restore the saved
-identity without requiring a visit to the editor.
+Issue #170 occurs when a persisted player name is not restored to the ROM's source
+buffer before a record writer runs. Loading also normalizes ASCII lowercase in
+`player.json` to the ROM keyboard's uppercase alphabet as defensive input handling.
+Record writers now restore the saved identity without requiring a visit to the editor.
 
 The records header at `0x800A4160` is not the player's name. Do not overwrite it or
 pre-populate leaderboard rows. Both ROM record writers copy from
@@ -15,7 +14,7 @@ selector at `0x800CE6A6` is instead one-based).
 | Writer | Runtime entry / generated symbol | Restoration boundary |
 | --- | --- | --- |
 | Lap completion | `0x80029628` / `func_8002A228` | `0x80029C48`, after eligibility and player ownership have been resolved; player index is `s16[sp+0x2E]` |
-| Five-entry leaderboard | `0x8003F5F0` / `func_800401F0` | Name-byte copy sites `0x8003F924` and `0x8003FC0C`; the ROM walks a mode-specific source one byte at a time |
+| Five-entry leaderboard | `0x8003F5F0` / `func_800401F0` | Entry, with the signed zero-based player index in `a0` |
 
 Lap completion has four name destinations relative to the records base: `0x72`
 (race), `0x17A` (mirrored race), `0x516` (Time Trial), and `0x61E` (mirrored Time
@@ -35,10 +34,8 @@ cmake --build build --target lambo_player_records_tests
 ctest --test-dir build -R '^lambo_player_records$' --output-on-failure
 ```
 
-The leaderboard hooks override only player one's name bytes at those copy sites;
-guest source ranges are left untouched. This is necessary because restoring the
-editor buffer at the leaderboard entry is too early—the ROM's ranking pass can
-select a different stale profile source before it copies the name.
+The leaderboard hook restores only player one's source buffer before the ROM's
+ranking and insertion logic runs; guest source ranges are left untouched.
 
 This deterministic test verifies the record-writing code, not driving, rendering,
 Controller Pak serialization, or complete gameplay traversal.

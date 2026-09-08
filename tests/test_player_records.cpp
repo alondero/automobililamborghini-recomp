@@ -108,6 +108,7 @@ int main() {
                 func_800401F0(rdram, &ctx);
                 expect(ctx.r2 == 0, "ROM awards first place");
                 check_name(rdram, profile + names, "ADAM", "no-edit leaderboard saved=" + saved);
+                check_name(rdram, player, "ADAM", "leaderboard restores player buffer");
                 check_name(rdram, profile + names + 14, "OLD0", "ROM shifts previous winner");
                 check_name(rdram, player + 13, "GUEST", "guest name preserved");
                 check_name(rdram, profile, "TITUS LAM64", "profile header preserved");
