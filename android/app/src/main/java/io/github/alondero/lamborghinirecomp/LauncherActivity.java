@@ -203,7 +203,8 @@ public final class LauncherActivity extends Activity {
         File files = getFilesDir();
         File marker = new File(files, "assets/.assets-version");
         File expected = new File(files, "assets/ui/fonts/LatoLatin-Regular.ttf");
-        if (marker.isFile() && expected.isFile()
+        File expectedSyms = new File(files, "lamborghini.syms.toml");
+        if (marker.isFile() && expected.isFile() && expectedSyms.isFile()
             && version.equals(new String(Files.readAllBytes(marker.toPath()), StandardCharsets.UTF_8))) return;
 
         File stage = Files.createTempDirectory(files.toPath(), "assets-stage-").toFile();

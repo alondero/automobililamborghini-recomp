@@ -96,10 +96,12 @@ Set these GitHub Actions repository secrets:
 | `ANDROID_KEY_PASSWORD` | Private key password |
 
 The workflow also uses the existing `ROM_ASSETS_REPO` variable and
-`ROM_ASSETS_PAT` secret. The Android job fails before producing an APK if signing
-setup is missing; it never substitutes a debug key. Keystore material is written
-only to the runner's temporary directory, removed after the build, and excluded
-from artifacts.
+`ROM_ASSETS_PAT` secret. If signing setup is missing, the optional Android job is
+skipped and the desktop release proceeds without an APK; it never substitutes a
+debug key. When signing is configured, Android build, packaging, signature, and
+alignment failures fail the release. Keystore material is written only to the
+runner's temporary directory, removed after the build, and excluded from
+artifacts.
 
 For a local signed build, set `ANDROID_KEYSTORE_PATH` to the keystore's absolute
 path plus the three password/alias variables above, then run

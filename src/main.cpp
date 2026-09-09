@@ -1123,6 +1123,9 @@ int main(int argc, char** argv) {
     setenv("HOME", storage, 1);
     setenv("XDG_CONFIG_HOME", storage, 1);
     setenv("XDG_STATE_HOME", storage, 1);
+    const std::string symbols_path =
+        (std::filesystem::path(storage) / "lamborghini.syms.toml").string();
+    setenv("LAMBO_CRASH_SYMBOLS", symbols_path.c_str(), 1);
     // Install before any remaining Android bootstrap operation so a native
     // fault in the earliest path/log setup still goes through the handler.
     lambo::crash::install();
