@@ -1113,14 +1113,19 @@ int main(int argc, char** argv) {
 #if defined(__ANDROID__)
     // SDLActivity owns the native entry point. Use app-private storage for all
     // runtime-relative assets, configuration, logs and saves.
-    // Install before any Android bootstrap operation so a native fault in the
-    // earliest path/log setup still goes through the crash-dump handler.
-    lambo::crash::install();
     const char* storage = SDL_AndroidGetInternalStoragePath();
     if (!storage) {
         std::fprintf(stderr, "[android] SDL did not provide internal storage\n");
         return 2;
     }
+    // Set the app-private roots before installing the one-shot handler so its
+    // report destination is correct even if the following path/log setup fails.
+    setenv("HOME", storage, 1);
+    setenv("XDG_CONFIG_HOME", storage, 1);
+    setenv("XDG_STATE_HOME", storage, 1);
+    // Install before any remaining Android bootstrap operation so a native
+    // fault in the earliest path/log setup still goes through the handler.
+    lambo::crash::install();
     std::error_code path_error;
     std::filesystem::current_path(storage, path_error);
     if (path_error) {
@@ -1138,9 +1143,6 @@ int main(int argc, char** argv) {
     }
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::setvbuf(stderr, nullptr, _IONBF, 0);
-    setenv("HOME", storage, 1);
-    setenv("XDG_CONFIG_HOME", storage, 1);
-    setenv("XDG_STATE_HOME", storage, 1);
 #endif
     return application_main(argc, argv);
 }
