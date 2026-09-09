@@ -20,6 +20,10 @@ cmake_minimum_required(VERSION 3.20)
 
 project(lamborghini_modern VERSION 0.5.0 LANGUAGES C CXX)
 
+if(ANDROID)
+    include(cmake/Android.cmake)
+endif()
+
 include(CTest)
 find_package(Threads REQUIRED)
 
@@ -628,7 +632,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     # The shipped Windows application is a GUI-subsystem executable.  Its
     # WinMain wrapper still accepts normal command-line arguments; lambo_log
     # allocates a console only when --console is requested.
-    if(WIN32)
+    if(ANDROID)
+        add_library(lamborghini_modern SHARED ${LAMBO_SOURCES})
+        set_target_properties(lamborghini_modern PROPERTIES OUTPUT_NAME main)
+        target_link_libraries(lamborghini_modern PRIVATE SDL2::SDL2 SDL2main android log)
+        add_dependencies(lamborghini_modern lambo_vulkan)
+    elseif(WIN32)
         add_executable(lamborghini_modern WIN32 ${LAMBO_SOURCES})
     else()
         add_executable(lamborghini_modern ${LAMBO_SOURCES})
@@ -695,7 +704,9 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     # missing the dxc.exe path AND the compiler args (-T ps_6_3, -spirv, ...). Pin the
     # full set of variables here so the shader build commands resolve end-to-end.
     set(LAMBO_DXC_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/dxc")
-    if(WIN32)
+    if(ANDROID)
+        set(DXC ${LAMBO_HOST_DXC})
+    elseif(WIN32)
         set(DXC "${LAMBO_DXC_ROOT}/bin/x64/dxc.exe")
     elseif(APPLE)
         find_library(LAMBO_ZLIB_LIBRARY NAMES z)

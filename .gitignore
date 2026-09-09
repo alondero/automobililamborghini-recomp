@@ -19,6 +19,14 @@ out/
 CMakeUserPresets.json
 compile_commands.json
 
+# Android packaging and local signing credentials.
+android/.gradle/
+android/local.properties
+dist/
+*.apk
+*.jks
+*.keystore
+
 # --- Editor / OS -----------------------------------------------------------
 .vs/
 .vscode/

@@ -308,6 +308,12 @@ public:
             }
 #endif
             if (fallback == RT64::UserConfiguration::GraphicsAPI::OptionCount) {
+#if defined(__ANDROID__)
+                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Cannot start graphics",
+                    "The selected Vulkan driver could not initialize RT64. It must support descriptor indexing and scalar block layouts. "
+                    "On supported Adreno devices, import a compatible Mesa Turnip driver ZIP from the launcher. "
+                    "If a custom driver is selected, try another version or the system driver.", nullptr);
+#endif
                 app = nullptr;
                 return;
             }

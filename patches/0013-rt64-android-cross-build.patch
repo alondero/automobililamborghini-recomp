@@ -1,0 +1,173 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 2fb01e5..5920162 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -35,7 +35,9 @@ function(preprocess INFILE OUTFILE OPTIONS)
+     endif()
+ endfunction()
+
+-if (WIN32)
++if (ANDROID)
++    set(DXC ${LAMBO_HOST_DXC})
++elseif (WIN32)
+     set (DXC "${PROJECT_SOURCE_DIR}/src/contrib/dxc/bin/x64/dxc.exe")
+     add_compile_definitions(NOMINMAX)
+
+@@ -66,12 +68,16 @@ set(ZSTD_LEGACY_SUPPORT OFF)
+ set(ZSTD_BUILD_STATIC ON)
+ set(ZSTD_BUILD_SHARED OFF)
+
+-add_subdirectory(src/tools/file_to_c)
++if(NOT ANDROID)
++    add_subdirectory(src/tools/file_to_c)
++endif()
+ add_subdirectory(src/contrib/re-spirv)
+-add_subdirectory(src/contrib/nativefiledialog-extended)
++if(NOT ANDROID)
++    add_subdirectory(src/contrib/nativefiledialog-extended)
++endif()
+ add_subdirectory(src/contrib/zstd/build/cmake)
+
+-if (CMAKE_SYSTEM_NAME MATCHES "Linux" AND RT64_SDL_WINDOW_VULKAN)
++if ((CMAKE_SYSTEM_NAME MATCHES "Linux" OR ANDROID) AND RT64_SDL_WINDOW_VULKAN)
+     set(PLUME_SDL_VULKAN_ENABLED TRUE)
+ elseif (APPLE)
+     set(PLUME_APPLE_RETINA_ENABLED OFF)
+@@ -103,6 +109,7 @@ set(ANDROID_ABI arm64-v8a)
+ set (DXC_COMMON_OPTS "-I${PROJECT_SOURCE_DIR}/src")
+ set (DXC_DXIL_OPTS "-Wno-ignored-attributes")
+ set (DXC_SPV_OPTS "-spirv" "-fspv-target-env=vulkan1.0" "-fvk-use-dx-layout")
++
+ set (DXC_LB_OPTS "${DXC_COMMON_OPTS}" "-D" "LIBRARY" "-T" "lib_6_3")
+ set (DXC_PS_OPTS "${DXC_COMMON_OPTS}" "-E" "PSMain" "-T ps_6_3")
+ set (DXC_VS_OPTS "${DXC_COMMON_OPTS}" "-E" "VSMain" "-T vs_6_3" "-fvk-invert-y")
+@@ -298,7 +305,7 @@ add_compile_definitions(
+     IMGUI_IMPL_VULKAN_NO_PROTOTYPES
+ )
+
+-if (CMAKE_SYSTEM_NAME MATCHES "Linux" AND RT64_SDL_WINDOW_VULKAN)
++if ((CMAKE_SYSTEM_NAME MATCHES "Linux" OR ANDROID) AND RT64_SDL_WINDOW_VULKAN)
+     add_compile_definitions("PLUME_SDL_VULKAN_ENABLED")
+     add_compile_definitions("RT64_SDL_WINDOW_VULKAN")
+ endif()
+@@ -438,7 +445,9 @@ set_target_properties(rt64 PROPERTIES PREFIX "")
+
+ # Add common libraries.
+ target_link_libraries(rt64 re-spirv)
+-target_link_libraries(rt64 nfd)
++if(NOT ANDROID)
++    target_link_libraries(rt64 nfd)
++endif()
+ target_link_libraries(rt64 libzstd_static)
+ target_link_libraries(rt64 plume)
+
+@@ -475,9 +484,7 @@ endif()
+
+ target_link_directories(rt64 PRIVATE ${PROJECT_SOURCE_DIR}/src/contrib/dxc)
+
+-if (NOT ANDROID)
+-    target_link_libraries(rt64 ${SDL2_LIBRARIES})
+-endif()
++target_link_libraries(rt64 ${SDL2_LIBRARIES})
+
+ if (CMAKE_SYSTEM_NAME MATCHES "Linux")
+     if (NOT RT64_SDL_WINDOW_VULKAN)
+diff --git a/src/gui/rt64_file_dialog.cpp b/src/gui/rt64_file_dialog.cpp
+index 72faede..b6cd65d 100644
+--- a/src/gui/rt64_file_dialog.cpp
++++ b/src/gui/rt64_file_dialog.cpp
+@@ -6,13 +6,24 @@
+
+ #include <cassert>
+
++#if !defined(__ANDROID__)
+ #include <nfd.h>
++#endif
+
+ namespace RT64 {
+     // FileDialog
+
+     std::atomic<bool> FileDialog::isOpen = false;
+
++#if defined(__ANDROID__)
++    // RT64 inspector dialogs have no Android backend. ROM import belongs to
++    // the app Activity and uses the Storage Access Framework.
++    void FileDialog::initialize() {}
++    void FileDialog::finish() {}
++    std::filesystem::path FileDialog::getDirectoryPath() { return {}; }
++    std::filesystem::path FileDialog::getOpenFilename(const std::vector<FileFilter>&) { return {}; }
++    std::filesystem::path FileDialog::getSaveFilename(const std::vector<FileFilter>&) { return {}; }
++#else
+     void FileDialog::initialize() {
+         NFD_Init();
+     }
+@@ -76,4 +87,5 @@ namespace RT64 {
+         isOpen = false;
+         return path;
+     }
++#endif
+ };
+\ No newline at end of file
+diff --git a/src/hle/rt64_application.cpp b/src/hle/rt64_application.cpp
+index 72e8aeb..90b4186 100644
+--- a/src/hle/rt64_application.cpp
++++ b/src/hle/rt64_application.cpp
+@@ -197,6 +197,15 @@ namespace RT64 {
+             return SetupResult::GraphicsDeviceNotFound;
+         }
+
++#if defined(__ANDROID__)
++        // RT64 uses non-uniform, partially bound texture arrays. Failing here
++        // avoids submitting invalid shaders on older mobile system drivers.
++        if (!device->getCapabilities().descriptorIndexing || !device->getCapabilities().scalarBlockLayout) {
++            fprintf(stderr, "The Vulkan driver lacks RT64 descriptor indexing or scalar block layout support.\n");
++            return SetupResult::GraphicsDeviceNotFound;
++        }
++#endif
++
+         // Print device information to console.
+         RenderDeviceDescription deviceDescription = device->getDescription();
+         fprintf(stdout, "Device Name: %s\n", deviceDescription.name.c_str());
+@@ -325,7 +334,13 @@ namespace RT64 {
+         // Create the swap chain with the texture count specified from the configuration.
+         RenderSwapChainDesc swapChainDesc;
+         swapChainDesc.renderWindow = appWindow->windowHandle;
++#if defined(__ANDROID__)
++        // Keep this format in lockstep with Lambo's Rml SwapChainFormat in
++        // src/ui/lambo_ui_render_interface.cpp; Android's SDL path is RGBA.
++        swapChainDesc.format = RenderFormat::R8G8B8A8_UNORM;
++#else
+         swapChainDesc.format = RenderFormat::B8G8R8A8_UNORM;
++#endif
+         swapChainDesc.textureCount = (userConfig.displayBuffering == UserConfiguration::DisplayBuffering::Triple) ? 3 : 2;
+
+         // Enable present wait if supported by the device. We specify a max latency of 1 as we use it to wait right before the next
+diff --git a/src/hle/rt64_application_window.cpp b/src/hle/rt64_application_window.cpp
+index 08f83e5..bec0a92 100755
+--- a/src/hle/rt64_application_window.cpp
++++ b/src/hle/rt64_application_window.cpp
+@@ -103,8 +103,6 @@ namespace RT64 {
+         bounds.top = rect.top;
+         bounds.width = rect.right - rect.left;
+         bounds.height = rect.bottom - rect.top;
+-#   elif defined(__ANDROID__)
+-        static_assert(false && "Android unimplemented");
+ #   elif defined(__linux__) || defined(__APPLE__)
+         if (SDL_VideoInit(nullptr) != 0) {
+             printf("Failed to init SDL2 video: %s\n", SDL_GetError());
+diff --git a/src/render/rt64_shader_library.cpp b/src/render/rt64_shader_library.cpp
+index d1c5273..dae16df 100644
+--- a/src/render/rt64_shader_library.cpp
++++ b/src/render/rt64_shader_library.cpp
+@@ -599,7 +599,11 @@ namespace RT64 {
+             RenderGraphicsPipelineDesc pipelineDesc;
+             pipelineDesc.vertexShader = fullScreenVertexShader.get();
+             pipelineDesc.pixelShader = regularShader.get();
++#if defined(__ANDROID__)
++            pipelineDesc.renderTargetFormat[0] = RenderFormat::R8G8B8A8_UNORM; // TODO: Use whatever format the swap chain was created with.
++#else
+             pipelineDesc.renderTargetFormat[0] = RenderFormat::B8G8R8A8_UNORM; // TODO: Use whatever format the swap chain was created with.
++#endif
+             pipelineDesc.renderTargetBlend[0] = RenderBlendDesc::Copy();
+             pipelineDesc.renderTargetCount = 1;
+             pipelineDesc.pipelineLayout = videoInterfaceNearest.pipelineLayout.get();

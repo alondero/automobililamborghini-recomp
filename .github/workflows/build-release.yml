@@ -1,6 +1,6 @@
 name: Build & Release
 
-# Manual, on-demand build of Windows + Linux binaries, published to GitHub Releases.
+# Manual, on-demand build of Windows + Linux binaries and an Android ARM64 APK, published to GitHub Releases.
 #
 # The recompilation step (BUILDING.md step 3) needs the actual game ROM to translate
 # into C, and the port also reads the ROM at runtime for assets. The ROM is
@@ -227,8 +227,111 @@ jobs:
           path: lamborghini-recomp-windows-x64.zip
           retention-days: 14
 
+  build-android:
+    # Android signing is optional for a desktop release. When the repository
+    # signing secrets are configured this job contributes the APK; without
+    # them the desktop release still publishes and reports the missing APK.
+    # Once configured, Android build or verification failures block publication.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Android signing configuration
+        id: signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for key in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!key}" ]; then
+              echo "configured=false" >> "$GITHUB_OUTPUT"
+              echo "Android signing is not configured; skipping the optional APK job."
+              exit 0
+            fi
+          done
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        if: steps.signing.outputs.configured == 'true'
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Java
+        if: steps.signing.outputs.configured == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        if: steps.signing.outputs.configured == 'true'
+        uses: android-actions/setup-android@v3
+
+      - name: Install build dependencies
+        if: steps.signing.outputs.configured == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build python3
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358'
+
+      - name: Check release prerequisites
+        if: steps.signing.outputs.configured == 'true'
+        env:
+          ROM_ASSETS_REPO: ${{ vars.ROM_ASSETS_REPO }}
+          ROM_ASSETS_PAT: ${{ secrets.ROM_ASSETS_PAT }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for key in ROM_ASSETS_REPO ROM_ASSETS_PAT; do
+            if [ -z "${!key}" ]; then
+              echo "::error::Missing $key; see docs/ANDROID.md for release setup."
+              exit 1
+            fi
+          done
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/android-release.jks"
+
+      - name: Fetch ROM from private assets repo
+        if: steps.signing.outputs.configured == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.ROM_ASSETS_REPO }}
+          token: ${{ secrets.ROM_ASSETS_PAT }}
+          path: rom-assets
+
+      - name: Build signed APK
+        if: steps.signing.outputs.configured == 'true'
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/android-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cp "rom-assets/$ROM_FILENAME" "./$ROM_FILENAME"
+          python3 scripts/build_android.py --release
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/lamborghini-recomp-android-arm64.apk
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 dist/lamborghini-recomp-android-arm64.apk
+
+      - name: Remove private build inputs
+        if: always() && steps.signing.outputs.configured == 'true'
+        run: |
+          rm -f "$ROM_FILENAME" "$RUNNER_TEMP/android-release.jks"
+          rm -rf rom-assets
+
+      - name: Upload artifact
+        if: steps.signing.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lamborghini-recomp-android-arm64
+          path: dist/lamborghini-recomp-android-arm64.apk
+          if-no-files-found: error
+          retention-days: 14
+
   release:
-    needs: [build-linux, build-windows]
+    needs: [build-linux, build-windows, build-android]
+    if: needs.build-linux.result == 'success' && needs.build-windows.result == 'success' && needs.build-android.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
@@ -240,11 +343,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          release_files=(
+            artifacts/lamborghini-recomp-linux-x64/lamborghini-recomp-linux-x64.zip
+            artifacts/lamborghini-recomp-windows-x64/lamborghini-recomp-windows-x64.zip
+          )
+          android_apk="$(find artifacts -type f -name 'lamborghini-recomp-android-arm64.apk' -print -quit)"
+          if [ -n "$android_apk" ]; then
+            release_files+=("$android_apk")
+          else
+            echo "Android signing is not configured; publishing desktop assets without an APK."
+          fi
           gh release create "${{ inputs.tag }}" \
-            artifacts/lamborghini-recomp-linux-x64/lamborghini-recomp-linux-x64.zip \
-            artifacts/lamborghini-recomp-windows-x64/lamborghini-recomp-windows-x64.zip \
+            "${release_files[@]}" \
             --repo "${{ github.repository }}" \
             --title "${{ inputs.tag }}" \
             $( [ "${{ inputs.prerelease }}" = "true" ] && echo --prerelease ) \
             $( [ "${{ inputs.draft }}" = "true" ] && echo --draft ) \
-            --notes "Automated build from commit ${{ github.sha }}. **You must supply your own legally-dumped copy of \`Automobili Lamborghini (USA).z64\` next to the executable — this project ships no game data.** See BUILDING.md."
+            --notes "Automated build from commit ${{ github.sha }}. **You must supply your own legally-dumped copy of \`Automobili Lamborghini (USA).z64\` next to the desktop executable, or import it using the Android app — this project ships no game data.** See BUILDING.md."

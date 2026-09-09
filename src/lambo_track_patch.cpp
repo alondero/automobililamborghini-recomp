@@ -59,7 +59,8 @@ struct Package {
     std::vector<Edit> edits;
 };
 
-std::atomic<std::shared_ptr<const Package>> g_package;
+// Use the shared_ptr atomic operations supported by both libc++ and libstdc++.
+std::shared_ptr<const Package> g_package;
 std::atomic<const char*> g_last_error{nullptr};
 
 uint16_t read_le_u16(const uint8_t* bytes) noexcept {
@@ -253,19 +254,19 @@ LoadResult load_package(const std::filesystem::path& path) {
         candidate.id = 1;
     }
     auto next_package = std::make_shared<const Package>(std::move(candidate));
-    g_package.store(std::move(next_package), std::memory_order_release);
+    std::atomic_store_explicit(&g_package, std::shared_ptr<const Package>{std::move(next_package)}, std::memory_order_release);
     g_last_error.store(nullptr, std::memory_order_release);
     return LoadResult::Loaded;
 }
 
 void disable() {
-    g_package.store(std::shared_ptr<const Package>{}, std::memory_order_release);
+    std::atomic_store_explicit(&g_package, std::shared_ptr<const Package>{}, std::memory_order_release);
     g_last_error.store(nullptr, std::memory_order_release);
 }
 
 ApplyResult apply_to_active_track(uint8_t* rdram) noexcept {
     const std::shared_ptr<const Package> package =
-        g_package.load(std::memory_order_acquire);
+        std::atomic_load_explicit(&g_package, std::memory_order_acquire);
     if (!package) {
         return ApplyResult::Disabled;
     }
@@ -336,7 +337,7 @@ ApplyResult apply_to_active_track(uint8_t* rdram) noexcept {
 
 uint64_t active_package_id() noexcept {
     const std::shared_ptr<const Package> package =
-        g_package.load(std::memory_order_acquire);
+        std::atomic_load_explicit(&g_package, std::memory_order_acquire);
     return package ? package->id : 0;
 }
 

@@ -401,7 +401,10 @@ text = "lambo_ws_minimap_reset(rdram);"
 [[patches.hook]]
 func = "func_8004384C"
 before_vram = 0x80043C88
-text = "extern unsigned int lambo_ws_minimap_outline_x(unsigned int); ctx->r5 = S32(lambo_ws_minimap_outline_x((uint32_t)ctx->r5));"
+# Android Clang rejects hook declarations that cross generated labels. Keep
+# each extern and call in a block; this is valid for desktop and preserves the
+# same hook order in every generated build.
+text = "{ extern unsigned int lambo_ws_minimap_outline_x(unsigned int); ctx->r5 = S32(lambo_ws_minimap_outline_x((uint32_t)ctx->r5)); }"
 
 # Issue #42 — widescreen HUD for 2P split screen. func_80050860 keys on the player
 # count at 0x800CE6A4 ($s0): ==2 branches to the top/bottom section (L_80050BEC).
@@ -486,7 +489,7 @@ text = "lambo_ws_pin_reset(rdram);"
 [[patches.hook]]
 func = "func_80050860"
 before_vram = 0x80050DB4
-text = "extern void lambo_ws_minimap_pin_2p(unsigned char*); lambo_ws_minimap_pin_2p(rdram);"
+text = "{ extern void lambo_ws_minimap_pin_2p(unsigned char*); lambo_ws_minimap_pin_2p(rdram); }"
 
 [[patches.hook]]
 func = "func_80050860"
@@ -496,7 +499,7 @@ text = "lambo_ws_minimap_reset(rdram);"
 [[patches.hook]]
 func = "func_80050860"
 before_vram = 0x80050FF8
-text = "extern void lambo_ws_minimap_pin_2p(unsigned char*); lambo_ws_minimap_pin_2p(rdram);"
+text = "{ extern void lambo_ws_minimap_pin_2p(unsigned char*); lambo_ws_minimap_pin_2p(rdram); }"
 
 [[patches.hook]]
 func = "func_80050860"
@@ -548,7 +551,7 @@ text = "lambo_ws_pin_reset(rdram);"
 [[patches.hook]]
 func = "func_800028D0"
 before_vram = 0x80001CD0
-text = "extern void lambo_warp_tick(uint8_t*, recomp_context*); lambo_warp_tick(rdram, ctx);"
+text = "{ extern void lambo_warp_tick(uint8_t*, recomp_context*); lambo_warp_tick(rdram, ctx); }"
 
 # Issue #22 — developer save-state. Same top-level dispatcher (runs every frame in every
 # state), one instruction past the warp hook: N64Recomp rejects two hooks on the exact same
@@ -557,7 +560,7 @@ text = "extern void lambo_warp_tick(uint8_t*, recomp_context*); lambo_warp_tick(
 [[patches.hook]]
 func = "func_800028D0"
 before_vram = 0x80001CD4
-text = "extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_savestate_tick(rdram, ctx);"
+text = "{ extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_savestate_tick(rdram, ctx); }"
 
 # Car-differences measurement campaign: per-frame vehicle-record trace (one
 # instruction past the savestate hook). Gated behind LAMBO_CAR_TRACE; native in
@@ -565,17 +568,17 @@ text = "extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_saves
 [[patches.hook]]
 func = "func_800028D0"
 before_vram = 0x80001CD8
-text = "extern void lambo_replay_dispatch_begin(uint8_t*); extern void lambo_car_trace_tick(uint8_t*, recomp_context*); lambo_replay_dispatch_begin(rdram); lambo_car_trace_tick(rdram, ctx);"
+text = "{ extern void lambo_replay_dispatch_begin(uint8_t*); extern void lambo_car_trace_tick(uint8_t*, recomp_context*); lambo_replay_dispatch_begin(rdram); lambo_car_trace_tick(rdram, ctx); }"
 
 [[patches.hook]]
 func = "func_800028D0"
 before_vram = 0x800024E8
-text = "extern void lambo_replay_dispatch_end(uint8_t*); lambo_replay_dispatch_end(rdram);"
+text = "{ extern void lambo_replay_dispatch_end(uint8_t*); lambo_replay_dispatch_end(rdram); }"
 
 [[patches.hook]]
 func = "BootLoadInitialAssets"
 before_vram = 0x8000193C
-text = "extern void lambo_replay_input_tick(uint8_t*); lambo_replay_input_tick(rdram);"
+text = "{ extern void lambo_replay_input_tick(uint8_t*); lambo_replay_input_tick(rdram); }"
 
 # Issue #128 — true analog throttle. Capture the pedal demand immediately before the
 # stock human-driver A/Z branch, then apply the selected native port's continuous target
@@ -584,12 +587,12 @@ text = "extern void lambo_replay_input_tick(uint8_t*); lambo_replay_input_tick(r
 [[patches.hook]]
 func = "func_80019D20"
 before_vram = 0x80019FBC
-text = "extern void lambo_analog_throttle_begin(uint8_t*); lambo_analog_throttle_begin(rdram);"
+text = "{ extern void lambo_analog_throttle_begin(uint8_t*); lambo_analog_throttle_begin(rdram); }"
 
 [[patches.hook]]
 func = "func_80019D20"
 before_vram = 0x8001A120
-text = "extern void lambo_analog_throttle_apply(uint8_t*); lambo_analog_throttle_apply(rdram);"
+text = "{ extern void lambo_analog_throttle_apply(uint8_t*); lambo_analog_throttle_apply(rdram); }"
 
 # Analog brake. The stock brake block sits LATER in the same updater (0x8001A690-
 # 0x8001A990): its not-B release handler (func_8002A070, vram tail 0x800295D8)
@@ -603,7 +606,7 @@ text = "extern void lambo_analog_throttle_apply(uint8_t*); lambo_analog_throttle
 [[patches.hook]]
 func = "func_80019D20"
 before_vram = 0x8001A9A0
-text = "extern void lambo_analog_brake_apply(uint8_t*); lambo_analog_brake_apply(rdram);"
+text = "{ extern void lambo_analog_brake_apply(uint8_t*); lambo_analog_brake_apply(rdram); }"
 
 # Issue #40 — widescreen lens flare. The sun flare emitter func_80036854 draws a chain of
 # 10 translucent "ghost" texrects. Under ar_option Expand RT64 squishes each small untagged

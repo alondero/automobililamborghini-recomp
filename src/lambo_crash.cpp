@@ -42,8 +42,27 @@
 #else
     #define LAMBO_CRASH_POSIX 1
     #include <csignal>
+    #if defined(__ANDROID__)
+    #include <unwind.h>
+    #else
     #include <execinfo.h>
+    #endif
     #include <unistd.h>
+#endif
+
+#if defined(__ANDROID__)
+// Bionic has no execinfo.h. libunwind is provided by the NDK.
+static int backtrace(void** frames, int capacity) {
+    struct Trace { void** frames; int count; int capacity; } trace{frames, 0, capacity};
+    _Unwind_Backtrace([](_Unwind_Context* context, void* argument) {
+        auto& trace = *static_cast<Trace*>(argument);
+        if (trace.count == trace.capacity) return _URC_END_OF_STACK;
+        const uintptr_t pc = _Unwind_GetIP(context);
+        if (pc) trace.frames[trace.count++] = reinterpret_cast<void*>(pc);
+        return _URC_NO_REASON;
+    }, &trace);
+    return trace.count;
+}
 #endif
 
 // ----- Symbol table (parsed from lamborghini.syms.toml) -----
