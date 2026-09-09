@@ -46,8 +46,9 @@ file at once.
 ## Graphics options
 
 Graphics settings persist in `graphics.json` (in `%LOCALAPPDATA%\LamborghiniRecomp` on
-Windows, `~/.config/LamborghiniRecomp` elsewhere; create a `portable.txt` in the
-directory you launch from to keep everything there instead). Game saves live in the
+Windows, `~/.config/LamborghiniRecomp` elsewhere; create an empty `portable.txt` next
+to the game executable, or launch with `--portable`, to keep everything next to the
+game instead — handy for USB-stick or D:-drive installs). Game saves live in the
 same directory. The file is created with
 defaults on first run. On Windows, the **Graphics** and **Enhancements** menu-bar menus
 apply the commonly used options immediately and save them automatically. The graphics API
@@ -107,7 +108,7 @@ generating `rt64.json`, testing a loose pack, and packaging it as `.rtz`.
 ## In-Game Configuration & Controls
 
 - **Configuration Overlay**: Press the **Menu / Back / Start / Guide** button on your controller, or press <kbd>Esc</kbd> / <kbd>F1</kbd> on your keyboard (or use the native window menu `Game -> Settings` / `Controls`) to open the in-game configuration overlay at any time.
-- **Controls Remapping**: The **Controls Mapper** provides a 4-column N64 controller mapping interface for all digital buttons, triggers, C-buttons, D-Pad, and analog stick axes. Custom mappings persist per physical controller (by SDL GUID) in `%LOCALAPPDATA%\LamborghiniRecomp\controls.json` (or `~/.config/LamborghiniRecomp/controls.json`).
+- **Controls Remapping**: The **Controls Mapper** provides a 4-column N64 controller mapping interface for all digital buttons, triggers, C-buttons, D-Pad, and analog stick axes. Custom mappings persist per physical controller (by SDL GUID) in `%LOCALAPPDATA%\LamborghiniRecomp\controls.json` (or `~/.config/LamborghiniRecomp/controls.json`; portable mode keeps it next to the game — see above).
 
 
 ## Troubleshooting

@@ -22,6 +22,7 @@
 #include <latch>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -43,10 +44,16 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <limits.h>
+#else
+#include <unistd.h>
 #endif
 #include "lambo_rt64.h"
 #include "lambo_audio.h"
 #include "lambo_config.h"
+#include "lambo_paths.h"
 #include "lambo_crash.h"   // issue #13 / A14
 #include "lambo_gpu_advisory.h"  // issue #109: outdated-driver popup handoff
 #include "lambo_log.h"   
@@ -708,7 +715,80 @@ static std::filesystem::path unused_backup_path(const std::filesystem::path& pat
     return candidate;
 }
 
+// Portable mode (issue #190): exact --portable match. Parsed here rather than
+// in lambo_log_parse_args because the log directory itself depends on it.
+static bool has_portable_arg(int argc, char** argv) {
+    for (int i = 1; i < argc; ++i) {
+        if (argv[i] != nullptr && std::strcmp(argv[i], "--portable") == 0) return true;
+    }
+    return false;
+}
+
+// Resolve the directory containing this executable. The launch working
+// directory is not reliable: shortcuts, Steam, drag-drop imports, and CLI
+// runs from another folder all change it, while users expect portable files
+// next to the game itself.
+static std::optional<std::filesystem::path> executable_dir_from_platform(const char* argv0) {
+#if defined(_WIN32)
+    std::vector<wchar_t> buffer(32768);
+    const DWORD length =
+        GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (length > 0 && length < buffer.size()) {
+        const std::filesystem::path parent =
+            std::filesystem::path{std::wstring(buffer.data(), length)}.parent_path();
+        if (!parent.empty()) return parent;
+    }
+#elif defined(__APPLE__)
+    uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    if (size > 0) {
+        std::string buffer(size, '\0');
+        if (_NSGetExecutablePath(buffer.data(), &size) == 0) {
+            std::vector<char> resolved(PATH_MAX);
+            if (::realpath(buffer.c_str(), resolved.data()) != nullptr)
+                return std::filesystem::path{resolved.data()}.parent_path();
+            return std::filesystem::path{buffer.c_str()}.parent_path();
+        }
+    }
+#else
+    std::vector<char> buffer(4096);
+    for (;;) {
+        const ssize_t length =
+            ::readlink("/proc/self/exe", buffer.data(), buffer.size());
+        if (length < 0) break;
+        if (static_cast<size_t>(length) < buffer.size()) {
+            const std::filesystem::path parent =
+                std::filesystem::path{std::string(buffer.data(), static_cast<size_t>(length))}
+                    .parent_path();
+            if (!parent.empty()) return parent;
+            break;
+        }
+        if (buffer.size() >= 1u << 20) break;
+        buffer.resize(buffer.size() * 2);
+    }
+#endif
+    // argv[0] fallback: an absolute (or CWD-relative, separator-bearing) path
+    // still identifies the executable directory. A bare filename found via
+    // PATH tells us nothing, so report unknown and let callers use CWD.
+    if (argv0 != nullptr && argv0[0] != '\0') {
+        const std::filesystem::path candidate = path_from_utf8(argv0);
+        if (candidate.has_parent_path()) {
+            std::error_code ec;
+            if (candidate.is_absolute()) return candidate.parent_path();
+            const std::filesystem::path absolute = std::filesystem::absolute(candidate, ec);
+            if (!ec) return absolute.parent_path();
+        }
+    }
+    return std::nullopt;
+}
+
 static int application_main(int argc, char** argv) {
+    // Portable mode must resolve before logging initialises: the log file
+    // directory itself depends on it (issue #190).
+    if (const auto exe = executable_dir_from_platform(argc > 0 ? argv[0] : nullptr);
+        exe.has_value())
+        lambo::paths::set_executable_dir(*exe);
+    lambo::paths::set_portable_forced(has_portable_arg(argc, argv));
     // Parse and initialise logging before any startup path can emit a message.
     // The Windows target is GUI-subsystem, so --console is responsible for
     // attaching/allocating the live stderr sink.
@@ -720,6 +800,16 @@ static int application_main(int argc, char** argv) {
         return 2;
     }
     (void)lambo_log_initialize();
+    // Say once where settings and saves live so "it forgot my progress"
+    // reports are answerable from the log.
+    if (lambo::paths::portable_mode()) {
+        LAMBO_LOG_INFO("config", "portable mode (%s): settings and saves in %s\n",
+                       lambo::paths::portable_mode_source(),
+                       path_to_utf8(lambo::config::app_config_dir()).c_str());
+    } else {
+        LAMBO_LOG("config", "settings and saves in %s\n",
+                  path_to_utf8(lambo::config::app_config_dir()).c_str());
+    }
 #if defined(_WIN32)
     // SDL2main normally performs this when it owns WinMain. This target owns
     // WinMain because it is a GUI-subsystem executable.
