@@ -231,6 +231,7 @@ jobs:
     # Android signing is optional for a desktop release. When the repository
     # signing secrets are configured this job contributes the APK; without
     # them the desktop release still publishes and reports the missing APK.
+    # Once configured, Android build or verification failures block publication.
     runs-on: ubuntu-latest
     steps:
       - name: Check Android signing configuration
