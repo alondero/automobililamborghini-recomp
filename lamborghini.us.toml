@@ -401,6 +401,9 @@ text = "lambo_ws_minimap_reset(rdram);"
 [[patches.hook]]
 func = "func_8004384C"
 before_vram = 0x80043C88
+# Android Clang rejects hook declarations that cross generated labels. Keep
+# each extern and call in a block; this is valid for desktop and preserves the
+# same hook order in every generated build.
 text = "{ extern unsigned int lambo_ws_minimap_outline_x(unsigned int); ctx->r5 = S32(lambo_ws_minimap_outline_x((uint32_t)ctx->r5)); }"
 
 # Issue #42 — widescreen HUD for 2P split screen. func_80050860 keys on the player

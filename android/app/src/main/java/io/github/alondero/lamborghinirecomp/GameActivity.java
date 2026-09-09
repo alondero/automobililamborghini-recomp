@@ -18,7 +18,7 @@ public final class GameActivity extends SDLActivity {
     @Override public void loadLibraries() {
         try {
             String nativeDir = getApplicationInfo().nativeLibraryDir;
-            Os.setenv("LAMBO_ANDROID_NATIVE_LIB_DIR", nativeDir, true);
+            Os.setenv("LAMBO_ANDROID_NATIVE_LIB_DIR", nativeDir + "/", true);
             Os.setenv("LAMBO_ANDROID_CACHE_DIR", getCacheDir().getAbsolutePath() + "/", true);
             Os.setenv("SDL_VULKAN_LIBRARY", nativeDir + "/liblambo_vulkan.so", true);
             DriverImport.configure(this);

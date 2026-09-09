@@ -71,9 +71,13 @@ belongs in Git. Keep ROM-derived C and RSP sources ignored as on desktop.
 ## Release signing (one-time repository setup)
 
 The Build & Release workflow includes an Android job and attaches
-`lamborghini-recomp-android-arm64.apk` alongside the Windows and Linux archives.
-It requires a persistent release key: a different key prevents installing updates
-over the previous release. Back up the keystore and passwords securely.
+`lamborghini-recomp-android-arm64.apk` alongside the Windows and Linux archives
+when Android signing is configured. The Android job is optional for a desktop
+release: if its signing secrets are absent, Windows and Linux publication still
+proceeds and the release logs that the APK was omitted. Configure the secrets
+below before publishing a release that must include the APK. A persistent
+release key is required because a different key prevents installing updates over
+the previous release. Back up the keystore and passwords securely.
 
 Create a key locally with JDK `keytool` (it prompts for passwords):
 
@@ -92,9 +96,10 @@ Set these GitHub Actions repository secrets:
 | `ANDROID_KEY_PASSWORD` | Private key password |
 
 The workflow also uses the existing `ROM_ASSETS_REPO` variable and
-`ROM_ASSETS_PAT` secret. It fails before publishing if signing setup is missing;
-it never substitutes a debug key. Keystore material is written only to the runner's
-temporary directory, removed after the build, and excluded from artifacts.
+`ROM_ASSETS_PAT` secret. The Android job fails before producing an APK if signing
+setup is missing; it never substitutes a debug key. Keystore material is written
+only to the runner's temporary directory, removed after the build, and excluded
+from artifacts.
 
 For a local signed build, set `ANDROID_KEYSTORE_PATH` to the keystore's absolute
 path plus the three password/alias variables above, then run

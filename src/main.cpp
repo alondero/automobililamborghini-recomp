@@ -1113,13 +1113,29 @@ int main(int argc, char** argv) {
 #if defined(__ANDROID__)
     // SDLActivity owns the native entry point. Use app-private storage for all
     // runtime-relative assets, configuration, logs and saves.
+    // Install before any Android bootstrap operation so a native fault in the
+    // earliest path/log setup still goes through the crash-dump handler.
+    lambo::crash::install();
     const char* storage = SDL_AndroidGetInternalStoragePath();
-    if (!storage) return 2;
-    std::filesystem::current_path(storage);
+    if (!storage) {
+        std::fprintf(stderr, "[android] SDL did not provide internal storage\n");
+        return 2;
+    }
+    std::error_code path_error;
+    std::filesystem::current_path(storage, path_error);
+    if (path_error) {
+        std::fprintf(stderr, "[android] cannot set working directory to %s: %s\n",
+                     storage, path_error.message().c_str());
+        return 2;
+    }
     // Android does not forward native stdout/stderr to logcat. Preserve RT64
     // and driver diagnostics alongside the application's structured logs.
-    std::freopen("native.log", "w", stdout);
-    std::freopen("native-errors.log", "w", stderr);
+    FILE* native_log = std::freopen("native.log", "w", stdout);
+    FILE* native_errors = std::freopen("native-errors.log", "w", stderr);
+    if (native_log == nullptr || native_errors == nullptr) {
+        std::fprintf(stderr, "[android] cannot open native log files\n");
+        return 2;
+    }
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::setvbuf(stderr, nullptr, _IONBF, 0);
     setenv("HOME", storage, 1);

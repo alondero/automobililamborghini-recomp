@@ -128,11 +128,13 @@ index 72e8aeb..90b4186 100644
          // Print device information to console.
          RenderDeviceDescription deviceDescription = device->getDescription();
          fprintf(stdout, "Device Name: %s\n", deviceDescription.name.c_str());
-@@ -325,7 +334,11 @@ namespace RT64 {
+@@ -325,7 +334,13 @@ namespace RT64 {
          // Create the swap chain with the texture count specified from the configuration.
          RenderSwapChainDesc swapChainDesc;
          swapChainDesc.renderWindow = appWindow->windowHandle;
 +#if defined(__ANDROID__)
++        // Keep this format in lockstep with Lambo's Rml SwapChainFormat in
++        // src/ui/lambo_ui_render_interface.cpp; Android's SDL path is RGBA.
 +        swapChainDesc.format = RenderFormat::R8G8B8A8_UNORM;
 +#else
          swapChainDesc.format = RenderFormat::B8G8R8A8_UNORM;

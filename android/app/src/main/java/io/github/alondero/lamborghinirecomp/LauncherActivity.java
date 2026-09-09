@@ -13,6 +13,7 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -24,6 +25,7 @@ public final class LauncherActivity extends Activity {
     private static final String SHA256 = "cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c";
     private static final ExecutorService IMPORTS = Executors.newSingleThreadExecutor();
     private TextView status;
+    private TextView driverInfo;
     private Button play;
     private Button select;
     private Button driver;
@@ -35,6 +37,7 @@ public final class LauncherActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        cleanupTemporaryFiles();
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         int padding = (int)(24 * getResources().getDisplayMetrics().density);
@@ -57,7 +60,7 @@ public final class LauncherActivity extends Activity {
         play.setEnabled(new File(getFilesDir(), ROM).isFile());
         play.setOnClickListener(v -> prepare(null));
         layout.addView(play);
-        TextView driverInfo = new TextView(this);
+        driverInfo = new TextView(this);
         driverInfo.setText("GPU driver: " + DriverImport.description(this) + "\nOlder Adreno devices may need a Mesa Turnip driver ZIP for Vulkan support.");
         layout.addView(driverInfo);
         driver = new Button(this);
@@ -70,7 +73,10 @@ public final class LauncherActivity extends Activity {
         systemDriver = new Button(this);
         systemDriver.setText("Use system GPU driver");
         systemDriver.setOnClickListener(v -> {
-            try { DriverImport.useSystem(this); driverInfo.setText("System GPU driver selected"); }
+            try {
+                DriverImport.useSystem(this);
+                driverInfo.setText("GPU driver: System GPU driver\nOlder Adreno devices may need a Mesa Turnip driver ZIP for Vulkan support.");
+            }
             catch (Exception error) { status.setText(error.getMessage()); }
         });
         layout.addView(systemDriver);
@@ -95,6 +101,10 @@ public final class LauncherActivity extends Activity {
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
                     status.setText(resultMessage);
+                    if (resultMessage.startsWith("GPU driver ready: ")) {
+                        driverInfo.setText("GPU driver: " + DriverImport.description(this)
+                            + "\nOlder Adreno devices may need a Mesa Turnip driver ZIP for Vulkan support.");
+                    }
                     setBusy(false);
                 });
             });
@@ -114,8 +124,7 @@ public final class LauncherActivity extends Activity {
         IMPORTS.execute(() -> {
             try {
                 if (uri != null) importRom(uri);
-                copyAsset("assets");
-                copyAsset("lamborghini.syms.toml");
+                ensureAssets();
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
                     setBusy(false);
@@ -173,16 +182,85 @@ public final class LauncherActivity extends Activity {
         }
     }
 
-    private void copyAsset(String path) throws Exception {
+    private void copyAsset(String path, File root) throws Exception {
         String[] children = getAssets().list(path);
-        File destination = new File(getFilesDir(), path);
+        File destination = new File(root, path);
         if (children != null && children.length > 0) {
             if (!destination.isDirectory() && !destination.mkdirs()) throw new Exception("Cannot create assets directory");
-            for (String child : children) copyAsset(path + "/" + child);
+            for (String child : children) copyAsset(path + "/" + child, root);
         } else {
             try (InputStream input = getAssets().open(path)) {
+                File parent = destination.getParentFile();
+                if (parent != null && !parent.isDirectory() && !parent.mkdirs())
+                    throw new Exception("Cannot create asset directory");
                 Files.copy(input, destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
             }
         }
+    }
+
+    private void ensureAssets() throws Exception {
+        final String version = Integer.toString(getPackageManager().getPackageInfo(getPackageName(), 0).versionCode);
+        File files = getFilesDir();
+        File marker = new File(files, "assets/.assets-version");
+        File expected = new File(files, "assets/ui/fonts/LatoLatin-Regular.ttf");
+        if (marker.isFile() && expected.isFile()
+            && version.equals(new String(Files.readAllBytes(marker.toPath()), StandardCharsets.UTF_8))) return;
+
+        File stage = Files.createTempDirectory(files.toPath(), "assets-stage-").toFile();
+        File stagedAssets = new File(stage, "assets");
+        File stagedSyms = new File(stage, "lamborghini.syms.toml");
+        File destinationAssets = new File(files, "assets");
+        File destinationSyms = new File(files, "lamborghini.syms.toml");
+        File backupAssets = new File(files, "assets-old-" + System.nanoTime());
+        try {
+            copyAsset("assets", stage);
+            copyAsset("lamborghini.syms.toml", stage);
+            if (destinationAssets.exists()) moveAtomically(destinationAssets, backupAssets, false);
+            moveAtomically(stagedAssets, destinationAssets, false);
+            moveAtomically(stagedSyms, destinationSyms, true);
+            Files.write(new File(destinationAssets, ".assets-version").toPath(),
+                        version.getBytes(StandardCharsets.UTF_8));
+            deleteTree(backupAssets);
+        } catch (Exception error) {
+            if (!destinationAssets.exists() && backupAssets.exists()) {
+                try { moveAtomically(backupAssets, destinationAssets, false); }
+                catch (Exception ignored) { }
+            }
+            throw error;
+        } finally {
+            deleteTree(stage);
+            deleteTree(backupAssets);
+        }
+    }
+
+    private static void moveAtomically(File source, File destination, boolean replace) throws Exception {
+        if (!source.exists()) throw new Exception("Missing staged asset " + source.getName());
+        try {
+            if (replace) Files.move(source.toPath(), destination.toPath(),
+                                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            else Files.move(source.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
+            if (replace) Files.move(source.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            else Files.move(source.toPath(), destination.toPath());
+        }
+    }
+
+    private void cleanupTemporaryFiles() {
+        File[] files = getFilesDir().listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            String name = file.getName();
+            if (name.startsWith("rom-import-") || name.startsWith("assets-stage-")
+                || name.startsWith("assets-old-")) deleteTree(file);
+        }
+    }
+
+    private static void deleteTree(File file) {
+        if (file == null || !file.exists()) return;
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) for (File child : children) deleteTree(child);
+        }
+        if (!file.delete()) android.util.Log.w("Lamborghini", "Could not remove temporary file " + file);
     }
 }

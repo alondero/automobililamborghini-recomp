@@ -228,6 +228,10 @@ jobs:
           retention-days: 14
 
   build-android:
+    # Android signing is optional for a desktop release. When the repository
+    # signing secrets are configured this job contributes the APK; without
+    # them the desktop release still publishes and reports the missing APK.
+    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -302,6 +306,7 @@ jobs:
 
   release:
     needs: [build-linux, build-windows, build-android]
+    if: always() && needs.build-linux.result == 'success' && needs.build-windows.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
@@ -313,10 +318,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          release_files=(
+            artifacts/lamborghini-recomp-linux-x64/lamborghini-recomp-linux-x64.zip
+            artifacts/lamborghini-recomp-windows-x64/lamborghini-recomp-windows-x64.zip
+          )
+          android_apk="$(find artifacts -type f -name 'lamborghini-recomp-android-arm64.apk' -print -quit)"
+          if [ -n "$android_apk" ]; then
+            release_files+=("$android_apk")
+          else
+            echo "Android signing is not configured; publishing desktop assets without an APK."
+          fi
           gh release create "${{ inputs.tag }}" \
-            artifacts/lamborghini-recomp-linux-x64/lamborghini-recomp-linux-x64.zip \
-            artifacts/lamborghini-recomp-windows-x64/lamborghini-recomp-windows-x64.zip \
-            artifacts/lamborghini-recomp-android-arm64/lamborghini-recomp-android-arm64.apk \
+            "${release_files[@]}" \
             --repo "${{ github.repository }}" \
             --title "${{ inputs.tag }}" \
             $( [ "${{ inputs.prerelease }}" = "true" ] && echo --prerelease ) \
