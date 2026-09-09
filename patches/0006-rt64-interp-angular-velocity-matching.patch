@@ -1,5 +1,5 @@
 diff --git a/src/hle/rt64_game_frame.cpp b/src/hle/rt64_game_frame.cpp
-index 87392d0..99b9078 100644
+index 87392d0..25d0376 100644
 --- a/src/hle/rt64_game_frame.cpp
 +++ b/src/hle/rt64_game_frame.cpp
 @@ -2,6 +2,12 @@
@@ -56,7 +56,42 @@ index 87392d0..99b9078 100644
          return matchResult;
      }
  
-@@ -606,6 +631,93 @@ namespace RT64 {
+@@ -309,9 +334,19 @@ namespace RT64 {
+                     prevIt++;
+                 }
+                 else {
+-                    matchTransform(curWorkload, prevWorkload, curWorkloadMap, prevWorkloadMap, curIt->second, prevIt->second, modifiedBuffers);
+-                    curIt++;
+-                    prevIt++;
++                    const auto curEnd = curWorkload.transformIdMap.upper_bound(curIt->first);
++                    const auto prevEnd = prevWorkload.transformIdMap.upper_bound(prevIt->first);
++                    // A topology/visibility change must not shift the ordinal identity
++                    // of every later part in an explicitly ordered object.
++                    if (std::distance(curIt, curEnd) == std::distance(prevIt, prevEnd)) {
++                        while (curIt != curEnd) {
++                            matchTransform(curWorkload, prevWorkload, curWorkloadMap, prevWorkloadMap, curIt->second, prevIt->second, modifiedBuffers);
++                            curIt++;
++                            prevIt++;
++                        }
++                    }
++                    curIt = curEnd;
++                    prevIt = prevEnd;
+                 }
+             }
+ 
+@@ -489,6 +524,11 @@ namespace RT64 {
+                     viewProjMap.rigidBody.updateLinear(prevView, curView, projectionLinearComponent);
+                     viewProjMap.rigidBody.updateAngular(prevView, curView, projectionAngularComponent, projectionScaleComponent, projectionSkewComponent);
+                     viewProjMap.rigidBody.updateDecomposition(curView, projectionDecompose);
++                    // Explicit projection groups own their cut policy; anonymous
++                    // game cameras need a guard against interpolating through cuts.
++                    if (curProjGroup.matrixId == G_EX_ID_AUTO) {
++                        viewProjMap.rigidBody.resetOnCameraCut(prevView, curView);
++                    }
+                     viewProjMap.prevTransformIndex = prevProj.transformsIndex;
+                 }
+                 else {
+@@ -606,6 +646,93 @@ namespace RT64 {
              matchTransform(firstCurWorkload, firstPrevWorkload, firstCurWorkloadMap, firstPrevWorkloadMap, candidate.curIndex, candidate.prevIndex, modifiedBuffers);
          }
  
@@ -151,7 +186,7 @@ index 87392d0..99b9078 100644
              workloadsModified[firstCurProjIndices.workloadIndex].merge(modifiedBuffers);
          }
 diff --git a/src/hle/rt64_rigid_body.cpp b/src/hle/rt64_rigid_body.cpp
-index fd8b3eb..940823a 100644
+index fd8b3eb..8224caf 100644
 --- a/src/hle/rt64_rigid_body.cpp
 +++ b/src/hle/rt64_rigid_body.cpp
 @@ -2,6 +2,9 @@
@@ -164,7 +199,32 @@ index fd8b3eb..940823a 100644
  #include "rt64_rigid_body.h"
  
  #include "../include/rt64_extended_gbi.h"
-@@ -48,9 +51,11 @@ namespace RT64 {
+@@ -16,6 +19,24 @@ namespace RT64 {
+         linearVelocity = { 0.0f, 0.0f, 0.0f };
+     }
+ 
++    bool RigidBody::resetOnCameraCut(const hlslpp::float4x4 &prevView, const hlslpp::float4x4 &curView) {
++        // A view reversal makes component-wise interpolation singular at its
++        // midpoint. Test the whole basis so roll cuts are covered as well as yaw.
++        float basisDot = 0.0f;
++        for (int axis = 0; axis < 3; axis++) {
++            basisDot += hlslpp::dot(hlslpp::normalize(prevView[axis].xyz),
++                hlslpp::normalize(curView[axis].xyz));
++        }
++
++        constexpr float CutBasisDot = 2.87938524f; // 1 + 2*cos(20 degrees).
++        if (!std::isfinite(basisDot) || (basisDot < CutBasisDot)) {
++            *this = RigidBody();
++            return true;
++        }
++
++        return false;
++    }
++
+     void RigidBody::updateLinear(const hlslpp::float4x4 &prevTransform, const hlslpp::float4x4 &curTransform, uint8_t componentInterpolation) {
+         if (componentInterpolation == G_EX_COMPONENT_AUTO) {
+             const float Epsilon = 1e-6f;
+@@ -48,9 +69,11 @@ namespace RT64 {
              // Track angular velocity.
              const hlslpp::float3x3 invPrevRotation = hlslpp::inverse(rotationFrom3x3(extract3x3(prevTransform)));
              const hlslpp::float3x3 diffRotation = hlslpp::mul(invPrevRotation, rotationFrom3x3(extract3x3(curTransform)));
@@ -179,7 +239,7 @@ index fd8b3eb..940823a 100644
  
              // FIXME: Defaults to always interpolate.
              lerpRotation = true;
-@@ -67,6 +72,7 @@ namespace RT64 {
+@@ -67,6 +90,7 @@ namespace RT64 {
          else {
              lerpRotation = (rotInterpolation == G_EX_COMPONENT_INTERPOLATE);
              angularVelocity = 0.0f;
@@ -188,7 +248,7 @@ index fd8b3eb..940823a 100644
      }
  
 diff --git a/src/hle/rt64_rigid_body.h b/src/hle/rt64_rigid_body.h
-index 778e08b..3112abe 100644
+index 778e08b..007524f 100644
 --- a/src/hle/rt64_rigid_body.h
 +++ b/src/hle/rt64_rigid_body.h
 @@ -12,6 +12,7 @@ namespace RT64 {
@@ -199,3 +259,11 @@ index 778e08b..3112abe 100644
          uint8_t transformIndex = 0;
          bool lerpTranslation = false;
          bool lerpRotation = false;
+@@ -23,5 +24,7 @@ namespace RT64 {
+         // Default constructor.
+         RigidBody();
+ 
++        bool resetOnCameraCut(const hlslpp::float4x4 &prevView, const hlslpp::float4x4 &curView);
++
+         // Updates the vectors with the data from the transforms and updates the rigid body to determine if translation interpolation should be skipped.
+         void updateLinear(const hlslpp::float4x4 &prevTransform, const hlslpp::float4x4 &curTransform, uint8_t componentInterpolation);

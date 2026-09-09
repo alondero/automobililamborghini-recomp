@@ -130,6 +130,16 @@ if(BUILD_TESTING)
     target_link_libraries(lambo_track_patch_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_track_patch_safety COMMAND lambo_track_patch_tests)
 
+    add_executable(lambo_interpolation_tags_tests
+        tests/test_interpolation_tags.cpp
+        src/lambo_interpolation.cpp
+    )
+    target_include_directories(lambo_interpolation_tags_tests PRIVATE
+        ${N64MR}/N64Recomp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/include
+    )
+    add_test(NAME lambo_interpolation_tags COMMAND lambo_interpolation_tags_tests)
+
     add_executable(lambo_rt64_angular_velocity_tests
         tests/test_rt64_angular_velocity.cpp
         lib/rt64/src/hle/rt64_rigid_body.cpp
@@ -454,6 +464,21 @@ else()
     set(NFD_PORTAL ON CACHE BOOL "" FORCE)
 endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64 ${CMAKE_BINARY_DIR}/rt64)
+
+if(BUILD_TESTING)
+    add_executable(lambo_rt64_scene_matching_tests tests/test_rt64_scene_matching.cpp)
+    target_link_libraries(lambo_rt64_scene_matching_tests PRIVATE rt64)
+    target_compile_definitions(lambo_rt64_scene_matching_tests PRIVATE HLSL_CPU)
+    target_include_directories(lambo_rt64_scene_matching_tests PRIVATE
+        lib/rt64/include lib/rt64/src lib/rt64/src/contrib
+        lib/rt64/src/contrib/hlslpp/include lib/rt64/src/contrib/plume
+        lib/rt64/src/contrib/imgui
+    )
+    if(WIN32)
+        target_compile_definitions(lambo_rt64_scene_matching_tests PRIVATE NOMINMAX)
+    endif()
+    add_test(NAME lambo_rt64_scene_matching COMMAND lambo_rt64_scene_matching_tests)
+endif()
 # SDL2main owns the Windows entry point, but this project provides its own
 # WinMain wrapper so it can build as a GUI executable while still accepting
 # normal command-line arguments. RT64's bundled CMake adds SDL2main to its
@@ -615,6 +640,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_flare_widescreen.c  # issue #40: gEXSetRectAspect(STRETCH) bracket around the sun lens-flare ghosts
         src/lambo_fog_widescreen.cpp  # issue #83: widen dense 3P/4P fog to the 1P window/colour (DL rewrite, players>=3)
         src/lambo_sky_widescreen.cpp  # issue #84: draw the 1P/2P sky panorama in 3P/4P (patches.hook branch guard)
+        src/lambo_interpolation.cpp
         src/lambo_no_lod.cpp   # issues #87/#91: emit the per-segment scenery layer in 2P-4P like 1P (patches.hook branch guards)
         src/lambo_no_lod_policy.cpp # measured exceptions for synthesized PVS extras
         src/lambo_track_patch.cpp # Track Lab: guarded sparse PVS corrections applied after the stock track loader

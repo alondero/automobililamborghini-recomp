@@ -778,6 +778,19 @@ func = "func_8000A6C0"
 before_vram = 0x8000D920
 text = "{ extern uint32_t lambo_no_lod_seg_list_clamp(uint8_t*, uint32_t); ctx->r25 = lambo_no_lod_seg_list_clamp(rdram, (uint32_t)ctx->r25); }"
 
+# Stable scene-record identity survives culling/reordering in race and Viewer.
+# The linked-list iteration enters at 0x80009AF8 and all exits converge at
+# 0x8000E400 before reading record+6 into the next slot. sp+0x1B2 is that slot.
+[[patches.hook]]
+func = "func_8000A6C0"
+before_vram = 0x80009AF8
+text = "{ extern void lambo_interpolation_object_begin(uint8_t*, uint32_t); lambo_interpolation_object_begin(rdram, (uint16_t)MEM_H(0x1B2, ctx->r29)); }"
+
+[[patches.hook]]
+func = "func_8000A6C0"
+before_vram = 0x8000E400
+text = "{ extern void lambo_interpolation_object_end(uint8_t*); lambo_interpolation_object_end(rdram); }"
+
 # Issue #165 -- no_lod car-model detail (the last distance axis). The scene
 # builder also draws the cars and keeps a per-car scaled camera distance as a
 # halfword at 0x80098720 (sqrt at 0x8000C0A4, trunc + store at 0x8000C0AC/
