@@ -72,6 +72,58 @@ int main() {
     }
     expect_near(rotating.angularVelocity, std::acos(0.0f), 1e-5f, "quarter-turn rotation");
 
-    std::cout << "RT64 angular velocity remains finite\n";
+    for (float degrees : {0.0f, 5.0f, 19.0f, 21.0f, 90.0f, 180.0f}) {
+        const float radians = degrees * std::acos(-1.0f) / 180.0f;
+        auto view = identity;
+        view[0][0] = view[2][2] = std::cos(radians);
+        view[0][2] = std::sin(radians);
+        view[2][0] = -std::sin(radians);
+        view[3][0] = 100.0f;
+        RT64::RigidBody camera;
+        camera.updateLinear(identity, view, G_EX_COMPONENT_INTERPOLATE);
+        camera.updateAngular(identity, view, G_EX_COMPONENT_INTERPOLATE,
+            G_EX_COMPONENT_INTERPOLATE, G_EX_COMPONENT_INTERPOLATE);
+        camera.updateDecomposition(view, false);
+        const bool cut = camera.resetOnCameraCut(identity, view);
+        if (cut != (degrees > 20.0f)) {
+            std::cerr << "FAIL: camera cut classification at " << degrees << " degrees\n";
+            return 1;
+        }
+        if (cut) {
+            const auto midpoint = camera.lerp(0.5f, identity, view, true);
+            expect_near(hlslpp::determinant(midpoint), 1.0f, 1e-5f,
+                "cut must not collapse the camera halfway through");
+            expect_near(midpoint[3][0], 100.0f, 1e-5f,
+                "translation must cut together with rotation");
+            if (camera.lerpRotation || camera.lerpTranslation || camera.lerpScale ||
+                camera.lerpSkew || camera.lerpPerspective) {
+                std::cerr << "FAIL: cut retained interpolation history\n";
+                return 1;
+            }
+        }
+    }
+
+    auto roll_cut = identity;
+    roll_cut[0][0] = roll_cut[1][1] = -1.0f;
+    RT64::RigidBody roll_camera;
+    if (!roll_camera.resetOnCameraCut(identity, roll_cut)) {
+        std::cerr << "FAIL: roll-only camera cut was missed\n";
+        return 1;
+    }
+    auto scaled_view = identity;
+    scaled_view[0][0] = 2.0f;
+    scaled_view[1][1] = 3.0f;
+    scaled_view[2][2] = 4.0f;
+    RT64::RigidBody scaled_camera;
+    if (scaled_camera.resetOnCameraCut(identity, scaled_view)) {
+        std::cerr << "FAIL: camera scale change was classified as a rotation cut\n";
+        return 1;
+    }
+    if (!scaled_camera.resetOnCameraCut(identity, flat_transform(0))) {
+        std::cerr << "FAIL: invalid camera basis retained interpolation history\n";
+        return 1;
+    }
+
+    std::cout << "RT64 angular velocity and camera cuts remain safe\n";
     return 0;
 }
