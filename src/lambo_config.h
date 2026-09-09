@@ -19,6 +19,9 @@ namespace config {
 // Per-user persistent config directory (created on demand):
 //   Windows: %LOCALAPPDATA%\LamborghiniRecomp
 //   else:    $XDG_CONFIG_HOME/LamborghiniRecomp (or ~/.config/LamborghiniRecomp)
+// Portable mode (issue #190): an empty portable.txt next to the executable,
+// the --portable flag, or LAMBO_PORTABLE=1 keeps everything next to the game
+// instead (see lambo_paths.h).
 std::filesystem::path app_config_dir();
 
 // Absolute path of the live graphics.json (honours the LAMBO_GRAPHICS_CONFIG

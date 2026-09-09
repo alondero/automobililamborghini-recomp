@@ -86,7 +86,7 @@ lamborghini_modern.exe --console --verbose
 ```
 
 Then attach the newest `logs/lamborghini-*.log` from
-`%LOCALAPPDATA%\LamborghiniRecomp` (or the portable launch directory). The
+`%LOCALAPPDATA%\LamborghiniRecomp` (or the portable game directory). The
 preferred `--verbose` flag is equivalent to `--log-level=debug`; use
 `--log-level=trace` only when a maintainer requests the noisier trace.
 

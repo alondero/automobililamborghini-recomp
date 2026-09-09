@@ -89,6 +89,14 @@ if(BUILD_TESTING)
     target_link_libraries(lambo_log_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_logging_policy COMMAND lambo_log_tests)
 
+    add_executable(lambo_portable_paths_tests
+        tests/test_portable_paths.cpp
+    )
+    target_include_directories(lambo_portable_paths_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    add_test(NAME lambo_portable_paths COMMAND lambo_portable_paths_tests)
+
     add_executable(lambo_camera_projection_tests
         tests/test_camera_projection.cpp
     )
