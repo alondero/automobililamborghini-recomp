@@ -41,7 +41,9 @@ def main():
             parser.error("graphics config must be a JSON object")
         if graphics.get("texture_pack"):
             parser.error("graphics config already selects a pack; refusing to replace it")
+    road_source = companion / "textures" / f"{ROAD}.png"
     for path in (companion / "tools/build_pack.py", companion / "pack.json",
+                 road_source,
                  texconv, packer):
         if not path.is_file():
             parser.error(f"missing input: {path}")
@@ -54,18 +56,21 @@ def main():
     subprocess.run([
         str(texconv), "-nologo", "-w", "768", "-h", "96", "-m", "0",
         "-wrap", "-f", "BC7_UNORM", "-bc", "x", "-nogpu", "-l",
-        "-o", str(source), str(ROOT / "assets/textures/road-bump" / f"{ROAD}.png"),
+        "-o", str(source), str(road_source),
     ], check=True)
     metadata = json.loads((companion / "pack.json").read_text(encoding="utf-8"))
-    commit = subprocess.check_output(
+    port_commit = subprocess.check_output(
         ["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
+    source_commit = subprocess.check_output(
+        ["git", "-C", str(companion), "rev-parse", "HEAD"], text=True).strip()
     metadata.update(pack_id="lambo-road-bump-pilot", variant="road-only",
-                    source_commit=commit, port_commit=commit, credits="CREDITS.md")
+                    source_commit=source_commit, port_commit=port_commit,
+                    credits="CREDITS.md")
     (source / "pack.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     (source / "policy.json").write_text(
         json.dumps({"default_shift": "none", "default_operation": "stream"}) + "\n",
         encoding="utf-8")
-    shutil.copyfile(ROOT / "assets/textures/road-bump/README.md", source / "CREDITS.md")
+    shutil.copyfile(companion / "CREDITS.md", source / "CREDITS.md")
     subprocess.run([
         sys.executable, str(companion / "tools/build_pack.py"),
         "--source-dir", str(source), "--pack-json", str(source / "pack.json"),

@@ -1,7 +1,8 @@
 # Baked road surface detail
 
 This optional RT64 pack adds asphalt grain, small pits and baked relief highlights
-to the main driving surface used on circuit 1. It replaces v5 hash
+to the main driving surface used on circuit 1. Its editable source is maintained
+in the companion texture repository at `textures/296a811299243783.png`. It replaces v5 hash
 `296a811299243783`, a 128x16 atlas containing the road and lane markings. The
 replacement retains their layout and exports at 768x96, the companion pack's 6x
 scale. It uses BC7, ten mip levels, streaming, a low-mip cache and `shift: none`.
@@ -23,7 +24,8 @@ python tools/build_road_bump_pack.py `
   --output artifacts/road-detail
 ```
 
-The output directory must be new or empty. The companion checkout is read-only.
+The output directory must be new or empty. The builder reads the companion source
+checkout and does not modify it.
 The builder prints the resulting `.rtz` path. To enable it for ordinary launches,
 add `--install /path/to/graphics.json`. This preserves other settings and refuses
 to replace an already configured texture pack. Restart the game afterward.
@@ -55,9 +57,7 @@ is an RTX 3080; Intel HD 620 performance has not been measured.
 
 ## Authoring provenance
 
-The layout reference was the companion texture
-`textures/296a811299243783.png` at commit
-`34432b7fab31ab40d895394aacc06207ed99c1aa`. New artwork was authored with the
+The source is maintained in the companion texture repository. New artwork was authored with the
 built-in imagegen tool on 2026-09-09. The source is stored with normalized UV
 coordinates on a 3:1 canvas; Texconv restores the 8:1 runtime atlas. The pack
 retains the companion metadata's unresolved release-license status.
