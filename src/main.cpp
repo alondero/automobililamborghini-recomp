@@ -316,6 +316,9 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
     // below (also main thread, via recomp::start's loop). LAMBO_HEADLESS=1 (harness
     // knob) skips the window entirely; SDL failure degrades to headless the same way.
     if (lambo_rt64::enabled()) {
+#if defined(__ANDROID__)
+        SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+#endif
         // Enable SDL2's native Steam Controller HIDAPI driver (original Steam Controller); newer
         // pads (incl. Steam Controller Gen2 via Steam Input) present as a standard XInput gamepad
         // that the SDL_GameController API handles without this hint. Must precede SDL init.
@@ -333,6 +336,9 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
         // covers pads present before the event pump starts).
         if (g_controls != nullptr) g_controls->open_existing();
         uint32_t flags = SDL_WINDOW_RESIZABLE;
+#if defined(__ANDROID__)
+        flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+#endif
 #if defined(__linux__)
         flags |= SDL_WINDOW_VULKAN;
 #endif
@@ -1104,6 +1110,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 }
 #else
 int main(int argc, char** argv) {
+#if defined(__ANDROID__)
+    // SDLActivity owns the native entry point. Use app-private storage for all
+    // runtime-relative assets, configuration, logs and saves.
+    const char* storage = SDL_AndroidGetInternalStoragePath();
+    if (!storage) return 2;
+    std::filesystem::current_path(storage);
+    // Android does not forward native stdout/stderr to logcat. Preserve RT64
+    // and driver diagnostics alongside the application's structured logs.
+    std::freopen("native.log", "w", stdout);
+    std::freopen("native-errors.log", "w", stderr);
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    std::setvbuf(stderr, nullptr, _IONBF, 0);
+    setenv("HOME", storage, 1);
+    setenv("XDG_CONFIG_HOME", storage, 1);
+    setenv("XDG_STATE_HOME", storage, 1);
+#endif
     return application_main(argc, argv);
 }
 #endif

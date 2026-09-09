@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.20)
+project(lambo_android_host_tools LANGUAGES C CXX)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+add_subdirectory(../../lib/N64ModernRuntime/N64Recomp N64Recomp)
+add_subdirectory(../../lib/rt64/src/tools/file_to_c file_to_c)

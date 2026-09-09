@@ -1,6 +1,6 @@
 name: Build & Release
 
-# Manual, on-demand build of Windows + Linux binaries, published to GitHub Releases.
+# Manual, on-demand build of Windows + Linux binaries and an Android ARM64 APK, published to GitHub Releases.
 #
 # The recompilation step (BUILDING.md step 3) needs the actual game ROM to translate
 # into C, and the port also reads the ROM at runtime for assets. The ROM is
@@ -227,8 +227,81 @@ jobs:
           path: lamborghini-recomp-windows-x64.zip
           retention-days: 14
 
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build python3
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358'
+
+      - name: Check release prerequisites
+        env:
+          ROM_ASSETS_REPO: ${{ vars.ROM_ASSETS_REPO }}
+          ROM_ASSETS_PAT: ${{ secrets.ROM_ASSETS_PAT }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for key in ROM_ASSETS_REPO ROM_ASSETS_PAT ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!key}" ]; then
+              echo "::error::Missing $key; see docs/ANDROID.md for release setup."
+              exit 1
+            fi
+          done
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/android-release.jks"
+
+      - name: Fetch ROM from private assets repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.ROM_ASSETS_REPO }}
+          token: ${{ secrets.ROM_ASSETS_PAT }}
+          path: rom-assets
+
+      - name: Build signed APK
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/android-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cp "rom-assets/$ROM_FILENAME" "./$ROM_FILENAME"
+          python3 scripts/build_android.py --release
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/lamborghini-recomp-android-arm64.apk
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 dist/lamborghini-recomp-android-arm64.apk
+
+      - name: Remove private build inputs
+        if: always()
+        run: |
+          rm -f "$ROM_FILENAME" "$RUNNER_TEMP/android-release.jks"
+          rm -rf rom-assets
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lamborghini-recomp-android-arm64
+          path: dist/lamborghini-recomp-android-arm64.apk
+          if-no-files-found: error
+          retention-days: 14
+
   release:
-    needs: [build-linux, build-windows]
+    needs: [build-linux, build-windows, build-android]
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
@@ -243,8 +316,9 @@ jobs:
           gh release create "${{ inputs.tag }}" \
             artifacts/lamborghini-recomp-linux-x64/lamborghini-recomp-linux-x64.zip \
             artifacts/lamborghini-recomp-windows-x64/lamborghini-recomp-windows-x64.zip \
+            artifacts/lamborghini-recomp-android-arm64/lamborghini-recomp-android-arm64.apk \
             --repo "${{ github.repository }}" \
             --title "${{ inputs.tag }}" \
             $( [ "${{ inputs.prerelease }}" = "true" ] && echo --prerelease ) \
             $( [ "${{ inputs.draft }}" = "true" ] && echo --draft ) \
-            --notes "Automated build from commit ${{ github.sha }}. **You must supply your own legally-dumped copy of \`Automobili Lamborghini (USA).z64\` next to the executable — this project ships no game data.** See BUILDING.md."
+            --notes "Automated build from commit ${{ github.sha }}. **You must supply your own legally-dumped copy of \`Automobili Lamborghini (USA).z64\` next to the desktop executable, or import it using the Android app — this project ships no game data.** See BUILDING.md."

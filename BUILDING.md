@@ -1,5 +1,7 @@
 # Building
 
+Android ARM64 APK build, device setup, and release signing: [Android guide](docs/ANDROID.md).
+
 The build has two stages: **(1)** recompile the game code from your ROM into C, then
 **(2)** compile everything with CMake. All commands run from the repository root.
 
