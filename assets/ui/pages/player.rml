@@ -1,42 +1,29 @@
 <rml>
   <head>
     <title>Driver name</title>
-    <link type="text/rcss" href="../lambo.rcss"/>
+    <link type="text/template" href="../settings_shell.rml"/>
   </head>
-  <body>
-    <div id="window">
-      <div class="panel">
-        <div class="header-brand">
-          <div class="brand-title-row">
-            <h1>DRIVER NAME</h1>
-          </div>
-          <p class="brand-subtitle">Player one's saved identity, used for Championship records. Saved to player.json when you activate Save below.</p>
-        </div>
+  <body template="settings-shell">
+    <div class="settings-content">
+            <div class="content-header">
+              <h1>DRIVER NAME</h1>
+              <p class="brand-subtitle">Player one's saved identity, used for Championship records.</p>
+            </div>
 
-        <p class="help">1-12 letters A-Z and spaces. Lowercase is uppercased automatically. The in-game Championship name editor saves here too, so both stay in sync.</p>
-
-        <div class="columns">
-          <div class="column">
-            <h2>Saved driver</h2>
-            <p>Current driver: <span id="player-name-current" class="highlight-val">Loading...</span></p>
-            <p>Edit the name below, then activate Save. Keyboard: click the field and type, then Tab to Save.</p>
-            <input type="text" id="player-name-input" maxlength="12" size="14" value=""/>
-            <button id="autofocus" onclick="player:save">Save driver name</button>
-            <button onclick="player:clear">Clear saved name (use ROM default)</button>
-            <p id="player-name-status" class="summary"></p>
-          </div>
-        </div>
-
-        <button class="secondary exit-btn" onclick="back">Back to Settings</button>
-
-        <div class="footer-bar">
-          <div class="controller-guide">
-            <span class="guide-item"><span class="guide-key">A / Enter</span> Save / Clear</span>
-            <span class="guide-item"><span class="guide-key">B / Esc</span> Back</span>
-            <span class="guide-item"><span class="guide-key">D-Pad / Stick</span> Navigate</span>
-          </div>
-        </div>
-      </div>
+            <div class="setting-group">
+              <div class="setting-group-title">SAVED DRIVER</div>
+              <div class="overview-item">
+                <span class="overview-kicker">CURRENT</span>
+                <span id="player-name-current" class="overview-value">Loading...</span>
+              </div>
+              <p class="help">1-12 letters A-Z and spaces. Lowercase is uppercased automatically. The in-game Championship editor saves here too, so both stay in sync.</p>
+              <input type="text" id="player-name-input" class="driver-field" maxlength="12" size="14" value=""/>
+              <div class="driver-actions">
+                <button class="primary" onclick="player:save">Save driver name</button>
+                <button class="secondary" onclick="player:clear">Clear saved name</button>
+              </div>
+              <p id="player-name-status" class="summary"></p>
+            </div>
     </div>
   </body>
 </rml>

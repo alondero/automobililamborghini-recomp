@@ -983,3 +983,473 @@ scrollbarvertical sliderarrowinc {
   color: #868e96;
   text-align: center;
 }
+
+/* =====================================================================
+   Settings shell: sidebar navigation + scrollable content pane
+   ===================================================================== */
+
+.settings-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.settings-shell {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+  background-color: #0b101b;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  width: 320dp;
+  flex-shrink: 0;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 34dp 22dp 26dp 22dp;
+  background-color: #0c1220;
+  border-right: 1.5dp solid #1c2940;
+}
+
+.nav-brand {
+  display: block;
+  margin-bottom: 24dp;
+  padding: 0 8dp 20dp 8dp;
+  border-bottom: 1.5dp solid #1c2940;
+}
+
+.nav-kicker {
+  display: block;
+  font-size: 11dp;
+  letter-spacing: 3dp;
+  font-weight: bold;
+  color: #d4a017;
+  margin-bottom: 6dp;
+}
+
+.nav-brand h1 {
+  font-size: 21dp;
+  line-height: 25dp;
+  letter-spacing: 0.5dp;
+  margin: 0;
+}
+
+.nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4dp;
+}
+
+.nav-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 14dp;
+  width: 100%;
+  margin: 0;
+  padding: 12dp 14dp;
+  text-align: left;
+  background-color: transparent;
+  border: 1.5dp solid transparent;
+  border-radius: 10dp;
+  color: #9fb0c7;
+  font-size: 16dp;
+  font-weight: normal;
+  tab-index: auto;
+  nav: auto;
+}
+
+.nav-marker {
+  display: block;
+  width: 5dp;
+  height: 22dp;
+  border-radius: 3dp;
+  background-color: #2b3e5c;
+}
+
+.nav-label {
+  display: block;
+  flex: 1;
+}
+
+.nav-note {
+  display: block;
+  font-size: 11dp;
+  font-weight: bold;
+  color: #6c757d;
+  letter-spacing: 0.5dp;
+  margin-top: 2dp;
+}
+
+.nav-item:hover {
+  background-color: #131e30;
+  border-color: #22304a;
+  color: #f1f3f5;
+}
+
+.nav-item.active {
+  background-color: #17233a;
+  border-color: #2b3e5c;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.nav-item.active .nav-marker {
+  background-color: #ffd43b;
+}
+
+.nav-item:focus,
+.nav-item.active:focus {
+  background-color: #1b2a44;
+  border-color: #ffd43b;
+  color: #ffffff;
+}
+
+.nav-item:disabled {
+  color: #4b586b;
+  background-color: transparent;
+  border-color: transparent;
+}
+
+.nav-spacer {
+  flex: 1;
+}
+
+.nav-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 14dp;
+  padding-top: 18dp;
+  border-top: 1.5dp solid #1c2940;
+}
+
+.nav-back {
+  width: 100%;
+  margin: 0;
+  padding: 13dp 20dp;
+  text-align: center;
+  font-size: 16dp;
+  font-weight: bold;
+  color: #ffffff;
+  background-color: #c92a2a;
+  border: 1.5dp solid #ff6b6b;
+  border-radius: 10dp;
+  tab-index: auto;
+  nav: auto;
+}
+
+.nav-back:hover,
+.nav-back:focus {
+  background-color: #e03131;
+  border-color: #ffd43b;
+}
+
+.nav-hints {
+  display: flex;
+  flex-direction: column;
+  gap: 6dp;
+}
+
+.nav-version {
+  font-size: 12dp;
+  color: #5f7188;
+}
+
+.settings-content {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: 46dp 60dp 72dp 60dp;
+}
+
+/* The mapper has four dense columns, so give it the extra width recovered
+   from the normal settings gutter while keeping the shared sidebar. */
+.controls-content {
+  padding: 30dp 34dp 46dp 34dp;
+}
+
+.controls-content .mapper-grid {
+  gap: 8dp;
+}
+
+.controls-content .mapper-section {
+  flex: 1;
+  min-width: 0;
+  padding: 10dp 8dp;
+}
+
+.controls-content .mapper-row {
+  gap: 4dp;
+}
+
+.controls-content .mapper-label-col {
+  width: 40%;
+}
+
+.controls-content .mapper-slot-btn {
+  width: 58%;
+  padding: 7dp 6dp;
+  font-size: 12dp;
+}
+
+.controls-content .mapper-target-name,
+.controls-content .mapper-slot-val {
+  font-size: 12dp;
+}
+
+.content-header {
+  display: block;
+  margin-bottom: 30dp;
+  padding-bottom: 20dp;
+  border-bottom: 2dp solid #1c2940;
+}
+
+.content-header h1 {
+  font-size: 30dp;
+  margin: 0 0 8dp 0;
+}
+
+.setting-group {
+  display: block;
+  margin-bottom: 34dp;
+}
+
+.setting-group-title {
+  display: block;
+  font-size: 12dp;
+  font-weight: bold;
+  letter-spacing: 2dp;
+  color: #d4a017;
+  margin-bottom: 6dp;
+}
+
+.setting-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.setting-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28dp;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 15dp 18dp 15dp 16dp;
+  margin: 0;
+  border-left: 4dp solid transparent;
+  border-bottom: 1dp solid #16202f;
+  background-color: transparent;
+  border-radius: 0;
+  font-size: 16dp;
+  text-align: left;
+  color: #f1f3f5;
+  tab-index: auto;
+  nav: auto;
+}
+
+.setting-row:hover {
+  background-color: #101a29;
+}
+
+.setting-row:focus {
+  background-color: #16233a;
+  border-left-color: #ffd43b;
+  border-bottom-color: transparent;
+}
+
+.setting-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 3dp;
+}
+
+.setting-name {
+  display: block;
+  font-size: 17dp;
+  font-weight: bold;
+  color: #f1f3f5;
+}
+
+.setting-desc {
+  display: block;
+  font-size: 13dp;
+  line-height: 18dp;
+  color: #7d8ea6;
+}
+
+.setting-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+  gap: 7dp;
+}
+
+.setting-stepper {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10dp;
+}
+
+.step-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34dp;
+  height: 34dp;
+  border-radius: 17dp;
+  background-color: #16233a;
+  border: 1.5dp solid #2b3e5c;
+  color: #9fb0c7;
+  font-size: 18dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.step-btn:hover {
+  background-color: #22304a;
+  border-color: #ffd43b;
+  color: #ffd43b;
+}
+
+.setting-value {
+  display: block;
+  width: auto;
+  min-width: 150dp;
+  padding: 6dp 16dp;
+  text-align: center;
+  font-size: 16dp;
+  font-weight: bold;
+  color: #ffd43b;
+  background-color: #101a29;
+  border: 1.5dp solid #1f2d44;
+  border-radius: 8dp;
+}
+
+.track {
+  display: flex;
+  flex-direction: row;
+  gap: 3dp;
+  margin-top: 1dp;
+}
+
+.track-step {
+  display: block;
+  width: 9dp;
+  height: 4dp;
+  border-radius: 2dp;
+  background-color: #22304a;
+}
+
+.track-step.on {
+  background-color: #ffd43b;
+}
+
+.switch {
+  display: block;
+  position: relative;
+  width: 56dp;
+  height: 30dp;
+  border-radius: 15dp;
+  background-color: #22304a;
+  border: 1.5dp solid #2b3e5c;
+}
+
+.switch .knob {
+  display: block;
+  position: absolute;
+  top: 3dp;
+  left: 3dp;
+  width: 20dp;
+  height: 20dp;
+  border-radius: 10dp;
+  background-color: #8ea0b8;
+}
+
+.switch.on {
+  background-color: #2b8a3e;
+  border-color: #51cf66;
+}
+
+.switch.on .knob {
+  left: 33dp;
+  background-color: #ffffff;
+}
+
+.overview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12dp;
+  margin-bottom: 26dp;
+}
+
+.overview-item {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20dp;
+  padding: 18dp 22dp;
+  background-color: #101a29;
+  border: 1.5dp solid #1c2940;
+  border-radius: 12dp;
+}
+
+.overview-kicker {
+  display: block;
+  font-size: 12dp;
+  font-weight: bold;
+  letter-spacing: 2dp;
+  color: #d4a017;
+}
+
+.overview-value {
+  display: block;
+  font-size: 17dp;
+  font-weight: bold;
+  color: #eef2f7;
+  text-align: right;
+}
+
+.driver-field {
+  margin: 4dp 0 10dp 0;
+}
+
+.driver-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 12dp;
+  margin-top: 4dp;
+}
+
+.driver-actions button {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+}
+
+.placeholder-card {
+  padding: 26dp 30dp;
+  background-color: #101a29;
+  border: 1.5dp solid #1c2940;
+  border-radius: 12dp;
+  color: #9fb0c7;
+}
+
+@media (max-width: 1100px) {
+  .settings-nav {
+    width: 240dp;
+  }
+  .settings-content {
+    padding: 34dp 34dp 56dp 34dp;
+  }
+}

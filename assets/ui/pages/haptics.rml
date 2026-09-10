@@ -1,30 +1,18 @@
 <rml>
   <head>
     <title>Haptics</title>
-    <link type="text/rcss" href="../lambo.rcss"/>
+    <link type="text/template" href="../settings_shell.rml"/>
   </head>
-  <body>
-    <div id="window">
-      <div class="panel">
-        <div class="header-brand">
-          <div class="brand-title-row">
-            <h1>HAPTICS AND RUMBLE</h1>
-            <span class="badge-pill">COMING SOON</span>
-          </div>
-          <p class="brand-subtitle">Controller rumble vibration motors and trigger feedback.</p>
-        </div>
+  <body template="settings-shell">
+    <div class="settings-content">
+            <div class="content-header">
+              <h1>HAPTICS AND RUMBLE</h1>
+              <p class="brand-subtitle">Controller rumble vibration motors and trigger feedback.</p>
+            </div>
 
-        <p class="help">Rumble strength calibration and trigger vibration controls will be available here in an upcoming release.</p>
-        <button id="autofocus" class="secondary exit-btn" onclick="back">Back to Settings</button>
-
-        <div class="footer-bar">
-          <div class="controller-guide">
-            <span class="guide-item"><span class="guide-key">A / Enter</span> Select</span>
-            <span class="guide-item"><span class="guide-key">B / Esc</span> Back</span>
-            <span class="guide-item"><span class="guide-key">D-Pad / Stick</span> Navigate</span>
-          </div>
-        </div>
-      </div>
+            <div class="placeholder-card">
+              <p>Rumble strength calibration and trigger vibration controls will be available here in an upcoming release.</p>
+            </div>
     </div>
   </body>
 </rml>
