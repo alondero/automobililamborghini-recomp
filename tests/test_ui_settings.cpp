@@ -195,6 +195,16 @@ int main() {
     expect(persisted.at("camera_height_scale") == 0.66, "camera height persists");
     expect(persisted.at("camera_fov_add") == 5.0, "FOV boost persists");
 
+    // Negative deltas (graphics.json / env only; the menu cycles 0..+20) must
+    // not render a "+-" sign.
+    lambo::config::set_camera_fov_add(-10.0);
+    expect(lambo::ui::settings_snapshot().camera_fov == "-10 deg",
+           "settings snapshot presents negative FOV deltas");
+    lambo::config::set_camera_fov_add(0.0);
+    expect(lambo::ui::settings_snapshot().camera_fov == "Original",
+           "settings snapshot presents stock FOV");
+    lambo::config::flush_pending_graphics_updates();
+
     lambo::config::load_and_apply_graphics();
 #if defined(_WIN32)
     expect(lambo::config::current_graphics().api_option == GraphicsApi::D3D12,

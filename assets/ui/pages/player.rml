@@ -10,7 +10,7 @@
           <div class="brand-title-row">
             <h1>DRIVER NAME</h1>
           </div>
-          <p class="brand-subtitle">Player one's saved identity, used for Championship records. Settings save automatically.</p>
+          <p class="brand-subtitle">Player one's saved identity, used for Championship records. Saved to player.json when you activate Save below.</p>
         </div>
 
         <p class="help">1-12 letters A-Z and spaces. Lowercase is uppercased automatically. The in-game Championship name editor saves here too, so both stay in sync.</p>
@@ -21,8 +21,8 @@
             <p>Current driver: <span id="player-name-current" class="highlight-val">Loading...</span></p>
             <p>Edit the name below, then activate Save. Keyboard: click the field and type, then Tab to Save.</p>
             <input type="text" id="player-name-input" maxlength="12" size="14" value=""/>
-            <button id="autofocus" onclick="player:save"><span class="setting-label">Save driver name</span></button>
-            <button onclick="player:clear"><span class="setting-label">Clear saved name (use ROM default)</span></button>
+            <button id="autofocus" onclick="player:save">Save driver name</button>
+            <button onclick="player:clear">Clear saved name (use ROM default)</button>
             <p id="player-name-status" class="summary"></p>
           </div>
         </div>

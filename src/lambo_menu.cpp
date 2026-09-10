@@ -367,7 +367,7 @@ void attach(SDL_Window* window) {
     append_item(game, CMD_FULLSCREEN, "&Fullscreen\tF11");
     append_item(game, CMD_SETTINGS, "&Settings...");
     append_item(game, CMD_CONTROLS, "&Controls...");
-    append_item(game, CMD_PLAYER_NAME, "&Driver name...");
+    append_item(game, CMD_PLAYER_NAME, "&Driver Name...");
     AppendMenuW(game, MF_SEPARATOR, 0, nullptr);
     append_item(game, CMD_QUIT, "E&xit");
 

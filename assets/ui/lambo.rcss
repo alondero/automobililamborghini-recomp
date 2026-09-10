@@ -190,6 +190,19 @@ input {
   text-transform: uppercase;
 }
 
+.mouse-active input:hover,
+.controller-active input:focus,
+input:focus,
+input:focus-visible {
+  background-color: #2b3e5c;
+  border-color: #4dabf7;
+  color: #ffffff;
+}
+
+.menu-card.slim {
+  min-height: 110dp;
+}
+
 .overlay-actions {
   display: flex;
   flex-direction: row;

@@ -185,6 +185,15 @@ int main() {
     expect(lambo::player::saved_name().empty(), "cleared name falls back to ROM default");
     expect(!std::filesystem::exists(player_path), "cleared name removes player.json");
 
+    // Hand-edited player.json goes through the same normalisation as typed
+    // input instead of injecting raw padding into RDRAM.
+    {
+        std::ofstream output(player_path);
+        output << nlohmann::json{{"name", "  FAST  "}};
+    }
+    expect(lambo::player::saved_name() == "FAST",
+           "hand-edited padded name normalises on load");
+
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
     return failures == 0 ? 0 : 1;

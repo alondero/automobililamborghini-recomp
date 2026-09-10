@@ -146,8 +146,10 @@ std::string camera_scale_name(double value) {
 }
 
 std::string fov_add_name(double value) {
-    if (std::abs(value) < 0.0001) return "Original";
-    return "+" + std::to_string(static_cast<int>(std::lround(value))) + " deg";
+    const int degrees = static_cast<int>(std::lround(value));
+    if (degrees == 0) return "Original";
+    if (degrees < 0) return std::to_string(degrees) + " deg";
+    return "+" + std::to_string(degrees) + " deg";
 }
 
 } // namespace

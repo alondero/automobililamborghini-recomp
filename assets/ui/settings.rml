@@ -37,7 +37,7 @@
           </div>
 
           <div class="grid-row">
-            <button class="menu-card" onclick="page:player">
+            <button class="menu-card slim" onclick="page:player">
               <span class="btn-main-label">Driver Name</span>
               <span class="btn-sub-label">Player one's saved identity for Championship records</span>
             </button>
