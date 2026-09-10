@@ -167,6 +167,33 @@ int main() {
     }
     expect(seeded == edited, "next run seeds the persisted name into the ROM buffer");
 
+    // The Driver-name options page shares the same player.json vocabulary as
+    // the ROM hooks: lowercase is uppercased, surrounding whitespace trimmed.
+    expect(lambo::player::set_saved_name("  speed  Racer  ") == true,
+           "options-page name normalises whitespace and case");
+    expect(lambo::player::saved_name() == "SPEED RACER",
+           "normalised options-page name round-trips");
+    expect(read_json(player_path).at("name") == "SPEED RACER",
+           "options-page name persists to player.json");
+    expect(lambo::player::set_saved_name("has-digits-1") == false,
+           "options-page name rejects ROM-unsupported characters");
+    expect(lambo::player::set_saved_name("WAY TOO LONG A NAME") == false,
+           "options-page name rejects overlong input");
+    expect(lambo::player::saved_name() == "SPEED RACER",
+           "rejected options-page input keeps the previous name");
+    lambo::player::clear_saved_name();
+    expect(lambo::player::saved_name().empty(), "cleared name falls back to ROM default");
+    expect(!std::filesystem::exists(player_path), "cleared name removes player.json");
+
+    // Hand-edited player.json goes through the same normalisation as typed
+    // input instead of injecting raw padding into RDRAM.
+    {
+        std::ofstream output(player_path);
+        output << nlohmann::json{{"name", "  FAST  "}};
+    }
+    expect(lambo::player::saved_name() == "FAST",
+           "hand-edited padded name normalises on load");
+
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
     return failures == 0 ? 0 : 1;

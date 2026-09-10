@@ -33,6 +33,9 @@ constexpr auto setting_bindings = std::to_array<std::pair<std::string_view, Sett
     {"circuit:6", SettingAction::Circuit6Toggle},
     {"distance:next", SettingAction::DrawDistanceNext},
     {"fogdensity:next", SettingAction::FogDensityNext},
+    {"camdist:next", SettingAction::CameraDistanceNext},
+    {"camheight:next", SettingAction::CameraHeightNext},
+    {"fov:next", SettingAction::FovNext},
 });
 
 template <typename T, size_t Size>
@@ -128,6 +131,27 @@ std::string multiplier_name(double value) {
     return std::to_string(tenths / 10) + "." + std::to_string(tenths % 10) + "x";
 }
 
+// Camera scales use two-decimal authored steps (0.65/0.66), so the tenths-only
+// multiplier_name would blur them. "Original" keeps the stock value obvious.
+std::string camera_scale_name(double value) {
+    if (std::abs(value - 1.0) < 0.0001) return "Original";
+    int hundredths = static_cast<int>(std::lround(value * 100.0));
+    std::string text = std::to_string(hundredths / 100) + ".";
+    const int cents = hundredths % 100;
+    text += static_cast<char>('0' + cents / 10);
+    text += static_cast<char>('0' + cents % 10);
+    while (text.back() == '0') text.pop_back();
+    if (text.back() == '.') text.pop_back();
+    return text + "x";
+}
+
+std::string fov_add_name(double value) {
+    const int degrees = static_cast<int>(std::lround(value));
+    if (degrees == 0) return "Original";
+    if (degrees < 0) return std::to_string(degrees) + " deg";
+    return "+" + std::to_string(degrees) + " deg";
+}
+
 } // namespace
 
 namespace lambo::ui {
@@ -208,6 +232,15 @@ bool apply_setting_action(SettingAction action) {
         case SettingAction::FogDensityNext:
             lambo::config::set_global_fog_scale(next_number(
                 lambo::config::global_fog_scale(), std::array{0.0, 0.5, 0.75, 1.0, 1.5, 2.0})); return true;
+        case SettingAction::CameraDistanceNext:
+            lambo::config::set_camera_distance_scale(next_number(
+                lambo::config::camera_distance_scale(), std::array{1.0, 0.8, 0.65, 0.5})); return true;
+        case SettingAction::CameraHeightNext:
+            lambo::config::set_camera_height_scale(next_number(
+                lambo::config::camera_height_scale(), std::array{1.0, 0.66, 0.4})); return true;
+        case SettingAction::FovNext:
+            lambo::config::set_camera_fov_add(next_number(
+                lambo::config::camera_fov_add(), std::array{0.0, 5.0, 10.0, 15.0, 20.0})); return true;
     }
 
     lambo::config::apply_graphics(cfg, apply_live);
@@ -230,7 +263,9 @@ SettingsSnapshot settings_snapshot() {
         lambo::config::no_lod() ? "Enabled" : "Disabled",
         multiplier_name(lambo::config::global_draw_distance()),
         {},
-        {},
+        camera_scale_name(lambo::config::camera_distance_scale()),
+        camera_scale_name(lambo::config::camera_height_scale()),
+        fov_add_name(lambo::config::camera_fov_add()),
     };
     const int fog_percent = static_cast<int>(std::lround(lambo::config::global_fog_scale() * 100.0));
     result.fog_density = fog_percent == 0 ? "Off" : std::to_string(fog_percent) + "%";

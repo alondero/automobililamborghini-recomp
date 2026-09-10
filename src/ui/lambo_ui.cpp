@@ -24,12 +24,14 @@
 #include <concurrentqueue.h>
 
 #include "RmlUi/Core.h"
+#include "RmlUi/Core/Elements/ElementFormControl.h"
 #include "RmlUi/Debugger.h"
 #include "RmlUi_Platform_SDL.h"
 #include "rt64_render_hooks.h"
 
 #include "lambo_config.h"
 #include "lambo_log.h"
+#include "lambo_player_name.h"
 #include "lambo_startup.h"
 #include "lambo_ui_input.h"
 #include "lambo_ui_controls.h"
@@ -61,6 +63,7 @@ constexpr std::array page_descriptors{
     PageDescriptor{"pages/enhancements.rml", "Enhancements"},
     PageDescriptor{"pages/controls.rml", "Controls"},
     PageDescriptor{"pages/haptics.rml", "Haptics"},
+    PageDescriptor{"pages/player.rml", "Driver name"},
 };
 
 const PageDescriptor& page_descriptor(lambo::ui::Page page) {
@@ -134,11 +137,17 @@ struct UiState {
     InputMode input_mode = InputMode::Mouse;
     std::uint64_t controls_config_revision = ~std::uint64_t{};
     std::uint64_t controls_sample_revision = ~std::uint64_t{};
+    // Last Driver-name action result, shown on the Player page status line.
+    std::string player_status;
 
     void remember_focus();
     void restore_focus(lambo::ui::Page page);
     void set_input_mode(InputMode mode);
     void set_text(const char* id, const std::string& value);
+    void set_input_value(const char* id, const std::string& value);
+    std::string input_value(const char* id);
+    void refresh_player_values();
+    void show_player_status();
     void refresh_document_values();
     void refresh_controls_values();
     void load_page(lambo::ui::Page page, bool push_history);
@@ -171,6 +180,7 @@ std::atomic<int> g_requested_page{-1};
 std::atomic<int> g_requested_entry_point{static_cast<int>(lambo::ui::EntryPoint::Startup)};
 std::atomic<bool> g_requested_back{false};
 std::atomic<bool> g_requested_controls_route{false};
+std::atomic<bool> g_requested_player_route{false};
 std::atomic<lambo::StartupController*> g_startup_controller{nullptr};
 moodycamel::ConcurrentQueue<QueuedEvent> g_event_queue;
 
@@ -227,6 +237,38 @@ void UiState::set_text(const char* id, const std::string& value) {
     }
 }
 
+void UiState::set_input_value(const char* id, const std::string& value) {
+    if (document == nullptr) return;
+    if (auto* control =
+            dynamic_cast<Rml::ElementFormControl*>(document->GetElementById(id))) {
+        control->SetValue(value.c_str());
+    }
+}
+
+std::string UiState::input_value(const char* id) {
+    if (document == nullptr) return {};
+    if (auto* control =
+            dynamic_cast<Rml::ElementFormControl*>(document->GetElementById(id))) {
+        return std::string(control->GetValue().c_str());
+    }
+    return {};
+}
+
+void UiState::refresh_player_values() {
+    if (document == nullptr) return;
+    const std::string saved = lambo::player::saved_name();
+    set_text("player-name-current", saved.empty() ? "(ROM default)" : saved);
+    set_input_value("player-name-input", saved);
+    set_text("player-name-status", player_status);
+    set_text("launcher-driver-name", saved.empty() ? "(ROM default)" : saved);
+}
+
+// Status-only update: unlike refresh_player_values it leaves the typed input
+// buffer alone, so a rejected name stays visible for correction.
+void UiState::show_player_status() {
+    set_text("player-name-status", player_status);
+}
+
 void UiState::refresh_document_values() {
     if (document == nullptr) return;
     set_text("version", std::string("v") + LAMBO_VERSION);
@@ -244,10 +286,14 @@ void UiState::refresh_document_values() {
     set_text("enhancement-lod", values.lod_removal);
     set_text("enhancement-distance", values.draw_distance);
     set_text("enhancement-fog-density", values.fog_density);
+    set_text("enhancement-camdist", values.camera_distance);
+    set_text("enhancement-camheight", values.camera_height);
+    set_text("enhancement-fov", values.camera_fov);
     for (size_t circuit = 0; circuit < values.circuit_visibility.size(); ++circuit) {
         const std::string id = "enhancement-circuit-" + std::to_string(circuit + 1);
         set_text(id.c_str(), values.circuit_visibility[circuit]);
     }
+    refresh_player_values();
     refresh_controls_values();
 }
 
@@ -383,6 +429,7 @@ void process_action(const std::string& action, const std::string& parameter) {
         else if (parameter == "enhancements") g_state->show_page(lambo::ui::Page::Enhancements);
         else if (parameter == "controls") g_state->show_page(lambo::ui::Page::Controls);
         else if (parameter == "haptics") g_state->show_page(lambo::ui::Page::Haptics);
+        else if (parameter == "player") g_state->show_page(lambo::ui::Page::Player);
     } else if (action == "back") {
         if (g_state != nullptr) g_state->back();
     } else if (action == "setting") {
@@ -392,6 +439,26 @@ void process_action(const std::string& action, const std::string& parameter) {
         }
     } else if (action == "control") {
         lambo::ui::apply_control_action(parameter);
+    } else if (action == "player") {
+        if (g_state == nullptr) return;
+        if (parameter == "save") {
+            const std::string typed = g_state->input_value("player-name-input");
+            if (lambo::player::set_saved_name(typed)) {
+                g_state->player_status =
+                    "Saved driver name " + lambo::player::saved_name() + ".";
+                LAMBO_LOG_INFO("ui", "driver name saved from options page\n");
+                g_state->refresh_document_values();
+            } else {
+                g_state->player_status =
+                    "Invalid name: use 1-12 letters A-Z and spaces.";
+                g_state->show_player_status();
+            }
+        } else if (parameter == "clear") {
+            lambo::player::clear_saved_name();
+            g_state->player_status = "Cleared: the game will use its ROM default name.";
+            LAMBO_LOG_INFO("ui", "driver name cleared from options page\n");
+            g_state->refresh_document_values();
+        }
     }
 }
 
@@ -403,6 +470,7 @@ void install_event_handlers(UiState& state) {
     state.event_listener_instancer.register_event("back", [](const std::string&) { process_action("back", ""); });
     state.event_listener_instancer.register_event("setting", [](const std::string& p) { process_action("setting", p); });
     state.event_listener_instancer.register_event("control", [](const std::string& p) { process_action("control", p); });
+    state.event_listener_instancer.register_event("player", [](const std::string& p) { process_action("player", p); });
 }
 
 void init_hook(RT64::RenderInterface* interface, RT64::RenderDevice* device) {
@@ -604,6 +672,13 @@ void draw_hook(RT64::RenderCommandList* command_list,
             else
                 g_state->pages = {lambo::ui::Page::Settings};
         }
+        if (requested == static_cast<int>(lambo::ui::Page::Player) &&
+            g_requested_player_route.exchange(false, std::memory_order_acq_rel)) {
+            if (g_state->entry_point == lambo::ui::EntryPoint::Startup)
+                g_state->pages = {lambo::ui::Page::Home, lambo::ui::Page::Settings};
+            else
+                g_state->pages = {lambo::ui::Page::Settings};
+        }
         g_state->show_page(static_cast<lambo::ui::Page>(requested));
     }
     if (g_requested_back.exchange(false, std::memory_order_acq_rel)) g_state->back();
@@ -687,6 +762,7 @@ void open_launcher() {
     SDL_ShowCursor(SDL_ENABLE);
     g_capture.store(true, std::memory_order_release);
     g_requested_controls_route.store(false, std::memory_order_release);
+    g_requested_player_route.store(false, std::memory_order_release);
     g_requested_page.store(static_cast<int>(Page::Home), std::memory_order_release);
 }
 
@@ -695,6 +771,7 @@ void open_settings() {
     SDL_ShowCursor(SDL_ENABLE);
     g_capture.store(true, std::memory_order_release);
     g_requested_controls_route.store(false, std::memory_order_release);
+    g_requested_player_route.store(false, std::memory_order_release);
     g_requested_page.store(static_cast<int>(Page::Settings), std::memory_order_release);
 }
 
@@ -714,6 +791,7 @@ void open_graphics() {
     SDL_ShowCursor(SDL_ENABLE);
     g_capture.store(true, std::memory_order_release);
     g_requested_controls_route.store(false, std::memory_order_release);
+    g_requested_player_route.store(false, std::memory_order_release);
     g_requested_page.store(static_cast<int>(Page::Graphics), std::memory_order_release);
 }
 
@@ -722,6 +800,7 @@ void open_enhancements() {
     SDL_ShowCursor(SDL_ENABLE);
     g_capture.store(true, std::memory_order_release);
     g_requested_controls_route.store(false, std::memory_order_release);
+    g_requested_player_route.store(false, std::memory_order_release);
     g_requested_page.store(static_cast<int>(Page::Enhancements), std::memory_order_release);
 }
 
@@ -730,7 +809,23 @@ void open_haptics() {
     SDL_ShowCursor(SDL_ENABLE);
     g_capture.store(true, std::memory_order_release);
     g_requested_controls_route.store(false, std::memory_order_release);
+    g_requested_player_route.store(false, std::memory_order_release);
     g_requested_page.store(static_cast<int>(Page::Haptics), std::memory_order_release);
+}
+
+void open_player() {
+    // Mirror open_controls: the entry point follows the runtime state so Back
+    // from a menu-bar invocation during gameplay returns through Settings
+    // instead of stranding a single Startup page with nowhere to go.
+    auto* startup = g_startup_controller.load(std::memory_order_acquire);
+    const EntryPoint entry = startup != nullptr && startup->state() == lambo::StartupState::Started
+        ? EntryPoint::InGameOverlay : EntryPoint::Startup;
+    g_requested_entry_point.store(static_cast<int>(entry), std::memory_order_release);
+    SDL_ShowCursor(SDL_ENABLE);
+    g_capture.store(true, std::memory_order_release);
+    g_requested_controls_route.store(false, std::memory_order_release);
+    g_requested_player_route.store(true, std::memory_order_release);
+    g_requested_page.store(static_cast<int>(Page::Player), std::memory_order_release);
 }
 
 void close_top_page() {

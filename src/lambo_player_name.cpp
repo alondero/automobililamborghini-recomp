@@ -1,8 +1,10 @@
 #include "lambo_player_name.h"
 
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <string>
 
 #include "json/json.hpp"
@@ -34,6 +36,35 @@ bool valid_name(const std::string& name) {
     return true;
 }
 
+// Normalise free input to the ROM keyboard vocabulary: surrounding whitespace
+// trimmed, lowercase uppercased. Internal runs of whitespace collapse to a
+// single space so gamepad/keyboard entry agree.
+std::string normalize_input(const std::string& name) {
+    size_t begin = 0;
+    while (begin < name.size() && std::isspace((unsigned char)name[begin])) ++begin;
+    size_t end = name.size();
+    while (end > begin && std::isspace((unsigned char)name[end - 1])) --end;
+    std::string result;
+    result.reserve(end - begin);
+    bool pending_space = false;
+    for (size_t i = begin; i < end; ++i) {
+        char ch = name[i];
+        if (std::isspace((unsigned char)ch)) {
+            pending_space = true;
+            continue;
+        }
+        if (pending_space && !result.empty()) result.push_back(' ');
+        pending_space = false;
+        if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 'a' + 'A');
+        result.push_back(ch);
+    }
+    return result;
+}
+
+// player.json is touched from both the UI thread (options page) and the guest
+// CPU thread (name-editor hooks), so every file access takes this.
+std::mutex g_player_file_mutex;
+
 std::filesystem::path player_config_path() {
     if (const char* path = std::getenv("LAMBO_PLAYER_CONFIG")) {
         return std::filesystem::path{path};
@@ -42,6 +73,7 @@ std::filesystem::path player_config_path() {
 }
 
 std::string load_saved_name() {
+    std::lock_guard<std::mutex> lock(g_player_file_mutex);
     const std::filesystem::path path = player_config_path();
     std::ifstream in{path};
     if (!in.good()) return {};
@@ -50,11 +82,9 @@ std::string load_saved_name() {
         in >> json;
         const auto field = json.find("name");
         if (field == json.end() || !field->is_string()) return {};
-        std::string name = field->get<std::string>();
-        // player.json can be edited outside the ROM's uppercase-only keyboard.
-        for (char& ch : name) {
-            if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 'a' + 'A');
-        }
+        // player.json can be hand-edited outside the ROM's uppercase-only
+        // keyboard, so it goes through the same normalisation as typed input.
+        const std::string name = normalize_input(field->get<std::string>());
         return valid_name(name) ? name : std::string{};
     } catch (const nlohmann::json::exception& e) {
         LAMBO_LOG_WARN("name", "%s unparseable (%s); keeping ROM default\n",
@@ -64,6 +94,7 @@ std::string load_saved_name() {
 }
 
 void save_name(const std::string& name) {
+    std::lock_guard<std::mutex> lock(g_player_file_mutex);
     const std::filesystem::path path = player_config_path();
     const std::filesystem::path tmp = path.string() + ".tmp";
     std::error_code ec;
@@ -100,7 +131,35 @@ int current_driver(uint8_t* rdram) {
     return (int16_t)MEM_H(0, (gpr)(int32_t)kCurrentDriverAddr);
 }
 
+void clear_saved_name_file() {
+    std::lock_guard<std::mutex> lock(g_player_file_mutex);
+    const std::filesystem::path path = player_config_path();
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
 } // namespace
+
+namespace lambo {
+namespace player {
+
+std::string saved_name() {
+    return load_saved_name();
+}
+
+bool set_saved_name(const std::string& name) {
+    const std::string normalized = normalize_input(name);
+    if (!valid_name(normalized)) return false;
+    save_name(normalized);
+    return true;
+}
+
+void clear_saved_name() {
+    clear_saved_name_file();
+}
+
+} // namespace player
+} // namespace lambo
 
 extern "C" void lambo_player_name_seed(uint8_t* rdram) {
     if (current_driver(rdram) != kPlayerOne) return;

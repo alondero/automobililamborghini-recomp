@@ -21,6 +21,7 @@ def main() -> None:
         "pages/enhancements.rml",
         "pages/controls.rml",
         "pages/haptics.rml",
+        "pages/player.rml",
     }
 
     for relative in required_documents:
@@ -48,11 +49,12 @@ def main() -> None:
         "fog:toggle", "sky:toggle", "lod:toggle",
         "circuit:1", "circuit:2", "circuit:3", "circuit:4", "circuit:5", "circuit:6",
         "distance:next", "fogdensity:next",
+        "camdist:next", "camheight:next", "fov:next",
     }
     require(setting_actions == expected_settings,
             f"setting actions differ: missing={expected_settings - setting_actions}, "
             f"unexpected={setting_actions - expected_settings}")
-    require({"graphics", "enhancements", "controls", "haptics"} <= page_actions,
+    require({"graphics", "enhancements", "controls", "haptics", "player"} <= page_actions,
             "settings hub is missing a stable route identifier")
 
     graphics = ET.parse(ui_root / "pages" / "graphics.rml")
@@ -106,6 +108,24 @@ def main() -> None:
     enhancements_text = (ui_root / "pages" / "enhancements.rml").read_text(encoding="utf-8")
     require(enhancements_text.index('class="help"') < enhancements_text.index('class="columns"'),
             "enhancement guidance must sit above both columns to keep their controls aligned")
+    enhancements = ET.parse(ui_root / "pages" / "enhancements.rml")
+    for value_id in ("enhancement-camdist", "enhancement-camheight", "enhancement-fov"):
+        require(any(element.attrib.get("id") == value_id for element in enhancements.iter()),
+                f"enhancements control is missing current-value target: {value_id}")
+
+    player = ET.parse(ui_root / "pages" / "player.rml")
+    player_ids = {element.attrib.get("id") for element in player.iter() if element.attrib.get("id")}
+    require({"player-name-current", "player-name-input", "player-name-status"} <= player_ids,
+            f"Driver page is missing state targets: "
+            f"{ {'player-name-current', 'player-name-input', 'player-name-status'} - player_ids}")
+    player_actions = {element.attrib.get("onclick") for element in player.iter()}
+    require({"player:save", "player:clear"} <= player_actions,
+            "Driver page is missing save/clear actions")
+
+    launcher_ids = {element.attrib.get("id") for element in ET.parse(ui_root / "launcher.rml").iter()
+                    if element.attrib.get("id")}
+    require("launcher-driver-name" in launcher_ids,
+            "launcher must surface the current driver name")
 
     launcher = (ui_root / "launcher.rml").read_text(encoding="utf-8")
     require("v1.0.0" not in launcher, "launcher must not hardcode a release version")
