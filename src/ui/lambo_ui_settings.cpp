@@ -109,14 +109,18 @@ constexpr auto camera_height_options = std::array{1.0, 0.66, 0.4};
 constexpr auto fov_options = std::array{0.0, 5.0, 10.0, 15.0, 20.0};
 
 template <typename T, size_t Size>
+T step_from_index(const std::array<T, Size>& values, size_t index, bool forward) {
+    if (forward) {
+        return index + 1 == values.size() ? values.front() : values[index + 1];
+    }
+    return index == 0 ? values.back() : values[index - 1];
+}
+
+template <typename T, size_t Size>
 T step_value(T current, const std::array<T, Size>& values, bool forward) {
     const auto position = std::find(values.begin(), values.end(), current);
     if (position == values.end()) return forward ? values.front() : values.back();
-    if (forward) {
-        const auto next = std::next(position);
-        return next == values.end() ? values.front() : *next;
-    }
-    return position == values.begin() ? values.back() : *std::prev(position);
+    return step_from_index(values, static_cast<size_t>(position - values.begin()), forward);
 }
 
 template <size_t Size>
@@ -125,17 +129,11 @@ double step_number(double current, const std::array<double, Size>& values, bool 
         return std::abs(value - current) < 0.001;
     });
     if (position == values.end()) return forward ? values.front() : values.back();
-    if (forward) {
-        const auto next = std::next(position);
-        return next == values.end() ? values.front() : *next;
-    }
-    return position == values.begin() ? values.back() : *std::prev(position);
+    return step_from_index(values, static_cast<size_t>(position - values.begin()), forward);
 }
 
-// Index of the value within an authored option list, used only for the visual
-// position track. Exact matches are the normal case; interpolate otherwise.
 template <size_t Size>
-int index_of(double current, const std::array<double, Size>& values) {
+int option_index(double current, const std::array<double, Size>& values) {
     for (size_t i = 0; i < values.size(); ++i) {
         if (std::abs(values[i] - current) < 0.001) return static_cast<int>(i);
     }
@@ -421,15 +419,15 @@ SettingsSnapshot settings_snapshot() {
     result.msaa_track = track(option_index(cfg.msaa_option, msaa_options), msaa_options.size());
     result.framebuffer_precision_track = track(option_index(cfg.hpfb_option, hpfb_options), hpfb_options.size());
     result.graphics_api_track = track(option_index(cfg.api_option, api_options), api_options.size());
-    result.draw_distance_track = track(index_of(
+    result.draw_distance_track = track(option_index(
         lambo::config::global_draw_distance(), draw_distance_options), draw_distance_options.size());
-    result.fog_density_track = track(index_of(
+    result.fog_density_track = track(option_index(
         lambo::config::global_fog_scale(), fog_density_options), fog_density_options.size());
-    result.camera_distance_track = track(index_of(
+    result.camera_distance_track = track(option_index(
         lambo::config::camera_distance_scale(), camera_distance_options), camera_distance_options.size());
-    result.camera_height_track = track(index_of(
+    result.camera_height_track = track(option_index(
         lambo::config::camera_height_scale(), camera_height_options), camera_height_options.size());
-    result.camera_fov_track = track(index_of(
+    result.camera_fov_track = track(option_index(
         lambo::config::camera_fov_add(), fov_options), fov_options.size());
     return result;
 }
