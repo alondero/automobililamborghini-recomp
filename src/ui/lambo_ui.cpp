@@ -144,6 +144,7 @@ struct UiState {
     void restore_focus(lambo::ui::Page page);
     void set_input_mode(InputMode mode);
     void set_text(const char* id, const std::string& value);
+    void set_toggle(const char* id, bool on);
     void set_input_value(const char* id, const std::string& value);
     std::string input_value(const char* id);
     void refresh_player_values();
@@ -152,8 +153,12 @@ struct UiState {
     void refresh_controls_values();
     void load_page(lambo::ui::Page page, bool push_history);
     void show_page(lambo::ui::Page page);
+    void navigate_settings(lambo::ui::Page page);
     void hide_pages();
     void back();
+    void focus_settings_content();
+    bool adjust_focused_setting(bool forward);
+    bool activate_focused_setting();
     void process_key_down(int key, bool repeat);
     void process_navigation_events(const std::vector<lambo::ui::NavigationEvent>& events);
     void process_queued_events();
@@ -216,6 +221,41 @@ void UiState::restore_focus(lambo::ui::Page page) {
         focus = document->GetElementById(saved->second);
     }
     if (focus == nullptr) focus = document->GetElementById("autofocus");
+    if (focus == nullptr) {
+        const char* nav_id = nullptr;
+        switch (page) {
+            case lambo::ui::Page::Settings: nav_id = "nav-settings"; break;
+            case lambo::ui::Page::Graphics: nav_id = "nav-graphics"; break;
+            case lambo::ui::Page::Enhancements: nav_id = "nav-enhancements"; break;
+            case lambo::ui::Page::Controls: nav_id = "nav-controls"; break;
+            case lambo::ui::Page::Player: nav_id = "nav-player"; break;
+            default: break;
+        }
+        if (nav_id != nullptr) focus = document->GetElementById(nav_id);
+    }
+    if (focus != nullptr) focus->Focus();
+}
+
+void UiState::focus_settings_content() {
+    if (document == nullptr || !current_page.has_value()) return;
+
+    Rml::Element* focus = nullptr;
+    switch (*current_page) {
+        case lambo::ui::Page::Graphics:
+            focus = document->GetElementById("setting-res");
+            break;
+        case lambo::ui::Page::Enhancements:
+            focus = document->GetElementById("toggle-fog");
+            break;
+        case lambo::ui::Page::Controls:
+            focus = document->QuerySelector(".mapper-slot-btn");
+            break;
+        case lambo::ui::Page::Player:
+            focus = document->GetElementById("player-name-input");
+            break;
+        default:
+            break;
+    }
     if (focus != nullptr) focus->Focus();
 }
 
@@ -234,6 +274,13 @@ void UiState::set_text(const char* id, const std::string& value) {
     if (document == nullptr) return;
     if (Rml::Element* element = document->GetElementById(id)) {
         element->SetInnerRML(value);
+    }
+}
+
+void UiState::set_toggle(const char* id, bool on) {
+    if (document == nullptr) return;
+    if (Rml::Element* element = document->GetElementById(id)) {
+        element->SetClass("on", on);
     }
 }
 
@@ -261,6 +308,7 @@ void UiState::refresh_player_values() {
     set_input_value("player-name-input", saved);
     set_text("player-name-status", player_status);
     set_text("launcher-driver-name", saved.empty() ? "(ROM default)" : saved);
+    set_text("overview-driver", saved.empty() ? "(ROM default)" : saved);
 }
 
 // Status-only update: unlike refresh_player_values it leaves the typed input
@@ -281,6 +329,14 @@ void UiState::refresh_document_values() {
     set_text("graphics-msaa", values.msaa);
     set_text("graphics-hpfb", values.framebuffer_precision);
     set_text("graphics-api", values.graphics_api);
+    set_text("graphics-resolution-track", values.resolution_track);
+    set_text("graphics-supersampling-track", values.supersampling_track);
+    set_text("graphics-aspect-track", values.aspect_track);
+    set_text("graphics-hud-track", values.hud_track);
+    set_text("graphics-refresh-track", values.refresh_track);
+    set_text("graphics-msaa-track", values.msaa_track);
+    set_text("graphics-hpfb-track", values.framebuffer_precision_track);
+    set_text("graphics-api-track", values.graphics_api_track);
     set_text("enhancement-fog", values.widescreen_fog);
     set_text("enhancement-sky", values.widescreen_sky);
     set_text("enhancement-lod", values.lod_removal);
@@ -289,10 +345,26 @@ void UiState::refresh_document_values() {
     set_text("enhancement-camdist", values.camera_distance);
     set_text("enhancement-camheight", values.camera_height);
     set_text("enhancement-fov", values.camera_fov);
+    set_text("enhancement-distance-track", values.draw_distance_track);
+    set_text("enhancement-fog-density-track", values.fog_density_track);
+    set_text("enhancement-camdist-track", values.camera_distance_track);
+    set_text("enhancement-camheight-track", values.camera_height_track);
+    set_text("enhancement-fov-track", values.camera_fov_track);
     for (size_t circuit = 0; circuit < values.circuit_visibility.size(); ++circuit) {
         const std::string id = "enhancement-circuit-" + std::to_string(circuit + 1);
         set_text(id.c_str(), values.circuit_visibility[circuit]);
     }
+    set_toggle("switch-fog", values.widescreen_fog == "Enabled");
+    set_toggle("switch-sky", values.widescreen_sky == "Enabled");
+    set_toggle("switch-lod", values.lod_removal == "Enabled");
+    for (size_t circuit = 0; circuit < values.circuit_visibility.size(); ++circuit) {
+        const std::string id = "switch-circuit-" + std::to_string(circuit + 1);
+        set_toggle(id.c_str(), values.circuit_visibility[circuit] == "Enabled");
+    }
+    set_text("overview-graphics",
+             values.resolution + " | " + values.aspect_ratio + " | " + values.msaa + " AA");
+    set_text("overview-enhancements",
+             values.draw_distance + " draw | " + values.fog_density + " fog");
     refresh_player_values();
     refresh_controls_values();
 }
@@ -364,6 +436,7 @@ void UiState::load_page(lambo::ui::Page page, bool push_history) {
     if (push_history) pages.push_back(page);
     refresh_document_values();
     restore_focus(page);
+    focus_settings_content();
     set_input_mode(input_mode);
     g_visible.store(true, std::memory_order_release);
     g_capture.store(true, std::memory_order_release);
@@ -372,6 +445,25 @@ void UiState::load_page(lambo::ui::Page page, bool push_history) {
 
 void UiState::show_page(lambo::ui::Page page) {
     load_page(page, true);
+}
+
+// The sidebar replaces content in place: Back always returns to the Settings
+// hub rather than replaying every category the user visited. Launcher shortcuts
+// (reached from Home) keep Home as their single parent instead.
+void UiState::navigate_settings(lambo::ui::Page page) {
+    const bool from_home = current_page == lambo::ui::Page::Home;
+    std::vector<lambo::ui::Page> stack;
+    if (!pages.empty() && pages.front() == lambo::ui::Page::Home) {
+        stack.push_back(lambo::ui::Page::Home);
+    }
+    if (from_home) {
+        stack.push_back(page);
+    } else {
+        stack.push_back(lambo::ui::Page::Settings);
+        if (page != lambo::ui::Page::Settings) stack.push_back(page);
+    }
+    pages = std::move(stack);
+    load_page(page, false);
 }
 
 void UiState::hide_pages() {
@@ -424,17 +516,17 @@ void process_action(const std::string& action, const std::string& parameter) {
         if (g_state != nullptr) g_state->show_page(lambo::ui::Page::Settings);
     } else if (action == "page") {
         if (g_state == nullptr) return;
-        if (parameter == "settings") g_state->show_page(lambo::ui::Page::Settings);
-        else if (parameter == "graphics") g_state->show_page(lambo::ui::Page::Graphics);
-        else if (parameter == "enhancements") g_state->show_page(lambo::ui::Page::Enhancements);
-        else if (parameter == "controls") g_state->show_page(lambo::ui::Page::Controls);
-        else if (parameter == "haptics") g_state->show_page(lambo::ui::Page::Haptics);
-        else if (parameter == "player") g_state->show_page(lambo::ui::Page::Player);
+        if (parameter == "settings") g_state->navigate_settings(lambo::ui::Page::Settings);
+        else if (parameter == "graphics") g_state->navigate_settings(lambo::ui::Page::Graphics);
+        else if (parameter == "enhancements") g_state->navigate_settings(lambo::ui::Page::Enhancements);
+        else if (parameter == "controls") g_state->navigate_settings(lambo::ui::Page::Controls);
+        else if (parameter == "haptics") g_state->navigate_settings(lambo::ui::Page::Haptics);
+        else if (parameter == "player") g_state->navigate_settings(lambo::ui::Page::Player);
     } else if (action == "back") {
         if (g_state != nullptr) g_state->back();
     } else if (action == "setting") {
-        const auto setting = lambo::ui::setting_action_from_name(parameter);
-        if (setting.has_value() && lambo::ui::apply_setting_action(*setting) && g_state != nullptr) {
+        const auto request = lambo::ui::setting_request_from_name(parameter);
+        if (request.has_value() && lambo::ui::apply_setting_request(*request) && g_state != nullptr) {
             g_state->refresh_document_values();
         }
     } else if (action == "control") {
@@ -460,6 +552,41 @@ void process_action(const std::string& action, const std::string& parameter) {
             g_state->refresh_document_values();
         }
     }
+}
+
+// Settings rows carry their binding in their element id so a focused row can be
+// adjusted with the D-Pad/stick without a second focus stop per value. Naming:
+// "setting-res" -> res:next/:prev (stepper), "toggle-fog" -> fog:toggle (switch).
+bool UiState::adjust_focused_setting(bool forward) {
+    if (context == nullptr) return false;
+    Rml::Element* focused = context->GetFocusElement();
+    if (focused == nullptr) return false;
+    const std::string id = std::string(focused->GetId().c_str());
+    if (id.rfind("setting-", 0) != 0) return false;
+    std::string name = id.substr(8);
+    if (name.rfind("circuit-", 0) == 0) name.replace(7, 1, ":");
+    process_action("setting", name + (forward ? ":next" : ":prev"));
+    return true;
+}
+
+bool UiState::activate_focused_setting() {
+    if (context == nullptr) return false;
+    Rml::Element* focused = context->GetFocusElement();
+    if (focused == nullptr) return false;
+    const std::string id = std::string(focused->GetId().c_str());
+    if (id.rfind("setting-", 0) == 0) {
+        std::string name = id.substr(8);
+        if (name.rfind("circuit-", 0) == 0) name.replace(7, 1, ":");
+        process_action("setting", name + ":next");
+        return true;
+    }
+    if (id.rfind("toggle-", 0) == 0) {
+        std::string name = id.substr(7);
+        if (name.rfind("circuit-", 0) == 0) name.replace(7, 1, ":");
+        process_action("setting", name + ":toggle");
+        return true;
+    }
+    return false;
 }
 
 void install_event_handlers(UiState& state) {
@@ -567,6 +694,11 @@ void UiState::process_key_down(int key, bool repeat) {
         if (!repeat) back();
         return;
     }
+    if ((key == SDLK_RETURN || key == SDLK_KP_ENTER) && !repeat && activate_focused_setting()) {
+        return;
+    }
+    if (key == SDLK_LEFT && adjust_focused_setting(false)) return;
+    if (key == SDLK_RIGHT && adjust_focused_setting(true)) return;
     context->ProcessKeyDown(RmlSDL::ConvertKey(key), RmlSDL::GetKeyModifierState());
 }
 
@@ -584,6 +716,11 @@ void UiState::process_navigation_events(
         if (event.key == NavigationKey::Back) {
             if (event.type == NavigationEventType::Press) back();
             continue;
+        }
+        if (event.type == NavigationEventType::Press) {
+            if (event.key == NavigationKey::Activate && activate_focused_setting()) continue;
+            if (event.key == NavigationKey::Left && adjust_focused_setting(false)) continue;
+            if (event.key == NavigationKey::Right && adjust_focused_setting(true)) continue;
         }
         const int key = sdl_key_from_navigation(event.key);
         if (key == SDLK_UNKNOWN) continue;
@@ -674,6 +811,16 @@ void draw_hook(RT64::RenderCommandList* command_list,
         }
         if (requested == static_cast<int>(lambo::ui::Page::Player) &&
             g_requested_player_route.exchange(false, std::memory_order_acq_rel)) {
+            if (g_state->entry_point == lambo::ui::EntryPoint::Startup)
+                g_state->pages = {lambo::ui::Page::Home, lambo::ui::Page::Settings};
+            else
+                g_state->pages = {lambo::ui::Page::Settings};
+        }
+        // Native-menu shortcuts into a settings category should still let the
+        // sidebar's Back button return to the hub (or the launcher).
+        if (requested == static_cast<int>(lambo::ui::Page::Graphics) ||
+            requested == static_cast<int>(lambo::ui::Page::Enhancements) ||
+            requested == static_cast<int>(lambo::ui::Page::Haptics)) {
             if (g_state->entry_point == lambo::ui::EntryPoint::Startup)
                 g_state->pages = {lambo::ui::Page::Home, lambo::ui::Page::Settings};
             else

@@ -5,49 +5,236 @@
   </head>
   <body>
     <div id="window">
-      <div class="panel">
-        <div class="header-brand">
-          <div class="brand-title-row">
-            <h1>VISUAL ENHANCEMENTS</h1>
+      <div class="panel settings-panel">
+        <div class="settings-shell">
+          <div class="settings-nav">
+            <div class="nav-brand">
+              <span class="nav-kicker">AUTOMOBILI</span>
+              <h1>LAMBORGHINI</h1>
+            </div>
+            <div class="nav-list">
+              <button id="nav-settings" class="nav-item" onclick="page:settings"><span class="nav-marker"></span><span class="nav-label">Overview</span></button>
+              <button id="nav-graphics" class="nav-item" onclick="page:graphics"><span class="nav-marker"></span><span class="nav-label">Graphics &amp; Display</span></button>
+              <button id="nav-enhancements" class="nav-item active" onclick="page:enhancements"><span class="nav-marker"></span><span class="nav-label">Visual Enhancements</span></button>
+              <button id="nav-controls" class="nav-item" onclick="page:controls"><span class="nav-marker"></span><span class="nav-label">Controls Mapper</span></button>
+              <button id="nav-player" class="nav-item" onclick="page:player"><span class="nav-marker"></span><span class="nav-label">Driver Name</span></button>
+              <button id="nav-haptics" class="nav-item" disabled="disabled" onclick="page:haptics"><span class="nav-marker"></span><span class="nav-label">Haptics<span class="nav-note">COMING SOON</span></span></button>
+            </div>
+            <div class="nav-spacer"></div>
+            <div class="nav-footer">
+              <button class="nav-back" onclick="back">Back</button>
+              <div class="nav-hints">
+                <span class="guide-item"><span class="guide-key">A / Enter</span> Toggle / Change</span>
+                <span class="guide-item"><span class="guide-key">B / Esc</span> Back</span>
+                <span class="guide-item"><span class="guide-key">Left / Right</span> Change value</span>
+              </div>
+              <div id="version" class="nav-version">Loading version...</div>
+            </div>
           </div>
-          <p class="brand-subtitle">Optional visual polish and draw distance extensions. Settings save automatically.</p>
-        </div>
 
-        <p class="help">Full-track visibility reduces distant pop-in per circuit when LOD limits are removed. Pro circuits may reveal unfinished scenery.</p>
+          <div class="settings-content">
+            <div class="content-header">
+              <h1>VISUAL ENHANCEMENTS</h1>
+              <p class="brand-subtitle">Optional visual polish and draw distance extensions. Settings save automatically.</p>
+            </div>
 
-        <div class="columns">
-          <div class="column">
-            <h2>Visual Polish</h2>
-            <button id="autofocus" onclick="setting:fog:toggle"><span class="setting-label">Match 3P/4P fog</span><span id="enhancement-fog" class="setting-value">Loading...</span></button>
-            <button onclick="setting:sky:toggle"><span class="setting-label">Match 3P/4P sky</span><span id="enhancement-sky" class="setting-value">Loading...</span></button>
-            <button onclick="setting:lod:toggle"><span class="setting-label">Remove original LOD limits</span><span id="enhancement-lod" class="setting-value">Loading...</span></button>
-            <button onclick="setting:distance:next"><span class="setting-label">Draw distance</span><span id="enhancement-distance" class="setting-value">Loading...</span></button>
-            <button onclick="setting:fogdensity:next"><span class="setting-label">Fog density</span><span id="enhancement-fog-density" class="setting-value">Loading...</span></button>
-          </div>
-          <div class="column">
-            <h2>Full-track visibility</h2>
-            <button onclick="setting:circuit:1"><span class="setting-label">Circuit 1 (Basic)</span><span id="enhancement-circuit-1" class="setting-value">Loading...</span></button>
-            <button onclick="setting:circuit:2"><span class="setting-label">Circuit 2 (Basic)</span><span id="enhancement-circuit-2" class="setting-value">Loading...</span></button>
-            <button onclick="setting:circuit:3"><span class="setting-label">Circuit 3 (Basic)</span><span id="enhancement-circuit-3" class="setting-value">Loading...</span></button>
-            <button onclick="setting:circuit:4"><span class="setting-label">Circuit 4 (Pro)</span><span id="enhancement-circuit-4" class="setting-value">Loading...</span></button>
-            <button onclick="setting:circuit:5"><span class="setting-label">Circuit 5 (Pro)</span><span id="enhancement-circuit-5" class="setting-value">Loading...</span></button>
-            <button onclick="setting:circuit:6"><span class="setting-label">Circuit 6 (Pro)</span><span id="enhancement-circuit-6" class="setting-value">Loading...</span></button>
-          </div>
-          <div class="column">
-            <h2>Chase camera (sense of speed)</h2>
-            <button onclick="setting:camdist:next"><span class="setting-label">Camera distance</span><span id="enhancement-camdist" class="setting-value">Loading...</span></button>
-            <button onclick="setting:camheight:next"><span class="setting-label">Camera height</span><span id="enhancement-camheight" class="setting-value">Loading...</span></button>
-            <button onclick="setting:fov:next"><span class="setting-label">Field-of-view boost</span><span id="enhancement-fov" class="setting-value">Loading...</span></button>
-          </div>
-        </div>
+            <p class="help">Full-track visibility reduces distant pop-in per circuit when LOD limits are removed. Pro circuits may reveal unfinished scenery.</p>
 
-        <button class="secondary exit-btn" onclick="back">Back to Settings</button>
+            <div class="setting-group">
+              <div class="setting-group-title">ATMOSPHERE</div>
+              <div class="setting-list">
+                <div id="toggle-fog" class="setting-row" tab-index="auto" onclick="setting:fog:toggle">
+                  <div class="setting-info">
+                    <span class="setting-name">Match 3P/4P fog</span>
+                    <span class="setting-desc">Uses player-car fog treatment when only one car is drawn.</span>
+                  </div>
+                  <div class="setting-control">
+                    <div class="setting-stepper">
+                      <span id="enhancement-fog" class="setting-value">Loading...</span>
+                      <span id="switch-fog" class="switch"><span class="knob"></span></span>
+                    </div>
+                  </div>
+                </div>
+                <div id="toggle-sky" class="setting-row" tab-index="auto" onclick="setting:sky:toggle">
+                  <div class="setting-info">
+                    <span class="setting-name">Match 3P/4P sky</span>
+                    <span class="setting-desc">Uses the wide-screen sky treatment from multi-car races.</span>
+                  </div>
+                  <div class="setting-control">
+                    <div class="setting-stepper">
+                      <span id="enhancement-sky" class="setting-value">Loading...</span>
+                      <span id="switch-sky" class="switch"><span class="knob"></span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-        <div class="footer-bar">
-          <div class="controller-guide">
-            <span class="guide-item"><span class="guide-key">A / Enter</span> Toggle / Cycle</span>
-            <span class="guide-item"><span class="guide-key">B / Esc</span> Back</span>
-            <span class="guide-item"><span class="guide-key">D-Pad / Stick</span> Navigate</span>
+            <div class="setting-group">
+              <div class="setting-group-title">WORLD DETAIL</div>
+              <div class="setting-list">
+                <div id="toggle-lod" class="setting-row" tab-index="auto" onclick="setting:lod:toggle">
+                  <div class="setting-info">
+                    <span class="setting-name">Remove original LOD limits</span>
+                    <span class="setting-desc">Keeps full-detail models visible at any distance.</span>
+                  </div>
+                  <div class="setting-control">
+                    <div class="setting-stepper">
+                      <span id="enhancement-lod" class="setting-value">Loading...</span>
+                      <span id="switch-lod" class="switch"><span class="knob"></span></span>
+                    </div>
+                  </div>
+                </div>
+                <div id="setting-distance" class="setting-row" tab-index="auto">
+                  <div class="setting-info">
+                    <span class="setting-name">Draw distance</span>
+                    <span class="setting-desc">Multiplier applied to scenery and opponent draw range.</span>
+                  </div>
+                  <div class="setting-control">
+                    <div class="setting-stepper">
+                      <span class="step-btn" onclick="setting:distance:prev">&lt;</span>
+                      <span id="enhancement-distance" class="setting-value">Loading...</span>
+                      <span class="step-btn" onclick="setting:distance:next">&gt;</span>
+                    </div>
+                    <div id="enhancement-distance-track" class="track"></div>
+                  </div>
+                </div>
+                <div id="setting-fogdensity" class="setting-row" tab-index="auto">
+                  <div class="setting-info">
+                    <span class="setting-name">Fog density</span>
+                    <span class="setting-desc">Scales the authored distance fog. Off reveals the full track.</span>
+                  </div>
+                  <div class="setting-control">
+                    <div class="setting-stepper">
+                      <span class="step-btn" onclick="setting:fogdensity:prev">&lt;</span>
+                      <span id="enhancement-fog-density" class="setting-value">Loading...</span>
+                      <span class="step-btn" onclick="setting:fogdensity:next">&gt;</span>
+                    </div>
+                    <div id="enhancement-fog-density-track" class="track"></div>
+                  </div>
+                </div>
+                <div id="toggle-circuit-1" class="setting-row" tab-index="auto" onclick="setting:circuit:1">
+                  <div class="setting-info">
+                    <span class="setting-name">Circuit 1 (Basic)</span>
+                    <span class="setting-desc">Full-track visibility for this circuit.</span>
+                  </div>
+                  <div class="setting-control">
+                    <div class="setting-stepper">
+                      <span id="enhancement-circuit-1" class="setting-value">Loading...</span>
+                      <span id="switch-circuit-1" class="switch"><span class="knob"></span></span>
+                    </div>
+                  </div>
+                </div>
+                <div id="toggle-circuit-2" class="setting-row" tab-index="auto" onclick="setting:circuit:2">
+                  <div class="setting-info">
+                    <span class="setting-name">Circuit 2 (Basic)</span>
+                    <span class="setting-desc">Full-track visibility for this circuit.</span>
+                  </div>
+                  <div class="setting-control">
+                    <div class="setting-stepper">
+                      <span id="enhancement-circuit-2" class="setting-value">Loading...</span>
+                      <span id="switch-circuit-2" class="switch"><span class="knob"></span></span>
+                    </div>
+                  </div>
+                </div>
+                <div id="toggle-circuit-3" class="setting-row" tab-index="auto" onclick="setting:circuit:3">
+                  <div class="setting-info">
+                    <span class="setting-name">Circuit 3 (Basic)</span>
+                    <span class="setting-desc">Full-track visibility for this circuit.</span>
+                  </div>
+                  <div class="setting-control">
+                    <div class="setting-stepper">
+                      <span id="enhancement-circuit-3" class="setting-value">Loading...</span>
+                      <span id="switch-circuit-3" class="switch"><span class="knob"></span></span>
+                    </div>
+                  </div>
+                </div>
+                <div id="toggle-circuit-4" class="setting-row" tab-index="auto" onclick="setting:circuit:4">
+                  <div class="setting-info">
+                    <span class="setting-name">Circuit 4 (Pro)</span>
+                    <span class="setting-desc">Full-track visibility for this circuit.</span>
+                  </div>
+                  <div class="setting-control">
+                    <div class="setting-stepper">
+                      <span id="enhancement-circuit-4" class="setting-value">Loading...</span>
+                      <span id="switch-circuit-4" class="switch"><span class="knob"></span></span>
+                    </div>
+                  </div>
+                </div>
+                <div id="toggle-circuit-5" class="setting-row" tab-index="auto" onclick="setting:circuit:5">
+                  <div class="setting-info">
+                    <span class="setting-name">Circuit 5 (Pro)</span>
+                    <span class="setting-desc">Full-track visibility for this circuit.</span>
+                  </div>
+                  <div class="setting-control">
+                    <div class="setting-stepper">
+                      <span id="enhancement-circuit-5" class="setting-value">Loading...</span>
+                      <span id="switch-circuit-5" class="switch"><span class="knob"></span></span>
+                    </div>
+                  </div>
+                </div>
+                <div id="toggle-circuit-6" class="setting-row" tab-index="auto" onclick="setting:circuit:6">
+                  <div class="setting-info">
+                    <span class="setting-name">Circuit 6 (Pro)</span>
+                    <span class="setting-desc">Full-track visibility for this circuit.</span>
+                  </div>
+                  <div class="setting-control">
+                    <div class="setting-stepper">
+                      <span id="enhancement-circuit-6" class="setting-value">Loading...</span>
+                      <span id="switch-circuit-6" class="switch"><span class="knob"></span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="setting-group">
+              <div class="setting-group-title">CHASE CAMERA (SENSE OF SPEED)</div>
+              <div class="setting-list">
+                <div id="setting-camdist" class="setting-row" tab-index="auto">
+                  <div class="setting-info">
+                    <span class="setting-name">Camera distance</span>
+                    <span class="setting-desc">Pulls the chase camera closer for a faster feel.</span>
+                  </div>
+                  <div class="setting-control">
+                    <div class="setting-stepper">
+                      <span class="step-btn" onclick="setting:camdist:prev">&lt;</span>
+                      <span id="enhancement-camdist" class="setting-value">Loading...</span>
+                      <span class="step-btn" onclick="setting:camdist:next">&gt;</span>
+                    </div>
+                    <div id="enhancement-camdist-track" class="track"></div>
+                  </div>
+                </div>
+                <div id="setting-camheight" class="setting-row" tab-index="auto">
+                  <div class="setting-info">
+                    <span class="setting-name">Camera height</span>
+                    <span class="setting-desc">Lowers the chase camera for a more grounded angle.</span>
+                  </div>
+                  <div class="setting-control">
+                    <div class="setting-stepper">
+                      <span class="step-btn" onclick="setting:camheight:prev">&lt;</span>
+                      <span id="enhancement-camheight" class="setting-value">Loading...</span>
+                      <span class="step-btn" onclick="setting:camheight:next">&gt;</span>
+                    </div>
+                    <div id="enhancement-camheight-track" class="track"></div>
+                  </div>
+                </div>
+                <div id="setting-fov" class="setting-row" tab-index="auto">
+                  <div class="setting-info">
+                    <span class="setting-name">Field-of-view boost</span>
+                    <span class="setting-desc">Widens the lens. The view cone adapts automatically.</span>
+                  </div>
+                  <div class="setting-control">
+                    <div class="setting-stepper">
+                      <span class="step-btn" onclick="setting:fov:prev">&lt;</span>
+                      <span id="enhancement-fov" class="setting-value">Loading...</span>
+                      <span class="step-btn" onclick="setting:fov:next">&gt;</span>
+                    </div>
+                    <div id="enhancement-fov-track" class="track"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -71,6 +71,29 @@ int main() {
     expect(!lambo::ui::setting_action_from_name("unknown:setting").has_value(),
            "unknown setting bindings are rejected");
 
+    const auto previous = lambo::ui::setting_request_from_name("res:prev");
+    expect(previous.has_value() &&
+           previous->direction == lambo::ui::SettingDirection::Previous,
+           "previous-direction bindings parse with their direction");
+    const auto toggle = lambo::ui::setting_request_from_name("fog:toggle");
+    expect(toggle.has_value() && toggle->direction == lambo::ui::SettingDirection::Next,
+           "toggle bindings parse as forward requests");
+
+    const auto apply_request = [](const char* name) {
+        const auto request = lambo::ui::setting_request_from_name(name);
+        return request.has_value() && lambo::ui::apply_setting_request(*request);
+    };
+    using ResolutionSetting = ultramodern::renderer::Resolution;
+    expect(apply_request("res:next") &&
+           lambo::config::current_graphics().res_option == ResolutionSetting::Original,
+           "forward request steps to the next option");
+    expect(apply_request("res:prev") &&
+           lambo::config::current_graphics().res_option == ResolutionSetting::Auto,
+           "previous request steps back to the original option");
+    expect(apply_request("res:prev") &&
+           lambo::config::current_graphics().res_option == ResolutionSetting::Original2x,
+           "previous request wraps to the last option at the head of the cycle");
+    lambo::config::apply_graphics(lambo::config::default_graphics_config());
     const auto apply = [](const char* name) {
         const auto action = lambo::ui::setting_action_from_name(name);
         return action.has_value() && lambo::ui::apply_setting_action(*action);
@@ -136,6 +159,10 @@ int main() {
     expect(snapshot.camera_distance == "0.8x", "settings snapshot presents camera distance");
     expect(snapshot.camera_height == "0.66x", "settings snapshot presents camera height");
     expect(snapshot.camera_fov == "+5 deg", "settings snapshot presents FOV boost");
+    expect(snapshot.resolution_track.find("track-step on") != std::string::npos,
+           "settings snapshot exposes a position track for stepped values");
+    expect(snapshot.draw_distance_track.find("track-step on") != std::string::npos,
+           "settings snapshot exposes a position track for numeric cycles");
 
     using SnapshotStringMember = std::string lambo::ui::SettingsSnapshot::*;
     const auto expect_cycle_wraps = [&](const char* binding, int steps, const std::string& initial,

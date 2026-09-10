@@ -44,12 +44,14 @@ def main() -> None:
                 page_actions.add(onclick.removeprefix("page:"))
 
     expected_settings = {
-        "res:next", "ss:next", "aspect:next", "hud:next", "rate:next",
-        "msaa:next", "hpfb:next", "api:next",
+        "res:next", "res:prev", "ss:next", "ss:prev", "aspect:next", "aspect:prev",
+        "hud:next", "hud:prev", "rate:next", "rate:prev", "msaa:next", "msaa:prev",
+        "hpfb:next", "hpfb:prev", "api:next", "api:prev",
         "fog:toggle", "sky:toggle", "lod:toggle",
         "circuit:1", "circuit:2", "circuit:3", "circuit:4", "circuit:5", "circuit:6",
-        "distance:next", "fogdensity:next",
-        "camdist:next", "camheight:next", "fov:next",
+        "distance:next", "distance:prev", "fogdensity:next", "fogdensity:prev",
+        "camdist:next", "camdist:prev", "camheight:next", "camheight:prev",
+        "fov:next", "fov:prev",
     }
     require(setting_actions == expected_settings,
             f"setting actions differ: missing={expected_settings - setting_actions}, "
@@ -57,11 +59,31 @@ def main() -> None:
     require({"graphics", "enhancements", "controls", "haptics", "player"} <= page_actions,
             "settings hub is missing a stable route identifier")
 
+    sidebar_pages = {
+        "settings.rml", "pages/graphics.rml", "pages/enhancements.rml",
+        "pages/controls.rml", "pages/haptics.rml", "pages/player.rml",
+    }
+    expected_sidebar_ids = {
+        "nav-settings", "nav-graphics", "nav-enhancements", "nav-controls",
+        "nav-player", "nav-haptics",
+    }
+    for relative in sidebar_pages:
+        sidebar_document = ET.parse(ui_root / relative)
+        sidebar_ids = {element.attrib.get("id") for element in sidebar_document.iter()
+                       if element.attrib.get("id", "").startswith("nav-")}
+        require(sidebar_ids == expected_sidebar_ids,
+                f"{relative} must expose the complete focusable settings sidebar")
+
     graphics = ET.parse(ui_root / "pages" / "graphics.rml")
-    graphics_controls = [element for element in graphics.iter("button")
-                         if element.attrib.get("onclick", "").startswith("setting:")]
-    require(len(graphics_controls) == 8,
-            "graphics must expose one control per setting, not one button per value")
+    graphics_rows = [element for element in graphics.iter()
+                     if element.attrib.get("id", "").startswith("setting-")]
+    require(len(graphics_rows) == 8,
+            "graphics must expose one focusable row per setting, not one button per value")
+    graphics_actions = {element.attrib.get("onclick", "") for element in graphics.iter()
+                        if element.attrib.get("onclick", "").startswith("setting:")}
+    for key in ("res", "ss", "aspect", "hud", "rate", "msaa", "hpfb", "api"):
+        require(f"setting:{key}:prev" in graphics_actions and f"setting:{key}:next" in graphics_actions,
+                f"graphics row {key} must offer both directions")
     for value_id in ("graphics-resolution", "graphics-supersampling", "graphics-aspect",
                      "graphics-hud", "graphics-refresh", "graphics-msaa", "graphics-hpfb",
                      "graphics-api"):
@@ -106,8 +128,8 @@ def main() -> None:
             "graphics API must not pretend to apply live")
 
     enhancements_text = (ui_root / "pages" / "enhancements.rml").read_text(encoding="utf-8")
-    require(enhancements_text.index('class="help"') < enhancements_text.index('class="columns"'),
-            "enhancement guidance must sit above both columns to keep their controls aligned")
+    require(enhancements_text.index('class="help"') < enhancements_text.index('class="setting-group"'),
+            "enhancement guidance must sit above the setting groups to keep their rows aligned")
     enhancements = ET.parse(ui_root / "pages" / "enhancements.rml")
     for value_id in ("enhancement-camdist", "enhancement-camheight", "enhancement-fov"):
         require(any(element.attrib.get("id") == value_id for element in enhancements.iter()),
@@ -164,7 +186,20 @@ def main() -> None:
     scrollbar_rule = re.search(r"scrollbarvertical\s*\{([^}]*)\}", rcss, re.DOTALL)
     require(scrollbar_rule is not None and "width:" in scrollbar_rule.group(1),
             "RmlUi scrollbars need an explicit width or they consume the content area")
+    settings_content_rule = re.search(r"\.settings-content\s*\{([^}]*)\}", rcss, re.DOTALL)
+    require(settings_content_rule is not None and "overflow-y: auto" in settings_content_rule.group(1),
+            "the settings content pane must own the vertical scrollbar")
+    setting_row_rule = re.search(r"\.setting-row\s*\{([^}]*)\}", rcss, re.DOTALL)
+    require(setting_row_rule is not None and "tab-index: auto" in setting_row_rule.group(1),
+            "setting rows must be focusable so left/right can adjust their value")
+    require(setting_row_rule is not None and "nav: auto" in setting_row_rule.group(1),
+            "setting rows must participate in RmlUi directional navigation")
+    nav_rule = re.search(r"\.settings-nav\s*\{([^}]*)\}", rcss, re.DOTALL)
+    require(nav_rule is not None and "width:" in nav_rule.group(1),
+            "the settings sidebar needs an explicit width so content can flex beside it")
     ui_source = (repo / "src" / "ui" / "lambo_ui.cpp").read_text(encoding="utf-8")
+    require("focus_settings_content" in ui_source,
+            "entering a settings section must transfer focus into its content")
     require('data, "Lato"' in ui_source,
             "fonts must be registered explicitly under the stylesheet family name")
     require("font_data" in ui_source and "font_data.reserve(2)" in ui_source,

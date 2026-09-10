@@ -5,23 +5,40 @@
   </head>
   <body>
     <div id="window">
-      <div class="panel">
-        <div class="header-brand">
-          <div class="brand-title-row">
-            <h1>HAPTICS AND RUMBLE</h1>
-            <span class="badge-pill">COMING SOON</span>
+      <div class="panel settings-panel">
+        <div class="settings-shell">
+          <div class="settings-nav">
+            <div class="nav-brand">
+              <span class="nav-kicker">AUTOMOBILI</span>
+              <h1>LAMBORGHINI</h1>
+            </div>
+            <div class="nav-list">
+              <button id="nav-settings" class="nav-item" onclick="page:settings"><span class="nav-marker"></span><span class="nav-label">Overview</span></button>
+              <button id="nav-graphics" class="nav-item" onclick="page:graphics"><span class="nav-marker"></span><span class="nav-label">Graphics &amp; Display</span></button>
+              <button id="nav-enhancements" class="nav-item" onclick="page:enhancements"><span class="nav-marker"></span><span class="nav-label">Visual Enhancements</span></button>
+              <button id="nav-controls" class="nav-item" onclick="page:controls"><span class="nav-marker"></span><span class="nav-label">Controls Mapper</span></button>
+              <button id="nav-player" class="nav-item" onclick="page:player"><span class="nav-marker"></span><span class="nav-label">Driver Name</span></button>
+              <button id="nav-haptics" class="nav-item active" disabled="disabled" onclick="page:haptics"><span class="nav-marker"></span><span class="nav-label">Haptics<span class="nav-note">COMING SOON</span></span></button>
+            </div>
+            <div class="nav-spacer"></div>
+            <div class="nav-footer">
+              <button class="nav-back" onclick="back">Back</button>
+              <div class="nav-hints">
+                <span class="guide-item"><span class="guide-key">B / Esc</span> Back</span>
+              </div>
+              <div id="version" class="nav-version">Loading version...</div>
+            </div>
           </div>
-          <p class="brand-subtitle">Controller rumble vibration motors and trigger feedback.</p>
-        </div>
 
-        <p class="help">Rumble strength calibration and trigger vibration controls will be available here in an upcoming release.</p>
-        <button id="autofocus" class="secondary exit-btn" onclick="back">Back to Settings</button>
+          <div class="settings-content">
+            <div class="content-header">
+              <h1>HAPTICS AND RUMBLE</h1>
+              <p class="brand-subtitle">Controller rumble vibration motors and trigger feedback.</p>
+            </div>
 
-        <div class="footer-bar">
-          <div class="controller-guide">
-            <span class="guide-item"><span class="guide-key">A / Enter</span> Select</span>
-            <span class="guide-item"><span class="guide-key">B / Esc</span> Back</span>
-            <span class="guide-item"><span class="guide-key">D-Pad / Stick</span> Navigate</span>
+            <div class="placeholder-card">
+              <p>Rumble strength calibration and trigger vibration controls will be available here in an upcoming release.</p>
+            </div>
           </div>
         </div>
       </div>
