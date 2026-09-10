@@ -16,6 +16,7 @@ def main() -> None:
     ui_root = repo / "assets" / "ui"
     required_documents = {
         "launcher.rml",
+        "settings_shell.rml",
         "settings.rml",
         "pages/graphics.rml",
         "pages/enhancements.rml",
@@ -67,12 +68,16 @@ def main() -> None:
         "nav-settings", "nav-graphics", "nav-enhancements", "nav-controls",
         "nav-player", "nav-haptics",
     }
+    sidebar_template = ET.parse(ui_root / "settings_shell.rml")
+    sidebar_ids = {element.attrib.get("id") for element in sidebar_template.iter()
+                   if element.attrib.get("id", "").startswith("nav-")}
+    require(sidebar_ids == expected_sidebar_ids,
+            "settings shell must expose the complete focusable settings sidebar")
     for relative in sidebar_pages:
         sidebar_document = ET.parse(ui_root / relative)
-        sidebar_ids = {element.attrib.get("id") for element in sidebar_document.iter()
-                       if element.attrib.get("id", "").startswith("nav-")}
-        require(sidebar_ids == expected_sidebar_ids,
-                f"{relative} must expose the complete focusable settings sidebar")
+        body = sidebar_document.find("body")
+        require(body is not None and body.attrib.get("template") == "settings-shell",
+                f"{relative} must use the shared settings shell template")
 
     graphics = ET.parse(ui_root / "pages" / "graphics.rml")
     graphics_rows = [element for element in graphics.iter()
@@ -90,8 +95,8 @@ def main() -> None:
         require(any(element.attrib.get("id") == value_id for element in graphics.iter()),
                 f"graphics control is missing current-value target: {value_id}")
 
-    settings = ET.parse(ui_root / "settings.rml")
-    unavailable = [element for element in settings.iter("button")
+    settings_shell = ET.parse(ui_root / "settings_shell.rml")
+    unavailable = [element for element in settings_shell.iter("button")
                    if element.attrib.get("disabled") == "disabled"]
     require(len(unavailable) == 1 and
             {element.attrib.get("onclick") for element in unavailable} ==
@@ -109,6 +114,9 @@ def main() -> None:
     }
     require(required_control_ids <= controls_ids,
             f"Controls page is missing state targets: {required_control_ids - controls_ids}")
+    controls_text = (ui_root / "pages" / "controls.rml").read_text(encoding="utf-8")
+    require("id=\"autofocus\"" not in controls_text and "class=\"footer-bar\"" not in controls_text,
+            "Controls page must not add a second back button or navigation footer")
     control_actions = {element.attrib.get("onclick") for element in controls.iter()
                        if element.attrib.get("onclick", "").startswith("control:")}
     require({"control:reset-profile", "control:capture-cancel", "control:conflict-accept"}

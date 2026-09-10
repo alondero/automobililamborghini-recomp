@@ -65,10 +65,10 @@ int main() {
         "camdist:next", "camheight:next", "fov:next",
     };
     for (const char* name : binding_names) {
-        expect(lambo::ui::setting_action_from_name(name).has_value(),
+        expect(lambo::ui::setting_request_from_name(name).has_value(),
                "every documented setting binding parses");
     }
-    expect(!lambo::ui::setting_action_from_name("unknown:setting").has_value(),
+    expect(!lambo::ui::setting_request_from_name("unknown:setting").has_value(),
            "unknown setting bindings are rejected");
 
     const auto previous = lambo::ui::setting_request_from_name("res:prev");
@@ -78,6 +78,10 @@ int main() {
     const auto toggle = lambo::ui::setting_request_from_name("fog:toggle");
     expect(toggle.has_value() && toggle->direction == lambo::ui::SettingDirection::Next,
            "toggle bindings parse as forward requests");
+    const auto circuit_toggle = lambo::ui::setting_request_from_name("circuit:1:toggle");
+    expect(circuit_toggle.has_value() &&
+           circuit_toggle->action == lambo::ui::SettingAction::Circuit1Toggle,
+           "focused circuit rows accept their toggle request");
 
     const auto apply_request = [](const char* name) {
         const auto request = lambo::ui::setting_request_from_name(name);
@@ -95,8 +99,8 @@ int main() {
            "previous request wraps to the last option at the head of the cycle");
     lambo::config::apply_graphics(lambo::config::default_graphics_config());
     const auto apply = [](const char* name) {
-        const auto action = lambo::ui::setting_action_from_name(name);
-        return action.has_value() && lambo::ui::apply_setting_action(*action);
+        const auto request = lambo::ui::setting_request_from_name(name);
+        return request.has_value() && lambo::ui::apply_setting_request(*request);
     };
 
     auto custom_refresh = lambo::config::current_graphics();
@@ -135,12 +139,14 @@ int main() {
 #endif
 
     expect(apply("fog:toggle") && apply("sky:toggle") && apply("lod:toggle") &&
-           apply("circuit:6") && apply("distance:next") && apply("fogdensity:next") &&
+           apply("circuit:6") && apply("circuit:1:toggle") &&
+           apply("distance:next") && apply("fogdensity:next") &&
            apply("camdist:next") && apply("camheight:next") && apply("fov:next"),
            "enhancement bindings apply through the typed settings seam");
     expect(!lambo::config::widescreen_fog_match(), "fog match toggles live");
     expect(!lambo::config::widescreen_sky_match(), "sky match toggles live");
     expect(!lambo::config::no_lod(), "LOD removal toggles live");
+    expect(!lambo::config::no_lod_circuit(0), "focused circuit toggle applies live");
     expect(lambo::config::no_lod_circuit(5), "per-circuit visibility toggles live");
     expect(lambo::config::global_draw_distance() == 2.0, "draw-distance cycle applies live");
     expect(lambo::config::global_fog_scale() == 1.5, "fog-density cycle applies live");
@@ -152,7 +158,7 @@ int main() {
     expect(snapshot.resolution == "Original", "settings snapshot presents resolution");
     expect(snapshot.refresh_rate == "30 Hz", "settings snapshot presents refresh rate");
     expect(snapshot.msaa == "4x", "settings snapshot presents MSAA");
-    expect(snapshot.circuit_visibility[5] == "Enabled",
+    expect(snapshot.circuit_visibility[5],
            "settings snapshot presents every circuit");
     expect(snapshot.draw_distance == "2x", "settings snapshot presents draw distance");
     expect(snapshot.fog_density == "150%", "settings snapshot presents fog density");

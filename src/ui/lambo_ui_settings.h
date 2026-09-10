@@ -33,7 +33,6 @@ enum class SettingAction {
     FovNext,
 };
 
-// Cycle settings can step forwards or backwards; toggles ignore the direction.
 enum class SettingDirection {
     Next,
     Previous,
@@ -53,17 +52,16 @@ struct SettingsSnapshot {
     std::string msaa;
     std::string framebuffer_precision;
     std::string graphics_api;
-    std::string widescreen_fog;
-    std::string widescreen_sky;
-    std::string lod_removal;
+    bool widescreen_fog_enabled;
+    bool widescreen_sky_enabled;
+    bool lod_removal_enabled;
     std::string draw_distance;
     std::string fog_density;
     std::string camera_distance;
     std::string camera_height;
     std::string camera_fov;
-    std::array<std::string, 6> circuit_visibility;
-    // Position indicators ("<span class=\"track-step on\"></span>"...) so the
-    // focused row can show where the current value sits in its option cycle.
+    std::array<bool, 6> circuit_visibility;
+    // Position indicators let the focused row show where its value sits in its cycle.
     std::string resolution_track;
     std::string supersampling_track;
     std::string aspect_track;
@@ -79,15 +77,8 @@ struct SettingsSnapshot {
     std::string camera_fov_track;
 };
 
-// Full parse of a `<key>:<verb>` binding, including direction. Prefer this over
-// setting_action_from_name for new call sites.
 std::optional<SettingRequest> setting_request_from_name(std::string_view name);
 bool apply_setting_request(const SettingRequest& request);
-
-// Back-compatibility wrappers used by the existing tests and any caller that
-// only needs the action identity.
-std::optional<SettingAction> setting_action_from_name(std::string_view name);
-bool apply_setting_action(SettingAction action);
 
 SettingsSnapshot settings_snapshot();
 

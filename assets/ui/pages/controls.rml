@@ -1,36 +1,10 @@
 <rml>
   <head>
     <title>Controls</title>
-    <link type="text/rcss" href="../lambo.rcss"/>
+    <link type="text/template" href="../settings_shell.rml"/>
   </head>
-  <body>
-    <div id="window">
-      <div class="panel controls-panel settings-panel">
-        <div class="settings-shell">
-          <div class="settings-nav">
-            <div class="nav-brand">
-              <span class="nav-kicker">AUTOMOBILI</span>
-              <h1>LAMBORGHINI</h1>
-            </div>
-            <div class="nav-list">
-              <button id="nav-settings" class="nav-item" onclick="page:settings"><span class="nav-marker"></span><span class="nav-label">Overview</span></button>
-              <button id="nav-graphics" class="nav-item" onclick="page:graphics"><span class="nav-marker"></span><span class="nav-label">Graphics &amp; Display</span></button>
-              <button id="nav-enhancements" class="nav-item" onclick="page:enhancements"><span class="nav-marker"></span><span class="nav-label">Visual Enhancements</span></button>
-              <button id="nav-controls" class="nav-item active" onclick="page:controls"><span class="nav-marker"></span><span class="nav-label">Controls Mapper</span></button>
-              <button id="nav-player" class="nav-item" onclick="page:player"><span class="nav-marker"></span><span class="nav-label">Driver Name</span></button>
-              <button id="nav-haptics" class="nav-item" disabled="disabled" onclick="page:haptics"><span class="nav-marker"></span><span class="nav-label">Haptics<span class="nav-note">COMING SOON</span></span></button>
-            </div>
-            <div class="nav-spacer"></div>
-            <div class="nav-footer">
-              <button class="nav-back" onclick="back">Back</button>
-              <div class="nav-hints">
-                <span class="guide-item"><span class="guide-key">A / Enter</span> Select</span>
-                <span class="guide-item"><span class="guide-key">B / Esc</span> Back</span>
-                <span class="guide-item"><span class="guide-key">D-Pad / Stick</span> Navigate</span>
-              </div>
-            </div>
-          </div>
-          <div class="settings-content controls-content">
+  <body template="settings-shell">
+    <div class="settings-content controls-content">
         <div class="header-brand">
           <div class="brand-title-row">
             <h1>N64 CONTROLLER MAPPER</h1>
@@ -69,16 +43,6 @@
           <p id="controls-persistence-status" class="controls-save-status">Defaults (not saved yet)</p>
         </div>
 
-        <button id="autofocus" class="secondary exit-btn" onclick="back">Back to Settings</button>
-
-        <div class="footer-bar">
-          <div class="controller-guide">
-            <span class="guide-item"><span class="guide-key">A / Enter</span> Remap Slot</span>
-            <span class="guide-item"><span class="guide-key">B / Esc</span> Back / Cancel</span>
-            <span class="guide-item"><span class="guide-key">D-Pad / Stick</span> Navigate</span>
-          </div>
-        </div>
-
         <div id="controls-capture-modal" class="controls-modal">
           <div class="modal-card">
             <h2>CAPTURE INPUT BINDING</h2>
@@ -99,9 +63,6 @@
             </div>
           </div>
         </div>
-        </div>
-      </div>
-      </div>
-      </div>
+    </div>
   </body>
 </rml>
