@@ -415,6 +415,7 @@ static void update_gfx_stub(void* /*gfx_data*/) {
                 else if (page == "graphics") lambo::ui::open_graphics();
                 else if (page == "enhancements") lambo::ui::open_enhancements();
                 else if (page == "haptics") lambo::ui::open_haptics();
+                else if (page == "player") lambo::ui::open_player();
                 else if (page == "launcher") lambo::ui::open_launcher();
             } else if (g_startup_controller->mode() == lambo::StartupMode::InteractiveLauncher) {
                 lambo::ui::open_launcher();

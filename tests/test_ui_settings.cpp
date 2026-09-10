@@ -62,6 +62,7 @@ int main() {
         "fog:toggle", "sky:toggle", "lod:toggle",
         "circuit:1", "circuit:2", "circuit:3", "circuit:4", "circuit:5", "circuit:6",
         "distance:next", "fogdensity:next",
+        "camdist:next", "camheight:next", "fov:next",
     };
     for (const char* name : binding_names) {
         expect(lambo::ui::setting_action_from_name(name).has_value(),
@@ -111,7 +112,8 @@ int main() {
 #endif
 
     expect(apply("fog:toggle") && apply("sky:toggle") && apply("lod:toggle") &&
-           apply("circuit:6") && apply("distance:next") && apply("fogdensity:next"),
+           apply("circuit:6") && apply("distance:next") && apply("fogdensity:next") &&
+           apply("camdist:next") && apply("camheight:next") && apply("fov:next"),
            "enhancement bindings apply through the typed settings seam");
     expect(!lambo::config::widescreen_fog_match(), "fog match toggles live");
     expect(!lambo::config::widescreen_sky_match(), "sky match toggles live");
@@ -119,6 +121,9 @@ int main() {
     expect(lambo::config::no_lod_circuit(5), "per-circuit visibility toggles live");
     expect(lambo::config::global_draw_distance() == 2.0, "draw-distance cycle applies live");
     expect(lambo::config::global_fog_scale() == 1.5, "fog-density cycle applies live");
+    expect(lambo::config::camera_distance_scale() == 0.8, "camera-distance cycle applies live");
+    expect(lambo::config::camera_height_scale() == 0.66, "camera-height cycle applies live");
+    expect(lambo::config::camera_fov_add() == 5.0, "FOV cycle applies live");
 
     const auto snapshot = lambo::ui::settings_snapshot();
     expect(snapshot.resolution == "Original", "settings snapshot presents resolution");
@@ -128,6 +133,9 @@ int main() {
            "settings snapshot presents every circuit");
     expect(snapshot.draw_distance == "2x", "settings snapshot presents draw distance");
     expect(snapshot.fog_density == "150%", "settings snapshot presents fog density");
+    expect(snapshot.camera_distance == "0.8x", "settings snapshot presents camera distance");
+    expect(snapshot.camera_height == "0.66x", "settings snapshot presents camera height");
+    expect(snapshot.camera_fov == "+5 deg", "settings snapshot presents FOV boost");
 
     using SnapshotStringMember = std::string lambo::ui::SettingsSnapshot::*;
     const auto expect_cycle_wraps = [&](const char* binding, int steps, const std::string& initial,
@@ -162,6 +170,12 @@ int main() {
                        &lambo::ui::SettingsSnapshot::draw_distance, "draw-distance cycle wraps");
     expect_cycle_wraps("fogdensity:next", 6, snapshot.fog_density,
                        &lambo::ui::SettingsSnapshot::fog_density, "fog-density cycle wraps");
+    expect_cycle_wraps("camdist:next", 4, snapshot.camera_distance,
+                       &lambo::ui::SettingsSnapshot::camera_distance, "camera-distance cycle wraps");
+    expect_cycle_wraps("camheight:next", 3, snapshot.camera_height,
+                       &lambo::ui::SettingsSnapshot::camera_height, "camera-height cycle wraps");
+    expect_cycle_wraps("fov:next", 5, snapshot.camera_fov,
+                       &lambo::ui::SettingsSnapshot::camera_fov, "FOV cycle wraps");
 
     lambo::config::flush_pending_graphics_updates();
     const auto persisted = read_json(config_path);
@@ -177,6 +191,9 @@ int main() {
            "per-circuit visibility persists");
     expect(persisted.at("draw_distance") == 2.0, "draw distance persists");
     expect(persisted.at("fog_scale") == 1.5, "fog density persists");
+    expect(persisted.at("camera_distance_scale") == 0.8, "camera distance persists");
+    expect(persisted.at("camera_height_scale") == 0.66, "camera height persists");
+    expect(persisted.at("camera_fov_add") == 5.0, "FOV boost persists");
 
     lambo::config::load_and_apply_graphics();
 #if defined(_WIN32)

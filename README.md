@@ -79,6 +79,8 @@ N64Recomp ports (Zelda 64: Recompiled et al.):
 | `fog_scale_circuit` | array of 6 numbers | `[1,1,1,1,1,1]` | Per-circuit fog multipliers (multiplied with `fog_scale`), e.g. clear a single hazy track by lowering its entry. |
 | `draw_distance` | `0` or `0.1`–`100` | `1.5` | Multiplier on the authored per-circuit draw-distance radii (needs `no_lod`). `1.0` = the N64 distances, higher = see further, `0` = unlimited — note that unlimited draws distant track pieces the artists never meant to be visible (they float with nothing in between). |
 | `draw_distance_circuit` | array of 6 numbers | `[1,1,1,1,1,1]` | Per-circuit draw-distance multipliers (multiplied with `draw_distance`), e.g. extend just one short-sighted city track. |
+| `camera_distance_scale` | `0.2`–`3.0` | `1.0` | Multiplier on the chase camera's authored distance from the car (`1.0` = stock, `0.5` = half as far). Also settable live from the Enhancements menu / options page. |
+| `camera_height_scale` | `0.2`–`3.0` | `1.0` | Multiplier on the chase camera's authored eye-height offset. Also settable live from the Enhancements menu / options page. |
 | `camera_fov_add` | `-20`–`60` degrees | `0` | Degrees added to each camera layout's authored field of view (sense-of-speed effect). The scene builder's view-cone cull widens to match, so higher values do not cause peripheral pop-in. Also settable live from the Enhancements menu. |
 | `show_launcher` | `true`, `false` | `false` | When `false`, the game auto-boots directly into gameplay with the in-game configuration overlay available during play. When `true`, presents the standalone launcher shell at boot. Overridable via `LAMBO_LAUNCHER=1/0`. |
 
@@ -109,7 +111,8 @@ generating `rt64.json`, testing a loose pack, and packaging it as `.rtz`.
 
 ## In-Game Configuration & Controls
 
-- **Configuration Overlay**: Press the **Menu / Back / Start / Guide** button on your controller, or press <kbd>Esc</kbd> / <kbd>F1</kbd> on your keyboard (or use the native window menu `Game -> Settings` / `Controls`) to open the in-game configuration overlay at any time.
+- **Configuration Overlay**: Press the **Menu / Back / Start / Guide** button on your controller, or press <kbd>Esc</kbd> / <kbd>F1</kbd> on your keyboard (or use the native window menu `Game -> Settings` / `Controls` / `Driver name`) to open the in-game configuration overlay at any time.
+- **Driver Name**: Player one's identity for Championship records lives in `player.json` next to the other config files. Edit it under Settings → Driver Name in the overlay (or the in-game Championship name editor — both stay in sync), or clear it there to return to the ROM default. The launcher shows the current driver.
 - **Controls Remapping**: The **Controls Mapper** provides a 4-column N64 controller mapping interface for all digital buttons, triggers, C-buttons, D-Pad, and analog stick axes. Custom mappings persist per physical controller (by SDL GUID) in `%LOCALAPPDATA%\LamborghiniRecomp\controls.json` (or `~/.config/LamborghiniRecomp/controls.json`; portable mode keeps it next to the game — see above).
 
 

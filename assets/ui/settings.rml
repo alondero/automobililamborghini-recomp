@@ -21,7 +21,7 @@
             </button>
             <button class="menu-card" onclick="page:enhancements">
               <span class="btn-main-label">Visual Enhancements</span>
-              <span class="btn-sub-label">Widescreen fog and sky matching, draw distance, and per-circuit LOD</span>
+              <span class="btn-sub-label">Widescreen fog and sky matching, draw distance, per-circuit LOD, and chase camera</span>
             </button>
           </div>
 
@@ -33,6 +33,13 @@
             <button class="menu-card" disabled="disabled" onclick="page:haptics">
               <span class="btn-main-label">Haptics and Rumble (Coming Soon)</span>
               <span class="btn-sub-label">Controller rumble vibration motors and trigger feedback</span>
+            </button>
+          </div>
+
+          <div class="grid-row">
+            <button class="menu-card" onclick="page:player">
+              <span class="btn-main-label">Driver Name</span>
+              <span class="btn-sub-label">Player one's saved identity for Championship records</span>
             </button>
           </div>
         </div>

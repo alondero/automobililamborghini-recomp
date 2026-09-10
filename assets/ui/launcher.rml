@@ -11,6 +11,7 @@
             <h1>AUTOMOBILI LAMBORGHINI</h1>
             <span class="badge-pill">RECOMPILED</span>
           </div>
+          <p class="brand-subtitle">Driver: <span id="launcher-driver-name" class="highlight-val">Loading...</span> (change it under Settings, Driver Name)</p>
         </div>
 
         <div class="grid-2x2">

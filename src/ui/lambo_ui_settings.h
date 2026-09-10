@@ -28,6 +28,9 @@ enum class SettingAction {
     Circuit6Toggle,
     DrawDistanceNext,
     FogDensityNext,
+    CameraDistanceNext,
+    CameraHeightNext,
+    FovNext,
 };
 
 struct SettingsSnapshot {
@@ -44,6 +47,9 @@ struct SettingsSnapshot {
     std::string lod_removal;
     std::string draw_distance;
     std::string fog_density;
+    std::string camera_distance;
+    std::string camera_height;
+    std::string camera_fov;
     std::array<std::string, 6> circuit_visibility;
 };
 

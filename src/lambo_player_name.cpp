@@ -1,5 +1,6 @@
 #include "lambo_player_name.h"
 
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -100,7 +101,59 @@ int current_driver(uint8_t* rdram) {
     return (int16_t)MEM_H(0, (gpr)(int32_t)kCurrentDriverAddr);
 }
 
+// Normalise free input to the ROM keyboard vocabulary: surrounding whitespace
+// trimmed, lowercase uppercased. Internal runs of whitespace collapse to a
+// single space so gamepad/keyboard entry agree.
+std::string normalize_input(const std::string& name) {
+    size_t begin = 0;
+    while (begin < name.size() && std::isspace((unsigned char)name[begin])) ++begin;
+    size_t end = name.size();
+    while (end > begin && std::isspace((unsigned char)name[end - 1])) --end;
+    std::string result;
+    result.reserve(end - begin);
+    bool pending_space = false;
+    for (size_t i = begin; i < end; ++i) {
+        char ch = name[i];
+        if (std::isspace((unsigned char)ch)) {
+            pending_space = true;
+            continue;
+        }
+        if (pending_space && !result.empty()) result.push_back(' ');
+        pending_space = false;
+        if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 'a' + 'A');
+        result.push_back(ch);
+    }
+    return result;
+}
+
+void clear_saved_name_file() {
+    const std::filesystem::path path = player_config_path();
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
 } // namespace
+
+namespace lambo {
+namespace player {
+
+std::string saved_name() {
+    return load_saved_name();
+}
+
+bool set_saved_name(const std::string& name) {
+    const std::string normalized = normalize_input(name);
+    if (!valid_name(normalized)) return false;
+    save_name(normalized);
+    return true;
+}
+
+void clear_saved_name() {
+    clear_saved_name_file();
+}
+
+} // namespace player
+} // namespace lambo
 
 extern "C" void lambo_player_name_seed(uint8_t* rdram) {
     if (current_driver(rdram) != kPlayerOne) return;

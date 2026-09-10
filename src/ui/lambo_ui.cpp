@@ -30,6 +30,7 @@
 
 #include "lambo_config.h"
 #include "lambo_log.h"
+#include "lambo_player_name.h"
 #include "lambo_startup.h"
 #include "lambo_ui_input.h"
 #include "lambo_ui_controls.h"
@@ -61,6 +62,7 @@ constexpr std::array page_descriptors{
     PageDescriptor{"pages/enhancements.rml", "Enhancements"},
     PageDescriptor{"pages/controls.rml", "Controls"},
     PageDescriptor{"pages/haptics.rml", "Haptics"},
+    PageDescriptor{"pages/player.rml", "Driver name"},
 };
 
 const PageDescriptor& page_descriptor(lambo::ui::Page page) {
@@ -134,11 +136,16 @@ struct UiState {
     InputMode input_mode = InputMode::Mouse;
     std::uint64_t controls_config_revision = ~std::uint64_t{};
     std::uint64_t controls_sample_revision = ~std::uint64_t{};
+    // Last Driver-name action result, shown on the Player page status line.
+    std::string player_status;
 
     void remember_focus();
     void restore_focus(lambo::ui::Page page);
     void set_input_mode(InputMode mode);
     void set_text(const char* id, const std::string& value);
+    void set_input_value(const char* id, const std::string& value);
+    std::string input_value(const char* id);
+    void refresh_player_values();
     void refresh_document_values();
     void refresh_controls_values();
     void load_page(lambo::ui::Page page, bool push_history);
@@ -227,6 +234,32 @@ void UiState::set_text(const char* id, const std::string& value) {
     }
 }
 
+void UiState::set_input_value(const char* id, const std::string& value) {
+    if (document == nullptr) return;
+    if (Rml::Element* element = document->GetElementById(id)) {
+        element->SetAttribute("value", value.c_str());
+    }
+}
+
+std::string UiState::input_value(const char* id) {
+    if (document == nullptr) return {};
+    Rml::Element* element = document->GetElementById(id);
+    if (element == nullptr) return {};
+    if (const Rml::Variant* value = element->GetAttribute("value")) {
+        return std::string(value->Get<Rml::String>().c_str());
+    }
+    return {};
+}
+
+void UiState::refresh_player_values() {
+    if (document == nullptr) return;
+    const std::string saved = lambo::player::saved_name();
+    set_text("player-name-current", saved.empty() ? "(ROM default)" : saved);
+    set_input_value("player-name-input", saved);
+    set_text("player-name-status", player_status);
+    set_text("launcher-driver-name", saved.empty() ? "(ROM default)" : saved);
+}
+
 void UiState::refresh_document_values() {
     if (document == nullptr) return;
     set_text("version", std::string("v") + LAMBO_VERSION);
@@ -244,10 +277,14 @@ void UiState::refresh_document_values() {
     set_text("enhancement-lod", values.lod_removal);
     set_text("enhancement-distance", values.draw_distance);
     set_text("enhancement-fog-density", values.fog_density);
+    set_text("enhancement-camdist", values.camera_distance);
+    set_text("enhancement-camheight", values.camera_height);
+    set_text("enhancement-fov", values.camera_fov);
     for (size_t circuit = 0; circuit < values.circuit_visibility.size(); ++circuit) {
         const std::string id = "enhancement-circuit-" + std::to_string(circuit + 1);
         set_text(id.c_str(), values.circuit_visibility[circuit]);
     }
+    refresh_player_values();
     refresh_controls_values();
 }
 
@@ -383,6 +420,7 @@ void process_action(const std::string& action, const std::string& parameter) {
         else if (parameter == "enhancements") g_state->show_page(lambo::ui::Page::Enhancements);
         else if (parameter == "controls") g_state->show_page(lambo::ui::Page::Controls);
         else if (parameter == "haptics") g_state->show_page(lambo::ui::Page::Haptics);
+        else if (parameter == "player") g_state->show_page(lambo::ui::Page::Player);
     } else if (action == "back") {
         if (g_state != nullptr) g_state->back();
     } else if (action == "setting") {
@@ -392,6 +430,25 @@ void process_action(const std::string& action, const std::string& parameter) {
         }
     } else if (action == "control") {
         lambo::ui::apply_control_action(parameter);
+    } else if (action == "player") {
+        if (g_state == nullptr) return;
+        if (parameter == "save") {
+            const std::string typed = g_state->input_value("player-name-input");
+            if (lambo::player::set_saved_name(typed)) {
+                g_state->player_status =
+                    "Saved driver name " + lambo::player::saved_name() + ".";
+                LAMBO_LOG_INFO("ui", "driver name saved from options page\n");
+            } else {
+                g_state->player_status =
+                    "Invalid name: use 1-12 letters A-Z and spaces.";
+            }
+            g_state->refresh_document_values();
+        } else if (parameter == "clear") {
+            lambo::player::clear_saved_name();
+            g_state->player_status = "Cleared: the game will use its ROM default name.";
+            LAMBO_LOG_INFO("ui", "driver name cleared from options page\n");
+            g_state->refresh_document_values();
+        }
     }
 }
 
@@ -403,6 +460,7 @@ void install_event_handlers(UiState& state) {
     state.event_listener_instancer.register_event("back", [](const std::string&) { process_action("back", ""); });
     state.event_listener_instancer.register_event("setting", [](const std::string& p) { process_action("setting", p); });
     state.event_listener_instancer.register_event("control", [](const std::string& p) { process_action("control", p); });
+    state.event_listener_instancer.register_event("player", [](const std::string& p) { process_action("player", p); });
 }
 
 void init_hook(RT64::RenderInterface* interface, RT64::RenderDevice* device) {
@@ -731,6 +789,14 @@ void open_haptics() {
     g_capture.store(true, std::memory_order_release);
     g_requested_controls_route.store(false, std::memory_order_release);
     g_requested_page.store(static_cast<int>(Page::Haptics), std::memory_order_release);
+}
+
+void open_player() {
+    g_requested_entry_point.store(static_cast<int>(EntryPoint::Startup), std::memory_order_release);
+    SDL_ShowCursor(SDL_ENABLE);
+    g_capture.store(true, std::memory_order_release);
+    g_requested_controls_route.store(false, std::memory_order_release);
+    g_requested_page.store(static_cast<int>(Page::Player), std::memory_order_release);
 }
 
 void close_top_page() {

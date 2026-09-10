@@ -19,6 +19,7 @@ enum class Page {
     Enhancements,
     Controls,
     Haptics,
+    Player,
 };
 
 enum class EntryPoint {
@@ -36,6 +37,7 @@ void open_controls();
 void open_graphics();
 void open_enhancements();
 void open_haptics();
+void open_player();
 void close_top_page();
 bool is_initialized();
 bool is_visible();
