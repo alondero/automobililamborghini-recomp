@@ -124,7 +124,7 @@ Run from the repository root so the ROM path resolves:
 ./build/lamborghini_modern
 ```
 
-The game auto-boots directly into gameplay. Press the **Menu / Back / Guide** button on your controller, or press <kbd>Esc</kbd> / <kbd>F1</kbd> on your keyboard to open the in-game configuration overlay and controls mapper (press the same button again to close it). To launch into the standalone launcher shell instead, set `LAMBO_LAUNCHER=1` in your environment or set `"show_launcher": true` in `graphics.json`.
+The game auto-boots directly into gameplay. Press the **Menu / Back / Guide** button on your controller, or <kbd>F1</kbd> on your keyboard, to toggle the in-game configuration overlay and controls mapper: it opens on Settings, and the same button closes it again from anywhere. <kbd>Esc</kbd> is Back instead — it steps up one level at a time and closes the overlay only once you are on the top-level Overview page. To launch into the standalone launcher shell instead, set `LAMBO_LAUNCHER=1` in your environment or set `"show_launcher": true` in `graphics.json`.
 
 ## Notes
 

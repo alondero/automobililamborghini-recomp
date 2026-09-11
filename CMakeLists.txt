@@ -328,6 +328,16 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_ui_controller_navigation COMMAND lambo_ui_input_tests)
 
+    add_executable(lambo_ui_requests_tests
+        tests/test_ui_requests.cpp
+        src/ui/lambo_ui_requests.cpp
+    )
+    target_include_directories(lambo_ui_requests_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(lambo_ui_requests_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_ui_overlay_requests COMMAND lambo_ui_requests_tests)
+
     add_executable(lambo_ui_settings_tests
         tests/test_ui_settings.cpp
         src/ui/lambo_ui_settings.cpp
@@ -625,6 +635,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/controls/lambo_controls_sdl.cpp
         src/ui/lambo_ui.cpp
         src/ui/lambo_ui_input.cpp
+        src/ui/lambo_ui_requests.cpp
         src/ui/lambo_ui_controls.cpp
         src/ui/lambo_ui_render_interface.cpp
         src/ui/lambo_ui_settings.cpp

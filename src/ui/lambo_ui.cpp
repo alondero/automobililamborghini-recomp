@@ -36,6 +36,7 @@
 #include "lambo_ui_input.h"
 #include "lambo_ui_controls.h"
 #include "lambo_ui_render_interface.h"
+#include "lambo_ui_requests.h"
 #include "lambo_ui_settings.h"
 
 #ifndef LAMBO_VERSION
@@ -217,10 +218,11 @@ std::mutex g_state_mutex;
 SDL_Window* g_window = nullptr;
 std::atomic<bool> g_visible{false};
 std::atomic<bool> g_capture{false};
-std::atomic<int> g_requested_page{-1};
-std::atomic<int> g_requested_entry_point{static_cast<int>(lambo::ui::EntryPoint::Startup)};
-std::atomic<bool> g_requested_back{false};
-std::atomic<bool> g_requested_dismiss{false};
+// One coherent intent instead of separate page/back/dismiss atomics: those were
+// applied in a fixed order rather than the order the user pressed them, so a
+// dismiss arriving after an open would load a document and unload it again in
+// the same frame.
+lambo::ui::OverlayRequestQueue g_requests;
 std::atomic<lambo::StartupController*> g_startup_controller{nullptr};
 moodycamel::ConcurrentQueue<QueuedEvent> g_event_queue;
 
@@ -783,7 +785,9 @@ void UiState::process_queued_events() {
     QueuedEvent queued{};
     while (g_event_queue.try_dequeue(queued)) {
         SDL_Event& event = queued.event;
-        if (context == nullptr) continue;
+        // A queued Back can unload the document part-way through this loop; the
+        // remaining events are stale and must not reach a torn-down document.
+        if (context == nullptr || document == nullptr) continue;
         switch (event.type) {
             case SDL_KEYDOWN:
                 process_key_down(event.key.keysym.sym, event.key.repeat != 0);
@@ -839,29 +843,56 @@ void UiState::process_queued_events() {
     process_navigation_events(controller_navigation.update(Clock::now()));
 }
 
+// Input queued while the overlay was visible is meaningless once it is gone, and
+// replaying it would drive RmlUi with no document loaded -- where a stale
+// controller press could still fire a page action, or even quit.
+void discard_queued_events() {
+    QueuedEvent queued{};
+    while (g_event_queue.try_dequeue(queued)) {
+    }
+}
+
 void draw_hook(RT64::RenderCommandList* command_list,
                RT64::RenderFramebuffer* swap_chain_framebuffer) {
     std::lock_guard lock(g_state_mutex);
     if (g_state == nullptr || g_state->context == nullptr || swap_chain_framebuffer == nullptr) return;
 
-    const int requested = g_requested_page.exchange(-1, std::memory_order_acq_rel);
-    if (requested >= 0) {
-        g_state->entry_point = static_cast<lambo::ui::EntryPoint>(
-            g_requested_entry_point.load(std::memory_order_acquire));
-        g_state->pages.clear();
-        const bool is_settings_page =
-            requested >= static_cast<int>(lambo::ui::Page::Graphics) &&
-            requested <= static_cast<int>(lambo::ui::Page::Player);
-        if (is_settings_page) {
-            if (g_state->entry_point == lambo::ui::EntryPoint::Startup)
-                g_state->pages = {lambo::ui::Page::Home, lambo::ui::Page::Settings};
-            else
-                g_state->pages = {lambo::ui::Page::Settings};
+    // At most one intent is outstanding, so an open can never be undone by a
+    // dismiss (or a Back) applied later in the same frame.
+    const lambo::ui::OverlayRequestQueue::Request request = g_requests.take();
+    switch (request.kind) {
+        case lambo::ui::OverlayRequestQueue::Kind::ShowPage: {
+            g_state->entry_point = static_cast<lambo::ui::EntryPoint>(request.entry_point);
+            g_state->pages.clear();
+            const bool is_settings_page =
+                request.page >= static_cast<int>(lambo::ui::Page::Graphics) &&
+                request.page <= static_cast<int>(lambo::ui::Page::Player);
+            if (is_settings_page) {
+                if (g_state->entry_point == lambo::ui::EntryPoint::Startup)
+                    g_state->pages = {lambo::ui::Page::Home, lambo::ui::Page::Settings};
+                else
+                    g_state->pages = {lambo::ui::Page::Settings};
+            }
+            g_state->show_page(static_cast<lambo::ui::Page>(request.page));
+            break;
         }
-        g_state->show_page(static_cast<lambo::ui::Page>(requested));
+        case lambo::ui::OverlayRequestQueue::Kind::Back:
+            g_state->back();
+            break;
+        case lambo::ui::OverlayRequestQueue::Kind::Dismiss:
+            g_state->hide_pages();
+            break;
+        case lambo::ui::OverlayRequestQueue::Kind::None:
+            break;
     }
-    if (g_requested_back.exchange(false, std::memory_order_acq_rel)) g_state->back();
-    if (g_requested_dismiss.exchange(false, std::memory_order_acq_rel)) g_state->hide_pages();
+    // Publish what was actually applied so the next toggle decides from the real
+    // state, unless a newer producer intent has already replaced it.
+    g_requests.note_visibility(g_visible.load(std::memory_order_acquire));
+
+    if (!g_visible.load(std::memory_order_acquire)) {
+        discard_queued_events();
+        return;
+    }
     g_state->process_queued_events();
     if (!g_visible.load(std::memory_order_acquire)) return;
     g_state->refresh_controls_values();
@@ -937,49 +968,46 @@ bool handle_event(const SDL_Event& event) {
     }
 }
 
+// Each of these replaces any outstanding request, so the newest caller wins
+// instead of racing the previous one.
 void open_launcher() {
-    g_requested_entry_point.store(static_cast<int>(EntryPoint::Startup), std::memory_order_release);
     SDL_ShowCursor(SDL_ENABLE);
     g_capture.store(true, std::memory_order_release);
-    g_requested_page.store(static_cast<int>(Page::Home), std::memory_order_release);
+    g_requests.request_show(static_cast<int>(Page::Home), static_cast<int>(EntryPoint::Startup));
 }
 
 void open_settings() {
-    g_requested_entry_point.store(static_cast<int>(EntryPoint::InGameOverlay), std::memory_order_release);
     SDL_ShowCursor(SDL_ENABLE);
     g_capture.store(true, std::memory_order_release);
-    g_requested_page.store(static_cast<int>(Page::Settings), std::memory_order_release);
+    g_requests.request_show(static_cast<int>(Page::Settings),
+                            static_cast<int>(EntryPoint::InGameOverlay));
 }
 
 void open_controls() {
     auto* startup = g_startup_controller.load(std::memory_order_acquire);
     const EntryPoint entry = startup != nullptr && startup->state() == lambo::StartupState::Started
         ? EntryPoint::InGameOverlay : EntryPoint::Startup;
-    g_requested_entry_point.store(static_cast<int>(entry), std::memory_order_release);
     SDL_ShowCursor(SDL_ENABLE);
     g_capture.store(true, std::memory_order_release);
-    g_requested_page.store(static_cast<int>(Page::Controls), std::memory_order_release);
+    g_requests.request_show(static_cast<int>(Page::Controls), static_cast<int>(entry));
 }
 
 void open_graphics() {
-    g_requested_entry_point.store(static_cast<int>(EntryPoint::Startup), std::memory_order_release);
     SDL_ShowCursor(SDL_ENABLE);
     g_capture.store(true, std::memory_order_release);
-    g_requested_page.store(static_cast<int>(Page::Graphics), std::memory_order_release);
+    g_requests.request_show(static_cast<int>(Page::Graphics), static_cast<int>(EntryPoint::Startup));
 }
 
 void open_enhancements() {
-    g_requested_entry_point.store(static_cast<int>(EntryPoint::Startup), std::memory_order_release);
     SDL_ShowCursor(SDL_ENABLE);
     g_capture.store(true, std::memory_order_release);
-    g_requested_page.store(static_cast<int>(Page::Enhancements), std::memory_order_release);
+    g_requests.request_show(static_cast<int>(Page::Enhancements), static_cast<int>(EntryPoint::Startup));
 }
 
 void open_haptics() {
-    g_requested_entry_point.store(static_cast<int>(EntryPoint::Startup), std::memory_order_release);
     SDL_ShowCursor(SDL_ENABLE);
     g_capture.store(true, std::memory_order_release);
-    g_requested_page.store(static_cast<int>(Page::Haptics), std::memory_order_release);
+    g_requests.request_show(static_cast<int>(Page::Haptics), static_cast<int>(EntryPoint::Startup));
 }
 
 void open_player() {
@@ -989,27 +1017,31 @@ void open_player() {
     auto* startup = g_startup_controller.load(std::memory_order_acquire);
     const EntryPoint entry = startup != nullptr && startup->state() == lambo::StartupState::Started
         ? EntryPoint::InGameOverlay : EntryPoint::Startup;
-    g_requested_entry_point.store(static_cast<int>(entry), std::memory_order_release);
     SDL_ShowCursor(SDL_ENABLE);
     g_capture.store(true, std::memory_order_release);
-    g_requested_page.store(static_cast<int>(Page::Player), std::memory_order_release);
+    g_requests.request_show(static_cast<int>(Page::Player), static_cast<int>(entry));
 }
 
-void close_top_page() {
-    g_requested_back.store(true, std::memory_order_release);
-}
+void close_top_page() { g_requests.request_back(); }
 
-// Closes the overlay outright instead of popping one page, so the menu button
-// can toggle the whole UI regardless of how deep the user has navigated.
-void dismiss() {
-    g_requested_dismiss.store(true, std::memory_order_release);
+// The menu button's toggle: opens Settings from gameplay, hides the overlay
+// outright from any depth. Deciding inside lambo::ui keeps callers out of the
+// overlay's state machine and away from the render thread's asynchronously
+// published visibility, which lags by a frame.
+void toggle_settings() {
+    const bool showing = g_requests.toggle(static_cast<int>(Page::Settings),
+                                           static_cast<int>(EntryPoint::InGameOverlay));
+    if (showing) {
+        SDL_ShowCursor(SDL_ENABLE);
+        g_capture.store(true, std::memory_order_release);
+    }
 }
 
 bool is_initialized() {
     std::lock_guard lock(g_state_mutex);
     return g_state != nullptr && g_state->context != nullptr;
 }
-bool is_visible() { return g_visible.load(std::memory_order_acquire); }
+bool overlay_visible_intent() { return g_requests.visible_intent(); }
 bool captures_input() { return g_capture.load(std::memory_order_acquire); }
 
 void shutdown() {

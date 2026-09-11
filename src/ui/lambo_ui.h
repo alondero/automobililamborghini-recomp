@@ -39,9 +39,16 @@ void open_enhancements();
 void open_haptics();
 void open_player();
 void close_top_page();
-void dismiss();
+// Toggles the overlay: opens Settings from gameplay, hides it outright from any
+// depth. Owns the decision internally so callers need not read the render
+// thread's visibility, which lags by a frame.
+void toggle_settings();
 bool is_initialized();
-bool is_visible();
+// Whether the overlay is showing or about to be, including a request the render
+// thread has not consumed yet. This is the accessor to branch on from the event
+// pump: visibility is published asynchronously by the render thread, so reading
+// the applied state directly would lag by a frame.
+bool overlay_visible_intent();
 bool captures_input();
 void shutdown();
 

@@ -460,8 +460,7 @@ static void update_gfx_stub(void* /*gfx_data*/) {
             if (menu_button &&
                 g_startup_controller != nullptr &&
                 g_startup_controller->state() == lambo::StartupState::Started) {
-                if (lambo::ui::is_visible()) lambo::ui::dismiss();
-                else lambo::ui::open_settings();
+                lambo::ui::toggle_settings();
                 continue;
             }
 
@@ -475,7 +474,7 @@ static void update_gfx_stub(void* /*gfx_data*/) {
             if (settings_shortcut &&
                 g_startup_controller != nullptr &&
                 g_startup_controller->state() == lambo::StartupState::Started &&
-                !lambo::ui::is_visible()) {
+                !lambo::ui::overlay_visible_intent()) {
                 lambo::ui::open_settings();
                 continue;
             }
