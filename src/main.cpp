@@ -449,14 +449,29 @@ static void update_gfx_stub(void* /*gfx_data*/) {
 
             if (g_controls != nullptr && g_controls->handle_capture_event(event)) continue;
             if (lambo::menu::handle_event(event)) continue;
+
+            // The menu button (F1 or the pad's Back/Guide) toggles the options overlay:
+            // it opens Settings from gameplay and closes it again from anywhere inside.
+            // This runs before lambo::ui::handle_event so the press still toggles once the
+            // overlay owns input; Esc keeps its page-stack "back" meaning below.
+            const bool menu_button =
+                (event.type == SDL_KEYDOWN && !event.key.repeat && event.key.keysym.sym == SDLK_F1) ||
+                (g_controls != nullptr && g_controls->selected_back_pressed(event));
+            if (menu_button &&
+                g_startup_controller != nullptr &&
+                g_startup_controller->state() == lambo::StartupState::Started) {
+                if (lambo::ui::is_visible()) lambo::ui::dismiss();
+                else lambo::ui::open_settings();
+                continue;
+            }
+
             if (lambo::ui::handle_event(event)) continue;
 
             // Once the launcher/overlay captures input, guest and developer shortcuts are
             // suppressed. F11 and Alt+Enter remain application-level shortcuts otherwise.
             const bool settings_shortcut =
-                (event.type == SDL_KEYDOWN && !event.key.repeat &&
-                 (event.key.keysym.sym == SDLK_ESCAPE || event.key.keysym.sym == SDLK_F1)) ||
-                (g_controls != nullptr && g_controls->selected_back_pressed(event));
+                event.type == SDL_KEYDOWN && !event.key.repeat &&
+                event.key.keysym.sym == SDLK_ESCAPE;
             if (settings_shortcut &&
                 g_startup_controller != nullptr &&
                 g_startup_controller->state() == lambo::StartupState::Started &&

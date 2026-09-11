@@ -220,6 +220,7 @@ std::atomic<bool> g_capture{false};
 std::atomic<int> g_requested_page{-1};
 std::atomic<int> g_requested_entry_point{static_cast<int>(lambo::ui::EntryPoint::Startup)};
 std::atomic<bool> g_requested_back{false};
+std::atomic<bool> g_requested_dismiss{false};
 std::atomic<lambo::StartupController*> g_startup_controller{nullptr};
 moodycamel::ConcurrentQueue<QueuedEvent> g_event_queue;
 
@@ -860,6 +861,7 @@ void draw_hook(RT64::RenderCommandList* command_list,
         g_state->show_page(static_cast<lambo::ui::Page>(requested));
     }
     if (g_requested_back.exchange(false, std::memory_order_acq_rel)) g_state->back();
+    if (g_requested_dismiss.exchange(false, std::memory_order_acq_rel)) g_state->hide_pages();
     g_state->process_queued_events();
     if (!g_visible.load(std::memory_order_acquire)) return;
     g_state->refresh_controls_values();
@@ -995,6 +997,12 @@ void open_player() {
 
 void close_top_page() {
     g_requested_back.store(true, std::memory_order_release);
+}
+
+// Closes the overlay outright instead of popping one page, so the menu button
+// can toggle the whole UI regardless of how deep the user has navigated.
+void dismiss() {
+    g_requested_dismiss.store(true, std::memory_order_release);
 }
 
 bool is_initialized() {

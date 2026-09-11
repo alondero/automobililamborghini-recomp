@@ -39,6 +39,7 @@ void open_enhancements();
 void open_haptics();
 void open_player();
 void close_top_page();
+void dismiss();
 bool is_initialized();
 bool is_visible();
 bool captures_input();
