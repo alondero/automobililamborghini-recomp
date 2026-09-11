@@ -197,6 +197,24 @@ def main() -> None:
     settings_content_rule = re.search(r"\.settings-content\s*\{([^}]*)\}", rcss, re.DOTALL)
     require(settings_content_rule is not None and "overflow-y: auto" in settings_content_rule.group(1),
             "the settings content pane must own the vertical scrollbar")
+    # RmlUi's directional search skips scroll containers outright, so a sidebar
+    # item using nav: auto can never carry focus into the scrolling content pane.
+    # The overview page has no autofocus anchor, so its sole action must be named
+    # as an explicit navigation target or the pane is unreachable entirely.
+    overview = ET.parse(ui_root / "settings.rml")
+    overview_exit = [element for element in overview.iter("button")
+                     if element.attrib.get("onclick") == "quit"]
+    require(len(overview_exit) == 1 and overview_exit[0].attrib.get("id"),
+            "the overview exit action needs an id to serve as a navigation target")
+    exit_id = overview_exit[0].attrib.get("id")
+    nav_settings_rule = re.search(r"#nav-settings\.active\s*\{([^}]*)\}", rcss, re.DOTALL)
+    require(nav_settings_rule is not None and f"nav-right: #{exit_id}" in nav_settings_rule.group(1),
+            "the active overview sidebar item must name its content target so the pane is enterable")
+    nav_item_rule = re.search(r"\.nav-item\s*\{([^}]*)\}", rcss, re.DOTALL)
+    require(nav_item_rule is not None and "nav: auto" in nav_item_rule.group(1),
+            "sidebar items keep their default directional navigation")
+    require("id=\"autofocus\"" not in (ui_root / "settings.rml").read_text(encoding="utf-8"),
+            "the overview page must not autofocus its quit action")
     setting_row_rule = re.search(r"\.setting-row\s*\{([^}]*)\}", rcss, re.DOTALL)
     require(setting_row_rule is not None and "tab-index: auto" in setting_row_rule.group(1),
             "setting rows must be focusable so left/right can adjust their value")

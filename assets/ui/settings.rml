@@ -28,8 +28,7 @@
             </div>
 
             <div class="overlay-actions">
-              <button class="primary overlay-action-btn" onclick="back">Resume Game</button>
-              <button class="secondary overlay-action-btn" onclick="quit">Exit to Desktop</button>
+              <button id="overview-exit" class="secondary overlay-action-btn" onclick="quit">Exit Game</button>
             </div>
     </div>
   </body>

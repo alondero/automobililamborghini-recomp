@@ -211,7 +211,9 @@ input:focus-visible {
   margin-top: 14dp;
 }
 
-.overlay-action-btn {
+/* Scoped so the margin reset beats button.secondary's margin-top; a bare
+   .overlay-action-btn loses the specificity tie-break. */
+.overlay-actions .overlay-action-btn {
   flex: 1;
   padding: 16dp 24dp;
   font-size: 18dp;
@@ -223,7 +225,7 @@ input:focus-visible {
   nav-up: auto;
   nav-right: auto;
   nav-down: auto;
-  nav-left: auto;
+  nav-left: #nav-settings;
 }
 
 /* 2x2 Grid Cards for Launcher and Settings */
@@ -1111,6 +1113,16 @@ scrollbarvertical sliderarrowinc {
   color: #4b586b;
   background-color: transparent;
   border-color: transparent;
+}
+
+/* The content pane scrolls (overflow-y: auto), and RmlUi's directional search
+   refuses to descend into scroll containers, so nav: auto can never carry focus
+   from the sidebar into a page's content. Name the Overview page's only action
+   explicitly to keep that pane reachable; other pages transfer focus on entry
+   via focus_settings_content(). Scoped to .active so the target id only
+   resolves on the page that actually defines it. */
+#nav-settings.active {
+  nav-right: #overview-exit;
 }
 
 .nav-spacer {
