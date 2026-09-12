@@ -41,11 +41,21 @@ int main() {
     word(next) = 0x00210001;
     word(next + 4) = 0x80000000;
     word(next + 8) = 0x8008C4A0;
+    for (uint32_t off = 0x0C; off < 0x30; off += 4)
+        word(next + off) = 0xA5A50000u | off;
     lambo::vi::promote_context(rdram);
     expect(black, "boot scanout is black while framebuffer points at program memory");
     expect(framebuffer == 0x80000000 && mode == 0x8008C4A0, "boot mode and buffer reach runtime");
     for (uint32_t off = 0; off < 0x30; off += 4)
         expect(word(curr + off) == word(next + off), "whole context is promoted for scheduler");
+
+    // A corrupted private-context pointer near the end of RDRAM must be rejected
+    // before the 0x30-byte promotion can overrun the host allocation.
+    word(0x8008D1A0) = 0x807FFFF0;
+    const int mode_calls_before_boundary = mode_calls;
+    lambo::vi::promote_context(rdram);
+    expect(mode_calls == mode_calls_before_boundary, "context promotion checks its full upper bound");
+    word(0x8008D1A0) = curr;
 
     // The first valid framebuffer clears BLACK without changing the video mode.
     word(next) = 0x00110001;

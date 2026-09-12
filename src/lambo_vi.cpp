@@ -8,10 +8,14 @@ void lambo::vi::promote_context(uint8_t* rdram) {
     if (rdram == nullptr) return;
     auto gw = [&](uint32_t a) -> uint32_t { return *(uint32_t*)(rdram + (a - 0x80000000u)); };
     auto sw = [&](uint32_t a, uint32_t v) { *(uint32_t*)(rdram + (a - 0x80000000u)) = v; };
-    auto in_rdram = [](uint32_t a) { return a >= 0x80000000u && a < 0x80800000u; };
+    auto in_rdram = [](uint32_t a, uint32_t size = 4) {
+        constexpr uint32_t base = 0x80000000u;
+        constexpr uint32_t end = 0x80800000u;
+        return a >= base && size <= end - base && a <= end - size && (a & 3u) == 0;
+    };
     uint32_t curr = gw(0x8008D1A0); // __osViCurr
     uint32_t next = gw(0x8008D1A4); // __osViNext
-    if (!in_rdram(curr) || !in_rdram(next)) return;
+    if (!in_rdram(curr, 0x30) || !in_rdram(next, 0x30)) return;
 
     // The game's scheduler reads these private libultra contexts, bypassing the
     // native VI API. Its task gate requires curr->buffer == next->buffer. Mirror

@@ -1534,7 +1534,7 @@ UNSTUB = [
     # RDRAM stores + two jals to the int-mask pair (runtime 0x8007D4E0/0x8007D500 -- the same pair
     # the emitted-real osViBlack func_80073DD0 already calls safely every boot), clean `jr $ra`.
     # Emitting the real body lands __osViNext->modep/state/control in RDRAM (converges to ares);
-    # promote_vi_context (recomp/src/main.cpp) applies it to ultramodern's native VI at retrace
+    # lambo::vi::promote_context (src/lambo_vi.cpp) applies it to ultramodern's native VI at retrace
     # cadence, exactly where libultra's __osViSwapContext would. TRACKER #58.
     "func_80075C60",
     # func_8004F5F0 (runtime 0x8004e9f0) = the menu confirm/OK-press handler (see its SPLIT_MERGES
