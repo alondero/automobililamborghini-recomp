@@ -34,7 +34,7 @@ void __osSetSR_recomp(uint8_t* rdram, recomp_context* ctx) {
 // OSViMode by osTvType (0=PAL->D_8008D4E0, 2=MPAL->D_8008D530, else NTSC->D_8008D580 = osViModeNtscLan1),
 // next->state=0x20 (VI_STATE_BLACK), next->control=modep->comRegs.ctrl. The MMIO tail (poll VI_CURRENT
 // 0xA4400010, zero VI_CONTROL, jal __osViSwapContext runtime 0x80085010) is owned by ultramodern's VI
-// manager and stays untranslated -- promote_vi_context (recomp/src/main.cpp) HLEs __osViSwapContext's
+// manager and stays untranslated -- lambo::vi::promote_context (src/lambo_vi.cpp) HLEs __osViSwapContext's
 // context promotion at retrace cadence. The default mode seeded here is overwritten almost immediately
 // by the game's own osViSetMode (func_80075C60: LPN2 at boot from osCreateScheduler, LAN2 from the game
 // SM), matching hardware ordering exactly. Reached via osCreateScheduler (func_80074B90) ->
