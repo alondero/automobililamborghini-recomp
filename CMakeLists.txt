@@ -46,6 +46,10 @@ if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/CMakeLists.txt)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(lambo_vi_context_tests tests/test_vi_context.cpp src/lambo_vi.cpp)
+    target_include_directories(lambo_vi_context_tests PRIVATE src)
+    add_test(NAME lambo_vi_context COMMAND lambo_vi_context_tests)
+
     find_program(LAMBO_PYTHON_EXECUTABLE NAMES python python3)
 
     if(LAMBO_PYTHON_EXECUTABLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs/funcs.h")
@@ -616,6 +620,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     # can succeed before RSPRecomp runs.
     set(LAMBO_SOURCES
         src/main.cpp
+        src/lambo_vi.cpp
         src/register_overlays.cpp
         src/stub_renderer.cpp
         src/lambo_audio.cpp    # SDL2 push-audio sink for the AI buffer (audio epic #53, PR 1 of 3)
