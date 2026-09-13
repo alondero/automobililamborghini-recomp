@@ -72,6 +72,9 @@ void set_show_launcher(bool enabled);
 //                                          without the F1 developer overlay.
 std::string texture_pack_path();
 std::string texture_dump_dir();
+void set_texture_pack_path(const std::string& path);
+void set_texture_dump_dir(const std::string& path);
+void set_window_size(WindowSize size);
 
 // Widen the dense 3P/4P split-screen fog to the 1P window/colour (issue #83).
 // graphics.json key "widescreen_fog_match" (default true), overridable by

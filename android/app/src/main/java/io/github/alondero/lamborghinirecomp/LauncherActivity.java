@@ -202,7 +202,7 @@ public final class LauncherActivity extends Activity {
         final String version = Integer.toString(getPackageManager().getPackageInfo(getPackageName(), 0).versionCode);
         File files = getFilesDir();
         File marker = new File(files, "assets/.assets-version");
-        File expected = new File(files, "assets/ui/fonts/LatoLatin-Regular.ttf");
+        File expected = new File(files, "assets/LatoLatin-Regular.ttf");
         File expectedSyms = new File(files, "lamborghini.syms.toml");
         if (marker.isFile() && expected.isFile() && expectedSyms.isFile()
             && version.equals(new String(Files.readAllBytes(marker.toPath()), StandardCharsets.UTF_8))) return;

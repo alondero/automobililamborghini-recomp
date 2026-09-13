@@ -1,0 +1,23 @@
+diff --git a/recompui/src/api/ui_api_events.cpp b/recompui/src/api/ui_api_events.cpp
+--- a/recompui/src/api/ui_api_events.cpp
++++ b/recompui/src/api/ui_api_events.cpp
+@@ -23,8 +23,7 @@
+ #include "librecomp/overlays.hpp"
+ #include "librecomp/helpers.hpp"
+ 
+-// TODO: Forced game includes
+-#include "../../../../../patches/ui_funcs.h"
++#include "recompui/event_structs.h"
+ 
+ struct QueuedCallback {
+     recompui::ResourceId resource;
+diff --git a/recompui/lib/FindFreetype.cmake b/recompui/lib/FindFreetype.cmake
+--- a/recompui/lib/FindFreetype.cmake
++++ b/recompui/lib/FindFreetype.cmake
+@@ -1,5 +1,5 @@
+ set(FREETYPE_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/../freetype-windows-binaries/include)
+-set(FREETYPE_LIBRARIES "${CMAKE_CURRENT_SOURCE_DIR}/../freetype-windows-binaries/release static/vs2015-2022/win64/freetype.lib")
++set(FREETYPE_LIBRARIES "${CMAKE_CURRENT_SOURCE_DIR}/../freetype-windows-binaries/release dll/win64/freetype.lib")
+ add_library(Freetype::Freetype STATIC IMPORTED)
+ set_target_properties(Freetype::Freetype PROPERTIES
+ 	IMPORTED_LOCATION ${FREETYPE_LIBRARIES}

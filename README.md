@@ -52,11 +52,16 @@ Windows, `~/.config/LamborghiniRecomp` elsewhere; create an empty `portable.txt`
 to the game executable, or launch with `--portable`, to keep everything next to the
 game instead — handy for USB-stick or D:-drive installs). Game saves live in the
 same directory. The file is created with
-defaults on first run. On Windows, the **Graphics** and **Enhancements** menu-bar menus
+defaults on first run. The shared **RecompFrontend** overlay provides graphics, enhancements,
+controller remapping, four-player device/profile assignment, pedals, and driver-name settings;
+open it with Esc/F1 or the controller menu button, including in fullscreen. Graphics and
+pedal changes use Apply/Discard; enhancement changes apply immediately. On Windows, the **Graphics** and **Enhancements** menu-bar menus
 apply the commonly used options immediately and save them automatically. The graphics API
 selection is also in the menu but takes effect on the next launch because RT64 creates the
-backend at startup. Advanced settings (texture paths and per-circuit numeric overrides) remain
-available by editing the file and relaunching. The schema and vocabulary match the other
+backend at startup. Texture paths and initial window dimensions are also in the shared
+Graphics tab (restart required). Per-circuit numeric overrides remain available in JSON.
+See [frontend migration notes](docs/recompfrontend.md) for profile import and persistence details.
+The schema and vocabulary match the other
 N64Recomp ports (Zelda 64: Recompiled et al.):
 
 | Key | Values | Default | Meaning |

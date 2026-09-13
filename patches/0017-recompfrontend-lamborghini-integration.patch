@@ -1,0 +1,299 @@
+diff --git a/recompinput/include/recompinput/input_events.h b/recompinput/include/recompinput/input_events.h
+index 5f4420f..3de62fe 100644
+--- a/recompinput/include/recompinput/input_events.h
++++ b/recompinput/include/recompinput/input_events.h
+@@ -4,5 +4,8 @@
+ 
+ namespace recompinput {
+     void handle_events();
++    // For hosts that own their SDL event loop.
++    bool handle_event(SDL_Event& event);
++    void finish_events();
+     void purge_deferred_controller_profiles();
+ }
+diff --git a/recompinput/include/recompinput/players.h b/recompinput/include/recompinput/players.h
+index 6c59b61..60d6115 100644
+--- a/recompinput/include/recompinput/players.h
++++ b/recompinput/include/recompinput/players.h
+@@ -35,6 +35,7 @@ namespace recompinput {
+         void stop_and_close_modal();
+         void commit_player_assignment();
+         void add_keyboard_player();
++        void add_controller_player(SDL_GameController* controller);
+         bool met_assignment_requirements();
+         bool is_blocking_input();
+         bool is_player_currently_assigning(int player_index);
+diff --git a/recompinput/include/recompinput/profiles.h b/recompinput/include/recompinput/profiles.h
+index 45bedd1..cd39c96 100644
+--- a/recompinput/include/recompinput/profiles.h
++++ b/recompinput/include/recompinput/profiles.h
+@@ -9,12 +9,13 @@
+ 
+ namespace recompinput {
+     struct ControllerGUID {
+-        uint64_t hash;
++        uint64_t hash{};
+         std::string serial;
+         int vendor{};
+         int product{};
+         int version{};
+         int crc16{};
++        void update_hash();
+     };
+ 
+     inline void to_json(nlohmann::json& j, const ControllerGUID& guid) {
+@@ -27,6 +28,7 @@ namespace recompinput {
+         j.at("product").get_to(guid.product);
+         j.at("version").get_to(guid.version);
+         j.at("crc16").get_to(guid.crc16);
++        guid.update_hash();
+     }
+ 
+     namespace profiles {
+diff --git a/recompinput/src/input_events.cpp b/recompinput/src/input_events.cpp
+index c76a1dc..08c7c4d 100644
+--- a/recompinput/src/input_events.cpp
++++ b/recompinput/src/input_events.cpp
+@@ -73,6 +73,8 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
+     case SDL_EventType::SDL_CONTROLLERDEVICEADDED:
+     {
+         SDL_ControllerDeviceEvent* controller_event = &event->cdevice;
++        // Hosts may enumerate at startup before SDL's queued added events arrive.
++        if (recompinput::get_controller_from_joystick_id(SDL_JoystickGetDeviceInstanceID(controller_event->which))) break;
+         SDL_GameController* controller = SDL_GameControllerOpen(controller_event->which);
+         printf("Controller added: %d\n", controller_event->which);
+         if (controller != nullptr) {
+@@ -86,6 +88,7 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
+             }
+         }
+         
++        if (controller == nullptr) break;
+         ControllerGUID guid = profiles::get_guid_from_sdl_controller(controller);
+         if (profiles::get_controller_by_guid(guid) < 0) {
+             if (players::is_single_player_mode()) {
+@@ -246,6 +249,19 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
+     return false;
+ }
+ 
++bool handle_event(SDL_Event& event) {
++    return sdl_event_filter(nullptr, &event);
++}
++
++void finish_events() {
++    binding::stop_skipping_events();
++    static bool started = false;
++    if (!started && ultramodern::is_game_started()) {
++        started = true;
++        recompui::process_game_started();
++    }
++}
++
+ void handle_events() {
+     SDL_Event cur_event;
+     static bool started = false;
+diff --git a/recompinput/src/players.cpp b/recompinput/src/players.cpp
+index 08cb3f3..dae48e0 100644
+--- a/recompinput/src/players.cpp
++++ b/recompinput/src/players.cpp
+@@ -153,6 +153,12 @@ void playerassignment::commit_player_assignment() {
+     stop_and_close_modal();
+ 
+     PlayerState.players = PlayerState.temp_players;
++    // Reassignment replaces device ownership, rather than leaving the previous
++    // keyboard/controller profile active on the same N64 port.
++    for (size_t i = 0; i < players::get_max_number_of_players(); ++i) {
++        profiles::set_input_profile_for_player(i, -1, InputDevice::Controller);
++        profiles::set_input_profile_for_player(i, -1, InputDevice::Keyboard);
++    }
+     for (int i = 0; i < players::get_number_of_assigned_players(); i++) {
+         Player &player = PlayerState.players[i];
+         if (player.controller != nullptr) {
+@@ -170,6 +176,15 @@ void playerassignment::add_keyboard_player() {
+     PlayerState.temp_players.add_keyboard_player();
+ }
+ 
++void playerassignment::add_controller_player(SDL_GameController* controller) {
++    if (!controller || !SDL_GameControllerGetAttached(controller) ||
++        PlayerState.temp_players.get_count() >= players::get_max_number_of_players()) return;
++    for (const auto& player : PlayerState.temp_players) {
++        if (player.controller == controller) return;
++    }
++    PlayerState.temp_players.add_controller_player(controller);
++}
++
+ bool playerassignment::met_assignment_requirements() {
+     return PlayerState.temp_players.get_count() >= PlayerState.min_players;
+ }
+diff --git a/recompinput/src/profiles.cpp b/recompinput/src/profiles.cpp
+index c89956e..bc50fb5 100644
+--- a/recompinput/src/profiles.cpp
++++ b/recompinput/src/profiles.cpp
+@@ -285,16 +285,19 @@ namespace recompinput {
+         guid.version = version;
+         guid.crc16 = crc16;
+ 
+-        // Compute the hash from the GUID.
++        guid.update_hash();
++        return guid;
++    }
++
++    void ControllerGUID::update_hash() {
++        // Use the same identity for live SDL devices and deserialized profiles.
+         XXH3_state_t state;
+         XXH3_64bits_reset(&state);
+-        XXH3_64bits_update(&state, &guid.vendor, sizeof(guid.vendor));
+-        XXH3_64bits_update(&state, &guid.product, sizeof(guid.product));
+-        XXH3_64bits_update(&state, &guid.version, sizeof(guid.version));
+-        XXH3_64bits_update(&state, &guid.crc16, sizeof(guid.crc16));
+-        guid.hash = XXH3_64bits_digest(&state);
+-
+-        return guid;
++        XXH3_64bits_update(&state, &vendor, sizeof(vendor));
++        XXH3_64bits_update(&state, &product, sizeof(product));
++        XXH3_64bits_update(&state, &version, sizeof(version));
++        XXH3_64bits_update(&state, &crc16, sizeof(crc16));
++        hash = XXH3_64bits_digest(&state);
+     }
+ 
+     int profiles::get_controller_profile_index_from_sdl_controller(SDL_GameController *game_controller) {
+diff --git a/recompui/include/recompui/config.h b/recompui/include/recompui/config.h
+index 38b84f5..6cde105 100644
+--- a/recompui/include/recompui/config.h
++++ b/recompui/include/recompui/config.h
+@@ -34,7 +34,7 @@ namespace recompui {
+         }
+ 
+         namespace controls {
+-            inline const std::string id = "controls";
++            inline const std::string id = "controls-framework";
+             inline const std::string tab_name = "Controls";
+ 
+             void add_game_input(
+diff --git a/recompui/lib/FindFreetype.cmake b/recompui/lib/FindFreetype.cmake
+index bbb8d6a..dd60b44 100644
+--- a/recompui/lib/FindFreetype.cmake
++++ b/recompui/lib/FindFreetype.cmake
+@@ -1,5 +1,5 @@
+ set(FREETYPE_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/../freetype-windows-binaries/include)
+-set(FREETYPE_LIBRARIES "${CMAKE_CURRENT_SOURCE_DIR}/../freetype-windows-binaries/release static/vs2015-2022/win64/freetype.lib")
++set(FREETYPE_LIBRARIES "${CMAKE_CURRENT_SOURCE_DIR}/../freetype-windows-binaries/release dll/win64/freetype.lib")
+ add_library(Freetype::Freetype STATIC IMPORTED)
+ set_target_properties(Freetype::Freetype PROPERTIES
+ 	IMPORTED_LOCATION ${FREETYPE_LIBRARIES}
+diff --git a/recompui/src/api/ui_api_events.cpp b/recompui/src/api/ui_api_events.cpp
+index 8ee95c5..161d82f 100644
+--- a/recompui/src/api/ui_api_events.cpp
++++ b/recompui/src/api/ui_api_events.cpp
+@@ -23,8 +23,7 @@
+ #include "librecomp/overlays.hpp"
+ #include "librecomp/helpers.hpp"
+ 
+-// TODO: Forced game includes
+-#include "../../../../../patches/ui_funcs.h"
++#include "recompui/event_structs.h"
+ 
+ struct QueuedCallback {
+     recompui::ResourceId resource;
+diff --git a/recompui/src/base/ui_state.cpp b/recompui/src/base/ui_state.cpp
+index 277a421..1bc650e 100644
+--- a/recompui/src/base/ui_state.cpp
++++ b/recompui/src/base/ui_state.cpp
+@@ -42,7 +42,9 @@ void recompui::open_quit_game_prompt() {
+         "Quit",
+         "Cancel",
+         []() {
+-            ultramodern::quit();
++            SDL_Event event{};
++            event.type = SDL_QUIT;
++            SDL_PushEvent(&event);
+         },
+         []() {},
+         recompui::ButtonStyle::Danger,
+diff --git a/recompui/src/config/ui_config.cpp b/recompui/src/config/ui_config.cpp
+index 6c84c05..1ad8f7b 100644
+--- a/recompui/src/config/ui_config.cpp
++++ b/recompui/src/config/ui_config.cpp
+@@ -159,7 +159,9 @@ namespace recompui {
+             if (ultramodern::is_game_started()) {
+                 recompui::open_quit_game_prompt();
+             } else {
+-                ultramodern::quit();
++                SDL_Event event{};
++                event.type = SDL_QUIT;
++                SDL_PushEvent(&event);
+             }
+         });
+         auto close_button = config_modal->modal_root_context.create_element<IconButton>(header_right, "icons/X.svg", ButtonStyle::Basic);
+diff --git a/recompui/src/config/ui_config_tab_graphics.cpp b/recompui/src/config/ui_config_tab_graphics.cpp
+index 4fdf81f..ff84e45 100644
+--- a/recompui/src/config/ui_config_tab_graphics.cpp
++++ b/recompui/src/config/ui_config_tab_graphics.cpp
+@@ -26,13 +26,15 @@ namespace recompui {
+         };
+ 
+         enum class DownsamplingOption {
+-            Off = 0,
++            Off = 1,
+             X2 = 2,
++            X3 = 3,
+             X4 = 4,
+         };
+         static EnumOptionVector downsampling_options = {
+             {DownsamplingOption::Off, "Off"},
+             {DownsamplingOption::X2, "2x"},
++            {DownsamplingOption::X3, "3x"},
+             {DownsamplingOption::X4, "4x"},
+         };
+ 
+@@ -74,7 +76,7 @@ namespace recompui {
+             {ultramodern::renderer::Antialiasing::None, "None"},
+             {ultramodern::renderer::Antialiasing::MSAA2X, "MSAA2X", "2X"},
+             {ultramodern::renderer::Antialiasing::MSAA4X, "MSAA4X", "4X"},
+-            // {ultramodern::renderer::Antialiasing::MSAA8X, "MSAA8X"},
++            {ultramodern::renderer::Antialiasing::MSAA8X, "MSAA8X", "8X"},
+         };
+ 
+         static EnumOptionVector refresh_rate_options = {
+@@ -229,7 +231,7 @@ namespace recompui {
+                 "Dev Mode",
+                 "Enables developer features.",
+                 false,
+-                true
++                false
+             );
+ 
+             config.add_enum_option(
+@@ -347,7 +349,7 @@ namespace recompui {
+                 "Selects the graphics API to use.",
+                 graphics_api_options,
+                 ultramodern::renderer::GraphicsApi::Auto,
+-                true
++                false
+             );
+ 
+             config.add_enum_option(
+@@ -356,7 +358,7 @@ namespace recompui {
+                 "Sets whether to use a high precision framebuffer.",
+                 hpfb_options,
+                 ultramodern::renderer::HighPrecisionFramebuffer::Off,
+-                true
++                false
+             );
+ 
+             return config;
+diff --git a/recompui/src/util/file.cpp b/recompui/src/util/file.cpp
+index 7ee84ed..340879c 100644
+--- a/recompui/src/util/file.cpp
++++ b/recompui/src/util/file.cpp
+@@ -120,7 +120,10 @@ namespace recompui {
+ #elif defined(__linux__) && defined(RECOMP_FLATPAK)
+         return "/app/bin";
+ #else
+-        return "";
++        char* base = SDL_GetBasePath();
++        std::filesystem::path result = base ? std::filesystem::u8path(base) : std::filesystem::current_path();
++        SDL_free(base);
++        return result;
+ #endif
+     }
+ 

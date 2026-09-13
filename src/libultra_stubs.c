@@ -256,11 +256,11 @@ static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
                     if (rx > 2) MEM_B(2, resp) = has_pak ? 0x01 : 0x00; /* bit0 = pak present */
                     break;
                 case 0x01: { /* controller read: canonical order, byte0 = button HIGH */
-                    uint16_t btn = (channel == 0) ? pads[0].button : 0;
+                    uint16_t btn = pads[channel].button;
                     if (rx > 0) MEM_B(0, resp) = (signed char)((btn >> 8) & 0xFF);
                     if (rx > 1) MEM_B(1, resp) = (signed char)(btn & 0xFF);
-                    if (rx > 2) MEM_B(2, resp) = (channel == 0) ? pads[0].stick_x : 0;
-                    if (rx > 3) MEM_B(3, resp) = (channel == 0) ? pads[0].stick_y : 0;
+                    if (rx > 2) MEM_B(2, resp) = pads[channel].stick_x;
+                    if (rx > 3) MEM_B(3, resp) = pads[channel].stick_y;
                     break;
                 }
                 case 0x02: { /* pak block read (real frame: rx = 0x21 = 32 data + 1 data-CRC) */

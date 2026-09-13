@@ -678,5 +678,21 @@ void set_show_launcher(bool enabled) {
     save_graphics_updates({{"show_launcher", enabled}});
 }
 
+void set_texture_pack_path(const std::string& path) {
+    { std::lock_guard lock(g_texture_mutex); g_texture_pack = path; }
+    save_graphics_updates({{"texture_pack", path}});
+}
+
+void set_texture_dump_dir(const std::string& path) {
+    { std::lock_guard lock(g_texture_mutex); g_texture_dump = path; }
+    save_graphics_updates({{"texture_dump", path}});
+}
+
+void set_window_size(WindowSize size) {
+    if (size.width < 320 || size.width > 7680 || size.height < 240 || size.height > 4320) return;
+    g_window_size = size;
+    save_graphics_updates({{"window_width", size.width}, {"window_height", size.height}});
+}
+
 } // namespace config
 } // namespace lambo

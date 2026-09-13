@@ -5,6 +5,6 @@
 	path = lib/rt64
 	url = https://github.com/rt64/rt64.git
 
-[submodule "lib/RmlUi"]
-	path = lib/RmlUi
-	url = https://github.com/mikke89/RmlUi.git
+[submodule "lib/RecompFrontend"]
+	path = lib/RecompFrontend
+	url = https://github.com/N64Recomp/RecompFrontend.git

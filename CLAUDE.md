@@ -51,7 +51,7 @@ Same approach as [Snowboard Kids 2 Recompiled](https://github.com/cdlewis/snowbo
 - If a rebuild links stale recompiled code, delete stale archives under `build/` named
   `libRecompiledFuncs.a`.
 - **EOL trap:** `scripts/gen_syms_toml.py` has *mixed* line endings at HEAD and
-  `assets/ui/lambo.rcss` is LF-only — whole-file rewrites that normalise EOLs produce
+  UI styles are LF-only — whole-file rewrites that normalise EOLs produce
   thousands of diff-noise lines. Edit in place; never round-trip these files through a
   text-mode script that rewrites every line.
 
@@ -84,6 +84,15 @@ artifacts and verifies the requested track actually loaded, 30 Hz guest input co
 vehicle motion, framebuffer swaps, and a complete BMP. See `docs/automation-harness.md`.
 Replay EOF proves the recorded controls ran, not that a lap completed. Keep neutral pre-roll
 and use the same warp or settled save-state when recording/replaying a regression fixture.
+
+## Configuration frontend
+
+The game uses the pinned `lib/RecompFrontend` for settings, remapping and four-player
+assignment. `src/ui/lambo_frontend*.cpp` adapts it to this port; do not add a second
+RmlUi backend. `graphics.json` and player identity remain port-owned, with external
+Config storage and changed-field Apply merging. Framework profiles use
+`controls-framework.json`; legacy `controls.json` is a read-only import source.
+See `docs/recompfrontend.md` for scope, migration limits and regression checks.
 
 ## Tracker
 Use Github Issues

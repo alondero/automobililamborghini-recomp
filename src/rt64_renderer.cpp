@@ -389,9 +389,11 @@ public:
     void send_dl(const OSTask* task) override {
         static int count = 0;
         if (++count == 1) {
-            LAMBO_LOG("rt64", "first send_dl: ucode=0x%08x ucode_data=0x%08x dl=0x%08x\n",
+            LAMBO_LOG("rt64", "first send_dl: ucode=0x%08x ucode_data=0x%08x dl=0x%08x presentation=%s\n",
                          (uint32_t)task->t.ucode, (uint32_t)task->t.ucode_data,
-                         (uint32_t)task->t.data_ptr);
+                         (uint32_t)task->t.data_ptr,
+                         app->enhancementConfig.presentation.mode == RT64::EnhancementConfiguration::Presentation::Mode::PresentEarly
+                             ? "PresentEarly" : "VI-synchronized");
         }
         app->state->rsp->reset();
         // Match the swrender's KSEG0 call-site convention (stub_renderer.cpp send_dl)
@@ -437,6 +439,15 @@ public:
                          count, vr->VI_ORIGIN_REG, vr->VI_STATUS_REG, vr->VI_WIDTH_REG,
                          vi_rate, target_rate, swap_hz, interp_count, interp_presented);
         }
+    }
+
+    void send_dummy_workload(uint32_t fb_address) override {
+        app->state->listProcessBegin();
+        app->state->rdp->setColorImage(G_IM_FMT_RGBA, G_IM_SIZ_16b, 320, fb_address);
+        app->state->rdp->setOtherMode(0x382C30, 0);
+        app->state->rdp->fillRect(0, 0, 320 << 2, 240 << 2);
+        app->state->fullSync();
+        app->state->listProcessEnd();
     }
 
     void update_screen() override {

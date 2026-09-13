@@ -131,20 +131,6 @@ index 518529d..bdde8e2 100644
                  // TODO hook the parsed event up to the actual parsing point when a callback is added to RT64.
                  ultramodern::extensions::on_displaylist_parsed(displaylist);
                  ultramodern::extensions::on_displaylist_completed(displaylist);
-@@ -442,6 +480,13 @@ static const OSViMode dummy_mode = []() {
- void set_dummy_vi(bool odd) {
-     ViState* next_state = events_context.vi.get_next_state();
-     next_state->mode = &dummy_mode;
-+    // Local patch (lamborghini #58): mirror what osViSetMode does with a real mode --
-+    // without this, VI_STATUS stays 0 (pixel type "blank") and a renderer that honours
-+    // the VI regs (RT64) presents black even with a valid origin. (A TYPE_32 variant was
-+    // A/B'd 2026-07-02 against this game's measured 32bpp framebuffers: black either way
-+    // in WSLg window captures -- inconclusive; the real fix is a faithful __osViInit so
-+    // the game's own mode reaches osViSetMode.)
-+    next_state->control = dummy_mode.comRegs.ctrl;
-     // Set up a dummy framebuffer.
-     next_state->framebuffer = 0x80700000;
-     if (odd) {
 diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
 index 9944a02..25702b1 100644
 --- a/ultramodern/src/mesgqueue.cpp

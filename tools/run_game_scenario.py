@@ -173,6 +173,10 @@ def build_environment(scenario: dict[str, Any], runtime: dict[str, Any], artifac
         "LAMBO_CONTROLLER_PAK_FILE": str(artifact / "controller.mpk"),
         "LAMBO_HARNESS_RESULT": str(artifact / "harness-result.json"),
         "LAMBO_MODERN_MAX_VIS": str(scenario.get("max_vis", DEFAULT_MAX_VIS)),
+        # Shared frontend profiles/general settings must be isolated too, not
+        # just graphics and Pak files. Never overwrite a developer's controls.
+        "LOCALAPPDATA": str(artifact / "user-config"),
+        "XDG_CONFIG_HOME": str(artifact / "user-config"),
     })
     if "warp" in runtime:
         environment["LAMBO_WARP"] = runtime["warp"]
@@ -243,7 +247,8 @@ def load_native_result(path: Path) -> dict[str, Any]:
     return result
 
 
-def evaluate(scenario: dict[str, Any], result: dict[str, Any], returncode: int | None) -> list[str]:
+def evaluate(scenario: dict[str, Any], result: dict[str, Any], returncode: int | None,
+             stderr: str = "") -> list[str]:
     failures: list[str] = []
     if returncode != 0:
         failures.append(f"process exited {returncode}")
@@ -292,6 +297,10 @@ def evaluate(scenario: dict[str, Any], result: dict[str, Any], returncode: int |
             failures.append("native state load was not applied cleanly")
 
     expected = scenario["expect"]
+    if "presentation_mode" in expected:
+        marker = "presentation=" + expected["presentation_mode"]
+        if not any("first send_dl:" in line and marker in line for line in stderr.splitlines()):
+            failures.append(f"first game display list did not use {expected['presentation_mode']} presentation")
     if "max_state_at_least" in expected and result.get("max_state", 0) < expected["max_state_at_least"]:
         failures.append(f"max_state {result.get('max_state')} < {expected['max_state_at_least']}")
     if "min_swaps" in expected and result.get("swaps", 0) < expected["min_swaps"]:
@@ -378,7 +387,7 @@ def main(argv: list[str] | None = None) -> int:
     except ScenarioError as error:
         failures.append(str(error))
     if native is not None:
-        failures.extend(evaluate(runtime, native, returncode))
+        failures.extend(evaluate(runtime, native, returncode, stderr))
     try:
         write_runner_result(artifact, scenario["name"], executable, returncode,
                             timed_out, failures, native)

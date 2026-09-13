@@ -34,6 +34,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(N64MR ${CMAKE_CURRENT_SOURCE_DIR}/lib/N64ModernRuntime)
+include(cmake/Frontend.cmake)
 
 # --- RT64 renderer (#58: DEFAULT presenter, hard build dependency since 2026-07-02) ---
 # recomp/lib/rt64 is a pinned git submodule; RT64 is always compiled in and is the
@@ -266,20 +267,6 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_controls_capture_state_machine COMMAND lambo_controls_capture_tests)
 
-    add_executable(lambo_ui_controls_tests
-        tests/test_ui_controls.cpp
-        src/ui/lambo_ui_controls.cpp
-        src/controls/lambo_controls.cpp
-        src/lambo_config.cpp
-        src/lambo_log.cpp
-        src/lambo_file.cpp
-    )
-    target_include_directories(lambo_ui_controls_tests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${N64MR}/ultramodern/include
-        ${N64MR}/thirdparty
-    )
-    add_test(NAME lambo_ui_controls_actions COMMAND lambo_ui_controls_tests)
 
     add_executable(lambo_analog_throttle_tests
         tests/test_analog_throttle.cpp
@@ -323,44 +310,12 @@ if(BUILD_TESTING)
     target_link_libraries(lambo_replay_runtime_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_replay_runtime_capture COMMAND lambo_replay_runtime_tests)
 
-    add_executable(lambo_ui_input_tests
-        tests/test_ui_input.cpp
-        src/ui/lambo_ui_input.cpp
-    )
-    target_include_directories(lambo_ui_input_tests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-    )
-    add_test(NAME lambo_ui_controller_navigation COMMAND lambo_ui_input_tests)
 
-    add_executable(lambo_ui_requests_tests
-        tests/test_ui_requests.cpp
-        src/ui/lambo_ui_requests.cpp
-    )
-    target_include_directories(lambo_ui_requests_tests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-    )
-    target_link_libraries(lambo_ui_requests_tests PRIVATE Threads::Threads)
-    add_test(NAME lambo_ui_overlay_requests COMMAND lambo_ui_requests_tests)
 
-    add_executable(lambo_ui_settings_tests
-        tests/test_ui_settings.cpp
-        src/ui/lambo_ui_settings.cpp
-        src/lambo_config.cpp
-        src/lambo_log.cpp
-    )
-    target_include_directories(lambo_ui_settings_tests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${N64MR}/ultramodern/include
-        ${N64MR}/thirdparty
-    )
-    add_test(NAME lambo_ui_settings_bindings COMMAND lambo_ui_settings_tests)
 
     if(LAMBO_PYTHON_EXECUTABLE)
-        add_test(NAME lambo_ui_asset_references
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui_assets.py
-                ${CMAKE_CURRENT_SOURCE_DIR}
-        )
+        add_test(NAME lambo_frontend_assets
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_frontend_assets.py ${CMAKE_CURRENT_SOURCE_DIR})
         add_test(NAME lambo_quit_path
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_quit_path.py
@@ -389,23 +344,10 @@ if(BUILD_TESTING)
     endif()
 endif()
 
-# RmlUi is the only UI toolkit used by the launcher. Keep the dependency pinned
-# as a submodule and build only the core/debugger libraries; the SDL backend is
-# compiled into the game target below so it shares the game's SDL instance.
+# RecompFrontend owns RmlUi, its SDL backend, fonts and SVG support.
 set(BUILD_SHARED_LIBS OFF)
 set(RMLUI_TESTS OFF CACHE BOOL "" FORCE)
 set(RMLUI_SAMPLES OFF CACHE BOOL "" FORCE)
-set(RMLUI_SVG_PLUGIN OFF CACHE BOOL "" FORCE)
-if(WIN32)
-    # Reuse RT64's pinned FreeType build for RmlUi text rendering. The Windows
-    # SDK bundle does not necessarily provide a CMake package of its own.
-    set(LAMBO_FREETYPE_ROOT
-        ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/mupen64plus-win32-deps/freetype-2.13.0)
-    set(FREETYPE_INCLUDE_DIR_ft2build ${LAMBO_FREETYPE_ROOT}/include CACHE PATH "" FORCE)
-    set(FREETYPE_INCLUDE_DIR_freetype2 ${LAMBO_FREETYPE_ROOT}/include CACHE PATH "" FORCE)
-    set(FREETYPE_LIBRARY ${LAMBO_FREETYPE_ROOT}/lib/x64/freetype.lib CACHE FILEPATH "" FORCE)
-    set(FREETYPE_LIBRARY_RELEASE ${LAMBO_FREETYPE_ROOT}/lib/x64/freetype.lib CACHE FILEPATH "" FORCE)
-endif()
 
 # lambo_config.cpp coalesces menu persistence on a portable std::thread. Keep
 # every executable that compiles it explicitly linked to the platform thread
@@ -415,36 +357,12 @@ foreach(lambo_config_thread_target
         lambo_config_tests
         lambo_controls_tests
         lambo_controls_capture_tests
-        lambo_ui_controls_tests
-        lambo_ui_settings_tests
         lambo_controls_sdl_tests
         lamborghini_modern)
     if(TARGET ${lambo_config_thread_target})
         target_link_libraries(${lambo_config_thread_target} PRIVATE Threads::Threads)
     endif()
 endforeach()
-if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/RmlUi/CMakeLists.txt)
-    message(FATAL_ERROR "lib/RmlUi submodule is missing. Initialise it first:\n"
-        "  git submodule update --init --recursive")
-endif()
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/RmlUi ${CMAKE_BINARY_DIR}/RmlUi)
-# GCC 16+ stopped pulling <cstdint> into <limits>/<algorithm>/<cstdlib>
-# transitively; RmlUi's vendored robin_hood.h relies on that and fails with
-# "Unsupported bitness" at the SIZE_MAX check (see release flow notes).
-# Force-include the standard integer header for every C++ translation unit
-# that includes an RmlUi header. Apply per-target so it covers:
-#   * rmlui_core / rmlui_debugger (STATIC libraries built by RmlUi's own CMakeLists
-#     whose target_compile_options already lock in -Wall -Wextra -pedantic — adding
-#     CMAKE_CXX_FLAGS at the parent level doesn't reach these targets because
-#     they're created before our parent CMakeLists resumes)
-#   * the SDL backend file compiled DIRECTLY into lamborghini_modern (we flag
-#     lamborghini_modern below in the target's own target_compile_options)
-foreach(_rmlui_target rmlui_core rmlui_debugger)
-    if(TARGET ${_rmlui_target})
-        target_compile_options(${_rmlui_target} PRIVATE -include cstdint)
-    endif()
-endforeach()
-
 set(RT64_STATIC TRUE)
 if(WIN32)
     # Windows (#68 native build): RT64 uses its D3D12 backend + a plain Win32 window
@@ -637,14 +555,9 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_analog_throttle.cpp # issue #128: atomic native-port throttle bridge + race hook
         src/lambo_analog_brake.cpp    # issue #152: atomic native-port brake bridge + race hook
         src/controls/lambo_controls.cpp
-        src/controls/lambo_controls_sdl.cpp
-        src/ui/lambo_ui.cpp
-        src/ui/lambo_ui_input.cpp
-        src/ui/lambo_ui_requests.cpp
-        src/ui/lambo_ui_controls.cpp
-        src/ui/lambo_ui_render_interface.cpp
-        src/ui/lambo_ui_settings.cpp
-        lib/RmlUi/Backends/RmlUi_Platform_SDL.cpp
+        src/ui/lambo_frontend.cpp
+        src/ui/lambo_frontend_settings.cpp
+        src/ui/lambo_frontend_input.cpp
         src/lambo_crash.cpp    # native crash backtrace (issue #13 / A14): Win32 EXCEPTION_POINTERS +
                                # POSIX sigaction handler printing KSEG0/RDRAM offset + a 32-entry
                                # function-lookup trace ring. No deps beyond libc + DbgHelp (Win) /
@@ -724,8 +637,6 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         ${N64MR}/librecomp/include
         ${N64MR}/N64Recomp/include
         ${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs
-        ${CMAKE_CURRENT_SOURCE_DIR}/lib/RmlUi/Include
-        ${CMAKE_CURRENT_SOURCE_DIR}/lib/RmlUi/Backends
         ${N64MR}/thirdparty/concurrentqueue
     )
     target_link_libraries(lamborghini_modern PRIVATE
@@ -772,8 +683,32 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     set(DXC_SPV_OPTS "-spirv" "-fspv-target-env=vulkan1.0" "-fvk-use-dx-layout")
     set(DXC_PS_OPTS "${DXC_COMMON_OPTS}" "-E" "PSMain" "-T ps_6_3")
     set(DXC_VS_OPTS "${DXC_COMMON_OPTS}" "-E" "VSMain" "-T vs_6_3" "-fvk-invert-y")
-    build_vertex_shader(lamborghini_modern "shaders/InterfaceVS.hlsl" "shaders/InterfaceVS.hlsl")
-    build_pixel_shader(lamborghini_modern "shaders/InterfacePS.hlsl" "shaders/InterfacePS.hlsl")
+    set(RECOMP_FRONTEND_N64MODERNRUNTIME_PATH "${N64MR}" CACHE PATH "" FORCE)
+    set(RECOMP_FRONTEND_RT64_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" CACHE PATH "" FORCE)
+    set(sdl2_SOURCE_DIR "${SDL2_WIN32_DEPS}")
+    add_subdirectory(lib/RecompFrontend)
+    foreach(frontend_target recompui recompinput rmlui_core rmlui_debugger)
+        target_compile_options(${frontend_target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-include>" "$<$<COMPILE_LANGUAGE:CXX>:cstdint>")
+        target_include_directories(${frontend_target} PRIVATE ${SDL2_INCLUDE_DIRS})
+    endforeach()
+    target_link_libraries(lamborghini_modern PRIVATE recompui recompinput)
+    if(BUILD_TESTING)
+        add_executable(lambo_frontend_settings_tests
+            tests/test_frontend_settings.cpp src/ui/lambo_frontend_settings.cpp
+            src/ui/lambo_frontend_input.cpp src/controls/lambo_controls.cpp
+            src/lambo_config.cpp src/lambo_player_name.cpp src/lambo_log.cpp src/lambo_file.cpp)
+        target_include_directories(lambo_frontend_settings_tests PRIVATE src ${SDL2_INCLUDE_DIRS})
+        target_link_libraries(lambo_frontend_settings_tests PRIVATE
+            recompui recompinput librecomp ultramodern rt64 Threads::Threads)
+        if(WIN32)
+            target_compile_definitions(lambo_frontend_settings_tests PRIVATE SDL_MAIN_HANDLED NOMINMAX)
+            target_link_libraries(lambo_frontend_settings_tests PRIVATE SDL2 shell32)
+        else()
+            target_link_libraries(lambo_frontend_settings_tests PRIVATE ${SDL2_LIBRARIES})
+        endif()
+        add_test(NAME lambo_frontend_settings COMMAND lambo_frontend_settings_tests
+            ${CMAKE_BINARY_DIR}/frontend-settings-test-data)
+    endif()
     # rt64's include_directories() are directory-scoped and do not propagate;
     # mirror Zelda64Recomp's include list for the game target.
     set(RT64_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64)
@@ -805,14 +740,14 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
 
     add_custom_command(TARGET lamborghini_modern POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/ui
-            $<TARGET_FILE_DIR:lamborghini_modern>/assets/ui
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/frontend
+            $<TARGET_FILE_DIR:lamborghini_modern>/assets
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/lib/RmlUi/Samples/assets/LatoLatin-Regular.ttf
-            $<TARGET_FILE_DIR:lamborghini_modern>/assets/ui/fonts/LatoLatin-Regular.ttf
+            ${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend/recompui/lib/RmlUi/Samples/assets/LatoLatin-Regular.ttf
+            $<TARGET_FILE_DIR:lamborghini_modern>/assets/LatoLatin-Regular.ttf
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/lib/RmlUi/Samples/assets/LatoLatin-Bold.ttf
-            $<TARGET_FILE_DIR:lamborghini_modern>/assets/ui/fonts/LatoLatin-Bold.ttf
+            ${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend/recompui/lib/RmlUi/Samples/assets/LatoLatin-Bold.ttf
+            $<TARGET_FILE_DIR:lamborghini_modern>/assets/LatoLatin-Bold.ttf
     )
 
     if(WIN32)
@@ -847,7 +782,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         add_custom_command(TARGET lamborghini_modern POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${SDL2_WIN32_DEPS}/lib/x64/SDL2.dll
-                ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/mupen64plus-win32-deps/freetype-2.13.0/lib/x64/freetype.dll
+                "${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend/recompui/lib/freetype-windows-binaries/release dll/win64/freetype.dll"
                 ${RT64_DXC_BIN}/dxcompiler.dll
                 ${RT64_DXC_BIN}/dxil.dll
                 $<TARGET_FILE_DIR:lamborghini_modern>)
