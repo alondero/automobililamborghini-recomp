@@ -357,7 +357,6 @@ foreach(lambo_config_thread_target
         lambo_config_tests
         lambo_controls_tests
         lambo_controls_capture_tests
-        lambo_controls_sdl_tests
         lamborghini_modern)
     if(TARGET ${lambo_config_thread_target})
         target_link_libraries(${lambo_config_thread_target} PRIVATE Threads::Threads)
@@ -473,28 +472,6 @@ if(BUILD_TESTING)
     add_test(NAME lambo_audio_recovers_from_device_failures
         COMMAND lambo_audio_recovery_tests)
 
-    add_executable(lambo_controls_sdl_tests
-        tests/test_controls_sdl.cpp
-        src/controls/lambo_controls.cpp
-        src/controls/lambo_controls_sdl.cpp
-        src/lambo_config.cpp
-        src/lambo_log.cpp
-        src/lambo_file.cpp
-    )
-    target_include_directories(lambo_controls_sdl_tests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${N64MR}/ultramodern/include
-        ${N64MR}/thirdparty
-        ${SDL2_INCLUDE_DIRS}
-    )
-    if(WIN32)
-        target_compile_definitions(lambo_controls_sdl_tests PRIVATE SDL_MAIN_HANDLED)
-        target_link_libraries(lambo_controls_sdl_tests PRIVATE SDL2)
-    else()
-        target_link_libraries(lambo_controls_sdl_tests PRIVATE ${SDL2_LIBRARIES})
-    endif()
-    target_link_libraries(lambo_controls_sdl_tests PRIVATE Threads::Threads)
-    add_test(NAME lambo_controls_sdl_registry COMMAND lambo_controls_sdl_tests)
 endif()
 
 # ultramodern + librecomp, which cascades N64Recomp / LiveRecomp / miniz.

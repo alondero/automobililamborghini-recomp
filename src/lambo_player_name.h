@@ -16,6 +16,9 @@ namespace player {
 std::string saved_name();
 bool set_saved_name(const std::string& name);
 void clear_saved_name();
+// Explicitly refresh player.json after an external file-change notification.
+// Normal callers should use saved_name(), which is served from the in-memory cache.
+void reload_saved_name();
 
 } // namespace player
 } // namespace lambo

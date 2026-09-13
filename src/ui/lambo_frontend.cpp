@@ -1,5 +1,6 @@
 #include "lambo_ui.h"
 #include "lambo_frontend_input.h"
+#include "lambo_frontend_overlay.h"
 #include "lambo_config.h"
 #include "lambo_startup.h"
 #include "recompui/recompui.h"
@@ -23,13 +24,12 @@ std::recursive_mutex& frontend_mutex() { static std::recursive_mutex mutex; retu
 void create_frontend_settings();
 void refresh_frontend_settings();
 namespace {
-std::atomic<bool> ready{false}, capture{false};
-std::atomic<int> pending{-1};
+std::atomic<bool> ready{false};
+OverlayCaptureGate overlay;
 lambo::StartupController* startup = nullptr;
 
 void request(Page page) {
-    capture.store(true, std::memory_order_release);
-    pending.store(static_cast<int>(page), std::memory_order_release);
+    overlay.request(page);
 }
 
 void initialize(plume::RenderInterface* interface, plume::RenderDevice* device) {
@@ -54,11 +54,21 @@ void initialize(plume::RenderInterface* interface, plume::RenderDevice* device) 
 
 void render(plume::RenderCommandList* commands, plume::RenderFramebuffer* framebuffer) {
     std::lock_guard lock(frontend_mutex());
-    const int action = pending.exchange(-1, std::memory_order_acq_rel);
+    const OverlayRequest action = overlay.take_request();
     refresh_frontend_settings();
-    if (action == -2) recompui::try_close_current_context();
-    else if (action >= 0) {
-        const auto page = static_cast<Page>(action);
+    if (action.kind == OverlayRequestKind::Close) {
+        // The render callback does not own a ContextId opened through the
+        // thread-local ContextId API, so try_close_current_context() cannot
+        // dismiss the modal here. Close the config modal explicitly and hide
+        // any nested context (for example the player-assignment prompt).
+        // A dirty confirmation-backed tab may open Apply/Discard instead of
+        // closing. Do not hide that prompt; it is the only path that can
+        // resolve the pending edit. For a clean modal, remove any nested
+        // context after the config close succeeds.
+        if (recompui::config::close()) recompui::hide_all_contexts();
+    }
+    else if (action.kind == OverlayRequestKind::Page) {
+        const auto page = action.page;
         if (page == Page::Home) recompui::show_context(recompui::get_launcher_context_id(), "");
         else {
             recompui::config::open();
@@ -75,13 +85,13 @@ void render(plume::RenderCommandList* commands, plume::RenderFramebuffer* frameb
         }
     }
     draw_hook(commands, framebuffer);
-    capture.store(recompui::is_context_capturing_input(), std::memory_order_release);
+    overlay.publish_context_capture(recompui::is_context_capturing_input());
 }
 
 void deinitialize() {
     std::lock_guard lock(frontend_mutex());
     ready.store(false, std::memory_order_release);
-    capture.store(false, std::memory_order_release);
+    overlay.publish_context_capture(false);
     deinit_hook();
 }
 }
@@ -164,11 +174,11 @@ void open_graphics() { request(Page::Graphics); }
 void open_enhancements() { request(Page::Enhancements); }
 void open_haptics() { request(Page::Haptics); }
 void open_player() { request(Page::Player); }
-void close_top_page() { pending.store(-2, std::memory_order_release); }
+void close_top_page() { overlay.request_close(); }
 void toggle_settings() { if (captures_input()) close_top_page(); else open_settings(); }
 bool is_initialized() { return ready.load(std::memory_order_acquire); }
 bool overlay_visible_intent() { return captures_input(); }
-bool captures_input() { return pending.load(std::memory_order_acquire) >= 0 || capture.load(std::memory_order_acquire); }
+bool captures_input() { return overlay.captures_input(); }
 void shutdown() { RT64::SetRenderHooks(nullptr, nullptr, nullptr); if (ready.load()) deinitialize(); }
 void save_frontend_preferences() {
     std::lock_guard lock(frontend_mutex());

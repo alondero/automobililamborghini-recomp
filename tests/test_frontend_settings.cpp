@@ -2,8 +2,11 @@
 #include <iostream>
 #include <stdexcept>
 #include "lambo_config.h"
+#include "lambo_player_name.h"
 #include "lambo_paths.h"
+#include "ui/lambo_ui.h"
 #include "ui/lambo_frontend_input.h"
+#include "ui/lambo_frontend_overlay.h"
 #include "librecomp/game.hpp"
 #include "recompui/config.h"
 #include "recompinput/profiles.h"
@@ -28,18 +31,53 @@ int main(int argc, char** argv) {
           file << R"({"version":3,"profiles":[],"controllers":[]})"; }
         const nlohmann::json initial = {
             {"res_option", "Original2x"}, {"ds_option", 3}, {"msaa_option", "MSAA8X"},
+            {"window_width", 1920}, {"window_height", 1080},
+            {"texture_pack", "seed-pack"}, {"texture_dump", "seed-dump"},
             {"camera_distance_scale", .65}, {"future_option", "preserve me"},
             {"no_lod_circuit", {true, false, true, false, true, false}}};
         { std::ofstream file(path / "graphics.json"); file << initial; }
         lambo::config::load_and_apply_graphics();
+        require(lambo::player::set_saved_name("RACER"), "driver cache fixture");
         lambo::ui::create_frontend_settings();
         lambo::ui::create_frontend_pedal_settings();
         recompui::config::finalize();
+
+        // The SDL pump posts the toggle and the presentation callback
+        // publishes the applied context state. Verify both edges of that
+        // contract without requiring a renderer in this settings test.
+        lambo::ui::OverlayCaptureGate overlay;
+        overlay.request(lambo::ui::Page::Settings);
+        require(overlay.captures_input(), "opening settings did not capture input");
+        const auto open_request = overlay.take_request();
+        require(open_request.kind == lambo::ui::OverlayRequestKind::Page &&
+                    open_request.page == lambo::ui::Page::Settings,
+                "settings open request was not consumed");
+        overlay.publish_context_capture(true);
+        overlay.request_close();
+        require(overlay.captures_input(), "close released input before render applied it");
+        require(overlay.take_request().kind == lambo::ui::OverlayRequestKind::Close,
+                "settings close request was not consumed");
+        overlay.publish_context_capture(false);
+        require(!overlay.captures_input(), "closing settings did not release input capture");
+
         auto& graphics = recompui::config::get_graphics_config();
         using namespace ultramodern::renderer;
         require(std::get<uint32_t>(graphics.get_option_value("res_option")) == uint32_t(Resolution::Original2x), "resolution import");
         require(std::get<uint32_t>(graphics.get_option_value("ds_option")) == 3, "3x supersampling import");
         require(std::get<uint32_t>(graphics.get_option_value("msaa_option")) == uint32_t(Antialiasing::MSAA8X), "8x MSAA import");
+        require(std::get<double>(graphics.get_option_value("window_width")) == 1920, "window width import");
+        require(std::get<double>(graphics.get_option_value("window_height")) == 1080, "window height import");
+        require(std::get<std::string>(graphics.get_option_value("texture_pack")) == "seed-pack", "texture pack import");
+        require(std::get<std::string>(graphics.get_option_value("texture_dump")) == "seed-dump", "texture dump import");
+        auto& driver = recompui::config::get_config("driver");
+        driver.set_option_value("name", std::string{});
+        lambo::ui::refresh_frontend_settings();
+        require(std::get<std::string>(driver.get_temp_option_value("name")).empty(),
+                "driver refresh clobbered an active text edit");
+        driver.revert_temp_config();
+        lambo::ui::refresh_frontend_settings();
+        require(std::get<std::string>(driver.get_option_value("name")) == "RACER",
+                "driver refresh missed an external name save");
         for (const char* key : {"api_option", "hpfb_option", "developer_mode", "window_width", "window_height", "texture_pack", "texture_dump"})
             require(graphics.has_option(key) && !graphics.is_config_option_hidden(graphics.get_config_schema().options_by_id.at(key)), "missing primary graphics option");
         graphics.set_option_value("ds_option", uint32_t(2));
@@ -49,6 +87,16 @@ int main(int argc, char** argv) {
         graphics.set_option_value("ds_option", uint32_t(4));
         graphics.save_config();
         require(lambo::config::current_graphics().ds_option == 4, "apply failed");
+        graphics.set_option_value("window_width", 2560.0);
+        graphics.set_option_value("window_height", 1440.0);
+        graphics.set_option_value("texture_pack", std::string("applied-pack"));
+        graphics.set_option_value("texture_dump", std::string("applied-dump"));
+        graphics.save_config();
+        lambo::config::flush_pending_graphics_updates();
+        require(lambo::config::window_size().width == 2560 && lambo::config::window_size().height == 1440,
+                "restart window options did not apply");
+        require(lambo::config::texture_pack_path() == "applied-pack", "texture pack option did not apply");
+        require(lambo::config::texture_dump_dir() == "applied-dump", "texture dump option did not apply");
         lambo::config::update_saved_window_mode(WindowMode::Fullscreen);
         lambo::ui::refresh_frontend_settings();
         require(std::get<uint32_t>(graphics.get_option_value("wm_option")) == uint32_t(WindowMode::Fullscreen), "external fullscreen refresh");

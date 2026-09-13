@@ -17,6 +17,7 @@ void sync_value(Config& page, const std::string& id, ConfigValueVariant value) {
 }
 
 void seed_graphics() {
+    namespace port = lambo::config;
     auto& page = recompui::config::get_graphics_config();
     const auto cfg = lambo::config::current_graphics();
 #define ENUM(field) sync_value(page, #field, static_cast<uint32_t>(cfg.field))
@@ -26,6 +27,10 @@ void seed_graphics() {
 #undef ENUM
     sync_value(page, "rr_manual_value", double(cfg.rr_manual_value));
     sync_value(page, "developer_mode", cfg.developer_mode);
+    sync_value(page, "window_width", double(port::window_size().width));
+    sync_value(page, "window_height", double(port::window_size().height));
+    sync_value(page, "texture_pack", port::texture_pack_path());
+    sync_value(page, "texture_dump", port::texture_dump_dir());
     page.revert_temp_config();
     seeded_graphics = cfg;
 }
@@ -43,7 +48,6 @@ void apply_graphics() {
     const bool developer = std::get<bool>(page.get_option_value("developer_mode"));
     if (developer != seeded_graphics.developer_mode) cfg.developer_mode = developer;
     lambo::config::apply_graphics(cfg);
-    seed_graphics();
 }
 
 void boolean(Config& page, const std::string& id, const std::string& label,
@@ -78,7 +82,10 @@ void refresh_frontend_settings() {
     sync_value(enhancements, "camera_height", port::camera_height_scale());
     sync_value(enhancements, "camera_fov", port::camera_fov_add());
     auto& driver = recompui::config::get_config("driver");
-    sync_value(driver, "name", lambo::player::saved_name());
+    // The name editor is confirmation-backed. Refresh it only while clean so
+    // a Championship save can appear in the page without overwriting an
+    // in-progress text edit (and without touching player.json per frame).
+    if (!driver.is_dirty()) sync_value(driver, "name", lambo::player::saved_name());
     sync_value(driver, "show_launcher", port::show_launcher());
 }
 
@@ -91,7 +98,6 @@ void create_frontend_settings() {
     // environment overrides, enhancement values and restart-only API changes.
     graphics.external_storage = true;
     graphics.set_load_callback(seed_graphics);
-    graphics.set_save_callback(apply_graphics);
     graphics.update_option_description("api_option", "Graphics backend. Changes take effect after restarting the application.");
     graphics.update_option_description("developer_mode", "RT64 developer overlay. Changes take effect after restarting the application.");
     graphics.add_number_option("window_width", "Window width (restart)", "Initial window dimensions after restart.", 320, 7680, 1, 0, false, port::window_size().width);
@@ -104,6 +110,9 @@ void create_frontend_settings() {
         lambo::config::set_window_size({int(std::get<double>(page.get_option_value("window_width"))), int(std::get<double>(page.get_option_value("window_height")))});
         lambo::config::set_texture_pack_path(std::get<std::string>(page.get_option_value("texture_pack")));
         lambo::config::set_texture_dump_dir(std::get<std::string>(page.get_option_value("texture_dump")));
+        // Seed after every field has been published so Apply leaves the UI
+        // and the port snapshot in agreement with the saved values.
+        seed_graphics();
     });
 
     auto& enhancements = settings::create_config_tab("Enhancements", "enhancements", false);
@@ -122,7 +131,7 @@ void create_frontend_settings() {
     number(enhancements, "camera_fov", "Additional field of view (degrees)", port::camera_fov_add(), -20, 60, 1, port::set_camera_fov_add);
 
     settings::create_controls_tab();
-    auto& driver = settings::create_config_tab("Driver", "driver", false);
+    auto& driver = settings::create_config_tab("Driver", "driver", true);
     driver.external_storage = true;
     driver.add_string_option("name", "Driver name", "Player one: 1-12 letters or spaces. Also saved by the Championship name editor.", lambo::player::saved_name());
     driver.add_option_change_callback("name", [](ConfigValueVariant value, ConfigValueVariant, OptionChangeContext context) {

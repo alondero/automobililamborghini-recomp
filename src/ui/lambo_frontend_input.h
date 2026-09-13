@@ -2,8 +2,9 @@
 #include "controls/lambo_controls.h"
 #include <mutex>
 namespace lambo::ui {
-// Frontend contexts and profiles are mutable on the render thread. The SDL
-// pump takes this lock before touching them; guest callbacks use snapshots.
+// Frontend contexts and profiles are mutable on the presentation thread. The
+// main-thread SDL/event/input pump takes this lock before touching them; guest
+// callbacks consume published snapshots and do not enter the UI state.
 std::recursive_mutex& frontend_mutex();
 void create_frontend_pedal_settings();
 void configure_frontend_input_defaults();

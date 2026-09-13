@@ -191,6 +191,7 @@ int main() {
         std::ofstream output(player_path);
         output << nlohmann::json{{"name", "  FAST  "}};
     }
+    lambo::player::reload_saved_name();
     expect(lambo::player::saved_name() == "FAST",
            "hand-edited padded name normalises on load");
 
