@@ -397,13 +397,15 @@ endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64 ${CMAKE_BINARY_DIR}/rt64)
 
 if(BUILD_TESTING)
-    add_executable(lambo_rt64_scene_matching_tests tests/test_rt64_scene_matching.cpp)
+    add_executable(lambo_rt64_scene_matching_tests
+        tests/test_rt64_scene_matching.cpp src/lambo_interpolation.cpp)
     target_link_libraries(lambo_rt64_scene_matching_tests PRIVATE rt64)
     target_compile_definitions(lambo_rt64_scene_matching_tests PRIVATE HLSL_CPU)
     target_include_directories(lambo_rt64_scene_matching_tests PRIVATE
         lib/rt64/include lib/rt64/src lib/rt64/src/contrib
         lib/rt64/src/contrib/hlslpp/include lib/rt64/src/contrib/plume
         lib/rt64/src/contrib/imgui
+        ${N64MR}/N64Recomp/include
     )
     if(WIN32)
         target_compile_definitions(lambo_rt64_scene_matching_tests PRIVATE NOMINMAX)

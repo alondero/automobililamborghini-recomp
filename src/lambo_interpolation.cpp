@@ -27,7 +27,10 @@ extern "C" void lambo_interpolation_object_begin(uint8_t* rdram, uint32_t object
     // Other scene records contain variable scenery draws and still need AUTO.
     const gpr record = static_cast<int32_t>(0x800B69A8u + object * 0x10Cu);
     const bool car = (MEM_HU(0, record) & 8u) != 0;
-    const uint32_t viewport = MEM_HU(0, static_cast<gpr>(static_cast<int32_t>(0x80098732u)));
+    // The frame builder iterates viewports 1..4 at 0x800CE6A6 (0x80004AA8 /
+    // 0x80005124). 0x80098732 is the race lap high-water mark: using it here
+    // drops every car's interpolation history when a player crosses the line.
+    const uint32_t viewport = MEM_HU(0, static_cast<gpr>(static_cast<int32_t>(0x800CE6A6u)));
     const uint32_t id = 0x10000000u | ((viewport & 3u) << 16) | (object & 0xFFFFu);
     GfxCommand group[2]{};
     gEXMatrixGroupDecomposed(group, id, G_EX_PUSH, 0,
