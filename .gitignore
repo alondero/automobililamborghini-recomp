@@ -45,6 +45,7 @@ dma_validation/
 *.log
 *.stackdump
 scratch/
+.recompfrontend-experiment/
 artifacts/
 # Local Track Lab snapshots, editable exports, and compiled corrections.
 track-lab-work/

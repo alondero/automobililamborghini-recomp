@@ -55,6 +55,7 @@ int main() {
 #endif
     for (const std::string saved : {"ADAM", "Adam"}) {
         std::ofstream(path) << nlohmann::json{{"name", saved}};
+        lambo::player::reload_saved_name();
         for (int mode : {0, 2}) {
             for (int mirror : {0, 1}) {
                 std::vector<uint8_t> memory(0x800000);
@@ -133,6 +134,7 @@ int main() {
 
     for (const std::string saved : {"", "NAME123", "ABCDEFGHIJKLM", "\xC3\xA9"}) {
         std::ofstream(path) << nlohmann::json{{"name", saved}};
+        lambo::player::reload_saved_name();
         std::vector<uint8_t> memory(0x800000);
         auto* rdram = memory.data();
         put(rdram, player, "TITUS");
@@ -143,6 +145,7 @@ int main() {
         std::vector<uint8_t> memory(0x800000);
         auto* rdram = memory.data();
         std::ofstream(path) << nlohmann::json{{"name", "abcdefghijkl"}};
+        lambo::player::reload_saved_name();
         MEM_B(13, player) = 0x55;
         lambo_player_name_restore_for_record(rdram, 0);
         check_name(rdram, player, "ABCDEFGHIJKL", "maximum length normalized intact");

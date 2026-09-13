@@ -64,6 +64,8 @@ std::string normalize_input(const std::string& name) {
 // player.json is touched from both the UI thread (options page) and the guest
 // CPU thread (name-editor hooks), so every file access takes this.
 std::mutex g_player_file_mutex;
+std::string g_cached_name;
+bool g_name_loaded = false;
 
 std::filesystem::path player_config_path() {
     if (const char* path = std::getenv("LAMBO_PLAYER_CONFIG")) {
@@ -72,8 +74,7 @@ std::filesystem::path player_config_path() {
     return lambo::config::app_config_dir() / kPlayerConfigFile;
 }
 
-std::string load_saved_name() {
-    std::lock_guard<std::mutex> lock(g_player_file_mutex);
+std::string read_saved_name_file() {
     const std::filesystem::path path = player_config_path();
     std::ifstream in{path};
     if (!in.good()) return {};
@@ -93,7 +94,19 @@ std::string load_saved_name() {
     }
 }
 
-void save_name(const std::string& name) {
+// The presentation thread asks for the current name while refreshing the
+// settings model. Keep that path entirely in memory: player.json is loaded
+// once and is invalidated only by an explicit reload or a successful write.
+std::string load_saved_name() {
+    std::lock_guard<std::mutex> lock(g_player_file_mutex);
+    if (!g_name_loaded) {
+        g_cached_name = read_saved_name_file();
+        g_name_loaded = true;
+    }
+    return g_cached_name;
+}
+
+bool save_name(const std::string& name) {
     std::lock_guard<std::mutex> lock(g_player_file_mutex);
     const std::filesystem::path path = player_config_path();
     const std::filesystem::path tmp = path.string() + ".tmp";
@@ -103,13 +116,13 @@ void save_name(const std::string& name) {
     std::ofstream out{tmp};
     if (!out.good()) {
         LAMBO_LOG_ERROR("name", "cannot write %s\n", tmp.string().c_str());
-        return;
+        return false;
     }
     out << nlohmann::json{{"name", name}}.dump(4) << '\n';
     out.flush();
     if (!out.good()) {
         LAMBO_LOG_ERROR("name", "write to %s failed\n", tmp.string().c_str());
-        return;
+        return false;
     }
     out.close();
 
@@ -124,7 +137,11 @@ void save_name(const std::string& name) {
 #endif
     if (ec) {
         LAMBO_LOG_ERROR("name", "cannot publish %s\n", path.string().c_str());
+        return false;
     }
+    g_cached_name = name;
+    g_name_loaded = true;
+    return true;
 }
 
 int current_driver(uint8_t* rdram) {
@@ -136,6 +153,8 @@ void clear_saved_name_file() {
     const std::filesystem::path path = player_config_path();
     std::error_code ec;
     std::filesystem::remove(path, ec);
+    g_cached_name.clear();
+    g_name_loaded = true;
 }
 
 } // namespace
@@ -150,12 +169,17 @@ std::string saved_name() {
 bool set_saved_name(const std::string& name) {
     const std::string normalized = normalize_input(name);
     if (!valid_name(normalized)) return false;
-    save_name(normalized);
-    return true;
+    return save_name(normalized);
 }
 
 void clear_saved_name() {
     clear_saved_name_file();
+}
+
+void reload_saved_name() {
+    std::lock_guard<std::mutex> lock(g_player_file_mutex);
+    g_cached_name = read_saved_name_file();
+    g_name_loaded = true;
 }
 
 } // namespace player

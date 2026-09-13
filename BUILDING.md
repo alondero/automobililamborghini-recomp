@@ -124,7 +124,17 @@ Run from the repository root so the ROM path resolves:
 ./build/lamborghini_modern
 ```
 
-The game auto-boots directly into gameplay. Press the **Menu / Back / Guide** button on your controller, or <kbd>F1</kbd> on your keyboard, to toggle the in-game configuration overlay and controls mapper: it opens on Settings, and the same button closes it again from anywhere. <kbd>Esc</kbd> is Back instead — it steps up one level at a time and closes the overlay only once you are on the top-level Overview page. To launch into the standalone launcher shell instead, set `LAMBO_LAUNCHER=1` in your environment or set `"show_launcher": true` in `graphics.json`.
+The game auto-boots directly into gameplay. Press F1, Escape, or the controller menu
+button to open the shared RecompFrontend settings overlay, including in fullscreen.
+Graphics and pedals use Apply/Discard; Controls includes device assignment and profiles
+for 1-4 players. Player one automatically uses the preferred or first connected controller,
+with keyboard fallback. Use Controls to assign multiplayer devices. To show the launcher at boot,
+set `LAMBO_LAUNCHER=1` or enable the startup
+launcher option in Driver. See [frontend migration details](docs/recompfrontend.md).
+
+RecompFrontend owns the nested RmlUi dependency. CMake automatically applies the small
+downstream frontend/runtime patches (0016/0017/0018) after the normal build-script
+dependency patches. A conflicting dependency checkout produces an error, not a reset.
 
 ## Notes
 

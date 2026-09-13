@@ -72,6 +72,13 @@ void __osViInit_recomp(uint8_t* rdram, recomp_context* ctx) {
 //   D_8011C6D0[0] = FF 03 21 02 <btn_lo> <btn_hi> 00 00  (status byte 0 = clean, no pak)
 //   count D_8011C681 = 4 ; mode D_8011C680 = 1 ; D_8011C640[i] = FF 01 04 01 00 00 00 00
 typedef struct { uint16_t button; signed char stick_x; signed char stick_y; unsigned char err_no; } LamboPad;
+enum {
+    CONTROLLER_PAK_BLOCK_SIZE = 32,
+    CONTROLLER_PAK_ADDRESS_MASK = 0xFFE0u,
+    CONTROLLER_PAK_BANK_SELECT_REG = 0x8000u,
+    CONTROLLER_PAK_IMAGE_ADDRESS_MASK = 0x7FFFu,
+    RUMBLE_PAK_COMMAND_REG = 0xC000u,
+};
 void osContGetReadData(void* pads);                                  /* ultramodern (fills OSContPad[4]) */
 int  osContSetCh(uint8_t* rdram, unsigned char ch);                  /* ultramodern: sets max_controllers */
 void osContStartReadData_recomp(uint8_t* rdram, recomp_context* ctx); /* librecomp native */
@@ -256,11 +263,11 @@ static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
                     if (rx > 2) MEM_B(2, resp) = has_pak ? 0x01 : 0x00; /* bit0 = pak present */
                     break;
                 case 0x01: { /* controller read: canonical order, byte0 = button HIGH */
-                    uint16_t btn = (channel == 0) ? pads[0].button : 0;
+                    uint16_t btn = pads[channel].button;
                     if (rx > 0) MEM_B(0, resp) = (signed char)((btn >> 8) & 0xFF);
                     if (rx > 1) MEM_B(1, resp) = (signed char)(btn & 0xFF);
-                    if (rx > 2) MEM_B(2, resp) = (channel == 0) ? pads[0].stick_x : 0;
-                    if (rx > 3) MEM_B(3, resp) = (channel == 0) ? pads[0].stick_y : 0;
+                    if (rx > 2) MEM_B(2, resp) = pads[channel].stick_x;
+                    if (rx > 3) MEM_B(3, resp) = pads[channel].stick_y;
                     break;
                 }
                 case 0x02: { /* pak block read (real frame: rx = 0x21 = 32 data + 1 data-CRC) */
@@ -270,13 +277,13 @@ static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
                      * reading past the ndata bytes actually written on a degenerate short frame. */
                     if (has_pak && rx == 33) {
                         /* addr = 2 tx bytes after the cmd; low 5 bits are the address-CRC */
-                        unsigned addr = ((MEM_BU(pos + 3, buf) << 8) | MEM_BU(pos + 4, buf)) & 0xFFE0u;
-                        if (addr >= 0x8000u) {                 /* bank/rumble-detect region */
-                            for (k = 0; k < 32; k++) MEM_B(k, resp) = 0;
+                        unsigned addr = ((MEM_BU(pos + 3, buf) << 8) | MEM_BU(pos + 4, buf)) & CONTROLLER_PAK_ADDRESS_MASK;
+                        if (addr >= CONTROLLER_PAK_BANK_SELECT_REG) { /* bank/rumble-detect region */
+                            for (k = 0; k < CONTROLLER_PAK_BLOCK_SIZE; k++) MEM_B(k, resp) = 0;
                             MEM_B(31, resp) = (signed char)0x80; /* motor-init echo (byte31==0x80) */
                         } else {                               /* RAM: serve the .mpk image */
-                            for (k = 0; k < 32; k++)
-                                MEM_B(k, resp) = (signed char)g_lambo_pak_image[(addr + k) & 0x7FFFu];
+                            for (k = 0; k < CONTROLLER_PAK_BLOCK_SIZE; k++)
+                                MEM_B(k, resp) = (signed char)g_lambo_pak_image[(addr + k) & CONTROLLER_PAK_IMAGE_ADDRESS_MASK];
                         }
                         /* present pak -> REAL (non-inverted) data CRC over the 32-byte block */
                         MEM_B(32, resp) = (signed char)lambo_joybus_data_crc(rdram, resp);
@@ -290,7 +297,7 @@ static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
                          * guard but has no addr bytes, so reading pos+3/pos+4 would run off the end */
                         LAMBO_LOG_TRACE("paktrc", "READ  ch=%d tx=%d rx=%d addr=%04x served=%s crc=%02x\n",
                                 channel, tx, rx,
-                                (unsigned)(tx >= 3 ? (((MEM_BU(pos + 3, buf) << 8) | MEM_BU(pos + 4, buf)) & 0xFFE0u) : 0xFFFFu),
+                                (unsigned)(tx >= 3 ? (((MEM_BU(pos + 3, buf) << 8) | MEM_BU(pos + 4, buf)) & CONTROLLER_PAK_ADDRESS_MASK) : 0xFFFFu),
                                 (has_pak && rx == 33) ? "image" : "nopak",
                                 (unsigned)(rx > 0 ? MEM_BU(rx - 1, resp) : 0));
                     break;
@@ -299,12 +306,12 @@ static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
                     gpr data = buf + (gpr)(pos + 5);
                     unsigned char crc = (tx >= 3) ? lambo_joybus_data_crc(rdram, data) : 0;
                     if (has_pak && tx >= 3) {
-                        unsigned addr = ((MEM_BU(pos + 3, buf) << 8) | MEM_BU(pos + 4, buf)) & 0xFFE0u;
-                        if (addr == 0xC000u) {                 /* MOTOR control block -> SDL rumble */
+                        unsigned addr = ((MEM_BU(pos + 3, buf) << 8) | MEM_BU(pos + 4, buf)) & CONTROLLER_PAK_ADDRESS_MASK;
+                        if (addr == RUMBLE_PAK_COMMAND_REG) { /* MOTOR control block -> SDL rumble */
                             lambo_pak_set_rumble(MEM_BU(0, data) != 0);
-                        } else if (addr < 0x8000u) {           /* RAM: persist into the .mpk image */
+                        } else if (addr < CONTROLLER_PAK_BANK_SELECT_REG) { /* RAM: persist into the .mpk image */
                             int k;
-                            for (k = 0; k < 32; k++) g_lambo_pak_image[(addr + k) & 0x7FFFu] = (uint8_t)MEM_BU(k, data);
+                            for (k = 0; k < CONTROLLER_PAK_BLOCK_SIZE; k++) g_lambo_pak_image[(addr + k) & CONTROLLER_PAK_IMAGE_ADDRESS_MASK] = (uint8_t)MEM_BU(k, data);
                             lambo_pak_save();
                         }
                         /* else bank-select (0x8000): accept, no store */
@@ -315,7 +322,7 @@ static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
                     if (lambo_pak_trace())
                         LAMBO_LOG_TRACE("paktrc", "WRITE ch=%d tx=%d rx=%d addr=%04x data0=%02x served=%s ack=%02x\n",
                                 channel, tx, rx,
-                                (unsigned)(tx >= 3 ? (((MEM_BU(pos + 3, buf) << 8) | MEM_BU(pos + 4, buf)) & 0xFFE0u) : 0xFFFFu),
+                                (unsigned)(tx >= 3 ? (((MEM_BU(pos + 3, buf) << 8) | MEM_BU(pos + 4, buf)) & CONTROLLER_PAK_ADDRESS_MASK) : 0xFFFFu),
                                 (unsigned)(tx >= 3 ? MEM_BU(0, data) : 0),
                                 (has_pak && tx >= 3) ? "image" : "nopak",
                                 (unsigned)(rx > 0 ? MEM_BU(0, resp) : 0));

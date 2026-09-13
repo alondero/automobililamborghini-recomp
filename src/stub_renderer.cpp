@@ -1326,6 +1326,7 @@ static RenderStats render_into(Framebuffer& fb, const uint8_t* rdram, const OSTa
 
 class HeadlessRendererContext : public ultramodern::renderer::RendererContext {
 public:
+    void send_dummy_workload(uint32_t) override {}
     HeadlessRendererContext() {
         setup_result = ultramodern::renderer::SetupResult::Success;
         chosen_api = ultramodern::renderer::GraphicsApi::Auto;

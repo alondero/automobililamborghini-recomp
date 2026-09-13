@@ -124,7 +124,7 @@ def package(ndk, sdk, variant):
             if name.lower().endswith((".z64", ".v64", ".n64", ".mpk", ".pak")):
                 raise RuntimeError(f"Forbidden game data in APK: {name}")
         for name in ["lib/arm64-v8a/libmain.so", "lib/arm64-v8a/libSDL2.so", "lib/arm64-v8a/libc++_shared.so", "lib/arm64-v8a/liblambo_vulkan.so",
-                     "lib/arm64-v8a/libmain_hook.so", "lib/arm64-v8a/libhook_impl.so", "assets/assets/ui/fonts/LatoLatin-Regular.ttf"]:
+                     "lib/arm64-v8a/libmain_hook.so", "lib/arm64-v8a/libhook_impl.so", "assets/assets/LatoLatin-Regular.ttf"]:
             if name not in archive.namelist():
                 raise RuntimeError(f"Missing APK payload: {name}")
     dist = ROOT / "dist"

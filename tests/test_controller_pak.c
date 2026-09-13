@@ -14,9 +14,11 @@ void func_8006A910(uint8_t* rdram, recomp_context* ctx);
 
 static int rumble_state;
 static int motor_init_calls;
+typedef struct { uint16_t button; signed char stick_x; signed char stick_y; unsigned char err_no; } TestPad;
+static TestPad test_pads[4];
 
 void osContGetReadData(void* pads) {
-    (void)pads;
+    memcpy(pads, test_pads, sizeof(test_pads));
 }
 
 int osContSetCh(uint8_t* rdram, unsigned char ch) {
@@ -61,6 +63,33 @@ int main(void) {
 
     remove(pak_path);
     lambo_pak_storage_configure(pak_path);
+
+    /* Exercise the actual guest PIF bridge, not just host input snapshots. */
+    for (int channel = 0; channel < 4; ++channel) {
+        int offset = channel * 8;
+        test_pads[channel].button = (uint16_t)(0x8001u >> channel);
+        test_pads[channel].stick_x = (signed char)(20 + channel);
+        test_pads[channel].stick_y = (signed char)(-40 - channel);
+        MEM_B(offset, pak_status) = (signed char)0xFF;
+        MEM_B(offset + 1, pak_status) = 1;
+        MEM_B(offset + 2, pak_status) = 4;
+        MEM_B(offset + 3, pak_status) = 1;
+    }
+    MEM_B(32, pak_status) = (signed char)0xFE;
+    ctx.r5 = pak_status;
+    func_8007F780(rdram, &ctx);
+    for (int channel = 0; channel < 4; ++channel) {
+        int offset = channel * 8 + 4;
+        unsigned button = (MEM_BU(offset, pak_status) << 8) | MEM_BU(offset + 1, pak_status);
+        if (button != test_pads[channel].button ||
+            MEM_B(offset + 2, pak_status) != test_pads[channel].stick_x ||
+            MEM_B(offset + 3, pak_status) != test_pads[channel].stick_y) {
+            fprintf(stderr, "Joybus lost player %d input\n", channel + 1);
+            free(rdram);
+            return 1;
+        }
+    }
+    memset(test_pads, 0, sizeof(test_pads));
 
     ctx.r5 = pak_status;
     MEM_B(0, pak_status) = (signed char)0xFE;

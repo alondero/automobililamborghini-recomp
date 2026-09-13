@@ -1,0 +1,41 @@
+diff --git a/librecomp/include/librecomp/config.hpp b/librecomp/include/librecomp/config.hpp
+index a1086cf..7dff792 100644
+--- a/librecomp/include/librecomp/config.hpp
++++ b/librecomp/include/librecomp/config.hpp
+@@ -263,6 +263,8 @@ namespace recomp {
+             void set_save_callback(std::function<void()> callback) {
+                 save_callback = callback;
+             }
++            // Host-owned persistence: use the schema/UI without a second JSON owner.
++            bool external_storage = false;
+ 
+             void report_config_option_update(size_t option_index, ConfigOptionUpdateType update_type);
+             void update_option_disabled(size_t option_index, bool disabled);
+diff --git a/librecomp/src/config.cpp b/librecomp/src/config.cpp
+index 6bc03fd..5ca35a9 100644
+--- a/librecomp/src/config.cpp
++++ b/librecomp/src/config.cpp
+@@ -405,7 +405,7 @@ nlohmann::json Config::get_storage_json() const {
+ bool Config::save_config_json(nlohmann::json config_json) const {
+     std::filesystem::path file_path = get_path_to_config(is_mod_config) / config_file_name;
+ 
+-    bool result = save_json_with_backups(file_path, config_json);
++    bool result = external_storage || save_json_with_backups(file_path, config_json);
+     if (save_callback) {
+         save_callback();
+     }
+@@ -509,6 +509,14 @@ ConfigValueVariant Config::parse_config_option_json_value(const nlohmann::json&
+ }
+ 
+ bool Config::load_config(std::function<bool(nlohmann::json &)> validate_callback) {
++    if (external_storage) {
++        loaded_config = true;
++        if (load_callback) load_callback();
++        revert_temp_config();
++        derive_all_config_option_dependencies();
++        clear_config_option_updates();
++        return true;
++    }
+     std::filesystem::path file_path = get_path_to_config(is_mod_config) / config_file_name;
+     nlohmann::json config_json{};
+ 

@@ -1,0 +1,4 @@
+/* Keep the framework's built-in theme; supply only this preview's font family. */
+body {
+    font-family: LatoLatin;
+}
