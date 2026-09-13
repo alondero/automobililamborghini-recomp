@@ -4,6 +4,10 @@
 
 #include "common/rt64_common.h"
 #include "hle/rt64_workload_queue.h"
+#include "recomp.h"
+
+extern "C" void lambo_interpolation_object_begin(uint8_t*, uint32_t);
+extern "C" void lambo_interpolation_object_end(uint8_t*);
 
 static void require(bool condition, const char* message) {
     if (!condition) {
@@ -13,9 +17,26 @@ static void require(bool condition, const char* message) {
 }
 
 int main() {
+    std::vector<uint8_t> memory(8 * 1024 * 1024);
+    auto* rdram = memory.data();
+    auto guest_address = [](uint32_t address) -> gpr {
+        return static_cast<int32_t>(address);
+    };
+    auto object_id = [&](uint32_t object) {
+        MEM_H(0, guest_address(0x800B69A8u + object * 0x10Cu)) = 8;
+        MEM_W(0, guest_address(0x800A39CCu)) = static_cast<int32_t>(0x80400000u);
+        lambo_interpolation_object_begin(rdram, object);
+        const uint32_t id = MEM_W(0, guest_address(0x8040000Cu));
+        lambo_interpolation_object_end(rdram);
+        return id;
+    };
     auto queue = std::make_unique<RT64::WorkloadQueue>();
     const auto identity = hlslpp::float4x4::identity();
     for (unsigned frame = 0; frame < 2; ++frame) {
+        // The start-line crossing advances the race's lap high-water mark,
+        // while the viewport is still player one. Feed real emitted IDs to RT64.
+        MEM_H(0, guest_address(0x80098732u)) = frame;
+        MEM_H(0, guest_address(0x800CE6A6u)) = 1;
         auto& workload = queue->workloads[frame];
         workload.drawData = {};
         workload.fbPairs.resize(1);
@@ -38,7 +59,7 @@ int main() {
             data.worldTransformGroups.push_back(object + 1);
             data.worldTransformVertexIndices.push_back(0);
             auto& group = data.transformGroups[object + 1];
-            group.matrixId = 0x10000001u + (frame ? 1 - object : object);
+            group.matrixId = object_id(1 + 3 * (frame ? 1 - object : object));
             group.tileInterpolation = G_EX_COMPONENT_SKIP;
             auto& call = projection.gameCalls[object];
             call.callDesc.minWorldMatrix = object;
@@ -72,7 +93,7 @@ int main() {
     const auto& transforms = current.frameMap.workloads[1].transforms;
     require(transforms[0].mapped && transforms[0].prevTransformIndex == 1 &&
         transforms[1].mapped && transforms[1].prevTransformIndex == 0,
-        "Parts crossed scene-record identities during camera movement");
+        "Start-line crossing or draw reordering broke the car's previous-frame match");
 
     queue->workloads[1].drawData.transformGroups[1].matrixId = 0x10000003;
     match();
