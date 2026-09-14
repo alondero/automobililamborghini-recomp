@@ -1,5 +1,8 @@
 # Texture packs
 
+Status: implemented RT64 replacement path. The workflow below is the current
+dump, authoring, packaging, and loading contract.
+
 This is the end-to-end guide for creating native RT64 replacement packs for the port.
 Texture-pack support is content-agnostic: an HD-art pack, a readable-text pack, or a small
 one-texture experiment all use the same runtime facility. Everything below was verified with
@@ -74,7 +77,8 @@ python tools/decode_dump.py /path/to/dump          # writes <dump>/png/*.png + i
 Open `index.html` (a contact sheet) to eyeball the whole dump. **Decode fidelity:**
 - **RGBA16 / RGBA32 / IA / I** — accurate. The "automobili Lamborghini" wordmark tiles
   decoded pixel-clean.
-- **CI4 / CI8** (palettized — *the format most fonts use*) — accurate as of issue #50.
+- **CI4 / CI8** (palettized — *the format most fonts use*) — based on the
+  earlier texture-format measurement.
   They used to come out "sheared and miscoloured", but the cause was the **TLUT byte order**,
   not the texel decode: `.rice.palette.rdram` is raw RDRAM, which RT64 stores byte-swapped
   within each 32-bit word (logical byte `A` at physical `A^3`). Reading the 16-bit palette

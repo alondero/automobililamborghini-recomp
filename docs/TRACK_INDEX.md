@@ -1,10 +1,13 @@
 # Track index — circuit 0-based ↔ 1-based ↔ F-key
 
+Status: reference mapping from the ROM and menu captures. Keep this table
+aligned with the source warp table and menu labels.
+
 The ROM has **no track-name strings**; the menu shows "CIRCUIT 1" through "CIRCUIT 6"
 with a numbered map preview (`src/lambo_warp.c:51-55`). So the only labels on disk
 are the integer index. This file maps each index to its navigation hotkey and the
 only organic category the user can read off the menu: **basic** (1-3) vs **pro**
-(4-6). Captured 2026-07-23 from the in-game track-select menu.
+(4-6).
 
 ## The table
 

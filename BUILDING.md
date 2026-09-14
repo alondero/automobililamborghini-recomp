@@ -1,144 +1,182 @@
 # Building
 
-Android ARM64 APK build, device setup, and release signing: [Android guide](docs/ANDROID.md).
+This guide is for developers. Players should use a release package from the
+[Releases page](https://github.com/alondero/automobililamborghini-recomp/releases/latest).
 
-The build has two stages: **(1)** recompile the game code from your ROM into C, then
-**(2)** compile everything with CMake. All commands run from the repository root.
+The build has two stages:
 
-## Prerequisites
+1. translate the game code from a matching ROM;
+2. compile the generated code and hand-written port.
 
-- **Git**, **CMake ≥ 3.20**, and **Python 3**.
-- A C/C++ toolchain:
-  - **Linux:** `gcc`/`g++` (C17 / C++20), plus `SDL2`, Vulkan headers/loader, and the
-    usual desktop build dependencies.
-  - **Windows:** **MinGW-w64 GCC** (MSVC is *not* required). RT64 uses its Direct3D 12
-    backend. The MinGW `bin` directory must be on `PATH`, or `gcc.exe` fails to load its
-    own DLLs.
-- A network connection at configure time (CMake fetches `DirectX-Headers` on Windows).
-- **Your own ROM:** `Automobili Lamborghini (USA).z64`, placed in the repository root.
-  Only the USA release is currently supported.
+The supported scripts perform both stages. Run them from the repository root.
 
-## 1. Clone with submodules
+## Requirements
 
-```bash
+All desktop builds need:
+
+- Git with recursive submodule support;
+- CMake 3.20 or newer;
+- Python 3;
+- Ninja;
+- a legal copy of the North American USA ROM;
+- a network connection for dependency configuration.
+
+Linux needs GCC/G++, SDL2 development files, Vulkan headers and loader, and
+the usual X11 desktop development files. The exact package list is in the
+dependency check at the top of build.sh.
+
+Windows needs MinGW-w64 GCC, Ninja, CMake, Git for Windows, and a native
+PowerShell session. MSVC is not the supported compiler. The build script
+adjusts its tool paths and applies the Windows RT64/Plume compatibility
+patches.
+
+The ROM is not included. The expected default filename is:
+
+~~~text
+Automobili Lamborghini (USA).z64
+~~~
+
+The known test ROM identity is recorded in
+[the testing guide](docs/testing.md). Do not publish the ROM or place it in a
+build artifact.
+
+The Windows script has a RomPath parameter for its presence check and CI
+plumbing, but the checked-in generator configuration still names the default
+file above. Use the default filename for the supported build. Do not treat
+RomPath as proof that an alternate filename is fully wired.
+
+## Initialize the checkout
+
+~~~bash
 git clone --recurse-submodules https://github.com/alondero/automobililamborghini-recomp.git
 cd automobililamborghini-recomp
-# If you already cloned without --recurse-submodules:
 git submodule update --init --recursive
-```
+~~~
 
-On Windows, enable long paths for the RT64 submodule's deep test files:
+On Windows, enable long paths for the deeply nested RT64 files:
 
-```bash
+~~~powershell
 git -c core.longpaths=true submodule update --init --recursive
-```
+~~~
 
-## 2. Apply the dependency patches
+## Windows
 
-The port needs small compatibility patches applied to the submodule working trees.
-The submodules are pinned to their public upstream commits; these patches reproduce the
-Lamborghini-specific changes (cooperative scheduler dispatch, VI-mode fallback, 30fps
-pacing, and — on Windows — the MinGW/D3D12 COM ABI fixes for RT64/plume).
+Place the ROM at the repository root using the exact filename above, then run:
 
-```bash
-# ultramodern / librecomp runtime (all platforms):
-git -C lib/N64ModernRuntime apply ../../patches/0001-lamborghini-runtime-scheduler-audio-vi.patch
+~~~powershell
+.\build.ps1
+~~~
 
-# ultramodern save-state thread-context relink (issue #22, all platforms):
-git -C lib/N64ModernRuntime apply ../../patches/0007-ultramodern-savestate-thread-context-relink.patch
+For a clean rebuild:
 
-# lazy RDRAM commit + rdram_memory.cpp (issue #158; the port's CMakeLists links
-# librecomp/src/rdram_memory.cpp directly, so configure fails without this):
-git -C lib/N64ModernRuntime apply ../../patches/0012-n64modernruntime-lazy-rdram-commit.patch
+~~~powershell
+.\build.ps1 -Clean
+~~~
 
-# RT64 renderer — all platforms (frame-interpolation transform matching, issue #30):
-git -C lib/rt64 apply "$(pwd)/patches/0006-rt64-interp-angular-velocity-matching.patch"
+The executable is build/lamborghini_modern.exe. Run it from the repository
+root so the ROM path resolves:
 
-# RT64 renderer — all platforms (parallaxless skybox backdrop):
-git -C lib/rt64 apply "$(pwd)/patches/0008-rt64-skybox-stretch-parallaxless-backdrop.patch"
+~~~powershell
+.\build\lamborghini_modern.exe
+~~~
 
-# RT64 renderer — all platforms (widescreen split subviewports; defines G_EX_ORIGIN_WIDE,
-# required by src/lambo_hud_widescreen.c):
-git -C lib/rt64 apply "$(pwd)/patches/0009-rt64-widescreen-split-subviewport.patch"
+The script applies the Windows patch set, configures CMake twice, generates
+RecompiledFuncs/ and src/aspMain.cpp, builds the executable, and runs the
+Windows RDRAM allocation regression when that target is available.
 
-# RT64 renderer — all platforms (explicit-D3D12 adapter escape hatch for Intel GPUs):
-git -C lib/rt64 apply "$(pwd)/patches/0010-rt64-intel-explicit-d3d12-escape-hatch.patch"
+## Linux
 
-# RT64 renderer — all platforms (finite backdrops independent of camera FOV):
-git -C lib/rt64 apply "$(pwd)/patches/0011-rt64-fov-independent-backdrop.patch"
+Place the ROM at the repository root, then run:
 
-# RT64 renderer — Windows / MinGW only (absolute paths avoid depth confusion):
-git -C lib/rt64 apply "$(pwd)/patches/0005-rt64-mingw-gcc-compat.patch"
-git -C lib/rt64/src/contrib/plume apply "$(pwd)/patches/0004-plume-d3d12-mingw-com-abi-struct-return.patch"
-```
+~~~bash
+bash ./build.sh
+~~~
 
-> The `0001` patch is `git diff <upstream>..<lamborghini>` for N64ModernRuntime and
-> applies cleanly onto the pinned commit, reproducing the exact runtime tree the port
-> was developed against.
+For a clean rebuild:
 
-## 3. Recompile the game code from your ROM
+~~~bash
+bash ./build.sh --clean
+~~~
 
-This reads your ROM and generates `RecompiledFuncs/` (git-ignored). First build the
-N64Recomp CLI (bundled in the runtime submodule), then run it against the config:
+The executable is build/lamborghini_modern:
 
-```bash
-# Regenerate the symbol map + config (optional; committed copies are provided):
-python3 scripts/gen_syms_toml.py
-
-# Build the recompiler CLIs, then recompile the game code AND the RSP audio ucode:
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target N64RecompCLI RSPRecomp
-./build/lib/N64ModernRuntime/librecomp/N64Recomp/N64Recomp lamborghini.us.toml
-./build/lib/N64ModernRuntime/librecomp/N64Recomp/RSPRecomp aspMain.us.toml
-```
-
-Both recompilers read `rom_file_path` from their `.toml` (defaults to
-`Automobili Lamborghini (USA).z64` in the repo root). This produces the git-ignored,
-ROM-derived translations `RecompiledFuncs/` (game code) and `src/aspMain.cpp` (audio
-microcode) — neither is committed to the repository.
-
-## 4. Build the port
-
-### Linux
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
-cmake --build build --target lamborghini_modern -j
-```
-
-### Windows (MinGW GCC)
-
-```bash
-export PATH="/c/ProgramData/mingw64/mingw64/bin:$PATH"   # adjust to your MinGW path
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_C_COMPILER=gcc.exe -DCMAKE_CXX_COMPILER=g++.exe
-cmake --build build --target lamborghini_modern -j
-```
-
-## 5. Run
-
-Run from the repository root so the ROM path resolves:
-
-```bash
+~~~bash
 ./build/lamborghini_modern
-```
+~~~
 
-The game auto-boots directly into gameplay. Press F1, Escape, or the controller menu
-button to open the shared RecompFrontend settings overlay, including in fullscreen.
-Graphics and pedals use Apply/Discard; Controls includes device assignment and profiles
-for 1-4 players. Player one automatically uses the preferred or first connected controller,
-with keyboard fallback. Use Controls to assign multiplayer devices. To show the launcher at boot,
-set `LAMBO_LAUNCHER=1` or enable the startup
-launcher option in Driver. See [frontend migration details](docs/recompfrontend.md).
+The Linux script applies the Linux patch set, configures CMake twice, generates
+the ROM-derived sources, and builds the executable.
 
-RecompFrontend owns the nested RmlUi dependency. CMake automatically applies the small
-downstream frontend/runtime patches (0016/0017/0018) after the normal build-script
-dependency patches. A conflicting dependency checkout produces an error, not a reset.
+## Android ARM64
 
-## Notes
+Android uses the separate script and needs Python, Git, CMake 3.22 or newer,
+Ninja, JDK 17, Android SDK platform 35, Android build tools 35, and NDK
+28.2.13676358. The device target is API 26 or newer. The device needs Vulkan
+1.1 plus the renderer features listed in the
+[Android guide](docs/ANDROID.md).
 
-- `lib/N64ModernRuntime`'s root CMake deliberately omits RT64; it is pulled in only by
-  this project's `CMakeLists.txt`.
-- `RecompiledFuncs/` is regenerated from your ROM and is never committed. Re-run step 3
-  after changing the symbol map or config.
+With ANDROID_HOME configured:
+
+~~~bash
+python3 scripts/build_android.py --install
+~~~
+
+On Windows, PowerShell can pass a CMake path when the SDK installation does
+not put it on PATH:
+
+~~~powershell
+python scripts/build_android.py --cmake 'path/to/cmake.exe' --install
+~~~
+
+The debug APK is written to
+dist/lamborghini-recomp-android-arm64-debug.apk. The APK contains no ROM. The
+launcher imports and validates the ROM on the device.
+
+## What the scripts generate
+
+The first CMake pass builds N64Recomp and RSPRecomp. Those tools read the ROM
+and generate:
+
+- RecompiledFuncs/ for the game functions;
+- src/aspMain.cpp for the generated audio task code.
+
+Both are ignored and must not be edited or committed. A second CMake configure
+is required so the generated files become build inputs.
+
+The checked-in TOML files, dump.toml, force_stub.txt, source hooks, tests, and
+patches remain human-owned. See
+[Architecture](docs/architecture.md) before changing a generation boundary.
+
+## Dependency patches
+
+The scripts apply the local patch series to pinned submodules. The complete
+inventory and platform matrix are in [patches/README.md](patches/README.md).
+Do not hand-edit a submodule and leave the change unrecorded. If a patch no
+longer applies, stop and investigate pin drift.
+
+## Tests
+
+After a successful build:
+
+~~~powershell
+ctest --test-dir build --output-on-failure
+python tools/run_game_scenario.py scenarios/harness-smoke.json
+~~~
+
+Use the Linux equivalents from
+[docs/testing.md](docs/testing.md). The end-to-end scenario needs generated
+output and the executable. Do not call a missing-ROM or missing-submodule
+build failure a passing test.
+
+## Troubleshooting a build
+
+- If a submodule is empty, run the recursive submodule command again.
+- If a patch fails, check for local dependency edits and the pinned commit.
+- If generated files are missing, confirm the ROM path and inspect the first
+  CMake pass for the recompiler tools.
+- If the final build ignores generated code, run the second CMake configure.
+- If Windows picks the wrong compiler or CMake, follow the script's tool-path
+  diagnostics rather than adding a shell-specific export command.
+
+For runtime failures, use [Debugging](docs/debugging.md). For test
+prerequisites and skip conditions, use [Testing](docs/testing.md).

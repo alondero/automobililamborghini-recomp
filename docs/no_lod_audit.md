@@ -1,16 +1,22 @@
-# `no_lod` audit — LOD mechanisms in race scenes (issue #88, map #87)
+# no_lod audit: LOD mechanisms in race scenes
 
-Audit of every level-of-detail (LOD) reducing mechanism in **race** scenes (state 6/7/8)
-across 1P/2P/3P/4P, to scope the `graphics.json` `no_lod` boolean. Evidence per claim is
-cited inline; anything not empirically verified is marked **probe needed**.
+Status: historical investigation with later addenda; current behavior is
+controlled by graphics.json and the source policy files.
 
-**Headline result: after the already-shipped baseline (A4 geometry-LOD patch,
-`f3dex.forceBranch`, `textureLOD.scale`, #83 fog match, #84 sky match), no confirmed
-mechanism remains that produces visible pop-up in race scenes.** Two candidates survive
-at hypothesis level (per-mode light count; one gated overlay-sprite emitter), plus one
-cheap completeness probe (per-mode car-mesh comparison). The game **never uses RDP
-texture LOD/mipmapping at all**, and per-mode **draw distance is measured intact** —
-two whole axes the map speculated about are empty.
+Historical labels in this page refer to local investigation themes: HUD
+alignment, lens flare, split-screen HUD, sky matching, fog matching, scene
+visibility, and per-car model detail. They are retained to preserve the
+research trail, not as current issue requirements.
+
+Audit of every level-of-detail (LOD) reducing mechanism in race scenes (state
+6/7/8) across one to four players, to scope the graphics.json no_lod policy.
+Evidence is cited inline; anything not empirically verified is marked as a
+probe or hypothesis.
+
+The early headline in this document is historical. Later addenda found
+additional scenery, radius, visibility-list, FOV-cone, car-distance, and
+occlusion cases. Read the latest addendum and the current source policy before
+describing no_lod as a single switch with one effect.
 
 ## 1. Inventory
 

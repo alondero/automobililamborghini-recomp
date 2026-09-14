@@ -1,8 +1,6 @@
-// Developer save-state: snapshot the guest's RAM at a frame boundary and restore it
-// later, so a hand-found moment (e.g. a car parked where a rendering bug reproduces)
-// can be returned to deterministically -- interactively (F7 save / F8 load) or headless
-// (LAMBO_STATE_LOAD=<file>) so an autonomous debugging agent can re-reach the spot with
-// no human at the wheel. Issue #22 (A24).
+// Developer save-state: snapshot guest RAM at a frame boundary and restore it
+// later. It is a deterministic debugging aid, not a player quick-save.
+// Interactive and headless usage is documented in docs/debugging.md.
 //
 // What is captured: the low 8 MiB of RDRAM (rdram[0 .. 0x800000)), which is the entire
 // guest-addressable N64 RAM (osMemSize reports 8 MiB) -- every object table, the camera,

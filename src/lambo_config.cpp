@@ -1,9 +1,8 @@
 // Persistent graphics configuration (see lambo_config.h).
 //
-// Schema and behaviour mirror Zelda64Recomp's src/game/config.cpp graphics.json
-// (same key names, same per-key fall-back-to-default on missing/corrupt values,
-// and a "portable.txt in the LAUNCH directory -> keep config there" escape hatch),
-// with a lightweight native menu for the common live-safe options.
+// The schema follows the shared runtime GraphicsConfig vocabulary. The port
+// owns persistence, per-key fallback, and the portable-directory escape hatch.
+// A lightweight native menu handles the common live-safe options.
 #include "lambo_config.h"
 
 #include <array>
@@ -31,23 +30,23 @@ constexpr int kDefaultWindowHeight = 900;
 
 lambo::config::WindowSize g_window_size{kDefaultWindowWidth, kDefaultWindowHeight};
 
-// RT64 texture-replacement paths (issue #9), persisted as extra graphics.json string
+// RT64 texture-replacement paths, persisted as extra graphics.json string
 // keys alongside the GraphicsConfig fields (like the window size). Empty = feature off.
 std::string g_texture_pack;
 std::string g_texture_dump;
 std::mutex g_texture_mutex;
 std::mutex g_graphics_file_mutex;
 
-// Widen the dense 3P/4P split-screen fog to the open 1P window/colour (issue #83).
+// Widen the dense 3P/4P split-screen fog to the open 1P window/colour.
 // Enhancement default-on, consistent with the widescreen wave; 1P/2P are unaffected
 // regardless (the rewrite self-gates on player count).
 std::atomic_bool g_widescreen_fog_match{true};
 
-// Draw the sky panorama in 3P/4P split screen like 1P/2P (issue #84). Same
+// Draw the sky panorama in 3P/4P split screen like 1P/2P. Same
 // enhancement family as the fog match; 1P/2P take the sky path natively anyway.
 std::atomic_bool g_widescreen_sky_match{true};
 
-// Remove the ROM's per-mode LOD reductions (issues #87/#91): the scene builder
+// Remove the ROM's per-mode LOD reductions: the scene builder
 // func_8000A6C0 emits each track segment's scenery layer (record+0xC sub-DL: the
 // distant canyon walls / roadside relief) only when players < 2, so 2P-4P races
 // lose the far scenery entirely. Default-on; the emit still self-gates on the
@@ -377,8 +376,7 @@ std::filesystem::path app_config_dir() {
 }
 
 ultramodern::renderer::GraphicsConfig default_graphics_config() {
-    // Zelda64Recomp's shipped defaults (config.cpp:26-35), which are the
-    // enhancement goals of issue wave 1: window-scaled internal resolution,
+    // Shared runtime defaults: window-scaled internal resolution,
     // widescreen Expand with the HUD clamped to 16:9, and RT64 frame
     // interpolation up to the display refresh rate (game logic stays at its
     // native 30Hz tick either way -- ultramodern's VI clock is fixed).
@@ -397,7 +395,7 @@ ultramodern::renderer::GraphicsConfig default_graphics_config() {
     return cfg;
 }
 
-// (issue #67) The widescreen-HUD geometry shifts no longer need a config-time gate:
+// Widescreen HUD geometry shifts no longer need a config-time gate:
 // src/lambo_hud_widescreen.c derives them from lambo_ws_get_hud_rect_aspect_bits(), which
 // is 0-travel (4/3) for any config where the rect pins don't move (non-Expand, 4:3 output,
 // or hr_option Original) AND tracks runtime window resizes and the hr_option clamp -- none

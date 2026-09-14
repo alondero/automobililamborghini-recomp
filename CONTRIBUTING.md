@@ -1,68 +1,116 @@
-# Contributing to Automobili Lamborghini: Recompiled
+# Contributing
 
-Thanks for your interest. This is a single-maintainer port of an N64 game via static
-recompilation — please read this before opening an issue or PR.
+The project welcomes AI-assisted work. The source, tests, and reviewed pull
+request are the project record. The maintainer decides what is supported and
+which trade-offs are acceptable through the normal review process.
 
-## Reporting a bug
+## Before changing code
 
-Use the **Bug report** issue template. The fields are not bureaucracy — each one
-maps to a layer the maintainer has to peel back to fix anything (ROM, build,
-config, runtime). A save state (F7) + `LAMBO_WARP` recipe + the newest session
-log and crash report cut triage from hours to minutes. See the template for
-the full list.
+1. Read [the documentation map](docs/README.md).
+2. Search the current source, tests, build scripts, and patch inventory.
+3. Identify whether the change touches generated output, guest memory, a
+   dependency patch, a renderer boundary, or a public user claim.
+4. Write down the expected behavior, evidence, and remaining uncertainty.
+5. Open an issue when the change is more than a small correction.
 
-## Proposing a change
+Do not use an old issue, PR body, or another port as the only specification.
+The current checkout and reproducible evidence are the starting point.
 
-Open an issue first. The tracker (epic **#26**) already lists the maintainer's
-roadmap and tiering; check whether your idea is already on it before writing
-code. PRs without a linked issue are likely to be closed with a pointer to the
-tracker.
+## First-change workflow
 
-For very small fixes (typos, dead links, one-line bugs), a direct PR with a
-clear "Closes #N" or "no linked issue — small cleanup" is fine.
+For a source change:
 
-## Building & running
+1. Make the smallest hand-written change.
+2. Add or update a focused host test when the behavior can be isolated.
+3. If the change depends on the ROM, record the ROM identity and generated-file
+   state.
+4. Re-run the relevant CTest group.
+5. Run the headless scenario when input, startup, audio, saves, or rendering
+   could be affected.
+6. Update the stable reference, investigation, or decision page.
+7. Report what was not tested.
 
-See **[BUILDING.md](./BUILDING.md)**. The dependency-patch step (`git apply
-.../0001…`) is the most common cause of "works on my machine" — the local
-`build.sh` / `build.ps1` scripts mirror CI exactly, so use them. If you skip
-them and hand-roll cmake, your build is unsupported.
+For a generation change, update the checked-in TOML or script, regenerate
+locally, inspect the generated diff, then run the same checks. Never edit
+RecompiledFuncs/ or src/aspMain.cpp by hand.
 
-## Development conventions
+## Generated code and patches
 
-See **[CLAUDE.md](./CLAUDE.md)**. The short version:
+Generated files are:
 
-- Match the existing comment density and idiom. Comments explain **why**, not
-  what — prefer code that doesn't need a comment.
-- Verify empirically (breakpoint, watchpoint, grep for DL constants), not by
-  name or by analogy to other ports.
-- Source is ground truth; session notes are not. Re-read the function before
-  reasoning about it.
-- Decompile, don't invent. Missing behaviour translates what the ROM does;
-  hand-rolled shortcuts are scaffolding, not shipping code.
+- RecompiledFuncs/;
+- src/aspMain.cpp.
 
-## Ground-truth reference
+The source inputs are the symbol/config files, dump.toml,
+scripts/n64recomp_race.toml, force_stub.txt, and hand-written source hooks.
+The build scripts and CMake apply the dependency patches. The patch inventory
+is [patches/README.md](patches/README.md).
 
-[ares](https://ares-emu.org/) is the reference for what the port should
-reproduce. The `ares-debugger` skill drives a locally-installed ares build for
-live-ROM comparison (read/write RDRAM, watchpoints, per-frame DL capture).
-"Port converges to ares" is the success metric — screenshot diffs and
-byte-identical builds are not.
+If a dependency change may be generic, compare it with the current upstream
+project and use that project's issue or pull request as the canonical proposal
+record. Keep the local purpose and test in `patches/README.md` and this pull
+request. If it only exists to handle Lamborghini data, keep it in the port and
+explain why. Do not create a private renderer fork.
 
-> The committed Python harness lives at `tools/emu_instrumentation/`. The ares
-> binary itself is **not** shipped in this repo (`tools/emulators/` is
-> `.gitignore`d); install ares separately. The scripts default to looking for
-> `tools/emulators/ares-base/ares-v147/ares.exe`; `tools/emu_instrumentation/run_ares_debug.py`
-> also accepts a `--ares-exe <path>` override.
+## Guest and host boundaries
+
+Guest memory is an emulated N64 byte array. A fixed address or packed layout
+is fragile port infrastructure. A comment or change that uses it must state:
+
+- address or structure layout;
+- width, units, and byte order;
+- owning thread and game phase;
+- synchronization or timing invariant;
+- failure behavior;
+- evidence and the intended replacement.
+
+Unknown fields must stay unknown. The desired direction is decompilation,
+source-level patches, stable symbols, explicit hooks, and eventually a
+versioned code/data mod interface. That is future work, not a reason to hide
+the current bridge.
+
+## Comments
+
+Comments should explain purpose, ownership, lifetime, units, invariants,
+failure behavior, address/endian assumptions, and why a workaround exists.
+Use a local document link or descriptive label for durable context. Do not
+leave a raw wave number or issue number as the only explanation.
+
+Keep active experiments in an issue or pull request. Once a result is settled,
+put the invariant in the relevant source comment, test, or subsystem page.
+Keep source comments short enough to stay beside the invariant they protect.
+
+## Testing and reports
+
+The exact commands are in [docs/testing.md](docs/testing.md). A useful report
+includes:
+
+- commit;
+- operating system, compiler, and graphics backend;
+- ROM identity/hash for ROM-backed work;
+- exact command;
+- generated-file state;
+- logs or captures;
+- expected and actual behavior;
+- tests run and skipped;
+- known limitations;
+- documentation impact.
+
+The repository does not require a copyrighted ROM for documentation checks.
+
+## Issues and pull requests
+
+Use the repository templates. A reverse-engineering finding must include the
+measurement setup, address/units if relevant, raw or summarized evidence,
+hypothesis, falsification step, and remaining uncertainty. A feature proposal
+must explain the user problem and the trade-offs it asks the maintainer to
+accept.
+
+Do not include private AI-session links, absolute machine paths, ROM bytes, or
+unexplained references to another project's issue tracker.
 
 ## Legal
 
-This repository contains no ROM content — you must supply your own copy of
-`Automobili Lamborghini (USA).z64` to build. By contributing, you affirm that
-your patch is your own work, GPLv3-compatible, and free of upstream ROM bytes
-or assets.
-
-Code original to this repository is released under the
-[GNU General Public License v3.0](./LICENSE), matching the wider N64Recomp
-port ecosystem. Vendored submodules (`lib/N64ModernRuntime`, `lib/rt64`) and
-patched dependencies retain their own respective licenses.
+Do not commit ROM data, generated ROM-derived output, copyrighted assets, or
+private user saves. Code original to this repository is GPLv3-compatible.
+Dependencies and local patches retain their own licenses.

@@ -1,4 +1,4 @@
-// Per-element widescreen HUD pinning (issue #2, RT64 extended GBI).
+// Per-element widescreen HUD pinning using RT64 extended GBI.
 //
 // Under `ar_option: Expand` RT64 renders untagged 2D centered in the 4:3 region, so the
 // race HUD's edge-anchored elements (LAP block left; RANK block + speedometer right)
@@ -31,7 +31,7 @@
 extern uint32_t lambo_ws_get_hud_rect_aspect_bits(void);
 
 // How far the rect pins travel at the LIVE effective HUD aspect, normalized so 16:9 == 1
-// (issue #67; see lambo_hud_widescreen.h). Each geometry element's measured-16:9 shift is
+// (see lambo_hud_widescreen.h). Each geometry element's measured-16:9 shift is
 // multiplied by this, so needle/arrow/outline track the rect pins at ANY Expand aspect and
 // hr_option. 0 when the rects don't travel (4:3 / non-Expand / Original) degenerates the
 // shifts to no-ops.
@@ -48,7 +48,7 @@ static gpr lambo_ws_bracket_start;
 // that branch over the jal (e.g. the pit-stop screen hides the dial/RANK/LAP draws by
 // jumping straight to the post-jal label). An unpaired reset would pop a scissor that was
 // never pushed and run the matrix walker over a stale [bracket_start, cursor) range,
-// shifting arbitrary scene matrices (issue: pit-stop flicker; cold-start value 0 even
+// shifting arbitrary scene matrices (pit-stop flicker; cold-start value 0 even
 // walks out of RDRAM and crashes). The flag models the pairing: pins arm, resets disarm,
 // label-landing-only paths leave it untouched. Quad-text section uses a similar flag for
 // the same merge-label trap.
@@ -133,7 +133,7 @@ void lambo_ws_pin_right(uint8_t* rdram) {
 // the shipped 16:9 Clamp16x9 defaults, so the magnitude is ~533 units either way.
 //
 // These are the 16:9 magnitudes; lambo_ws_get_hud_shift_scale() scales them for other
-// output aspects (issue #67), so at 16:9 they reproduce the #39/#43-shipped placement
+// output aspects, so at 16:9 they reproduce the measured placement
 // exactly and at wider/narrower Expand aspects they track the rect pins.
 // Needle: calibrated live against the RIGHT-pinned dial at 16:9 (2026-07-05: 530
 // centers it on the dial hub — matching the analytic 533 to measurement precision).
@@ -173,7 +173,7 @@ void lambo_ws_pin_reset(uint8_t* rdram) {
     emit_rect_align(rdram, G_EX_ORIGIN_NONE, 0);
 }
 
-// Minimap composite (issue #41): the 1P dispatcher's jal to the overlay func_80054FFC
+// Minimap composite: the 1P dispatcher's jal to the overlay func_80054FFC
 // (car dots + P1 label texrects, player arrow = two quads via pool LOAD matrices) is
 // bracketed LEFT; the reset shifts the arrow matrices in game space to match. The
 // track OUTLINE is separate: 3D geometry drawn by the per-frame builder func_8004384C
@@ -182,12 +182,12 @@ void lambo_ws_pin_reset(uint8_t* rdram) {
 // a hook there rewrites the x argument in flight. Camera units -> screen px depends
 // on that projection; -1.09 verified live 2026-07-05 (1600x900 Expand+Clamp16x9,
 // arcade race: dots and P1 sit on the outline) — the 16:9 magnitude, scaled by
-// lambo_ws_get_hud_shift_scale() for other aspects (issue #67). Env
+// lambo_ws_get_hud_shift_scale() for other aspects. Env
 // LAMBO_WS_MINIMAP_OUTLINE_DX (float, camera units, negative = further left) sets the
 // 16:9 base for recalibration; it is scaled the same way.
 #define LAMBO_WS_MINIMAP_OUTLINE_DX -1.09f
 
-// The frame builder also runs in modes whose dots are not pinned yet (#42: 2P split;
+// The frame builder also runs in modes whose dots are not pinned yet (2P split;
 // demo race has no HUD). Key the outline shift off the 1P bracket actually running:
 // the builder draws before the dispatcher each frame, so it sees the previous frame's
 // flag (one unshifted frame on race entry, decays within 3 frames after exit).
@@ -232,14 +232,14 @@ uint32_t lambo_ws_minimap_outline_x(uint32_t x_bits) {
     return x.u;
 }
 
-// 2P split minimap (issue #56): the whole composite (dots + arrow + track outline) is
+// 2P split minimap: the whole composite (dots + arrow + track outline) is
 // 2D here, so one LEFT bracket per half pins it -- no 3D outline shift like 1P (see
 // docs/HUD.md). Distinct from lambo_ws_minimap_pin only to skip the 1P outline frame-gate.
 void lambo_ws_minimap_pin_2p(uint8_t* rdram) {
     lambo_ws_pin_left(rdram);
 }
 
-// Quad-split HUD text pinning (issue #78). func_80050860's quad section (L_800517A8)
+// Quad-split HUD text pinning. func_80050860's quad section (L_800517A8)
 // draws each player's RANK/speed/lap-notify text and tag texrects at fixed 4:3-space
 // columns (left ~0x14-0x46, right ~0xEB-0x11D) plus per-quadrant-centred message glyphs
 // (x=0x50/0xF0) and, in 3P, the map panel centred at (240,180). With the quadrant 3D
@@ -357,7 +357,7 @@ void lambo_ws_quad_panel_reset(uint8_t* rdram) {
     emit_rect_align(rdram, G_EX_ORIGIN_NONE, 0);
 }
 
-// 3P/4P split-screen widescreen (issue #42 follow-up). Unlike the rect-align pins above
+// 3P/4P split-screen widescreen. Unlike the rect-align pins above
 // (which move 2D texrects), this tags the 3D quadrant VIEWPORTS: each player's view is a
 // half-width quadrant that RT64 would otherwise squeeze to the 4:3 centre (pillarbox).
 // G_EX_ORIGIN_WIDE (patches/0008) makes RT64 render a tagged viewport wide -- filling its

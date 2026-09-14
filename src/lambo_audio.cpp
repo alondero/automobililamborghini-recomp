@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// SDL2 push-audio backend for the ultramodern pivot. See lambo_audio.h for the contract.
-// NOTE (W135, 2026-07-04): the old claim here that "this game uses a CPU/FPU synth, not an RSP
-// audio ucode -- there is no aspMain to translate" is FALSIFIED (graveyarded). The game submits
-// real M_AUDTASKs with a ~0x738-byte ACMD list every audio frame (measured at title, matching the
-// ares dump's list at 0x800df2f0 opcode-for-opcode); PCM is synthesised by the RSP aspMain at ROM
-// 0x88B90, now RSPRecomp'd into src/aspMain.cpp (see recomp/aspMain.us.toml).
+// SDL2 push-audio backend for the ultramodern runtime. See lambo_audio.h for
+// the public contract. The generated RSP audio task source is an input to this
+// bridge; it is not hand-written and is absent until the ROM build runs.
 //
-// Design notes:
+// Design invariants:
 //  * Format: int16 stereo at 48 kHz initially. SDL is asked for AUDIO_S16LSB
 //    and 2 channels. The actual obtained spec may differ; queue_samples builds
 //    an SDL_AudioCVT when the obtained spec does not match the game's output
@@ -14,10 +11,9 @@
 //  * Thread model: the game's audio thread calls queue_samples (via the
 //    ultramodern shim). SDL device lifecycle work is pumped from the main
 //    thread; submission performs conversion and queueing but never device lifecycle calls.
-//  * First-AICall tripwire: queue_samples logs once the first time it sees a
-//    non-empty buffer. The producer cluster is currently stubbed (W96), so
-//    the log will not fire under the current headless boot. It becomes
-//    meaningful when the producer un-stub lands (Phase E.2).
+//  * The first non-empty buffer is logged once for diagnosis. A headless run
+//    may have no device; that is a normal test boundary, not proof that audio
+//    production is complete.
 
 #include "lambo_audio.h"
 
@@ -42,7 +38,7 @@ namespace {
 SDL_AudioDeviceID g_dev = 0;
 SDL_AudioSpec     g_obtained{};
 uint32_t         g_desired_rate = 0;
-// Persistent stream converter (W137, #53): resampling 22050->48000 needs filter STATE carried
+// Persistent stream converter: resampling 22050->48000 needs filter state carried
 // across submits. The old per-submit SDL_AudioCVT path reset that state every ~21 ms buffer
 // (SDL_ConvertAudio is a one-shot API that pads each chunk's edges with silence), which garbled
 // the whole mix at chunk rate — Adam's "each chunk sounds played backwards" report. Guarded by
@@ -238,7 +234,7 @@ void submit(const int16_t* pcm, size_t sample_count) {
     if (pcm == nullptr || sample_count == 0) {
         return;
     }
-    // Bounds guard (W135, #53): early boot submits one garbage-sized buffer (measured:
+    // Bounds guard: early boot submits one garbage-sized buffer (measured:
     // byte_count 0xFFFF5000 = -0xB000 as a signed AI length) which overflowed the conversion
     // buffer size below into a std::length_error abort. Real AI hardware masks the length
     // register to 18 bits (max DMA 256 KB); anything above that ceiling is not a real audio
@@ -284,7 +280,7 @@ void submit(const int16_t* pcm, size_t sample_count) {
     // sample_count * sizeof(int16_t).
     const uint32_t byte_count = (uint32_t)(sample_count * sizeof(int16_t));
 
-    // Un-swizzle the guest sample order (W137, #53). N64Recomp stores RDRAM as byte-swapped
+    // Un-swizzle the guest sample order. N64Recomp stores RDRAM as byte-swapped
     // 32-bit words (guest byte A lives at host A^3), and the RSP DMA writes the finished PCM
     // through that convention. A raw int16 view of the buffer therefore yields each aligned
     // word's two samples in REVERSED order (values intact) — i.e. the L/R channels swapped.
@@ -373,7 +369,7 @@ size_t get_frames_remaining() {
     }
     uint64_t device_frames = bytes / bytes_per_frame;
 
-    // Cushion (W137, #53): the game keeps the AI buffer only marginally ahead (correct on real
+    // Cushion: the game keeps the AI buffer only marginally ahead (correct on real
     // hardware, where the AI FIFO adds its own latency), but SDL pulls a whole device callback
     // (g_obtained.samples frames, ~10 ms at 48 kHz/480) at once — so a queue that hovers near
     // one callback's worth audibly underruns at pull boundaries (measured: 250+ queue-empty
@@ -384,7 +380,7 @@ size_t get_frames_remaining() {
     const uint64_t cushion = 3ull * (g_obtained.samples ? g_obtained.samples : 512);
     device_frames = (device_frames > cushion) ? (device_frames - cushion) : 0;
 
-    // Rate-convert to GAME frames (W137, #53). The queue holds RESAMPLED audio at the device
+    // Rate-convert to game frames. The queue holds resampled audio at the device
     // rate (e.g. 48000), but the caller — ultramodern::get_remaining_audio_bytes, and through
     // it the game's mixer backpressure — reasons in the game's AI rate (e.g. 22050). Reporting
     // device frames overstates the buffered audio by freq_device/freq_game (~2.18x), so the
@@ -429,7 +425,7 @@ void init(uint32_t desired_sample_rate) {
         }
     }
 
-    // HEADLESS harness runs get NO audio device (W135, #53). Rationale: in a headless/WSL
+    // Headless harness runs have no audio device. In a headless
     // environment the SDL queue never drains (Pulse has no real sink; SDL's dummy driver buffers
     // forever), so SDL_GetQueuedAudioSize grows unbounded, get_frames_remaining reports a full
     // queue, and the GAME'S OWN backpressure (frame count = target - remaining in the mixer body

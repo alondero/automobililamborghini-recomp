@@ -1,5 +1,8 @@
 # Track Lab
 
+Status: experimental stock-track correction tool. It does not support general
+custom tracks or code mods.
+
 Track Lab is the first safe track-modding workflow for this port. It extracts a
 loaded stock circuit into readable JSON, records decoded segment anchors and
 assumed AI waypoints for inspection, edits the circuit's authored visibility

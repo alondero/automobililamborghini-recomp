@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Audio epic #53 -- host-side audio sink for the ultramodern pivot.
+// Host-side audio boundary. Ownership and failure behavior are documented in
+// docs/architecture.md under the audio and thread sections.
 //
 // Lamborghini's recompiled game pushes 16-bit signed stereo PCM into the AI
 // buffer via osAiSetNextBuffer; the N64ModernRuntime HLE for that primitive
 // (librecomp/src/ai.cpp) routes the buffer into ultramodern::queue_audio_buffer,
 // which forwards to whatever the consuming project registered in
 // audio_callbacks_t. We register a SDL2 push-audio backend here. The pattern
-// mirrors the peer N64Recomp projects (Zelda64Recomp, Snowboard Kids 2, BM64Recomp,
-// Banjo-Kazooie, MegaMan64Recomp) -- all GPL-3.0, all using the same SDL2
-// SDL_OpenAudioDevice + SDL_QueueAudio + SDL_GetQueuedAudioSize shape.
+// The SDL device is a host sink. It must not become a second owner of guest
+// audio state.
 #ifndef LAMBO_AUDIO_H
 #define LAMBO_AUDIO_H
 
@@ -27,12 +27,12 @@ namespace lambo::audio {
 // unpaused) so the runtime can immediately queue PCM via ultramodern's shim.
 void init(uint32_t desired_sample_rate);
 
-// Pump device discovery/recovery from the application's main-thread event loop. This keeps
-// SDL_InitSubSystem/SDL_OpenAudioDevice/SDL_CloseAudioDevice out of queue_samples.
+// Pump device discovery/recovery from the application's main-thread event loop.
+// This keeps SDL device lifecycle calls out of queue_samples.
 void pump();
 
-// Populate the three ultramodern audio callbacks (queue_samples /
-// get_frames_remaining / set_frequency) into `out`. Callers must invoke
+// Populate the three ultramodern audio callbacks (queue_samples,
+// get_frames_remaining, and set_frequency) into out. Callers must invoke
 // `init(...)` first; the callback pointers are stable for the process lifetime
 // of the SDL device.
 void get_callbacks(ultramodern::audio_callbacks_t* out);

@@ -4,10 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Guest layout schema, NOT a host view of RDRAM. Use offsetof with MEM_H/MEM_W:
+// Guest layout schema, not a host view of RDRAM. Use offsetof with MEM_H/MEM_W:
 // librecomp's word-swizzled RDRAM does not have native C struct byte order.
-// Unknown fields deliberately remain unnamed. Evidence: ROM constructor at
-// runtime 0x80011370; control/physics consumers listed in CAR_DIFFERENCES.md.
+// Unknown fields deliberately remain unnamed. The fixed layout is a fragile
+// bridge; source evidence and car behavior notes are in docs/CAR_DIFFERENCES.md.
 #pragma pack(push, 1)
 typedef struct LamboVehicleRecord {
     uint8_t unknown_00[0x0E];

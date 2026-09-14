@@ -1,5 +1,5 @@
-// RT64 renderer context for the pivot runtime — the DEFAULT presenter (#58, flipped
-// 2026-07-02; headless harness runs opt out with LAMBO_HEADLESS=1, see lambo_rt64.h).
+// RT64 renderer context. The presenter boundary, local patches, and headless
+// fallback are documented in patches/README.md.
 //
 // Adapted from Zelda64Recomp's src/main/rt64_render_context.cpp (MIT), minus the
 // texture-pack / mod / UI plumbing. The seam is identical to the headless swrender
@@ -52,10 +52,10 @@ uint32_t DPC_TMEM_REG = 0;
 
 void dummy_check_interrupts() {}
 
-// Live swapchain handle for the widescreen HUD rect-aspect helper (issue #67): the
+// Live swapchain handle for the widescreen HUD rect-aspect helper: the
 // game-space 2D HUD geometry shifts key off the effective rect-pin aspect, which depends
 // on the live output size and hr_option -- see lambo_ws_get_hud_rect_aspect_bits() below.
-// (The issue #3 skybox no longer uses this: renderer patches 0008 and 0011 identify,
+// (The skybox no longer uses this: renderer patches 0008 and 0011 identify,
 // restore, and stretch the explicitly tagged finite backdrop independently of camera FOV.)
 //
 // Written on the gfx thread (RT64Context ctor/dtor), read every frame on the CPU/
@@ -169,7 +169,7 @@ ultramodern::renderer::GraphicsApi map_graphics_api(RT64::UserConfiguration::Gra
     return ultramodern::renderer::GraphicsApi::Auto;
 }
 
-// GPU driver advisory (issue #109): an out-of-date Intel driver trips RT64's
+// GPU driver advisory: an out-of-date Intel driver trips RT64's
 // force-Vulkan workaround, and on Iris Xe that Vulkan driver immediately loses
 // the device (vkQueueSubmit VK_ERROR_DEVICE_LOST) -> a black screen with nothing
 // user-readable anywhere. Detect the condition after setup and say what to do.
@@ -336,7 +336,7 @@ public:
         // dtor's reverse-order unpublish still fires while `app` is alive.
         g_lambo_active_app = app.get();
 
-        // Texture replacement wiring (issue #9). RT64 already owns the whole
+        // Texture replacement wiring. RT64 already owns the whole
         // dump/hash/replace machinery; the port just points it at directories. Both
         // are opt-in (empty path = off) and independent of developerMode, so an
         // end-user pack loads without the F1 developer overlay.
@@ -486,7 +486,7 @@ private:
 
 } // anonymous namespace
 
-// (issue #67) Effective aspect the extended-GBI HUD rect pins travel to, as raw float
+// Effective aspect the extended-GBI HUD rect pins travel to, as raw float
 // bits. The gEXSetRectAlign HUD pins honour hr_option -- Full reaches the real edges, Clamp16x9
 // stops at 16:9, Original doesn't move -- so the game-space HUD geometry shifts
 // (src/lambo_hud_widescreen.c) key off THIS. Keying them off the raw output aspect would

@@ -19,8 +19,8 @@ void lambo::vi::promote_context(uint8_t* rdram) {
 
     // The game's scheduler reads these private libultra contexts, bypassing the
     // native VI API. Its task gate requires curr->buffer == next->buffer. Mirror
-    // __osViSwapContext's retrace promotion so the gate reopens after each swap
-    // (#58), preserving the whole context as observed in the ares reference.
+    // __osViSwapContext's retrace promotion so the gate reopens after each swap.
+    // This fixed-address bridge is described in docs/architecture.md.
     for (uint32_t off = 0; off < 0x30; off += 4) sw(curr + off, gw(next + off));
 
     // Forward the promoted state to ultramodern for RT64 scanout. Mode changes
