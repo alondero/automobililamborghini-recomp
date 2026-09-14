@@ -1,5 +1,8 @@
 # Track index — circuit 0-based ↔ 1-based ↔ F-key
 
+Status: reference mapping from the ROM and menu captures. The capture was not
+rerun in this audit.
+
 The ROM has **no track-name strings**; the menu shows "CIRCUIT 1" through "CIRCUIT 6"
 with a numbered map preview (`src/lambo_warp.c:51-55`). So the only labels on disk
 are the integer index. This file maps each index to its navigation hotkey and the

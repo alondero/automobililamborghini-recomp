@@ -1,5 +1,8 @@
 # Frame interpolation
 
+Status: implemented subsystem notes with historical runtime measurements. The
+replay and native checks were not rerun in this audit.
+
 Cars are rendered by `func_8000A6C0`'s scene-record walk. The linked-list
 iteration begins at runtime `0x80009AF8`, reads the record slot from
 `sp+0x1B2`, and converges at `0x8000E400` before following record offset 6.

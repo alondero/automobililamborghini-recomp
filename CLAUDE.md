@@ -1,98 +1,64 @@
-Native PC port of the N64 game via *static recompilation* (N64Recomp → C, run on `ultramodern`+`librecomp`, rendered with RT64).
-Same approach as [Snowboard Kids 2 Recompiled](https://github.com/cdlewis/snowboardkids2-recomp), [Smash Bros Recompiled](https://github.com/zestydevy/smash64r), [Bomberman 64 Recompiled](https://github.com/RevoSucks/BM64Recomp). 
+# Working notes for coding agents
 
-## Mental model
+This file is a compact orientation for automated coding help. Human
+contributors should start with [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[documentation map](docs/index.md).
 
-- **Name-routed static recompilation.** N64Recomp translates ROM functions to C by *name*.
-  `ultramodern`+`librecomp` provide the libultra/OS layer — there is NO hand-rolled HLE and
-  NO CP0/IRQ kernel emulation to maintain. RT64 is the renderer (F3DEX v1 ucode).
-- **`force_stub.txt`** lists functions deliberately left as empty stubs (not yet needed or
-  routed natively). The porting loop is: run → it crashes on a CP0/MMIO instruction inside
-  some primitive → hand that primitive to the native runtime (or un-stub the real function).
-- **`RecompiledFuncs/` and `src/aspMain.cpp` are ROM-derived and git-ignored** — regenerated
-  by step 3 of BUILDING.md. Never commit them.
-- Boots through attract/title/menu to the demo race. Input, audio, rendering wired through RT64.
+## Source of truth
 
-## Non-negotiable engineering principles
+Prefer current source, build scripts, tests, fixtures, and measured captures.
+Treat old session notes, issue prose, and AI reasoning as evidence to check.
+When evidence is incomplete, say so and show the trade-off to the human
+maintainer.
 
-- **Source is ground truth; session notes are corruptible history.** Before reasoning about
-  any function, read its actual body. "Per earlier findings" is a signal to re-read source.
-- **Recompilation, not game design — NEVER invent mechanics.** No invented timeouts, counter
-  seeds, transition values, or idle durations. If behaviour is missing, translate what the ROM
-  actually does; read the disassembly first. A hand-rolled shortcut is *scaffolding*: name it
-  as such in the comment, pair it with a tracker entry, and remove it when the real code lands.
-- **Measure before architecture.** measurement → data → decode → fix. Run the cheap diagnostic
-  first; don't stack implementation options without a falsification gate between them.
-- **Verify empirically, not by name.** Whether a function is called / emits DL / owns a role —
-  prove it with a breakpoint, watchpoint, or grep for the actual primitive constants.
-- **Ship code, not notes.** A session whose only output is a note/plan is a failure mode — the
-  next session distrusts unverified notes and re-derives them. Land the smallest real increment.
-  Never hand the next session an "exact first move"; if you know what to do, do it now.
+## Repository shape
 
-## Debugging
+The build reads the USA ROM, runs N64Recomp and RSPRecomp, then compiles
+generated sources with the hand-written port, N64ModernRuntime, RT64, and the
+frontend.
 
-- **ares is reference.** Invoke the **`ares-debugger` skill** for any live-ROM
-  work (read/write RDRAM, "who writes X" watchpoints, per-frame VI/DL capture). An empty
-  `mcp__ares__*` response is NOT a blocker — it means use the skill that launches ares. VI base
-  = `0xA4400010`; ares RDRAM is big-endian. To check port-vs-ROM data, capture an ares dump this
-  way and diff it against a port dump.
-- **Live-debug the port** with native gdb on the built binary (`build/lamborghini_modern`).
-  Count breakpoint hits with `ignore N <big>` + `info breakpoints`, NOT printf-in-commands
-  (silently undercounts in the multithreaded build).
-- **Success metric = port-vs-ares convergence**, not screenshot diffs and not byte-identicality
-  between builds. Replacing a stub with real translated behaviour moves the port toward ares —
-  that divergence is *progress*.
+RecompiledFuncs/ and src/aspMain.cpp are generated and ignored. Never edit
+them. Change the symbol/config inputs or a hand-written hook and regenerate.
+The build scripts and [patch inventory](patches/README.md) define dependency
+patch application.
 
-## Toolchain gotchas
+## Engineering rules
 
-- **MinGW `bin` must be on PATH** or `gcc.exe` silently exits 1 (can't find its own DLLs).
-- A `cc` shim may sit ahead of gcc in PATH on this box — pin `-DCMAKE_C_COMPILER`/`CXX_COMPILER`
-  explicitly when configuring, or `project()` fails with "C compiler is broken".
-- If a rebuild links stale recompiled code, delete stale archives under `build/` named
-  `libRecompiledFuncs.a`.
-- **EOL trap:** `scripts/gen_syms_toml.py` has *mixed* line endings at HEAD and
-  UI styles are LF-only — whole-file rewrites that normalise EOLs produce
-  thousands of diff-noise lines. Edit in place; never round-trip these files through a
-  text-mode script that rewrites every line.
+- Do not invent game behavior to make a test pass.
+- Measure a guest-memory or renderer claim before changing architecture.
+- Keep guest and host ownership explicit.
+- Treat direct guest-memory writes as fragile transitional bridges.
+- Keep comments about invariants, units, ownership, lifetime, and failure
+  behavior beside the code.
+- Keep generic renderer work separate from game-specific display-list policy.
+- Prefer a focused regression test and a dated evidence page over a confident
+  unsupported claim.
 
-## Game facts (verify from source / live-ares before building on them)
+The desired long-term direction is better decompilation, source-level patches,
+stable symbols, explicit hooks, and a versioned mod boundary. It is not
+complete today.
 
-- **State machine 0→8:** attract → title → menu → demo race.
-- **Audio:** voice alloc/steal search is `func_80080040`; the SDL sink needs a *persistent*
-  SDL_AudioStream (stateless per-buffer resampling garbles); guest-word PCM needs a pair-swap
-  un-swizzle; `get_frames_remaining` must report AI-rate (22050) frames, not device-rate (48000),
-  or music plays ~2.2× slow. State 6 = music; state 8 = quiet music + SFX.
-- **Input map:** A = confirm, B = cancel; menu input buffer `D_8011C640` (mind byte order).
-- **View-cone cull is FOV-coupled:** the scene builder (func_8000A6C0) ANDs both segment
-  cull paths with an authored forward-cone cosine double `0.886` at 0x8008D8C0/C8 — the
-  only readers. It was authored for the N64 frustum, so any FOV change must rewrite it
-  per frame or geometry pops in at the screen edges regardless of draw distance
-  (`lambo_view_cone_cos` + the world-draw hook; docs/no_lod_audit.md §11).
-- **Pedals:** throttle = s16 at vehicle+0xAA (±10/update toward a per-channel limit); brake demand
-  = float at vehicle+0xA0 (+1/update to 16 while B held, snapped to 0 on release), consumed by
-  the physics pass only while s16[vehicle+0xAC] > 0. The ROM's brake handlers rewrite both fields
-  every frame — analog-brake hooks must write AFTER them (vram 0x8001A9A0 merge), not at the
-  throttle sites. See docs/analog-throttle.md and docs/analog-brake.md.
-- **Rumble:** game uses custom start/stop wrappers (func_8006A7A0 / func_8006A82C) that call libultra's osMotorStart (func_8007AC78) and osMotorStop (func_8007AB10). The scan (func_80069710) runs osPfsInitPak first and skips osMotorInit when the Controller Pak succeeds. Keep the guest Rumble Pak flag (0x80110F08) truthful or the Championship save flow loops through the accessory-swap messages. Native overrides of the request function (func_8006A8B4) and the per-frame PWM engine (func_8006A910, gate-only deviation from the ROM body) plus the game-level wrappers preserve 0x80110F28/0x80110F18 state and drive SDL rumble without touching guest accessory detection; lower osMotorStart/osMotorStop overrides remain defensive.
+## Debugging and testing
 
-## Test discipline
+Use [docs/debugging.md](docs/debugging.md) for logs, captures, and optional
+ares comparison. Use [docs/testing.md](docs/testing.md) for host tests,
+ROM-backed tests, and the headless scenario.
 
-Gate on what changed. Recompilation-config / runtime-glue changes → build + boot smoke.
-For an autonomous race/render smoke after building, run
-`python tools/run_game_scenario.py scenarios/harness-smoke.json`; it isolates config/Pak
-artifacts and verifies the requested track actually loaded, 30 Hz guest input consumption,
-vehicle motion, framebuffer swaps, and a complete BMP. See `docs/automation-harness.md`.
-Replay EOF proves the recorded controls ran, not that a lap completed. Keep neutral pre-roll
-and use the same warp or settled save-state when recording/replaying a regression fixture.
+The normal smoke command is:
 
-## Configuration frontend
+~~~text
+python tools/run_game_scenario.py scenarios/harness-smoke.json
+~~~
 
-The game uses the pinned `lib/RecompFrontend` for settings, remapping and four-player
-assignment. `src/ui/lambo_frontend*.cpp` adapts it to this port; do not add a second
-RmlUi backend. `graphics.json` and player identity remain port-owned, with external
-Config storage and changed-field Apply merging. Framework profiles use
-`controls-framework.json`; legacy `controls.json` is a read-only import source.
-See `docs/recompfrontend.md` for scope, migration limits and regression checks.
+It requires a built executable, generated output, and the matching ROM.
+Documentation checks do not.
 
-## Tracker
-Use Github Issues
+## User-facing changes
+
+Keep player documentation in simple English. Do not make players learn ROM
+addresses, RDRAM, RT64, or recompilation to install and use the port. Put
+technical detail in the developer and reference pages.
+
+Before claiming support, verify the platform, release path, settings path, save
+path, and failure behavior. If a binary was not run, mark that observation
+unverified.

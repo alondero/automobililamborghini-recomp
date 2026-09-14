@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """Generate a RUNTIME-ADDRESSED whole-ROM syms.toml for the modern metadata-driven
-n64recomp (ultramodern + librecomp stack, ADR 0002 / epic #54, pivot phase 2).
+n64recomp (ultramodern + librecomp stack).
+
+The long comments in this generator include historical measurement labels and
+repository discussion references because they explain why individual symbol
+boundaries, merges, and stubs exist. They are evidence, not current policy.
+Current evidence and architectural status belong in docs/investigations/,
+docs/reference/, and docs/architecture.md. New comments should use a
+descriptive label and a durable local document link.
 
 WHY this exists
 ---------------

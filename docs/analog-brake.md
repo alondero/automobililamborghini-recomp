@@ -1,10 +1,9 @@
 # Analog brake
 
-Issue [#152](https://github.com/alondero/automobililamborghini-recomp/issues/152).
+Status: implemented host bridge with focused tests; guest hook remains a
+transitional fixed-layout seam.
 
-Follow-up to the analog throttle work
-([#128](https://github.com/alondero/automobililamborghini-recomp/issues/128),
-`docs/analog-throttle.md`). A controller axis can be mapped to the brake pedal
+A controller axis can be mapped to the brake pedal
 in the controls mapper's DRIVING column; the native bridge drives the ROM's own
 brake field continuously while leaving digital play untouched.
 

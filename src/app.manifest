@@ -2,7 +2,7 @@
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
-      <!-- Per-Monitor V2 DPI awareness (issue #161): without this the process runs
+      <!-- Per-Monitor V2 DPI awareness: without this the process runs
            DPI-unaware and DWM bitmap-stretches the window by the system scale
            factor (e.g. 1600x900 -> ~2800x1575 at 175%), overflowing 1080p
            screens. The modern key needs Win10 1703+; the legacy dpiAware entry

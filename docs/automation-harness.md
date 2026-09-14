@@ -1,5 +1,8 @@
 # Automated game harness
 
+Status: implemented developer harness; requires a built executable and matching
+generated output. It is not a player feature.
+
 The harness makes a real game run repeatable and bounded. It starts through the
 normal race loader (or a local save-state), applies effective N64 input on game
 updates, captures frames, and emits a JSON result that a script can assert on.
@@ -61,7 +64,7 @@ A scenario can select these fields:
   "warp_mode": 0,
   "max_vis": 7200,
   "input": {
-    "replay": "../recordings/circuit-1-time-trial.jsonl",
+    "replay": "../recordings/circuit-1-time-trial-car-0.jsonl",
     "start_state": 8,
     "start_delay": 0,
     "exit_on_end": true
@@ -107,7 +110,7 @@ Launch a windowed time trial and drive it normally. PowerShell example:
 ```powershell
 $env:LAMBO_WARP = '1:3:0:1'
 $env:LAMBO_WARP_MODE = '0'
-$env:LAMBO_INPUT_RECORD = 'recordings/circuit-1-time-trial.jsonl'
+$env:LAMBO_INPUT_RECORD = 'recordings/circuit-1-time-trial-car-0.jsonl'
 $env:LAMBO_INPUT_START_STATE = '8'
 ./build/lamborghini_modern.exe --console --verbose
 ```

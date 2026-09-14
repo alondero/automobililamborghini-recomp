@@ -1,8 +1,12 @@
-# Analog throttle preflight
+# Analog throttle
 
-Issue [#128](https://github.com/alondero/automobililamborghini-recomp/issues/128)
-adds a continuous controller source without changing the ROM's default digital
-controls. This note records the guest-side seam before the native hook is added.
+Status: implemented host bridge with focused tests; guest hook remains a
+transitional fixed-layout seam.
+
+Source of truth: src/lambo_analog_throttle.* and the tests listed below.
+
+A continuous controller source is added without changing the ROM's default
+digital controls. This note records the measured guest-side seam.
 
 ## Guest control path
 

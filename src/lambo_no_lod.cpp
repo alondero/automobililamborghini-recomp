@@ -1,4 +1,4 @@
-// #87/#91: remove the ROM's per-mode LOD reductions. The scene builder
+// Remove the ROM's per-mode LOD reductions. The scene builder
 // func_8000A6C0 draws each track segment as up to three sub-DLs from the
 // segment record (+0x4 road, +0x8 walls, +0xC far scenery) but emits the
 // scenery layer only when the player count at 0x800CE6A4 is < 2
@@ -217,7 +217,7 @@ extern "C" uint32_t lambo_no_lod_seg_list_clamp(uint8_t* rdram, uint32_t count) 
     return (int32_t)count > 20 ? 20u : count;
 }
 
-// Per-car model LOD (issue #165, the last distance axis -- a user report that car
+// Per-car model LOD is the last distance axis: car
 // models still swap with distance after the scenery work shipped). The same scene
 // builder draws the cars and keeps a per-car scaled camera distance as a halfword
 // at 0x80098720: each frame it computes sqrt of the scaled dx^2+dy^2+dz^2 between

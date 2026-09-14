@@ -1,4 +1,5 @@
-// Persistent user-facing graphics configuration (#1/#2 enhancement wave).
+// Persistent user-facing graphics configuration. The file schema and ownership
+// are documented in docs/configuration.md.
 //
 // Same model as Zelda64Recomp: ultramodern owns the GraphicsConfig struct and the
 // renderer reacts to set_graphics_config(); the PORT owns persistence. We persist a
@@ -19,7 +20,7 @@ namespace config {
 // Per-user persistent config directory (created on demand):
 //   Windows: %LOCALAPPDATA%\LamborghiniRecomp
 //   else:    $XDG_CONFIG_HOME/LamborghiniRecomp (or ~/.config/LamborghiniRecomp)
-// Portable mode (issue #190): an empty portable.txt next to the executable,
+// Portable mode: an empty portable.txt next to the executable,
 // the --portable flag, or LAMBO_PORTABLE=1 keeps everything next to the game
 // instead (see lambo_paths.h).
 std::filesystem::path app_config_dir();
@@ -63,7 +64,7 @@ WindowSize window_size();
 bool show_launcher();
 void set_show_launcher(bool enabled);
 
-// RT64 texture-replacement paths (issue #9). Both are extra graphics.json string keys
+// RT64 texture-replacement paths. Both are extra graphics.json string keys
 // (empty = feature off), overridable by env var for headless capture/testing:
 //   texture_pack  / LAMBO_TEXTURE_PACK  -- directory or .rtz to auto-load at startup.
 //   texture_dump  / LAMBO_TEXTURE_DUMP  -- directory RT64 writes every used texture to
@@ -76,26 +77,26 @@ void set_texture_pack_path(const std::string& path);
 void set_texture_dump_dir(const std::string& path);
 void set_window_size(WindowSize size);
 
-// Widen the dense 3P/4P split-screen fog to the 1P window/colour (issue #83).
+// Widen the dense 3P/4P split-screen fog to the 1P window/colour.
 // graphics.json key "widescreen_fog_match" (default true), overridable by
 // LAMBO_FOG_MATCH_1P=1/0. The rewrite still self-gates on player count >= 3.
 bool widescreen_fog_match();
 void set_widescreen_fog_match(bool enabled);
 
-// Draw the sky panorama in 3P/4P split screen like 1P/2P (issue #84).
+// Draw the sky panorama in 3P/4P split screen like 1P/2P.
 // graphics.json key "widescreen_sky_match" (default true), overridable by
 // LAMBO_SKY_MATCH_1P=1/0. Only flips a branch that 1P/2P already take.
 bool widescreen_sky_match();
 void set_widescreen_sky_match(bool enabled);
 
-// Remove the ROM's per-mode LOD reductions (issues #87/#91): emit each track
+// Remove the ROM's per-mode LOD reductions: emit each track
 // segment's scenery layer in 2P-4P races like 1P does. graphics.json key
 // "no_lod" (default true), overridable by LAMBO_NO_LOD=1/0.
 bool no_lod();
 void set_no_lod(bool enabled);
 
 // Per-circuit refinement of no_lod: the full-track walk (PVS synth) is what fixes
-// the cross-track distance pop-in (PR #122), but on the pro tracks it surfaces
+// the cross-track distance pop-in, but on the pro tracks it surfaces
 // back-of-buildings / cross-track geometry the track authors relied on the
 // authored PVS rows to hide. Ship-safe default: pro tracks (3-5) ship with the
 // PVS synth OFF (N64-style authoring); basic tracks (0-2) ship with it ON (modern

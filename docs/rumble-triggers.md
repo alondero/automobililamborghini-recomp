@@ -1,4 +1,7 @@
-# Rumble trigger audit (issue #102, map #101)
+# Rumble trigger audit
+
+Status: measured ROM behavior with port integration; historical audit notes
+remain below. The current source bridge is the authority.
 
 **Verdict: the ROM has a complete, emitted, reachable rumble system — the
 `src/libultra_stubs.c` FAITHFULNESS NOTE claim ("detects the Rumble Pak but never drives the
@@ -39,10 +42,13 @@ rumble-related hides in stubbed code.
 
 1. **Force-stubbed/truncated callers** — CLOSED, negative: whole-ROM jal counts for engine (3), `rumble_set` (5), start (2), stop (3), `osMotorInit` (2) each match the emitted call sites one-for-one. No rumble caller hides in stubbed code.
 2. **Raw SI frames bypassing the pak-write primitive** — CONFIRMED as the actual mechanism: motor writes are pre-staged frames replayed via `func_8007F780`, never a runtime `__osContRamWrite(0xC000)`. This is why the old enumeration found nothing yet concluded wrongly.
-3. **Prompt / detection flow** — located: detection = pak scan `func_80069710` → `osMotorInit` → `0x80110F08[ch]`. UI-side readers of the present flag (candidate "switch to Rumble Pak?" prompt gates, for ticket #104 to probe live): `func_800400EC`, `func_8004EC98`, `func_8004F254`, `func_80050274`.
+3. **Prompt / detection flow** — located: detection = pak scan `func_80069710` → `osMotorInit` → `0x80110F08[ch]`. UI-side readers of the present flag remain candidates for a live probe: `func_800400EC`, `func_8004EC98`, `func_8004F254`, `func_80050274`.
 
-## Implications for the rest of map #101
+## Implications for the rest of the map
 
 - The port intercepts the request leaf, the per-frame PWM engine, and the start/stop wrappers ahead of raw Joybus submission so rumble can coexist with a guest-visible Controller Pak. Sharp probes remain: breakpoint/trace `rumble_set` (`0x80069CB4`) and watch `0x80110F28`/`0x80110F18`/`0x800A3A40` writes; the engine override lives in `src/libultra_stubs.c` (`func_8006A910`).
-- For ares (#103): watchpoint `0x800A3A40` and the frame templates `0x8011C810` read, or break at `0x80069BA0` (start wrapper) — much sharper than scanning PIF traffic.
-- `src/libultra_stubs.c`'s FAITHFULNESS NOTE (~line 253) and issue #98's "ROM doesn't drive the motor" out-of-scope rationale are wrong and must be rewritten when #106 lands.
+- For an ares comparison: watchpoint `0x800A3A40` and the frame templates
+  `0x8011C810`, or break at `0x80069BA0` (start wrapper). This is sharper than
+  scanning PIF traffic; no live ares run is claimed by this audit.
+- The old source note that denied motor output is stale. The current source and
+  this audit are the durable explanation.

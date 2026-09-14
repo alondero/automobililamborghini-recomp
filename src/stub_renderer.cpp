@@ -1,10 +1,10 @@
-// Headless stub renderer for the first-VI boot probe (#57).
+// Headless renderer used by scripted scenarios and renderer diagnostics.
 //
 // ultramodern requires a non-null `renderer::create_render_context` callback,
 // but reaching the first VI retrace needs no actual rendering (the VI timer is
 // a wall-clock thread, and the per-frame ScreenUpdateAction queue is unbounded
 // and non-blocking). So we hand back a RendererContext whose every method is a
-// no-op. RT64 replaces this in phase #58.
+// no-op for display-list submission. RT64 is the normal interactive presenter.
 
 #include <cstdio>
 #include <cstdlib>
@@ -18,12 +18,12 @@
 
 #include "ultramodern/renderer_context.hpp"
 
-#include "lambo_rt64.h" // RT64 default presenter (#58); LAMBO_HEADLESS=1 keeps swrender
+#include "lambo_rt64.h" // Presenter boundary; LAMBO_HEADLESS=1 selects this path
 
 // Set by create_render_context so the game-specific VI retrace hook (vi_cb in main.cpp)
 // can reach RDRAM. ultramodern's events thread owns the only rdram pointer otherwise.
 uint8_t* g_lambo_rdram = nullptr;
-extern "C" void lambo_fog_match_1p(uint8_t* rdram, uint32_t dl_addr);  // src/lambo_fog_widescreen.cpp (#83)
+extern "C" void lambo_fog_match_1p(uint8_t* rdram, uint32_t dl_addr);  // src/lambo_fog_widescreen.cpp
 
 namespace headless {
 
@@ -32,12 +32,13 @@ namespace headless {
 //
 // The pivot is headless: send_dl drops the display list. But that OSTask carries
 // the REAL command stream the game built in RDRAM this frame -- the exact input an
-// HLE renderer (RT64, #58) will walk. With NO renderer wired, this is the only way
+// HLE renderer (RT64) will walk. With NO renderer wired, this is the only way
 // to answer "is what the game renders at state 8 real 3D geometry, or empty?" -- i.e.
-// whether the game-logic->DL pipeline is faithful (W102 proved the game LOGIC is;
-// this checks its rendered output). MEASURED (W103, 2026-07-01): the state-8 DL is
+// whether the game-logic->DL pipeline is faithful (earlier logic captures established the
+// game path; this checks its rendered output). A prior capture (2026-07-01) found the state-8 DL is
 // F3DEX (Fast3DEX v1), NOT F3DEX2 -- 0xB1=G_TRI2 present, 0x01=G_MTX/0x04=G_VTX low
 // opcodes. This matters for RT64: the HLE must select the F3DEX ucode profile.
+// The renderer boundary and evidence status are in docs/reference/renderer.md.
 // Env-gated so the DEFAULT build is byte-unchanged. LAMBO_DL_INSPECT=1 dumps a one-shot
 // summary at LAMBO_DL_INSPECT_STATE (default 8). Walks G_DL branches + gsSPSegment addressing.
 namespace dlinspect {
@@ -279,8 +280,8 @@ static void dump_summary(const uint8_t* rdram, const OSTask* t) {
                      i, st.tex_addr[i], fmt_name(st.tex_fmt[i]), siz_name(st.tex_siz[i]));
 }
 
-// Menu-DL census (issue #32): per-frame counts of G_SPRITE2D / TEXRECT / total commands.
-// The G_SPRITE2D count exists because issue #32 was filed blaming RT64's empty sprite2DBase
+// Menu-DL census: per-frame counts of G_SPRITE2D / TEXRECT / total commands.
+// The G_SPRITE2D count exists because an earlier hypothesis blamed RT64's empty sprite2DBase
 // handler; this census measured ZERO Sprite2D commands on every menu screen (and none built
 // anywhere in the ROM), falsifying that hypothesis -- the real cause was two truncated,
 // force-stubbed menu draw emitters (gen_syms_toml.py SPLIT_MERGES func_8006CEC8/func_8004AFD8).
@@ -350,7 +351,7 @@ static void sprite_scan(const uint8_t* rdram, uint32_t start_addr, uint32_t seg[
     }
 }
 
-// One-shot full-DL dump (issue #32): walk the frame's DL like sprite_scan but append every
+// One-shot full-DL dump: walk the frame's DL like sprite_scan but append every
 // resolved command (depth, rdram offset, w0, w1) as text to `f`. Ground truth for diffing
 // the port's menu command stream against an ares capture of the same screen.
 static void dump_walk(const uint8_t* rdram, uint32_t start_addr, uint32_t seg[16],
@@ -382,14 +383,14 @@ static void dump_walk(const uint8_t* rdram, uint32_t start_addr, uint32_t seg[16
 // ---------------------------------------------------------------------------
 // The pivot's software reference renderer -- runs on the DEFAULT path, every frame.
 //
-// W103 proved the state-8 demo-race DL is a real, textured, transformed F3DEX 3D
-// scene (1213 tris, 1831 verts, 45 matrices). RT64 (ADR 0002, #58) is the eventual
+// Earlier capture work established that the state-8 demo-race DL is a real, textured, transformed F3DEX 3D
+// scene (1213 tris, 1831 verts, 45 matrices). RT64 is the intended
 // HLE renderer but is not vendored and is a multi-session lift, so this is the in-tree
 // renderer for now: walk the game's real DL, apply the real G_MTX matrices, transform
 // the G_VTX verts, and rasterize TRI1/TRI2/QUAD into an RGBA framebuffer.
 //
 // It is a SCAFFOLD toward RT64 (correct-but-slow) and is TRACKED for retirement when RT64
-// lands (#53/#54). W105 added per-pixel texturing (RGBA16 + CI4/CI8 via TLUT, sampled from
+// integration target. Per-pixel texturing (RGBA16 + CI4/CI8 via TLUT, sampled from
 // the source image in RDRAM, perspective-correct, modulated by Gouraud shade); untextured or
 // unhandled-format tris fall back to Gouraud vertex colour. But per this
 // project's rules it is NOT gated off: the DEFAULT build IS the integration target,
@@ -487,7 +488,7 @@ struct RState {
     SVtx vtx[128];
     Framebuffer* fb;
     // --- texture pipeline state (tracked across the DL walk, like RDP TMEM state) ---
-    // W105: the state-8 scene is textured (RGBA16 majority + CI4/CI8 via TLUT). We sample
+    // Texture path: the state-8 scene is textured (RGBA16 majority + CI4/CI8 via TLUT). We sample
     // the SOURCE image in RDRAM directly (no TMEM byte-array model): every texture group
     // re-issues SETTIMG(texel) right before its render tile + draw, so the "current SETTIMG"
     // IS this group's texel source. The two-tile idiom means tile 7 is the LOADBLOCK load
@@ -499,7 +500,7 @@ struct RState {
     uint32_t rt_w = 0, rt_h = 0;    // render tile texel dims from SETTILESIZE
     uint8_t  rt_cmS = 0, rt_cmT = 0;// render-tile clamp/mirror bits (bit0=G_TX_MIRROR, bit1=G_TX_CLAMP)
     bool     tex_on = false;        // G_TEXTURE enable
-    // --- colour combiner + register colours (W107): the state-8 scene uses NINE distinct
+    // --- colour combiner + register colours: the state-8 scene uses NINE distinct
     // SETCOMBINE muxes, not just TEXEL0*SHADE. The sky is TEX0-only (no shade), road is
     // 2-cycle LOD*SHADE, many body panels are TEX0*PRIM. Track the raw mux + PRIM/ENV so
     // raster can evaluate the real (a-b)*c+d per pixel instead of forcing modulate.
@@ -507,7 +508,7 @@ struct RState {
     uint32_t cc_w1 = 0xFFFCF83C;    // SETCOMBINE w1
     uint8_t  prim_r = 255, prim_g = 255, prim_b = 255, prim_a = 255;
     uint8_t  env_r  = 255, env_g  = 255, env_b  = 255, env_a  = 255;
-    // --- fog + blender render mode (W109): the state-8 scene is a DUSK RACE WITH FOG.
+    // --- fog + blender render mode: the state-8 scene is a DUSK RACE WITH FOG.
     // The RSP folds a z-derived fog coefficient into vertex alpha (see G_FOG above); the
     // blender then mixes the combiner output toward fog_color by that coefficient on the
     // surfaces whose render-mode cycle-1 P input is CLR_FOG. Track fm/fo (G_MW_FOG), the
@@ -515,7 +516,7 @@ struct RState {
     int16_t  fog_mul = 0, fog_off = 0;      // raw s16 fog multiplier / offset
     uint8_t  fog_r = 0, fog_g = 0, fog_b = 0;
     uint32_t othermode_lo = 0;              // accumulated render mode (blender lives in bits 16-31)
-    // --- real N64 vertex lighting (W110): the state-8 scene loads 2 directional lights +
+    // --- real N64 vertex lighting: the state-8 scene loads 2 directional lights +
     // 1 ambient via G_MOVEMEM (indices G_MV_L0=0x86, L1=0x88, ambient at 0x86+num*2). The RSP
     // lambert-shades each vertex normal against these COLOURED lights; the port previously
     // faked it with a single grey headlight, flattening the dusk key/fill and darkening the
@@ -600,7 +601,7 @@ static void xform_vertex(RState& s, uint32_t phys, SVtx& out, bool lighting) {
     uint8_t cg = rd_u8(s.rdram, phys + 13);
     uint8_t cb = rd_u8(s.rdram, phys + 14);
     if (lighting && s.lights_loaded) {
-        // Real N64 lighting (W110): the cn bytes are a signed normal. Rotate it into eye space
+        // Real N64 lighting: the cn bytes are a signed normal. Rotate it into eye space
         // by the modelview upper-3x3, normalise, then accumulate ambient + per-directional-light
         // lambert, each weighted by the light's own RGB colour. This restores the dusk key
         // (warm yellow from above) + fill (cool blue) that the old grey headlight flattened.
@@ -634,7 +635,7 @@ static void xform_vertex(RState& s, uint32_t phys, SVtx& out, bool lighting) {
     } else {
         out.r = cr; out.g = cg; out.b = cb;
     }
-    // Fog fold (W109): when G_FOG is set, the RSP replaces vertex alpha with a fog
+    // Fog fold: when G_FOG is set, the RSP replaces vertex alpha with a fog
     // coefficient derived from the projected screen-z, NOT the authored byte. Formula
     // (matches GLideN64/fast3d): fog = clamp(ndc_z * fm + fo, 0, 255), ndc_z = clip_z/clip_w
     // in [-1,1]. fm/fo are the raw s16 gSPFogPosition values (fm>0, fo<0), so fog rises
@@ -777,7 +778,7 @@ static int clip_near_plane(const ClipV* in, int n, ClipV* out) {
 // (fm=25600 fo=-25344), i.e. distant terrain fades to fog AT the far plane and anything
 // past it must VANISH so the dusk-sky backdrop shows through at the horizon. Without
 // this clip the port draws that terrain as a fully-fogged dark curtain over the lower
-// sky (W112: port horizon band y=60-95 was (56,50,43) == fog colour, where live ares
+// sky: port horizon band y=60-95 was (56,50,43) == fog colour, where live ares
 // shows the bright sky (170-185,140-150,115-122)).
 static int clip_far_plane(const ClipV* in, int n, ClipV* out) {
     int m = 0;
@@ -802,7 +803,7 @@ static inline void project(const RState& s, const ClipV& c, ScreenV& o) {
     o.s = c.s; o.t = c.t; o.r = c.r; o.g = c.g; o.b = c.b; o.a = c.a;
 }
 
-// --- N64 colour combiner (W107) -------------------------------------------------
+// --- N64 colour combiner --------------------------------------------------------
 // The RDP combiner computes out = (A - B) * C + D per cycle, in two cycles, with the
 // cycle-0 result feeding cycle-1 as COMBINED. The state-8 scene uses nine distinct
 // muxes; forcing TEX0*SHADE darkened the sky (a TEX0-only surface) and mis-tinted the
@@ -923,18 +924,18 @@ static bool raster_screen_tri(RState& s, const ScreenV& a, const ScreenV& b, con
     bool textured = tex_avail && want_tex;
     RGBA prim = {s.prim_r / 255.0f, s.prim_g / 255.0f, s.prim_b / 255.0f, s.prim_a / 255.0f};
     RGBA env  = {s.env_r  / 255.0f, s.env_g  / 255.0f, s.env_b  / 255.0f, s.env_a  / 255.0f};
-    // Fog blender (W109): a surface is fogged iff its render-mode cycle-1 P colour input is
+    // Fog blender: a surface is fogged iff its render-mode cycle-1 P colour input is
     // CLR_FOG (bits 31-30 of othermode_lo == 3, e.g. the CB023038 fog-add mode). For those,
     // mix the combiner output toward fog_color by the per-pixel fog coefficient (shade.a,
     // which xform_vertex folded z-derived fog into). Non-fog surfaces are untouched.
-    // Measurement knob (#83): LAMBO_SWRENDER_NO_FOG=1 skips the fog blend so the capture
+    // Measurement knob: LAMBO_SWRENDER_NO_FOG=1 skips the fog blend so the capture
     // shows the raw geometry BEHIND the fog. Answers "is the 3P/4P far-clip actually short,
     // or is the near-black fog the only thing hiding the distance?" -- the swrender uses the
     // ROM's own projection, so culled-away far geometry stays absent even with fog off.
     static const bool s_no_fog = []{ const char* e = std::getenv("LAMBO_SWRENDER_NO_FOG"); return e && e[0] == '1'; }();
     bool fog_surface = !s_no_fog && ((s.othermode_lo >> 30) & 3) == 3;
     RGBA fogc = {s.fog_r / 255.0f, s.fog_g / 255.0f, s.fog_b / 255.0f, 1.0f};
-    // Translucency (W109): a surface alpha-blends against the framebuffer iff its blender
+    // Translucency: a surface alpha-blends against the framebuffer iff its blender
     // cycle-2 reads CLR_MEM weighted by (1-A) -- M2==CLR_MEM(1) && B2==1MA(0). This is the
     // faithful test (NOT ALPHA_CVG_SEL). The car's soft shadow (C8104A50) passes; the opaque
     // fogged body/road (CB023038, cyc2 M2==CLR_IN) does not. XLU surfaces z-TEST but don't
@@ -1160,7 +1161,7 @@ static void walk(RState& s, uint32_t start_addr, int depth) {
                 if (i3 < 128 && i4 < 128 && i5 < 128) raster_tri(s, s.vtx[i3], s.vtx[i4], s.vtx[i5]);
                 break;
             }
-            // --- texture pipeline (W105): decode enough of the RDP tile state to sample.
+            // --- texture pipeline: decode enough of the RDP tile state to sample.
             case G_SETTIMG: {
                 // Declares the source image in RDRAM. For this scene the "current" SETTIMG at
                 // draw time is the group's texel source (the palette SETTIMG is consumed by the
@@ -1204,7 +1205,7 @@ static void walk(RState& s, uint32_t start_addr, int depth) {
                 break;
             }
             case G_SETCOMBINE: {
-                // Store the raw 2-cycle mux; raster evaluates (A-B)*C+D per pixel (W107).
+                // Store the raw 2-cycle mux; raster evaluates (A-B)*C+D per pixel.
                 s.cc_w0 = w0; s.cc_w1 = w1;
                 break;
             }
@@ -1339,7 +1340,7 @@ public:
     // The game's main loop built a DL and osSpTaskStartGo -> submit_rsp_task delivered it
     // here. The software reference renderer (swrender) rasterizes it into m_fb on the
     // DEFAULT path every frame -- the trunk renders, so the trunk is what gets stress-tested
-    // (RT64, #58, will replace swrender). Log the FIRST gfx OSTask once as the "gfx-OSTask
+    // (RT64 will replace swrender). Log the FIRST gfx OSTask once as the "gfx-OSTask
     // seam reached" runtime signal.
     void send_dl(const OSTask* t) override {
         static int count = 0;
@@ -1371,7 +1372,7 @@ public:
                 }
             }
         }
-        // Race-DL dump (issue #84, LAMBO_RACE_DL_DUMP=<basename>): once the race state (>=8)
+        // Race-DL dump (LAMBO_RACE_DL_DUMP=<basename>): once the race state (>=8)
         // has settled, dump the walked frame DL to <basename>.txt and RDRAM to <basename>.bin
         // so a 1P-vs-3P sky draw can be diffed offline. Default: env unset -> skipped.
         static const char* s_race_dump = std::getenv("LAMBO_RACE_DL_DUMP");
@@ -1436,7 +1437,7 @@ public:
                 }
             }
         }
-        // Menu-DL trace (issue #32, LAMBO_MENU_DL_TRACE=1): per-frame command census keyed by
+        // Menu-DL trace (LAMBO_MENU_DL_TRACE=1): per-frame command census keyed by
         // the menu screen id, logged on every (screen, count) change -- the port-vs-ares DL
         // convergence tool that found the missing cursor/arrow emitters. Default: env unset.
         static const bool s_sprite_trace = (std::getenv("LAMBO_MENU_DL_TRACE") != nullptr);
@@ -1498,7 +1499,7 @@ public:
             // they tune a default-on behaviour, they do not switch rendering on/off.
             // LAMBO_DL_RENDER_EVERY=N additionally re-captures every N send_dls after the
             // first hit (numbered .N.bmp suffixes) -- needed to compare ATTRACT DEMO CYCLES
-            // against ares (W112: the attract plays different demo tracks per state-8 pass;
+            // against ares (the attract plays different demo tracks per state-8 pass;
             // a single first-frame capture can be a different SCENE than an ares capture).
             static const char* s_every_env = std::getenv("LAMBO_DL_RENDER_EVERY");
             static const int s_every = s_every_env ? std::atoi(s_every_env) : 0;
@@ -1519,7 +1520,7 @@ public:
                     if (s_every > 0) m_next_capture = count + s_every;
                     bool ok = swrender::write_bmp(path, m_fb);
                     // Demo-track index (D_800CE774, mod-6, +1 per attract pass via func_80038D6C).
-                    // Logged so every capture self-identifies its attract demo — W111 chased a
+                    // Logged so every capture self-identifies its attract demo — earlier capture work chased a
                     // "horizon gap" that was two DIFFERENT demos compared frame-to-frame.
                     uint32_t dw = *(const uint32_t*)(g_lambo_rdram + (0x800CE774 - 0x80000000u));
                     int demo_idx = (int)((dw >> 16) & 0xFFFF);
@@ -1534,7 +1535,7 @@ public:
                 }
             }
         }
-        // Periodic heartbeat: a SUSTAINED gfx pipeline (not the #58 1-task stall). Before the
+        // Periodic heartbeat: a SUSTAINED gfx pipeline (not the RT64 one-task stall). Before the
         // __osViCurr/__osViNext retrace-promotion fix (vi_cb in main.cpp), this stuck at 1 forever.
         // lambo_log_enabled short-circuits the WHOLE block on a default boot (the rt64 sibling
         // also wraps so its VI-reg read + mutex lock are skipped -- here the block is just the
@@ -1559,7 +1560,7 @@ std::unique_ptr<ultramodern::renderer::RendererContext>
 create_render_context(uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle,
                       bool developer_mode) {
     g_lambo_rdram = rdram;
-    // RT64 is the DEFAULT presenter (#58, flipped 2026-07-02). LAMBO_HEADLESS=1 (harness
+    // RT64 is the default presenter. LAMBO_HEADLESS=1 (harness
     // knob) keeps the headless swrender, which remains the measurement instrument: it
     // rasterises into the RDRAM framebuffer the port-vs-ares harness byte-compares.
     // RT64 setup failure (no Vulkan device / no window) also degrades to swrender so
@@ -1578,14 +1579,14 @@ create_render_context(uint8_t* rdram, ultramodern::renderer::WindowHandle window
 }
 
 // ---- deterministic lighting self-test (LAMBO_LIGHTING_SELFTEST=1, no ROM) ----------
-// Validates the W110 real-lighting path end-to-end WITHOUT the ROM or ares: builds a
+// Validates the real-lighting path end-to-end WITHOUT the ROM or ares: builds a
 // synthetic byte-swapped RDRAM holding a minimal F3DEX DL (G_MW_NUMLIGHT moveword +
 // light-struct G_MOVEMEMs + SHADE-only SETCOMBINE + optional G_MTX + G_VTX + G_TRI1)
 // and runs it through the REAL render path (swrender::render_into), printing the
 // centre-pixel colour per case. tests/pivot/test_lighting.py recomputes the expected
 // lambert sum INDEPENDENTLY in Python and compares -- a deterministic answer to "is
 // the lighting math + light decode right" that bypasses the ares frame-misalignment
-// trap entirely (W111: the demo-race scene never sets G_LIGHTING, so no ares FB-diff
+// trap entirely (the demo-race scene never sets G_LIGHTING, so no ares FB-diff
 // can exercise this path at state 8).
 namespace selftest {
 
@@ -1599,7 +1600,7 @@ struct FakeMem {
     void w8 (uint32_t off, uint8_t  v) { buf[off ^ 3] = v; }
 };
 
-// The W111-measured state-8 light set (colours 0-255, directions raw s8) -- using the
+// The captured state-8 light set (colours 0-255, directions raw s8) -- using the
 // real game's values keeps the test representative of the scene that matters.
 struct TLight { uint8_t r, g, b; int8_t dx, dy, dz; };
 static const TLight kL0  = {241, 254, 153, -11,  55, -101};   // warm dusk key

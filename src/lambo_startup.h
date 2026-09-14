@@ -30,12 +30,12 @@ public:
     explicit StartupController(StartupMode mode,
                                StartGameAction start_game = {});
 
-    // Called once the host runtime and its window/render resources are ready.
-    // Returns true when this call initiated automatic startup.
+    // Called once host runtime and window/render resources are ready.
+    // Returns true when this call initiates automatic startup.
     bool runtime_ready();
 
     // Requests the first graphical Play transition. Repeated requests are safe
-    // and return false after startup has begun.
+    // and return false after startup begins.
     bool request_play();
 
     // Explicit application shutdown, including a launcher quit before the first
