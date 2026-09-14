@@ -44,6 +44,13 @@ a small size manifest, the managed environment, stdout/stderr, the native
 `harness-result.json`, and the runner's final `runner-result.json`. A wall-clock
 timeout is only a deadlock backstop; input timing never uses it.
 
+Use an executable built from the checkout containing the scenario runner. A
+successful process exit without `harness-result.json` is still a failed run:
+older binaries can recognize `LAMBO_WARP` while lacking input replay and harness
+reporting entirely. Check the captured logs and rebuild this checkout before
+diagnosing that symptom as a gameplay regression. In particular, pointing
+`--exe` at another worktree's old build does not verify the current source.
+
 The smoke trace holds A after the starting countdown and then releases it. It
 proves warp, game-clock replay, vehicle motion, rendering, clean EOF, and result
 assertions; it is deliberately not presented as a completed lap.
