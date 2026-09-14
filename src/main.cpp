@@ -1,13 +1,10 @@
-// Headless boot probe for the ultramodern pivot (epic #54, phase #57).
+// Application entry point and host/guest thread wiring. The supported build,
+// test, and debugging boundaries are documented in docs/architecture.md.
 //
-// Links the whole-ROM recompiled image (RecompiledFuncs) against librecomp +
-// ultramodern and boots the REAL entrypoint (0x80000400) under the modern
-// runtime, with stubbed rsp/renderer callbacks and no RT64/SDL. Goal: confirm
-// the recompiled boot reaches the first VI retrace and creates its first game
-// thread (osCreateThread). A stall before that is a legitimate, characterised
-// finding (run under gdb to capture the PC).
-//
-// Build/run (WSL): see recomp/CMakeLists.txt header.
+// The whole-ROM recompiled image runs through librecomp and ultramodern. The
+// normal path creates the host window, input, audio, and RT64 presenter; the
+// headless scenario selects the diagnostic renderer path. Build and run
+// instructions are in BUILDING.md and docs/testing.md.
 
 #include <algorithm>
 #include <atomic>
@@ -38,9 +35,9 @@
 
 #include <limits>
 
-#include <SDL.h>          // RT64 default presenter (#58): real window + event pump under WSLg
+#include <SDL.h>          // RT64 default presenter: real window + event pump under WSLg
 #if defined(_WIN32)
-#include <SDL_syswm.h>    // native Windows (#68): unwrap the HWND for ultramodern/RT64-D3D12
+#include <SDL_syswm.h>    // native Windows: unwrap the HWND for ultramodern/RT64-D3D12
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
@@ -54,8 +51,8 @@
 #include "lambo_audio.h"
 #include "lambo_config.h"
 #include "lambo_paths.h"
-#include "lambo_crash.h"   // issue #13 / A14
-#include "lambo_gpu_advisory.h"  // issue #109: outdated-driver popup handoff
+#include "lambo_crash.h"   // native crash reporting
+#include "lambo_gpu_advisory.h"  // graphics-driver advisory
 #include "lambo_log.h"   
 #include "lambo_pak_io.h"
 #include "lambo_pak_storage.h"
@@ -136,7 +133,7 @@ static void claim_immediate_exit() {
 // thread actually runs its per-frame dispatch loop, those threads are live in native
 // osRecvMesg and race the munmap into a SIGSEGV. This is a headless boot/probe harness that is
 // quitting anyway, so skip the unwind and let process exit tear the game threads down.
-    // (Graceful game-thread shutdown is RT64-integration work, #58.)
+    // (Graceful game-thread shutdown belongs at the RT64 integration boundary.)
 [[noreturn]] static void boot_summary_and_exit() {
     claim_immediate_exit();
     lambo::harness::log_boot_summary();
@@ -202,35 +199,26 @@ static void vi_cb() {
     }
 }
 
-// Audio RSP ucode (M_AUDTASK = task type 2, aspMain). librecomp ships no audio ucode and a real
-// recompiled aspMain is a large standalone effort -- the faithful end state, tracked under the AUDIO
-// epic #53 (this no-op is the scaffold to retire when real aspMain lands). #58 is the descent-crash
-// epic this boundary belongs to.
-// SCAFFOLD: this no-op ucode signals RspExitReason::Broke so run_task() succeeds (rsp.cpp:55) and the
-// audio thread proceeds. It synthesises NO PCM, so it does NOT fill (or zero) the audio DMA buffer:
-// osAiSetNextBuffer (routed to the native, gen_syms_toml.py) queues whatever stale RDRAM sits in that
-// buffer into ultramodern's audio backend. That is inaudible TODAY only because the headless build has
-// no audio sink; once a real output device is driven, audio_ucode_noop must be replaced by real aspMain
-// (or made to zero the buffer) to avoid emitting garbage -- it is NOT a silence guarantee. The point of
-// the scaffold is purely to clear the CRASH boundary: the native route runs the submit path WITHOUT the
-// raw AI-MMIO poll that used to SIGSEGV in __osAiDeviceBusy (func_80080950). Same scaffold class as the
-// no-op __osViInit/osCreatePiManager. Gfx tasks (type 1) never reach here -- intercepted by the renderer.
+// Audio RSP ucode (M_AUDTASK = task type 2, aspMain). The generated ROM build
+// declares aspMain and get_rsp_microcode_stub routes audio tasks to it. The
+// audio_ucode_noop helper is retained for a future source-only diagnostic
+// mode, but the current selector does not use it. It is not an audio
+// implementation and must not be presented as proof that sound works. Gfx
+// tasks (type 1) go to the renderer.
 static RspExitReason audio_ucode_noop(uint8_t* /*rdram*/, uint32_t /*ucode_addr*/) {
     static std::atomic<bool> logged{false};
     if (!logged.exchange(true))
-        LAMBO_LOG("probe", "audio_ucode_noop: first M_AUDTASK (type 2) -> Broke (no PCM; #53)\n");
+        LAMBO_LOG("probe", "audio_ucode_noop: first M_AUDTASK (type 2) -> Broke (no PCM)\n");
     return RspExitReason::Broke;
 }
 
-// RSPRecomp'd audio microcode (W135, 2026-07-04, #53): generated from the ROM's aspMain text at
-// ROM 0x88B90 (see recomp/aspMain.us.toml for the ground-truth derivation + regen command). This
-// RETIRES the audio_ucode_noop scaffold above for the M_AUDTASK path: librecomp's run_task loads
-// the OSTask + ucode data into DMEM and this function synthesises real PCM into the game's audio
-// buffers, which osAiSetNextBuffer then queues into the SDL sink.
+// RSPRecomp generates this declaration from the ROM's aspMain text. When the
+// generated source is present, librecomp loads the audio task into DMEM and
+// this function synthesizes PCM for the game's audio buffers.
 RspExitReason aspMain(uint8_t* rdram, uint32_t ucode_addr);
 
 static RspUcodeFunc* get_rsp_microcode_stub(const OSTask* task) {
-    if (task->t.type == 2) return aspMain; // M_AUDTASK: RSPRecomp'd real synthesis (#53)
+    if (task->t.type == 2) return aspMain; // M_AUDTASK: generated synthesis
     static std::atomic<bool> logged{false};
     if (!logged.exchange(true))
         LAMBO_LOG("probe", "get_rsp_microcode: unhandled task type %u -> nullptr\n",
@@ -242,9 +230,9 @@ static void message_box_stub(const char* msg) {
     LAMBO_LOG("probe", "message_box: %s\n", msg);
 }
 
-// Input (#68) — defined below in the input section; used by the window/pump callbacks above them.
+// Input — defined below in the input section; used by the window/pump callbacks above them.
 static void input_sample();
-static void rumble_apply();  // rumble-pak sink (#69); defined in the input section below
+static void rumble_apply();  // rumble-pak sink; defined in the input section below
 static std::atomic<uint32_t> g_multiplayer_snapshot[4]{};
 static std::atomic<bool> g_multiplayer_connected[4]{};
 
@@ -267,7 +255,7 @@ static void toggle_fullscreen() {
 }
 
 static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/) {
-    // RT64 default presenter (#58): RT64 needs a real window with a Vulkan surface
+    // RT64 default presenter: RT64 needs a real window with a Vulkan surface
     // (Linux). Created on the main thread; the SDL event pump runs in update_gfx_stub
     // below (also main thread, via recomp::start's loop). LAMBO_HEADLESS=1 (harness
     // knob) skips the window entirely; SDL failure degrades to headless the same way.
@@ -282,7 +270,7 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
         // Keep controller events flowing even when the window loses focus (matches the reference
         // ports; otherwise held inputs freeze on alt-tab).
         SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
-        // GAMECONTROLLER pulls in JOYSTICK + enables CONTROLLERDEVICEADDED/REMOVED events (#68).
+        // GAMECONTROLLER pulls in JOYSTICK + enables CONTROLLERDEVICEADDED/REMOVED events.
         if (SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
             LAMBO_LOG("rt64", "SDL_InitSubSystem(VIDEO|GAMECONTROLLER) failed: %s -- staying headless\n",
                          SDL_GetError());
@@ -320,7 +308,7 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
                      win_size.width, win_size.height);
         return ultramodern::renderer::WindowHandle{window};
 #elif defined(_WIN32)
-        // Native Windows (#68): ultramodern's WindowHandle is {HWND, thread_id} and RT64
+        // Native Windows: ultramodern's WindowHandle is {HWND, thread_id} and RT64
         // drives its D3D12 swapchain off the raw HWND, so unwrap it from the SDL window.
         // Same shape as Zelda64Recomp's Windows path (SDL_SysWMinfo -> info.win.window).
         SDL_SysWMinfo wmInfo;
@@ -432,7 +420,7 @@ static void update_gfx_stub(void* /*gfx_data*/) {
             const bool actual_fullscreen = (SDL_GetWindowFlags(g_sdl_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
             if (desired_fullscreen != actual_fullscreen) lambo::menu::toggle_fullscreen();
         }
-        // Severe GPU-driver advisory posted by renderer setup (issue #109): the affected
+        // Severe GPU-driver advisory posted by renderer setup: the affected
         // user sees only a black window, so show it as a modal box. Main thread owns all
         // UI; blocking the pump here is fine -- game threads keep running behind it.
         if (const char* advisory = lambo_gpu_advisory_take_pending()) {
@@ -446,12 +434,12 @@ static void update_gfx_stub(void* /*gfx_data*/) {
         recompinput::poll_inputs();
         lambo::input_gate::set_ui_capture(lambo::ui::captures_input());
         input_sample();
-        // Apply the game thread's latest rumble-pak motor state to the physical pad (#69).
+        // Apply the game thread's latest rumble-pak motor state to the physical pad.
         rumble_apply();
     }
 }
 
-// --- input (#68) --------------------------------------------------------------------------
+// --- input -------------------------------------------------------------------------------
 // Real SDL2 keyboard + gamepad -> N64 OSContPad, feeding ultramodern's get_input callback
 // (which packs our button mask + float stick into OSContPad via osContGetReadData).
 //
@@ -463,7 +451,7 @@ static void update_gfx_stub(void* /*gfx_data*/) {
 //
 // Port 0 is reported connected UNCONDITIONALLY (input_device_info below) even with no physical
 // pad: the keyboard is a valid input device, and the ROM's object-slot gate (func_8007A8A0)
-// bails to a stuck state 6 unless port 0 reads as present (#64/#53).
+// bails to a stuck state 6 unless port 0 reads as present.
 //
 // LAMBO_MODERN_INPUT (env, hex OS_CONT mask) is OR'd into every read -- the permanent harness
 // knob for headless title-advance scripting (LAMBO_HEADLESS never inits SDL gamecontroller, so
@@ -491,7 +479,7 @@ static uint16_t g_pulse_buttons = 0;
 static int      g_pulse_period = 0, g_pulse_duty = 0, g_pulse_start = 0;
 static int      g_pulse_count = 0;   // optional 5th field: stop after N pulses (0 = unlimited)
 
-// --- rumble-pak sink (#69) ----------------------------------------------------------------
+// --- rumble-pak sink ---------------------------------------------------------------------
 // The game's SI/PIF bridge (func_8007F780 -> lambo_joybus_answer, recomp/src/libultra_stubs.c)
 // runs on the GAME thread and decodes the ROM's motor-control pak writes (joybus cmd 0x03 to
 // pak block 0xC000: payload 0x01 = motor on, 0x00 = off). SDL rumble must be driven from the
@@ -501,10 +489,10 @@ static int      g_pulse_count = 0;   // optional 5th field: stop after N pulses 
 static std::atomic<int> g_rumble_on{0};              // game-thread write, main-thread read
 extern "C" void lambo_pak_set_rumble(int on) { g_rumble_on.store(on ? 1 : 0, std::memory_order_relaxed); }
 
-// Developer warp menu (#12, src/lambo_warp.c): main thread publishes, game thread warps.
+// Developer warp menu (src/lambo_warp.c): main thread publishes, game thread warps.
 extern "C" void lambo_warp_request(int circuit0);
 
-// Developer save-state (#22, src/lambo_savestate.c): F7 snapshots guest RAM, F8 restores it.
+// Developer save-state (src/lambo_savestate.c): F7 snapshots guest RAM, F8 restores it.
 // Main thread flips the request bit; the game thread does the copy at the next frame boundary.
 extern "C" void lambo_savestate_request_save(void);
 extern "C" void lambo_savestate_request_load(void);
@@ -547,7 +535,7 @@ static void input_sample() {
     if (const Uint8* ks = SDL_GetKeyboardState(nullptr)) {
 
         if (!lambo::input_gate::guest_input_suppressed()) {
-            // Developer warp menu (#12): F1..F6 warp straight to that circuit as a
+            // Developer warp menu: F1..F6 warp straight to that circuit as a
             // 1-player single race. Edge-detected here (main thread); consumed by
             // lambo_warp_tick on the game thread (src/lambo_warp.c).
             static Uint8 warp_prev[6] = {};
@@ -557,7 +545,7 @@ static void input_sample() {
                 warp_prev[i] = down;
             }
 
-            // Developer save-state (#22): F7 saves the current guest RAM to the state slot,
+            // Developer save-state: F7 saves the current guest RAM to the state slot,
             // F8 restores it. Edge-detected here (main thread); the copy runs on the game
             // thread at the next frame boundary (src/lambo_savestate.c).
             static Uint8 f7_prev = 0, f8_prev = 0;
@@ -688,7 +676,7 @@ static std::filesystem::path unused_backup_path(const std::filesystem::path& pat
     return candidate;
 }
 
-// Portable mode (issue #190): exact --portable match. Parsed here rather than
+// Portable mode: exact --portable match. Parsed here rather than
 // in lambo_log_parse_args because the log directory itself depends on it.
 static bool has_portable_arg(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
@@ -757,7 +745,7 @@ static std::optional<std::filesystem::path> executable_dir_from_platform(const c
 
 static int application_main(int argc, char** argv) {
     // Portable mode must resolve before logging initialises: the log file
-    // directory itself depends on it (issue #190).
+    // directory itself depends on it.
     if (const auto exe = executable_dir_from_platform(argc > 0 ? argv[0] : nullptr);
         exe.has_value())
         lambo::paths::set_executable_dir(*exe);
@@ -924,7 +912,7 @@ static int application_main(int argc, char** argv) {
                            lambo_pak_format_name(imported.format), pak_path_string.c_str());
         }
     } else if (controller_pak_path == nullptr && !std::filesystem::exists(pak_path)) {
-        // One-time migration for builds before #176, which accidentally stored the
+        // One-time migration for older builds, which accidentally stored the
         // default Controller Pak beside the executable/current working directory.
         const std::filesystem::path legacy = "lambo_controller_pak.mpk";
         if (std::filesystem::exists(legacy)) {
@@ -1051,7 +1039,7 @@ static int application_main(int argc, char** argv) {
     cfg.error_handling_callbacks.message_box = message_box_stub;
     // window_handle left default-empty -> create_window_stub() is used.
 
-    // Controller 0 is wired by DEFAULT (#64/#53, 2026-06-29): the ROM's controller subsystem
+    // Controller 0 is wired by default: the ROM's controller subsystem
     // gates object-slot registration on a clean controller status, and ares boots with 4 detected
     // controllers (count D_8011C681=4). With NO controller wired the read returns "no response"
     // and the object-slot gate func_8007A8A0 (via func_80083100) bails -> stuck at state 6.
@@ -1112,7 +1100,7 @@ static int application_main(int argc, char** argv) {
     cfg.input_callbacks.get_connected_device_info = input_device_info;
     LAMBO_LOG("probe", "input: controller0 connected (default), buttons=%04x\n", g_held_buttons);
 
-    // Audio epic #53 (PR 1 of 3): initialize the host audio sink. ultramodern
+    // Initialize the host audio sink. ultramodern
     // reads cfg.audio_callbacks inside recomp::start (recomp.cpp:743), before
     // preinit (recomp.cpp:809) calls init_audio() -> set_audio_frequency(48000).
     // init() makes the initial main-thread attempt; update_gfx_stub() pumps

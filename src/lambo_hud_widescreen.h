@@ -1,7 +1,8 @@
 #ifndef LAMBO_HUD_WIDESCREEN_H
 #define LAMBO_HUD_WIDESCREEN_H
 
-// Widescreen HUD-geometry shift scale (issue #67).
+// Widescreen HUD-geometry shift scale. See docs/HUD.md for the measured
+// geometry and the renderer boundary.
 //
 // The rect-based HUD elements pin to the widened output edges with gEXSetRectAlign, so
 // they travel proportionally to the LIVE output aspect. The geometry-based elements
@@ -24,7 +25,7 @@ static inline float lambo_ws_hud_shift_scale_for_aspect(float aspect) {
 // The rect pins do NOT always travel to the real output edges: RT64's extended GBI moves
 // them by `extAspectPercentage`, which depends on hr_option (rt64_workload_queue.cpp
 // :159-183). So the geometry must scale off the aspect the rects EFFECTIVELY pin to, not
-// the raw output aspect (that is the skybox's concern, issue #3). These two helpers mirror
+// the raw output aspect (that is the skybox's concern). These two helpers mirror
 // RT64's math so the game-space geometry tracks the rects in every hr_option, at any
 // output aspect. `source` is the game-native aspect (4/3).
 

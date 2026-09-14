@@ -1,6 +1,6 @@
-// Hand-provided no-op symbols for this ROM's libultra CP0/kernel helpers that the pivot routes
-// AWAY from recompilation (epic #54, phase 3). These functions are named canonically in
-// recomp/gen_syms_toml.py (LIBULTRA_NAMES) so N64Recomp marks them `ignored` (symbol_lists.cpp)
+// Hand-provided no-op symbols for this ROM's libultra CP0/kernel helpers that
+// the runtime routes away from recompilation. These functions are named in
+// scripts/gen_syms_toml.py (LIBULTRA_NAMES) so N64Recomp marks them ignored.
 // and emits no body.
 //
 // N64Recomp renames BOTH reimplemented AND ignored functions to `<name>_recomp` at the call site
@@ -38,7 +38,7 @@ void __osSetSR_recomp(uint8_t* rdram, recomp_context* ctx) {
 // context promotion at retrace cadence. The default mode seeded here is overwritten almost immediately
 // by the game's own osViSetMode (func_80075C60: LPN2 at boot from osCreateScheduler, LAN2 from the game
 // SM), matching hardware ordering exactly. Reached via osCreateScheduler (func_80074B90) ->
-// func_8007ED10 -> here. W115, #58.
+// func_8007ED10 -> here. This is the VI initialization bridge.
 void __osViInit_recomp(uint8_t* rdram, recomp_context* ctx) {
     gpr vi   = (gpr)(int32_t)0x8008D140u; /* OSViContext[2]; [1] at +0x30 */
     gpr modep;
@@ -60,7 +60,7 @@ void __osViInit_recomp(uint8_t* rdram, recomp_context* ctx) {
     MEM_W(0x3C, vi) = MEM_W(0x4, modep);                               /* next->control = modep->ctrl */
 }
 
-// --- controller-read bridge (#64/#53, 2026-06-29) ------------------------------------------
+// --- controller-read bridge ---------------------------------------------------------------
 // func_8007F780 (runtime 0x8007EB80) is the ROM's raw SI controller read (SIGSEGVs if recompiled:
 // raw SI_STATUS MMIO via __osSiDeviceBusy). It was routed to the native osContStartReadData, which
 // polls input + fires send_si_message (so the game's osRecvMesg unblocks) but does NOT fill the
@@ -104,18 +104,18 @@ static unsigned char lambo_joybus_data_crc(uint8_t* rdram, gpr addr) {
     return crc;
 }
 
-// --- controller-pak backing store (#69) ---------------------------------------------------
+// --- controller-pak backing store ---------------------------------------------------------
 // This game hand-rolls its SI kernel, but its pak READ/WRITE drivers (func_80083F70 /
 // func_80084EE0) are EMITTED REAL in the pivot: they build joybus block-read/-write frames
 // (cmd 0x02 / 0x03) and issue them through the SI bridge (func_8007F780 -> lambo_joybus_answer).
 // So a full, savable Controller Pak needs only that the bridge ANSWER those frames from a
-// host-side 32 KB SRAM image (persisted to a .mpk file) instead of the W121 "no pak" convention.
+// host-side 32 KB SRAM image (persisted to a .mpk file) instead of the old "no pak" fallback.
 //
 // The image must be FORMATTED, exactly as the reference emulator (ares) formats a freshly
 // created pak: the game's osPfsInitPak (func_8007A8A0) validates the ID-area checksums and
 // rejects an all-zero (unformatted) pak with PFS_ERR_ID_FATAL -- the game itself never formats
-// a dead pak. Port of the proven legacy HLE (src/recomp/recomp_support.c lambo_pak_image_format,
-// W16): ID areas at pages 1/3/4/6 (device id bit0, 1 bank = 32 KB, id16 + inverted checksums),
+// a dead pak. Port of the proven legacy HLE (src/recomp/recomp_support.c lambo_pak_image_format):
+// ID areas at pages 1/3/4/6 (device id bit0, 1 bank = 32 KB, id16 + inverted checksums),
 // inode table page 1 + backup page 2 with slots 5..127 = 0x03 (empty).
 uint8_t g_lambo_pak_image[LAMBO_PAK_SIZE];
 
@@ -143,7 +143,7 @@ static void lambo_pak_format(void) {
         img[base + 0x1C] = (uint8_t)(checksum >> 8); img[base + 0x1D] = (uint8_t)checksum;
         img[base + 0x1E] = (uint8_t)(inverted >> 8); img[base + 0x1F] = (uint8_t)inverted;
     }
-    /* TOC checksum (#31 follow-up): an 8-bit sum of ONLY the low byte of each inode word for
+    /* TOC checksum: an 8-bit sum of ONLY the low byte of each inode word for
      * slots 5..127 (BLOCK_EMPTY markers), NOT a sum over the whole 256-byte sector -- verified
      * against libdragon's __get_toc_checksum (src/joybus/mempak.c), the reference SDK-compatible
      * Controller Pak filesystem implementation. Getting this wrong makes the game's own
@@ -158,8 +158,8 @@ static void lambo_pak_format(void) {
     }
 }
 
-// Controller-pak feature is ON by default (this is the #69 deliverable). LAMBO_CONTROLLER_PAK=0
-// is a deliberate A/B opt-out (the old W121 "no pak" behaviour) for boot-stability debugging.
+// Controller-pak feature is ON by default. LAMBO_CONTROLLER_PAK=0 is a deliberate A/B opt-out
+// (the old "no pak" behaviour) for boot-stability debugging.
 static int lambo_pak_enabled(void) {
     static int cached = -1;
     if (cached < 0) {
@@ -195,7 +195,7 @@ static void lambo_pak_save(void) {
     lambo_pak_storage_schedule_save(g_lambo_pak_image);
 }
 
-// LAMBO_PAK_TRACE=1: per-frame joybus log (issue #35 diagnosis) -- shows exactly what the save
+// LAMBO_PAK_TRACE=1: per-frame joybus log for save-path diagnosis -- shows exactly what the save
 // flow asks the pak for and how the bridge answered, since call-level tracers proved the game
 // loops on reads without ever reaching a write.
 static int lambo_pak_trace(void) {
@@ -209,7 +209,7 @@ static int lambo_pak_trace(void) {
 // exists (main.cpp is always in the link), so a plain extern is fine.
 extern void lambo_pak_set_rumble(int on);
 
-// Answer a 0x40-byte joybus/PIF command buffer IN PLACE, the way the PIF hardware does (#69).
+// Answer a 0x40-byte joybus/PIF command buffer IN PLACE, the way the PIF hardware does.
 // The game hand-rolls its SI kernel and stages real joybus frames: 0x00 = channel skip,
 // 0xFF = pad byte, 0xFE = end, 0xFD = channel reset, else [tx][rx][cmd + tx-1 args][rx resp].
 // We emulate 4 standard controllers (matching ares: count D_8011C681 = 4) with controller 0
@@ -228,7 +228,7 @@ extern void lambo_pak_set_rumble(int on);
 // through the game's actual start/stop request wrappers below, without setting the guest's Rumble
 // Pak-present flag and confusing its Controller Pak swap/save state machine.
 //
-// FAITHFULNESS NOTE (#105, corrected 2026-07-11): Contrary to the prior note, the game DOES drive
+// FAITHFULNESS NOTE (corrected 2026-07-11): Contrary to the prior note, the game DOES drive
 // the motor during gameplay (e.g. collisions, off-road) via its custom start/stop wrappers
 // (func_8006A7A0/func_8006A82C). These wrappers call libultra's osMotorStart (func_8007AC78) and
 // osMotorStop (func_8007AB10). The wrapper overrides below preserve the ROM's motor-active flag
@@ -236,7 +236,7 @@ extern void lambo_pak_set_rumble(int on);
 // overrides remain as a defensive boundary, although these wrappers are their only live callers.
 static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
     int pos = 0, channel = 0;
-    int pak_ch0 = lambo_pak_enabled();  /* ch0 carries a formatted pak (#69) */
+    int pak_ch0 = lambo_pak_enabled();  /* ch0 carries a formatted pak */
     if (pak_ch0) lambo_pak_ensure_loaded();
     while (pos < 0x40) {
         unsigned t = MEM_BU(pos, buf);
@@ -371,7 +371,7 @@ static void lambo_pak_channel_probe(uint8_t* rdram, gpr buf) {
     }
 }
 
-// func_8007FFF0 (runtime 0x8007F3F0) = alSynAddPlayer -- NATIVE OVERRIDE (W134, #53; ignored via
+// func_8007FFF0 (runtime 0x8007F3F0) = alSynAddPlayer -- NATIVE OVERRIDE (ignored via
 // NATIVE_OVERRIDES in gen_syms_toml.py). Reproduces the ROM body's RDRAM ops exactly (see
 // asm/race_full_functions/func_8007FFF0.s: samplesLeft=curSamples; client->next=synth->head;
 // synth->head=client; bracketed by osSetIntMask -- a native C body is atomic w.r.t. the
@@ -382,7 +382,7 @@ static void lambo_pak_channel_probe(uint8_t* rdram, gpr buf) {
 // dozen instructions later; real hardware never dispatches inside that ~us window (16.6ms
 // retrace period), but the cooperative scheduler delivers backlogged retraces at dispatch points
 // inside the window and dispatched the handler against an unprimed event -> SIGSEGV in
-// func_8007699C (measured W134). The <=1-frame deferral is the same slack the hardware retrace
+// func_8007699C (measured during audio startup). The <=1-frame deferral is the same slack the hardware retrace
 // cadence provides. Remove if ultramodern gains preemptive external-message delivery.
 void func_8007FFF0(uint8_t* rdram, recomp_context* ctx) {
     gpr synth  = ctx->r4; /* a0 */
@@ -392,7 +392,7 @@ void func_8007FFF0(uint8_t* rdram, recomp_context* ctx) {
     /* FOUR audio frames (~64ms), not one: under the cooperative scheduler each audio frame hands
      * the registering thread exactly ONE dispatch-gap of progress (retrace backlog ping-pong),
      * and the constructor needs two more gaps after registration (post-exit, nextEvent-complete)
-     * before the current-event buffer is primed. Measured W134: a 1-frame deferral still crashed
+     * before the current-event buffer is primed. A 1-frame deferral still crashed
      * (dispatch on the 2nd frame, boot had only reached the post). Boot-time one-shot, inaudible. */
     int32_t defer = (int32_t)(((int64_t)rate * 64000) / 1000000);
     if (defer <= 0) defer = 4096;       /* rate not yet set: any plausible 4-frame slack */
@@ -423,7 +423,7 @@ void func_8007F780(uint8_t* rdram, recomp_context* ctx) {
     /* This game never calls osContInit (it reads the SI directly through this bridge; its caller
      * func_8007A1E4 is an ignored no-op), so ultramodern's max_controllers stayed 0 -- and
      * osContGetReadData loops `controller < max_controllers`, so get_input was NEVER polled and
-     * pads[] stayed zero. That silently dropped ALL input on every platform (#68). Seed the count
+      * pads[] stayed zero. That silently dropped ALL input on every platform. Seed the count
      * here (idempotent; osContInit's only side effect we depend on) so get_input is actually read. */
     osContSetCh(rdram, 4);
     osContGetReadData(pads);
@@ -436,8 +436,8 @@ void func_8007F780(uint8_t* rdram, recomp_context* ctx) {
         MEM_B(0, s) = (signed char)0xFF; MEM_B(1, s) = 0x01; MEM_B(2, s) = 0x04; MEM_B(3, s) = 0x01;
         MEM_B(4, s) = 0; MEM_B(5, s) = 0; MEM_B(6, s) = 0; MEM_B(7, s) = 0;
     }
-    /* The game reads the SI through TWO buffers carrying DIFFERENT joybus commands (#68 W120 got
-     * the menu buffer right but misread the second one; corrected #69):
+    /* The game reads the SI through TWO buffers carrying DIFFERENT joybus commands. Earlier input
+     * work got the menu buffer right but misread the second one; the Controller Pak bridge corrected this:
      *  - D_8011C640 (BOOT/MENU): controller READ frames (FF 01 04 01; cmd 0x01). Decoder
      *    func_80074DF4 does button = lhu(bytes 4,5) -- byte4 = HIGH, standard joybus order. The
      *    ROM function that stages these frames (func_8007A1E4) is an ignored no-op in the pivot,
@@ -453,9 +453,9 @@ void func_8007F780(uint8_t* rdram, recomp_context* ctx) {
     lambo_joybus_answer(rdram, buf, pads);
     /* One-shot diagnostic (env-gated -- LAMBO_INPUT_PROBE -- so it stays OUT of the default/play
      * build's hot path). It reports two things the pivot regression test asserts on:
-     *   1. that live input REACHES the game at all (buttons != 0)      -> guards the #68 W119 fix
+     *   1. that live input REACHES the game at all (buttons != 0)      -> guards input reachability
      *      (osContSetCh, without which max_controllers stayed 0 and get_input was never polled), and
-     *   2. the bytes AS WRITTEN to the destination buffer (byte4/byte5) -> guards the W120 byte-order
+     *   2. the bytes AS WRITTEN to the destination buffer (byte4/byte5) -> guards the byte-order
      *      fix (a revert would flip them, which the reach-only check could not catch). */
     if (!std_read) lambo_pak_channel_probe(rdram, buf);
     if (getenv("LAMBO_INPUT_PROBE") &&
@@ -497,7 +497,7 @@ void func_8006A8B4(uint8_t* rdram, recomp_context* ctx) {
 // is dropped. On hardware the same word gates both this engine and the Controller Pak save flow,
 // which is sound only because one physical accessory occupies the socket; the port presents a
 // Controller Pak while also driving rumble natively, so gating here would disable rumble entirely
-// (regression found in playtesting after the #105 flag-forcing revert). Everything else is the
+// (regression found after the flag-forcing workaround was reverted). Everything else is the
 // verbatim algorithm: re-register the SI event message (head), then per channel read the request:
 //   >= 0x47  hard on: start if motor off            (< 6    stop sentinel: osMotorInit re-probe,
 //                                                    stop wrapper, clear request)

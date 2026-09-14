@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 
-# Automobili Lamborghini: Recompiled — a static-recompilation PC port built on
+# Automobili Lamborghini: Recompiled - a static-recompilation PC port built on
 # N64ModernRuntime (ultramodern + librecomp) with the RT64 renderer.
 #
-# See BUILDING.md for full instructions. In short, from the repo root:
+# See BUILDING.md for the supported build sequence. In short:
 #
 #   # 1. Recompile the game code from YOUR ROM (produces RecompiledFuncs/):
 #   python3 scripts/gen_syms_toml.py
@@ -13,10 +13,8 @@ cmake_minimum_required(VERSION 3.20)
 #   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 #   cmake --build build --target lamborghini_modern -j
 #
-# Run from the repo root: the ROM path in lamborghini.us.toml is cwd-relative.
-# The RT64/plume MinGW patches (patches/0004+0005) are applied to the submodule
-# working tree on Windows; DirectX-Headers v1.614.1 is fetched at configure time.
-# RecompiledFuncs/ is gitignored — it is regenerated from your ROM (step 1).
+# The ROM path in lamborghini.us.toml is cwd-relative. The patch matrix is in
+# patches/README.md. RecompiledFuncs/ is regenerated from the supplied ROM.
 
 project(lamborghini_modern VERSION 0.5.0 LANGUAGES C CXX)
 
@@ -36,7 +34,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(N64MR ${CMAKE_CURRENT_SOURCE_DIR}/lib/N64ModernRuntime)
 include(cmake/Frontend.cmake)
 
-# --- RT64 renderer (#58: DEFAULT presenter, hard build dependency since 2026-07-02) ---
+# --- RT64 renderer boundary; see docs/reference/renderer.md ---
 # recomp/lib/rt64 is a pinned git submodule; RT64 is always compiled in and is the
 # default presenter at runtime (LAMBO_HEADLESS=1 is the harness knob that keeps the
 # headless swrender, the RDRAM-framebuffer measurement instrument for the port-vs-ares
@@ -364,7 +362,7 @@ foreach(lambo_config_thread_target
 endforeach()
 set(RT64_STATIC TRUE)
 if(WIN32)
-    # Windows (#68 native build): RT64 uses its D3D12 backend + a plain Win32 window
+    # Windows native build: RT64 uses its D3D12 backend + a plain Win32 window
     # (HWND handed over via SDL_GetWindowWMInfo in create_window_stub), so no SDL
     # Vulkan surface. SDL2 comes from rt64's own bundled Windows deps — the same
     # tree rt64's CMake points itself at (mupen64plus-win32-deps/SDL2-2.26.3).
@@ -374,7 +372,7 @@ if(WIN32)
     link_directories(${SDL2_WIN32_DEPS}/lib/x64)
     # MinGW's bundled d3d12.h is years behind the D3D12 SDK: plume needs
     # D3D12_HEAP_TYPE_GPU_UPLOAD and D3D12MemAlloc needs <dxguids.h> (its own
-    # MinGW support path, D3D12MA #71). Microsoft's DirectX-Headers package is
+    # MinGW support path). Microsoft's DirectX-Headers package is
     # the official fix and supports MinGW; put its d3d12.h AHEAD of the MinGW
     # system header and link the GUID definitions library everywhere.
     include(FetchContent)
@@ -510,7 +508,7 @@ if(FUNC_C_SOURCES OR FUNC_CXX_SOURCES)
     )
 endif()
 
-# --- Headless harness (#57): added once src/ exists ---------------------------
+# --- Headless harness: used by scripted scenarios and source-only diagnostics ---
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     # src/aspMain.cpp is RSPRecomp output (see BUILDING.md step 3); appended
     # only when present so the first configure (which builds the recompilers)
@@ -520,42 +518,42 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_vi.cpp
         src/register_overlays.cpp
         src/stub_renderer.cpp
-        src/lambo_audio.cpp    # SDL2 push-audio sink for the AI buffer (audio epic #53, PR 1 of 3)
-        src/lambo_audio_override.cpp # audio status getter override (W135)
-        src/lambo_config.cpp   # persistent graphics.json -> ultramodern GraphicsConfig (enhancements #1/#2)
+        src/lambo_audio.cpp    # SDL2 push-audio sink for the AI buffer
+        src/lambo_audio_override.cpp # audio status getter override
+        src/lambo_config.cpp   # persistent graphics.json -> GraphicsConfig
         src/lambo_player_name.cpp # remember player one's confirmed name for later name-entry screens
         src/lambo_menu.cpp     # lightweight native Win32 menu bar; live config actions + persistence
-        src/lambo_startup.cpp  # runtime-ready -> Play startup state machine (issue #126)
-        src/lambo_input_gate.cpp # controller capture/neutral-release barrier (issue #126)
+        src/lambo_startup.cpp  # runtime-ready -> Play startup state machine
+        src/lambo_input_gate.cpp # controller capture/neutral-release barrier
         src/lambo_replay.cpp
         src/lambo_replay_runtime.cpp
         src/lambo_harness_report.cpp
         src/lambo_file.cpp
-        src/lambo_analog_throttle.cpp # issue #128: atomic native-port throttle bridge + race hook
-        src/lambo_analog_brake.cpp    # issue #152: atomic native-port brake bridge + race hook
+        src/lambo_analog_throttle.cpp # host-to-guest throttle bridge + race hook
+        src/lambo_analog_brake.cpp    # host-to-guest brake bridge + race hook
         src/controls/lambo_controls.cpp
         src/ui/lambo_frontend.cpp
         src/ui/lambo_frontend_settings.cpp
         src/ui/lambo_frontend_input.cpp
-        src/lambo_crash.cpp    # native crash backtrace (issue #13 / A14): Win32 EXCEPTION_POINTERS +
+        src/lambo_crash.cpp    # native crash backtrace: Win32 EXCEPTION_POINTERS +
                                # POSIX sigaction handler printing KSEG0/RDRAM offset + a 32-entry
                                # function-lookup trace ring. No deps beyond libc + DbgHelp (Win) /
                                # libc backtrace(3) (POSIX).
         src/libultra_stubs.c   # no-op symbols for ignored libultra CP0 helpers (e.g. __osSetSR)
         src/lambo_pak_io.c
         src/lambo_pak_storage.cpp
-        src/lambo_hud_widescreen.c  # issue #2: gEXSetRectAlign brackets around the race-HUD dials
-        src/lambo_flare_widescreen.c  # issue #40: gEXSetRectAspect(STRETCH) bracket around the sun lens-flare ghosts
-        src/lambo_fog_widescreen.cpp  # issue #83: widen dense 3P/4P fog to the 1P window/colour (DL rewrite, players>=3)
-        src/lambo_sky_widescreen.cpp  # issue #84: draw the 1P/2P sky panorama in 3P/4P (patches.hook branch guard)
+        src/lambo_hud_widescreen.c  # extended-GBI alignment around race HUD elements
+        src/lambo_flare_widescreen.c  # extended-GBI aspect policy for lens flares
+        src/lambo_fog_widescreen.cpp  # wider fog policy for three/four-player views
+        src/lambo_sky_widescreen.cpp  # sky panorama policy for three/four-player views
         src/lambo_interpolation.cpp
-        src/lambo_no_lod.cpp   # issues #87/#91: emit the per-segment scenery layer in 2P-4P like 1P (patches.hook branch guards)
+        src/lambo_no_lod.cpp   # per-segment scenery policy; see docs/no_lod_audit.md
         src/lambo_no_lod_policy.cpp # measured exceptions for synthesized PVS extras
         src/lambo_track_patch.cpp # Track Lab: guarded sparse PVS corrections applied after the stock track loader
         src/lambo_camera.cpp   # sense of speed: chase-camera distance/height + FOV delta float-bit shims for the hooks
-        src/lambo_gpu_advisory.cpp  # issue #109: outdated-Intel-driver detection + user-facing fix advisory
-        src/lambo_warp.c       # issue #12: developer warp menu (F1-F6 / LAMBO_WARP race-track warp)
-        src/lambo_savestate.c  # issue #22: developer save-state (F7/F8 / LAMBO_STATE_LOAD RDRAM snapshot)
+        src/lambo_gpu_advisory.cpp  # outdated-Intel-driver detection and user advisory
+        src/lambo_warp.c       # developer warp menu (F1-F6 / LAMBO_WARP)
+        src/lambo_savestate.c  # developer RDRAM snapshot; see docs/debugging.md
         src/lambo_log.cpp      # file-first levelled logging + --console/--verbose CLI policy
         src/lambo_car_trace.c  # car-differences campaign: LAMBO_CAR_TRACE per-frame vehicle-record trace
     )
@@ -627,7 +625,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         target_link_libraries(lamborghini_modern PRIVATE RecompiledFuncs)
     endif()
 
-    # RT64 renderer (#58: default presenter; see the RT64 block above).
+    # RT64 renderer: default presenter; see the RT64 block above.
     target_sources(lamborghini_modern PRIVATE src/rt64_renderer.cpp)
     # rt64's build_pixel_shader/build_vertex_shader read ${DXC} and the DXC_*_OPTS
     # variables from the CALLER's scope (CMake evaluates unreferenced variables at call
@@ -730,7 +728,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     )
 
     if(WIN32)
-        # Per-Monitor V2 DPI awareness (issue #161): embed src/app.manifest so the
+        # Per-Monitor V2 DPI awareness: embed src/app.manifest so the
         # process gets true physical pixel dimensions at >100% display scaling --
         # without it DWM bitmap-stretches the window by the scale factor and a
         # 1600x900 window overflows 1080p screens at 175% scaling. MinGW ld has no
@@ -747,7 +745,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
                     ${CMAKE_CURRENT_SOURCE_DIR}/src/app.manifest
             COMMENT "Embedding DPI-awareness manifest (windres)")
         target_sources(lamborghini_modern PRIVATE ${LAMBO_MANIFEST_OBJ})
-        # Native crash backtrace (#13 / A14): CaptureStackBackTrace lives in
+        # Native crash backtrace: CaptureStackBackTrace lives in
         # dbghelp.dll. MinGW64 ships the import lib (libdbghelp.a) so an explicit
         # target_link_libraries entry is enough; we don't ship the DLL — the
         # system one is fine.

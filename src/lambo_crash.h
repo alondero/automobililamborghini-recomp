@@ -1,4 +1,5 @@
-// Issue #13 / A14 — peer-port cite CV:LoD src/main/main.cpp:2870-2955 @ 180fd01.
+// Native crash reporting boundary. The report format and redaction rules are
+// documented in docs/debugging.md.
 
 #ifndef LAMBO_CRASH_H
 #define LAMBO_CRASH_H

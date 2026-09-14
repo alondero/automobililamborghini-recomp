@@ -1,4 +1,4 @@
-// Widescreen lens flare (issue #40, RT64 extended GBI).
+// Widescreen lens flare using the RT64 extended-GBI aspect contract.
 //
 // The sun lens flare (emitter func_80036854) is a chain of 10 translucent "ghost"
 // texrects traced from the sun's projected screen position. Under ar_option Expand
@@ -14,7 +14,7 @@
 // the game's default (NONE) rect origins, convertViewportRect then pivots the horizontal
 // mapping about the native centre (160): a ghost's offset-from-centre in game pixels is
 // preserved into widened pixels, which is exactly where the FOV-widened 3D sun lands
-// (skybox/frustum already widen per issue #3). The scissor widens to the full frame by
+// (skybox/frustum already widen through the renderer boundary). The scissor widens to the full frame by
 // the same math. So the flare tracks the sun across the whole widescreen frame, uncropped,
 // with no coordinate arithmetic here. At 4:3 output invRatioScale is already 1.0, so the
 // bracket degenerates to a no-op (same reasoning as the HUD rect pins).

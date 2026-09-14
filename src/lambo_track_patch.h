@@ -6,9 +6,9 @@
 
 namespace lambo::track_patch {
 
-// load_package performs all file I/O, allocation, and portable-format
-// validation. A failed load leaves the previously active package unchanged;
-// callers that want no package can explicitly call disable().
+// load_package performs all file I/O, allocation, and format validation. A
+// failed load leaves the active package unchanged; callers that want no
+// package can explicitly call disable().
 enum class LoadResult {
     Loaded,
     IoError,
@@ -18,7 +18,8 @@ enum class LoadResult {
 
 // apply_to_active_track is suitable for a post-track-load or post-savestate
 // hook: it performs no allocation or file I/O. Every rejection is read-only;
-// writes occur only after the complete live PVS has passed its guards.
+// writes occur only after the complete live PVS has passed its guards. See
+// docs/modding.md for the deliberately narrow current contract.
 enum class ApplyResult {
     Disabled,
     WrongCircuit,

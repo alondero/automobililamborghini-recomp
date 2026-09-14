@@ -1,9 +1,13 @@
 # Persisted player names and records
 
-Issue #170 occurs when a persisted player name is not restored to the ROM's source
+This note records a historical player-name persistence bug: a saved name was not
+restored to the ROM's source
 buffer before a record writer runs. Loading also normalizes ASCII lowercase in
 `player.json` to the ROM keyboard's uppercase alphabet as defensive input handling.
 Record writers now restore the saved identity without requiring a visit to the editor.
+
+Status: implemented source notes with historical measurements. The record
+round trip was not rerun in this audit.
 
 The records header at `0x800A4160` is not the player's name. Do not overwrite it or
 pre-populate leaderboard rows. Both ROM record writers copy from

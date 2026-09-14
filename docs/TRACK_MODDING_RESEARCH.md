@@ -377,7 +377,7 @@ set of competitors, independent of segment count.
 
 ### 5.1 Strong binary candidate: 16-byte plane-like records
 
-The ROM scan in `tools/extract_track_data.py` found six large, exact contiguous
+An earlier external ROM scan found six large, exact contiguous
 runs of big-endian 16-byte records. Every one of 3228 records matches four
 finite floats: a non-negative scalar followed by a unit-length 3-vector.
 
@@ -669,17 +669,10 @@ Primary local sources used for this audit:
 * `tools/track_lab.py`, `src/lambo_track_patch.cpp`, and the circuit-1 runtime
   capture used to verify the active context, its 25-row PVS, and the
   post-loader hook at runtime `0x80006094`.
-* The sibling companion decomp checkout
-  `automobililamborghini-decomp/asm/race_full_functions/`, especially
-  `func_8000A6C0.s`, `func_80015044.s`, `func_800291CC.s`,
-  `func_80029628.s`, `func_8002AE94.s`, `func_8002D37C.s`, and
-  `func_80030D98.s`. This checkout is external to the recomp repository; the
-  filenames are given so the audit can be reproduced in that companion tree.
-* Companion notes `automobililamborghini-decomp/docs/notes/race_track_data.md`
-  and `automobililamborghini-decomp/docs/notes/asset_format_findings_2026-05-22.md`.
-* Companion extractor `automobililamborghini-decomp/tools/extract_track_data.py`;
-  its `--verify` scan reproduces the six large 16-byte-record boundaries listed
-  above.
+* A companion decompilation checkout was used by the earlier audit for
+  comparison. It is not part of this repository and is not available in this
+  worktree. Its function names, notes, and extractor are therefore historical
+  evidence, not runnable local sources.
 
 The next document revision should replace candidate labels with confirmed
 field names as runtime watchpoints identify consumers. Until then, preserve
