@@ -544,7 +544,7 @@ text = "lambo_ws_pin_reset(rdram);"
 # Issue #12 — developer warp menu. Per-frame warp tick at the entry of the TOP-LEVEL
 # state dispatcher func_800028D0 (runtime 0x80001CD0, argument-free, jump-table over
 # states 1..0x10, runs every frame in every state; func_800030F8 was tried first but
-# only runs in states 7/8 — too late for menu/attract warps). Consumes an F1-F6 /
+# only runs in states 7/8 — too late for menu/attract warps). Consumes a Ctrl+Shift+1-6 /
 # LAMBO_WARP request and performs the menu's own race-launch stores (cursor cluster +
 # audio quiesce + state 7) before the dispatcher reads the state word; native in
 # src/lambo_warp.c.

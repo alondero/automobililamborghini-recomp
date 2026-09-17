@@ -552,7 +552,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_track_patch.cpp # Track Lab: guarded sparse PVS corrections applied after the stock track loader
         src/lambo_camera.cpp   # sense of speed: chase-camera distance/height + FOV delta float-bit shims for the hooks
         src/lambo_gpu_advisory.cpp  # outdated-Intel-driver detection and user advisory
-        src/lambo_warp.c       # developer warp menu (F1-F6 / LAMBO_WARP)
+        src/lambo_warp.c       # developer warp menu (Ctrl+Shift+1-6 / LAMBO_WARP)
         src/lambo_savestate.c  # developer RDRAM snapshot; see docs/debugging.md
         src/lambo_log.cpp      # file-first levelled logging + --console/--verbose CLI policy
         src/lambo_car_trace.c  # car-differences campaign: LAMBO_CAR_TRACE per-frame vehicle-record trace

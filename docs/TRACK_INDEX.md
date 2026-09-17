@@ -1,4 +1,4 @@
-# Track index — circuit 0-based ↔ 1-based ↔ F-key
+# Track index — circuit 0-based ↔ 1-based ↔ warp hotkey
 
 Status: reference mapping from the ROM and menu captures. Keep this table
 aligned with the source warp table and menu labels.
@@ -11,14 +11,14 @@ only organic category the user can read off the menu: **basic** (1-3) vs **pro**
 
 ## The table
 
-| Index (0-based) | Circuit (1-based) | F-key | Tier | Authored radius (1P) | `no_lod_circuit` default | Status |
+| Index (0-based) | Circuit (1-based) | Warp key | Tier | Authored radius (1P) | `no_lod_circuit` default | Status |
 |---|---|---|---|---|---|---|
-| 0 | 1 | F1 | basic | 55000 | true (PVS synth on) | stable |
-| 1 | 2 | F2 | basic | 50000 | true (PVS synth on) | stable |
-| 2 | 3 | F3 | basic | 40000 | true (PVS synth on) | stable |
-| 3 | 4 | F4 | pro   | 45000 | **false (N64-style)** | experimental |
-| 4 | 5 | F5 | pro   | 35000 | **false (N64-style)** | experimental — city track |
-| 5 | 6 | F6 | pro   | 35000 | **false (N64-style)** | experimental |
+| 0 | 1 | Ctrl+Shift+1 | basic | 55000 | true (PVS synth on) | stable |
+| 1 | 2 | Ctrl+Shift+2 | basic | 50000 | true (PVS synth on) | stable |
+| 2 | 3 | Ctrl+Shift+3 | basic | 40000 | true (PVS synth on) | stable |
+| 3 | 4 | Ctrl+Shift+4 | pro   | 45000 | **false (N64-style)** | experimental |
+| 4 | 5 | Ctrl+Shift+5 | pro   | 35000 | **false (N64-style)** | experimental — city track |
+| 5 | 6 | Ctrl+Shift+6 | pro   | 35000 | **false (N64-style)** | experimental |
 
 So `no_lod_circuit[3..5]` is `false` by default — the PVS synth is off for the pro
 tracks, restoring the authored 10-slot PVS rows. The radius cull still runs for them
@@ -35,7 +35,7 @@ of the global multiplier so the city exactly hits N64.)
 
 ## Hotkeys / env var
 
-- **F1–F6** (dev-warp): jump straight to that circuit as a 1-player single race, 3 laps,
+- **Ctrl+Shift+1–6** (dev-warp): jump straight to that circuit as a 1-player single race, 3 laps,
   car 0. Active in any warpable state (3–8 except 7) — see `src/lambo_warp.c:68-72`.
 - **`LAMBO_WARP=N`** (env, 1-based): same launch-once warp. Use `LAMBO_WARP=5` to land
   on the city track from a cold boot.

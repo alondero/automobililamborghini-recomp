@@ -11,7 +11,7 @@
 //
 // Trigger paths (both consumed on the game thread by lambo_warp_tick, hooked at the
 // entry of the per-frame game-logic dispatcher func_800030F8, runtime 0x800024F8):
-//   - F1..F6 (SDL keyboard, published from input_sample in main.cpp): warp to that
+//   - Ctrl+Shift+1..6 (SDL keyboard, published from input_sample in main.cpp): warp to that
 //     circuit as a 1-player single race with the current defaults below.
 //   - LAMBO_WARP=circuit[:laps[:car[:players]]] (env, circuit 1-6): one-shot boot
 //     warp, fired at the first frame the game is in a warpable state.

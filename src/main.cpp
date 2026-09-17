@@ -535,12 +535,16 @@ static void input_sample() {
     if (const Uint8* ks = SDL_GetKeyboardState(nullptr)) {
 
         if (!lambo::input_gate::guest_input_suppressed()) {
-            // Developer warp menu: F1..F6 warp straight to that circuit as a
-            // 1-player single race. Edge-detected here (main thread); consumed by
-            // lambo_warp_tick on the game thread (src/lambo_warp.c).
+            // Developer warp menu: Ctrl+Shift+1..6 warp straight to that circuit as a
+            // 1-player single race. The chord keeps unmodified function keys free for
+            // player-facing bindings -- F1 toggles the settings overlay -- and stops a
+            // stray F-key press from launching a race. Edge-detected here (main thread);
+            // consumed by lambo_warp_tick on the game thread (src/lambo_warp.c).
+            const bool warp_chord = (ks[SDL_SCANCODE_LCTRL] || ks[SDL_SCANCODE_RCTRL]) &&
+                                    (ks[SDL_SCANCODE_LSHIFT] || ks[SDL_SCANCODE_RSHIFT]);
             static Uint8 warp_prev[6] = {};
             for (int i = 0; i < 6; i++) {
-                Uint8 down = ks[SDL_SCANCODE_F1 + i];
+                Uint8 down = warp_chord && ks[SDL_SCANCODE_1 + i];
                 if (down && !warp_prev[i]) lambo_warp_request(i);
                 warp_prev[i] = down;
             }
