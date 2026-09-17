@@ -1,4 +1,4 @@
-// Issue #13 / A14. See lambo_crash.h.
+// Native crash implementation. See lambo_crash.h and docs/debugging.md.
 
 // _GNU_SOURCE: makes glibc expose SIGSTKSZ as a compile-time constant
 // (without it, the POSIX install_posix alt-stack array is rejected with
@@ -372,7 +372,7 @@ void print_native_backtrace(FILE* fp, const void* const* pcs, int n, const char*
         char mbuf[112] = "";
 #if defined(LAMBO_CRASH_WIN32)
         // Module name per frame: distinguishes "our exe" from ntdll/driver
-        // DLL frames, which is what makes a field dump attributable (#80).
+        // DLL frames, which makes a field dump attributable.
         HMODULE mod = nullptr;
         if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
@@ -447,7 +447,7 @@ void final_dump_and_die(const char* reason, uint32_t vram_guess,
 
 LONG WINAPI win32_vectored_handler(EXCEPTION_POINTERS* ep) {
     DWORD code = ep->ExceptionRecord->ExceptionCode;
-    // Positive fatal list ONLY (issue #80). A VEH sees every exception
+    // Positive fatal list only. A VEH sees every exception
     // FIRST-CHANCE, before any catch/__except runs, so anything a later
     // handler would swallow is normal control flow here: C++ throws (MinGW
     // 0x20474343 "GCC ", MSVC 0xE06D7363 -- ultramodern ends guest threads
@@ -522,7 +522,7 @@ LONG WINAPI win32_vectored_handler(EXCEPTION_POINTERS* ep) {
         std::_Exit(EXIT_FAILURE);
     }
     // Raw code + faulting address in the banner: a field report with only a
-    // symbolic name ("EXCEPTION_UNKNOWN") is undiagnosable (issue #80).
+    // symbolic name ("EXCEPTION_UNKNOWN") is undiagnosable.
     char reason[128];
     std::snprintf(reason, sizeof(reason), "%s (code 0x%08lX at %p)",
                   win32_exception_name(code), (unsigned long)code,

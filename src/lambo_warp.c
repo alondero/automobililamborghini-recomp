@@ -1,5 +1,5 @@
-// Developer warp menu (issue #12, survey pattern A13: Banjo warps_table, Dr Mario
-// scene_table): jump straight to a race on any circuit without driving the menus.
+// Developer warp menu: jump straight to a race on any circuit without driving
+// the menus. The stores below mirror the measured menu transition.
 //
 // The ROM funnels every race start through one path: menu screens park their
 // selections in a cursor cluster at 0x800CE6xx, the RACE menu action quiesces audio
@@ -200,7 +200,7 @@ void lambo_warp_tick(uint8_t* rdram, recomp_context* ctx) {
 
     // 0x800CE6B4 selects the race mode the state-7 finalizer builds: 2 = single race
     // (LAP/RANK HUD), 0 = time trial (PREVIOUS/RECORD/BEST-LAP HUD, no rank). Overridable
-    // for testing the non-arcade HUD variants (issue #42); defaults to single race.
+    // for testing the non-arcade HUD variants; defaults to single race.
     const int mode = g_warp_mode_option;
     // The retail difficulty callback XORs this halfword with 1. Keep the
     // existing setting unless explicitly overridden for a controlled run.

@@ -1,4 +1,4 @@
-// MinGW/GCC COM-GUID compatibility for the native Windows build (#68).
+// MinGW/GCC COM-GUID compatibility for the native Windows build.
 //
 // Force-included (via -include) into every C++ TU of the D3D12-touching targets
 // (plume, rt64, lamborghini_modern) when compiling with MinGW GCC. Why:

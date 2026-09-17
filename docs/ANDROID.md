@@ -1,5 +1,9 @@
 # Android
 
+Status: buildable ARM64 path with device-specific limits. Device validation is
+not part of the current support claim; use the checks below before promising a
+device or driver combination.
+
 The Android build is an ARM64 APK using SDL2, RT64/Vulkan, and the same
 recompiled game/runtime as the desktop port. Minimum OS: Android 8 (API 26).
 The GPU driver must support Vulkan 1.1, descriptor indexing, and scalar block

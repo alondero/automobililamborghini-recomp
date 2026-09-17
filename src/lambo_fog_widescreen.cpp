@@ -1,4 +1,4 @@
-// #83: widen 3P/4P split-screen fog to the 1P window/colour, and (fog_scale) scale
+// Widescreen fog policy: widen 3P/4P fog to the 1P window/colour, and scale
 // fog density per track. Enhancement — rewrites the game-built display list in RDRAM
 // at the top of every send_dl (both renderers read the same RDRAM). The 3P/4P match
 // self-gates on live player count 0x800CE6A4 >= 3; the density scale applies whenever
@@ -18,7 +18,7 @@ constexpr uint8_t G_SETFOGCOLOR = 0xF8;
 constexpr uint8_t G_MW_SEGMENT  = 0x06;
 constexpr uint8_t G_MW_FOG      = 0x08;
 
-// 1P race fog, measured live (issue #83, Measurement 1):
+// 1P race fog, measured from the ROM path; see docs/no_lod_audit.md:
 //   gSPFogPosition -> fm=25600 (0x6400), fo=-25344 (s16 0x9D00) => w1 0x64009D00
 //   gDPSetFogColor -> (57,48,55) = 0x393037 in the top 24 bits (alpha preserved)
 constexpr uint32_t FOG_MW_1P   = 0x64009D00u;

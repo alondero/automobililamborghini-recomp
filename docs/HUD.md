@@ -1,6 +1,14 @@
-# HUD architecture & widescreen pinning (issue #2 findings, 2026-07-05)
+# HUD architecture and widescreen pinning
 
-Reference for anyone (human or LLM) touching HUD/2D rendering. Everything here was
+Status: historical measurement notes. The source and patch inventory are the
+current contracts; the live captures below are evidence, not a fresh runtime
+claim.
+
+Historical labels in this page refer to local investigation themes: minimap
+alignment, lens-flare aspect, split-screen HUD, split minimap, quad-split HUD,
+and renderer aspect measurements. They are not current issue requirements.
+
+Reference for anyone touching HUD/2D rendering. Everything here was
 verified live against a driven 1P race (probe printfs in the recompiled C + decoded
 frame captures of the display list). Names are splat-style (`lamborghini.syms.toml`
 name space); runtime vram = splat − 0xC00.

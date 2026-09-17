@@ -1,4 +1,4 @@
-// GPU driver advisory (issue #109): old Intel drivers trip RT64's
+// GPU driver advisory: old Intel drivers can trip RT64's
 // force-Vulkan workaround, and on Iris Xe that Vulkan driver loses the device
 // (VK_ERROR_DEVICE_LOST) -> silent black screen. Detect the condition after
 // renderer setup and tell the user what to do about it.
@@ -32,15 +32,16 @@ int lambo_gpu_intel_driver_predates_fix(uint64_t driver_version);
 
 // True for Gen12+ Intel iGPUs/dGPUs (Iris Xe, Arc), identified by the "Xe"/"Arc"
 // substring in the device name. These have no D3D12 device-removal bug, so RT64's
-// old-driver force-Vulkan (written for 6th-gen HD Graphics that DO device-remove on
-// D3D12) is wrong for them: it pushes them onto the Vulkan path that device-LOSES
-// (issue #109). patches/0010 uses the same substring test to keep them on D3D12.
+// old-driver force-Vulkan (written for 6th-gen HD Graphics that do device-remove
+// on D3D12) is wrong for them: it pushes them onto a Vulkan path that can lose
+// the device. The local renderer patch uses the same substring test to keep
+// them on D3D12.
 // NULL/empty name -> 0 (unknown, keep RT64's conservative fallback).
 int lambo_gpu_name_is_modern_intel(const char* device_name);
 
 // Classify the post-setup device state. running_vulkan reflects the API that was
 // actually chosen (after any RT64 fallback), not what the config asked for.
-// device_name distinguishes a modern Intel iGPU wrongly on Vulkan (SEVERE: the #109
+// device_name distinguishes a modern Intel iGPU wrongly on Vulkan (SEVERE:
 // device-loss black screen) from a 6th-gen part correctly on Vulkan (INFO: working,
 // driver merely old). NULL name is treated as not-modern.
 int lambo_gpu_advisory_severity(uint32_t vendor, uint64_t driver_version,

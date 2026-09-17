@@ -1,26 +1,51 @@
-<!--
-Replace this header with a 1–3 sentence summary of what the change does.
--->
+<!-- Keep the summary and evidence concrete. The human maintainer owns the
+support and architecture decisions represented by this change. -->
 
-## Why?
+## Summary
 
-Closes # <!-- required — issue this PR addresses, or "none — small cleanup" -->
+What changed, and why is it the smallest useful change?
 
-## How was it verified?
+## Scope and authority
 
-- [ ] Built clean with `build.sh` (Linux) / `build.ps1` (Windows) — no manual cmake incantation
-- [ ] Booted smoke-tested: attract → title → menu → race
-- [ ] If visual: screenshot or short clip attached / linked below
-- [ ] If config/schema: defaults preserved when fields absent in `graphics.json`
-- [ ] If new dep patch: mirrored in both `build.sh` AND `build.ps1` AND CI (`build-release.yml`)
-- [ ] If new hook into recompiled code: also mirrored in `scripts/gen_syms_toml.py` (the `PATCH_BLOCKS`-stale trap)
-- [ ] No comments that explain *what* the code does (only *why* — see `CLAUDE.md`)
-- [ ] No "🤖 Generated with Claude Code" footer in commits or PR description
+- [ ] This change is documentation-only.
+- [ ] This change changes runtime behavior.
+- [ ] This change changes a dependency patch or renderer boundary.
+- Relevant issue or design question:
+- Trade-offs needing review:
 
-## Screenshots / video
+## Verification
 
-<!-- For visual changes only. Drag into the PR or link to a gist. -->
+- Operating system:
+- Compiler/toolchain:
+- Graphics backend:
+- Release or commit tested:
+- ROM region and SHA-256, if ROM-backed:
+- Exact commands run:
+- Test results:
+- Manual checks or captures:
 
-## Risk / rollback
+## Generated and dependency state
 
-One sentence: what could break, and how to revert (commit hash, `git revert`, flag to disable, etc.).
+- [ ] No generated files were edited.
+- [ ] Generated inputs were changed and output was regenerated.
+- [ ] Generated output was freshly created for verification.
+- [ ] Dependency patches still apply through the supported scripts.
+- [ ] Upstream comparison/status was updated when a dependency behavior changed.
+
+## Documentation and limitations
+
+- Documentation files changed:
+- User-facing claim changed:
+- Known limitations:
+- Checks not run and why:
+- Logs, screenshots, or captures:
+
+## Review checklist
+
+- [ ] Guest/host ownership and thread boundaries are documented where needed.
+- [ ] Fixed guest addresses include units, byte order, and evidence.
+- [ ] Comments explain purpose or invariants rather than repeating code.
+- [ ] No private-session links, absolute machine paths, ROM bytes, or
+      unexplained foreign issue references were added.
+- [ ] python tools/check_docs.py passes when documentation changed.
+- [ ] git diff --check passes.

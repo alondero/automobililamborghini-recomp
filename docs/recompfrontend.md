@@ -1,5 +1,11 @@
 # Shared configuration frontend
 
+Status: current integration as described by src/ui and the checked-in frontend
+patch. Platform support is defined by README.md and BUILDING.md.
+
+The verification paragraphs below describe the frontend migration checks and
+their limits. They are not a replacement for a build or launch result.
+
 The game now uses RecompFrontend's settings modal, controls editor, navigation,
 player assignment and input profiles. `src/ui/lambo_frontend.cpp` is the host adapter;
 `lambo_frontend_settings.cpp` registers the port's additional settings. RT64 rendering,

@@ -16,11 +16,10 @@
 // logging/crash reporting can use the state sibling without depending on the
 // full graphics-config implementation.
 //
-// Portable mode (issue #190) keeps everything next to the game instead of on
-// the system drive, for USB/D: installs. It follows the de-facto emulator
-// convention (Dolphin, DuckStation, PCSX2, Zelda64Recomp): an empty
-// portable.txt next to the executable, or the --portable flag /
-// LAMBO_PORTABLE env var, forces the exe directory. A portable.txt in the
+// Portable mode keeps everything next to the game instead of in the platform
+// user directory. An empty portable.txt next to the executable, the
+// --portable flag, or the LAMBO_PORTABLE environment variable forces the
+// executable directory. A portable.txt in the
 // launch working directory is still honoured as a fallback so developer and
 // test runs from a build tree keep working.
 namespace lambo::paths {

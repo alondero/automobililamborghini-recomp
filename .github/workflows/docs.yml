@@ -1,0 +1,29 @@
+name: Documentation checks
+
+on:
+  push:
+    paths:
+      - "**/*.md"
+      - "tests/**"
+      - "tools/check_docs.py"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "**/*.md"
+      - "tests/**"
+      - "tools/check_docs.py"
+      - ".github/workflows/docs.yml"
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: git diff --check HEAD~1
+      - run: python tools/check_docs.py
+      - run: python -m unittest discover tests

@@ -1,5 +1,9 @@
 # Car differences: verified identities and measurement
 
+Status: historical ROM measurement notes. The measurements are retained for
+source context; treat them as evidence for the layouts documented below, not
+as a live gameplay test.
+
 The earlier six-selector campaign measured **difficulty overrides, not six
 cars**. Its car rankings, cornering groups and suggested top-speed caps are
 withdrawn. Do not use the tables in commit `f831078` for a car-selection UI.
