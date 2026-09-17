@@ -35,8 +35,8 @@ timing.
 ## Useful runtime controls
 
 The normal settings overlay opens with Esc, F1, or the controller menu button.
-For development, the keyboard circuit keys F1 through F6 select a race after
-boot. The environment form is:
+For development, the chord Ctrl+Shift+1 through Ctrl+Shift+6 selects a race
+after boot. The environment form is:
 
 ~~~text
 LAMBO_WARP=circuit[:laps[:car[:players]]]

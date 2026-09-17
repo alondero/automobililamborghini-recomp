@@ -57,7 +57,7 @@ LAMBO_TEXTURE_DUMP=/path/to/dump  ./build/lamborghini_modern
 
 Coverage is **runtime-driven**: a texture is only dumped once the game uploads it to TMEM.
 Exercise every screen and scene the pack should cover: attract/title, menus, every relevant
-HUD state, vehicles, rivals, and each track. The dev warp menu (`LAMBO_WARP`, F1–F6) reaches
+HUD state, vehicles, rivals, and each track. The dev warp (`LAMBO_WARP`, Ctrl+Shift+1–6) reaches
 race screens quickly. A scene not visited can leave its textures out of the dump.
 
 Each unique texture writes `<hash>.v5.tmem`, `<hash>.v5.tile.json` (fmt/siz/dims/tlut),
@@ -141,10 +141,10 @@ build/rt64/src/tools/texture_packer/texture_packer.exe /path/to/pack --create-pa
 
 With `developer_mode: true`, RT64's overlay opens on **F1** (Inspector) / **F4** (Replacements),
 giving a live per-draw-call texture view, "Start dumping textures", and interactive replace.
-⚠️ **Key clash:** the dev warp menu also uses F1–F6 (`src/main.cpp` polls those scancodes
-directly), so both fire at once. The config-driven dump/pack above avoids the overlay
-entirely, which is why it is the recommended path here; if you need the live inspector,
-expect the warp keys to also trigger.
+⚠️ **Key overlap:** F1 also toggles the port's own settings overlay (`src/main.cpp`), so
+with the developer overlay enabled both can respond to the key. The dev warp no longer
+competes for the function keys — it moved to Ctrl+Shift+1–6. The config-driven dump/pack
+above avoids the overlay entirely, which is why it is the recommended path here.
 
 ## Files
 
