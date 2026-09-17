@@ -141,10 +141,8 @@ build/rt64/src/tools/texture_packer/texture_packer.exe /path/to/pack --create-pa
 
 With `developer_mode: true`, RT64's overlay opens on **F1** (Inspector) / **F4** (Replacements),
 giving a live per-draw-call texture view, "Start dumping textures", and interactive replace.
-⚠️ **Key overlap:** F1 also toggles the port's own settings overlay (`src/main.cpp`), so
-with the developer overlay enabled both can respond to the key. The dev warp no longer
-competes for the function keys — it moved to Ctrl+Shift+1–6. The config-driven dump/pack
-above avoids the overlay entirely, which is why it is the recommended path here.
+The config-driven dump/pack above avoids the overlay entirely, which is why it is the
+recommended path here.
 
 ## Files
 
