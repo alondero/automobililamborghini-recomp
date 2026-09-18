@@ -17,6 +17,12 @@
 
 #define LAMBO_DL_CURSOR 0x800A39CCu
 
+// The game's task arena is roughly 31 KiB. The hook emits three commands
+// (24 bytes) plus the original instruction's 8 bytes that follow. Cap the
+// cursor at the documented arena end so a stale pointer cannot run off the
+// end of the buffer or into an unrelated RDRAM region.
+static constexpr uint32_t LAMBO_TASK_ARENA_END = 0x800A39CCu + 0x8000u;
+
 namespace {
 
 bool s_backdrop_group_open;
@@ -82,6 +88,14 @@ extern "C" void lambo_sky_extend_panorama(uint8_t* rdram) {
     const int radius = lambo_sky_column_radius(lambo_camera_sky_vertical_fov(),
         target_aspect, half(0x800CE6A4u) == 2);
     const int quad_count = 2 * (2 * radius - 2);
+    // Refuse to write if the game's display-list cursor is at or beyond the
+    // documented task arena end. The original cursor advance plus the original
+    // instruction's 8 bytes must still fit, so the early cursor cap is 32 bytes
+    // before LAMBO_TASK_ARENA_END.
+    const uint32_t cursor_before = MEM_W(0, static_cast<gpr>(static_cast<int32_t>(LAMBO_DL_CURSOR)));
+    if (cursor_before == 0 || cursor_before + 32u > LAMBO_TASK_ARENA_END) {
+        return;
+    }
     uint32_t vertex = buffer;
     const uint32_t list = buffer + quad_count * 64;
     uint32_t cursor = list;
@@ -109,7 +123,16 @@ extern "C" void lambo_sky_extend_panorama(uint8_t* rdram) {
             }
             // Same RGBA16 tile load and two F3DEX triangles as the original
             // emitter (0x8000FA48..0x8000FCDC), using vertex-cache slots 0..3.
-            command(0xFD100000u, word(textures + 0x254 + row * 32 + tile * 4));
+            // The texture pointer lives in the loaded track data; if a future
+            // ROM bump left a 0 there, the SetTextureImage would point at ROM
+            // offset 0 and the subsequent LoadTile would fault. Skip the quad
+            // and leave the original 3-column sky to cover the viewport.
+            const uint32_t tile_image = word(textures + 0x254 + row * 32 + tile * 4);
+            if (tile_image < 0x80000000u || tile_image >= 0x80800000u) {
+                vertex += 64;
+                continue;
+            }
+            command(0xFD100000u, tile_image);
             command(0xF5100000u, 0x07094060u);
             command(0xE6000000u, 0);
             command(0xF3000000u, 0x077FF080u);

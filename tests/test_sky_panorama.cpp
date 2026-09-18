@@ -68,7 +68,12 @@ int main() {
             uint32_t first_list = 0;
             for (int center = 0; center < 8; ++center) {
                 half(0x800987E0) = static_cast<int16_t>(center);
-                word(0x800A39CC) = static_cast<int32_t>(0x80400000u);
+                // Use a cursor position that lies inside the game's task arena
+                // (~31 KiB starting at 0x800A39CC) so the lambo_sky_extend_panorama
+                // cursor-bounds guard accepts it. The original test used
+                // 0x80400000, which is past the arena; the guard would skip the
+                // extension and the next assertion would fail.
+                word(0x800A39CC) = static_cast<int32_t>(0x800A4000u);
                 lambo_sky_backdrop_begin(rdram);
                 const uint32_t start = word(0x800A39CC);
                 lambo_sky_extend_panorama(rdram);
