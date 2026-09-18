@@ -16,6 +16,7 @@ IGNORED_MARKDOWN_PARTS = {
     "build",
     "build-android",
     "dist",
+    "emulators",
     "env",
     "lib",
     "node_modules",
