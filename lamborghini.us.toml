@@ -695,6 +695,12 @@ func = "func_800030F8"
 before_vram = 0x80005308
 text = "{ extern void lambo_sky_backdrop_end(uint8_t*); lambo_sky_backdrop_end(rdram); }"
 
+# Continue the original sky's horizontal tile strip before its state cleanup.
+[[patches.hook]]
+func = "func_800102D8"
+before_vram = 0x8001025C
+text = "{ extern void lambo_sky_extend_panorama(uint8_t*); lambo_sky_extend_panorama(rdram); }"
+
 # Track Lab v0 -- apply a guarded, same-size PVS correction after the stock track
 # loader has populated the active context. Companion disassembly labels this point
 # 0x80006C94; the whole-ROM recomp uses runtime addresses (splat - 0xC00), hence

@@ -30,6 +30,7 @@
 #include "lambo_config.h"
 #include "lambo_gpu_advisory.h"
 #include "lambo_hud_widescreen.h"
+#include "lambo_sky_panorama.h"
 
 extern "C" void lambo_fog_match_1p(uint8_t* rdram, uint32_t dl_addr);  // src/lambo_fog_widescreen.cpp
 
@@ -55,8 +56,7 @@ void dummy_check_interrupts() {}
 // Live swapchain handle for the widescreen HUD rect-aspect helper: the
 // game-space 2D HUD geometry shifts key off the effective rect-pin aspect, which depends
 // on the live output size and hr_option -- see lambo_ws_get_hud_rect_aspect_bits() below.
-// (The skybox no longer uses this: renderer patches 0008 and 0011 identify,
-// restore, and stretch the explicitly tagged finite backdrop independently of camera FOV.)
+// Sky coverage also reads the output aspect to extend its panorama tile strip.
 //
 // Written on the gfx thread (RT64Context ctor/dtor), read every frame on the CPU/
 // game-logic thread inside lambo_ws_get_hud_rect_aspect_bits() below -- unlike
@@ -485,6 +485,25 @@ private:
 };
 
 } // anonymous namespace
+
+extern "C" float lambo_sky_target_aspect() {
+    auto* active_app = g_lambo_active_app.load(std::memory_order_acquire);
+    if (active_app == nullptr || !active_app->sharedQueueResources) {
+        return 0.0f; // No RT64 presenter; leave the diagnostic renderer's sky alone.
+    }
+    auto& shared = *active_app->sharedQueueResources;
+    std::scoped_lock<std::mutex> lock(shared.configurationMutex);
+    switch (shared.userConfig.aspectRatio) {
+        case RT64::UserConfiguration::AspectRatio::Expand:
+            return shared.swapChainHeight > 0
+                ? std::max(4.0f / 3.0f, float(shared.swapChainWidth) / float(shared.swapChainHeight))
+                : 4.0f / 3.0f;
+        case RT64::UserConfiguration::AspectRatio::Manual:
+            return float(shared.userConfig.aspectTarget);
+        default:
+            return 4.0f / 3.0f;
+    }
+}
 
 // Effective aspect the extended-GBI HUD rect pins travel to, as raw float
 // bits. The gEXSetRectAlign HUD pins honour hr_option -- Full reaches the real edges, Clamp16x9

@@ -67,6 +67,7 @@ unsigned int scaled_bits(unsigned int authored_bits, double scale, const char* t
 double g_dist_last = -1.0;
 double g_height_last = -1.0;
 std::atomic<unsigned int> g_backdrop_projection_scale_bits{0x3F800000u};
+std::atomic<float> g_sky_vertical_fov{40.0f};
 // Bits of the scene-builder forward-view-cone cosine (a full double, NOT a
 // float round-trip: stock must restore the ROM double bit-for-bit), recomputed
 // alongside each guPerspective FOV so the cull cone tracks the rendered frustum
@@ -98,6 +99,7 @@ extern "C" unsigned int lambo_camera_fov_bits(unsigned int authored_bits) {
     std::memcpy(&authored, &authored_bits, sizeof(authored));
     const double out = lambo_clamp_vertical_fov(
         static_cast<double>(authored) + lambo::config::camera_fov_add());
+    g_sky_vertical_fov.store(static_cast<float>(out), std::memory_order_release);
     const float backdrop_scale = static_cast<float>(
         lambo_backdrop_fov_restore_scale(static_cast<double>(authored), out));
     g_backdrop_projection_scale_bits.store(float_bits(backdrop_scale),
@@ -134,6 +136,10 @@ extern "C" unsigned int lambo_camera_backdrop_projection_scale_bits() {
         LAMBO_LOG("camera", "backdrop projection restore %.4f\n", (double)scale);
     }
     return bits;
+}
+
+extern "C" float lambo_camera_sky_vertical_fov() {
+    return g_sky_vertical_fov.load(std::memory_order_acquire);
 }
 
 // Double bits of the widened forward-view-cone cosine for the scene builder's
