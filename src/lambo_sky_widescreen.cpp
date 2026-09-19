@@ -136,12 +136,19 @@ extern "C" void lambo_sky_extend_panorama(uint8_t* rdram) {
     // Keep the existing coverage envelope independent of angular motion.
     const double left = lambo_sky_panorama_at_x(-radius * 128.0, phase);
     const double right = lambo_sky_panorama_at_x((radius + 1) * 128.0, phase);
+    int quads = 0;
     for (int band = 0; band < 4; ++band) {
         const bool cap = band >= 2;
         const int row = band % 2;
         const uint16_t mirrored = static_cast<uint16_t>(half(0x80089054u + track * 4 + row * 2));
         for (int slice = static_cast<int>(std::floor(left / kSkySliceWidth));
              slice < static_cast<int>(std::ceil(right / kSkySliceWidth)); ++slice) {
+            // Do not commit a partial replacement if the coverage math ever
+            // exceeds the allocation. The guest cursor is rewound only after
+            // this loop, so returning here leaves the stock sky list intact.
+            if (++quads > max_quads) {
+                return;
+            }
             const int column = static_cast<int>(std::floor(slice / double(kSkySlicesPerTile)));
             const double u0 = std::max(left, slice * kSkySliceWidth);
             const double u1 = std::min(right, (slice + 1) * kSkySliceWidth);
