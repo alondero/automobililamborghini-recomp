@@ -551,7 +551,12 @@ text = "lambo_ws_pin_reset(rdram);"
 [[patches.hook]]
 func = "func_800028D0"
 before_vram = 0x80001CD0
-text = "{ extern void lambo_warp_tick(uint8_t*, recomp_context*); lambo_warp_tick(rdram, ctx); }"
+# State 7 replaces menu asset memory. The main loop normally permits two queued
+# graphics tasks, so defer this dispatch until its existing completion counter
+# drains. Return before the stack prologue: the main loop must keep receiving
+# task-done messages (blocking here would deadlock). Check after warp handling.
+# Guest addresses and lifetime evidence: docs/sky-panorama.md.
+text = "{ extern void lambo_warp_tick(uint8_t*, recomp_context*); lambo_warp_tick(rdram, ctx); if (MEM_H(0, (gpr)(int32_t)0x800CE6ACu) == 7 && MEM_H(0, (gpr)(int32_t)0x80098270u) > 0) return; }"
 
 # Issue #22 — developer save-state. Same top-level dispatcher (runs every frame in every
 # state), one instruction past the warp hook: N64Recomp rejects two hooks on the exact same
@@ -694,6 +699,19 @@ text = "{ extern void lambo_sky_backdrop_begin(uint8_t*); lambo_sky_backdrop_beg
 func = "func_800030F8"
 before_vram = 0x80005308
 text = "{ extern void lambo_sky_backdrop_end(uint8_t*); lambo_sky_backdrop_end(rdram); }"
+
+# Remember the tile commands after the sky matrices and material setup. The
+# native replacement commits only after validating/building its entire list.
+[[patches.hook]]
+func = "func_800102D8"
+before_vram = 0x8000F9AC
+text = "{ extern void lambo_sky_panorama_start(uint8_t*); lambo_sky_panorama_start(rdram); }"
+
+# Replace the flat strip with an angular panorama before its state cleanup.
+[[patches.hook]]
+func = "func_800102D8"
+before_vram = 0x8001025C
+text = "{ extern void lambo_sky_extend_panorama(uint8_t*); lambo_sky_extend_panorama(rdram); }"
 
 # Track Lab v0 -- apply a guarded, same-size PVS correction after the stock track
 # loader has populated the active context. Companion disassembly labels this point

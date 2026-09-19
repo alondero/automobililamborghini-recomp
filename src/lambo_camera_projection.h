@@ -18,9 +18,11 @@ inline double lambo_clamp_vertical_fov(double degrees) {
     return std::clamp(degrees, 1.0, 170.0);
 }
 
-// A finite panorama must retain its authored FOV even while the world camera is
-// widened. Return the projection multiplier which maps cot(adjusted / 2) back
-// to cot(authored / 2). Narrower cameras already overfill the panorama.
+// The finite panorama retains its authored vertical coverage even while the
+// world camera is widened. Return the Y projection multiplier mapping
+// cot(adjusted / 2) back to cot(authored / 2). Never apply this to X: that would
+// magnify heading-driven scroll. Extra panorama columns provide X coverage.
+// Narrower cameras already overfill the panorama.
 inline double lambo_backdrop_fov_restore_scale(double authored_degrees,
                                                 double adjusted_degrees) {
     if (!std::isfinite(authored_degrees) || !std::isfinite(adjusted_degrees) ||

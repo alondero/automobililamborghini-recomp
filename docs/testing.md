@@ -64,6 +64,7 @@ ctest --test-dir build -R "lambo_(controls|input|analog)"
 ctest --test-dir build -R "lambo_(controller_pak|startup_state_machine)"
 ctest --test-dir build -R "lambo_(no_lod|track_patch|interpolation)"
 ctest --test-dir build -R "lambo_rt64|lambo_audio"
+ctest --test-dir build -R "lambo_sky_(projection|panorama)|lambo_camera_projection"
 ~~~
 
 The complete list is the add_test list in CMakeLists.txt; keep this page
@@ -87,6 +88,8 @@ The interactive smoke scenario uses the RT64 presenter:
 
 ~~~bash
 python tools/run_game_scenario.py scenarios/frontend-rt64-smoke.json
+python tools/run_game_scenario.py scenarios/sky-turning-smoke.json
+python tools/run_game_scenario.py scenarios/menu-to-race-smoke.json
 ~~~
 
 It needs a display and a working graphics backend. Do not run it in a

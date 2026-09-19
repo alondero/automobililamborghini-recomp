@@ -17,10 +17,10 @@ trailing whitespace; write such a blank line as a removed/added pair instead.
 | 0005 | RT64 | MinGW compiler compatibility in the texture hasher. Windows-only. Compare with current RT64 before proposing a generic fix. |
 | 0006 | RT64 | Frame-interpolation transform matching used by this port. All desktop/Android paths that use the patch series. Needs a generic reproducer before proposing a fix. |
 | 0007 | N64ModernRuntime | Save-state thread-context relinking used by the port's developer save-state tool. Not a player quick-save guarantee. |
-| 0008 | RT64 | Project-specific skybox/backdrop behavior. Its general renderer shape may be reusable, but the Lamborghini policy belongs in the port. |
+| 0008 | RT64 | Historical zero-translation sky stretch. Kept as a patch-series input; 0011 removes the heuristic because it magnifies sky motion. |
 | 0009 | RT64 | Widescreen split-screen viewport origin used by the Lamborghini HUD path. Project-specific unless another game needs the same API. |
 | 0010 | RT64 | Intel automatic backend-selection workaround. Keep tied to a reproducible device and driver case. |
-| 0011 | RT64 | FOV-independent backdrop tag and projection behavior. Separate generic renderer behavior from Lamborghini policy before proposing a fix. |
+| 0011 | RT64 | Explicit backdrop tag, world-matched horizontal projection and independent vertical coverage. The port extends panorama tiles; see [sky motion evidence](../docs/sky-panorama.md). |
 | 0012 | N64ModernRuntime | Lazy RDRAM commitment and the source file required by this CMake build. Required on desktop and Android. |
 | 0013 | RT64 | Android cross-build support for host shader/compiler inputs. Android-only local build integration. |
 | 0014 | Plume inside RT64 | Android SDL/Vulkan window integration. Android-only. |
