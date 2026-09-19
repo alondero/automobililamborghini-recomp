@@ -60,6 +60,7 @@ status line before relying on a historical measurement.
 | [Car differences](CAR_DIFFERENCES.md) | Vehicle identity and measurement notes. |
 | [HUD notes](HUD.md) | Widescreen and HUD display-list evidence. |
 | [Interpolation](interpolation.md) | Frame interpolation behavior and regression evidence. |
+| [Sky panorama](sky-panorama.md) | Sky motion, projection coverage and task-owned panorama extensions. |
 | [No-LOD audit](no_lod_audit.md) | Historical LOD measurements and later addenda. |
 | [Rumble audit](rumble-triggers.md) | Rumble discovery and Controller Pak coexistence evidence. |
 | [Analog throttle](analog-throttle.md) | Throttle bridge measurements and tests. |

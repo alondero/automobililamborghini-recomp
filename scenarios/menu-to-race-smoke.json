@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "name": "menu-to-race-smoke",
+  "headless": false,
+  "max_vis": 3600,
+  "input": {
+    "replay": "../recordings/menu-to-race-smoke.jsonl",
+    "start_state": 6,
+    "start_delay": 0,
+    "exit_on_end": true
+  },
+  "expect": {
+    "max_state_at_least": 8,
+    "replay_complete": true,
+    "min_swaps": 600,
+    "presentation_mode": "PresentEarly"
+  }
+}
