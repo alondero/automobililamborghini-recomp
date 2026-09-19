@@ -85,9 +85,9 @@ and both current library pins.
 coverage, Apply/Discard, cross-surface fullscreen updates, legacy profile conversion,
 pre-attached SDL controllers without added events, preferred-device selection, imported
 device mappings, profile save/reload, duplicate added events, four SDL virtual controllers,
-reassignment, cross-player isolation and menu-action resolution for an unassigned
-controller. The controller-Pak test also verifies all four players' buttons and signed stick
-bytes through the actual guest Joybus bridge. The normal
+reassignment, cross-player isolation and menu-action resolution for unassigned and
+unresolved controllers. The controller-Pak test also verifies all four players' buttons
+and signed stick bytes through the actual guest Joybus bridge. The normal
 `tools/run_game_scenario.py scenarios/harness-smoke.json` checks the game/replay path.
 Native Windows overlay and race smoke checks were run for this migration. Linux, macOS,
 Android and physical-controller/haptic validation still need platform/device testing.

@@ -209,14 +209,25 @@ index 277a421..1bc650e 100644
          },
          []() {},
          recompui::ButtonStyle::Danger,
-@@ -580,12 +582,22 @@ bool check_menu_button_pressed(int profile_index, recompinput::GameInput input, int32_t event_button) {
+@@ -573,19 +575,33 @@ bool check_menu_button_pressed(int profile_index, recompinput::GameInput input, int32_t event_button) {
+ bool check_menu_button_pressed(int profile_index, recompinput::GameInput input, int32_t event_button) {
++    // A device with no resolved profile has no bindings to match.
++    if (profile_index < 0) {
++        return false;
++    }
+     auto menuBinding0 = recompinput::profiles::get_input_binding(profile_index, input, 0);
+     auto menuBinding1 = recompinput::profiles::get_input_binding(profile_index, input, 1);
+     if ((menuBinding0.input_type != recompinput::InputType::None && event_button == menuBinding0.input_id) ||
+         (menuBinding1.input_type != recompinput::InputType::None && event_button == menuBinding1.input_id)) {
+         return true;
+     }
      return false;
  }
 -
 +
 +// The controller profile that owns menu navigation for a joystick. The settings
 +// open check and the button-to-action mapping share this so both use one profile.
-+int controller_menu_profile_index(SDL_JoystickID joystick_id) {
++static int controller_menu_profile_index(SDL_JoystickID joystick_id) {
 +    if (recompinput::players::is_single_player_mode()) {
 +        return recompinput::profiles::get_sp_controller_profile_index();
 +    }
@@ -232,11 +243,11 @@ index 277a421..1bc650e 100644
      for (const auto& mapping_pair : recompui::menu_action_mapping::rml_key_to_action) {
          const auto& mapping = mapping_pair.second;
 -        if (check_menu_button_pressed(player1_profile, mapping.input, button.button)) {
-+        if (profile_index >= 0 && check_menu_button_pressed(profile_index, mapping.input, button.button)) {
++        if (check_menu_button_pressed(profile_index, mapping.input, button.button)) {
              return mapping.sdl;
          }
      }
-@@ -823,11 +841,4 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer* swap_chain_framebuffer) {
+@@ -823,11 +839,4 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer* swap_chain_framebuffer) {
                  SDL_JoystickID joystick_id = button_event->which;
 -                int profile_index;
 -                if (recompinput::players::is_single_player_mode()) {

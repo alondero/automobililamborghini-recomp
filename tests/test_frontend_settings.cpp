@@ -286,6 +286,14 @@ int main(int argc, char** argv) {
         require(cont_button_to_key(shoulder) == SDLK_F16, "unassigned controller lost tab-left");
         shoulder.button = SDL_CONTROLLER_BUTTON_RIGHTSHOULDER;
         require(cont_button_to_key(shoulder) == SDLK_F17, "unassigned controller lost tab-right");
+        // An unresolved device has no profile at all; menu actions must be inert while
+        // the profile-free D-pad fallback still works.
+        SDL_ControllerButtonEvent unknown_pad{};
+        unknown_pad.which = 9999;
+        unknown_pad.button = SDL_CONTROLLER_BUTTON_LEFTSHOULDER;
+        require(cont_button_to_key(unknown_pad) == 0, "unresolved device shoulder button produced a menu key");
+        unknown_pad.button = SDL_CONTROLLER_BUTTON_DPAD_UP;
+        require(cont_button_to_key(unknown_pad) == SDLK_UP, "unresolved device lost the d-pad fallback");
         remove_controller_state(menu_instance);
         SDL_GameControllerClose(menu_controller);
         SDL_JoystickDetachVirtual(menu_device);
