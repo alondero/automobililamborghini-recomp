@@ -17,6 +17,10 @@ std::vector<recomp::GameEntry> supported_games;
 namespace lambo::ui { void create_frontend_settings(); void refresh_frontend_settings(); }
 static void require(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
 
+// Defined in recompui's base/ui_state.cpp. Declared here so the menu-action
+// resolver's controller bindings can be checked without a render context.
+int cont_button_to_key(SDL_ControllerButtonEvent& button);
+
 int main(int argc, char** argv) {
     try {
         require(argc == 2, "pass an isolated test directory");
@@ -263,6 +267,28 @@ int main(int argc, char** argv) {
             profiles::get_n64_input(i, &buttons, &x, &y);
             require(buttons == (i == 2 ? 0 : 0x8000), "cross-player input leakage");
         }
+        // Menu actions must resolve through the pressing controller's own profile.
+        // An unassigned pad used to read player one's profile index, which this port
+        // sets to -1, so the shoulder tab buttons produced no menu action.
+        const int menu_device = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER, 6, 15, 0);
+        require(menu_device >= 0, "menu controller attach");
+        SDL_Event menu_added{};
+        menu_added.type = SDL_CONTROLLERDEVICEADDED;
+        menu_added.cdevice.which = menu_device;
+        recompinput::handle_event(menu_added);
+        const auto menu_instance = SDL_JoystickGetDeviceInstanceID(menu_device);
+        SDL_GameController* menu_controller = get_controller_from_joystick_id(menu_instance);
+        require(menu_controller != nullptr, "menu controller not registered");
+        profiles::set_input_profile_for_player(0, -1, InputDevice::Controller);
+        SDL_ControllerButtonEvent shoulder{};
+        shoulder.which = menu_instance;
+        shoulder.button = SDL_CONTROLLER_BUTTON_LEFTSHOULDER;
+        require(cont_button_to_key(shoulder) == SDLK_F16, "unassigned controller lost tab-left");
+        shoulder.button = SDL_CONTROLLER_BUTTON_RIGHTSHOULDER;
+        require(cont_button_to_key(shoulder) == SDLK_F17, "unassigned controller lost tab-right");
+        remove_controller_state(menu_instance);
+        SDL_GameControllerClose(menu_controller);
+        SDL_JoystickDetachVirtual(menu_device);
         SDL_Quit();
         std::cout << "PASS frontend settings, Apply/Discard, legacy graphics preservation and independent profiles\n";
         return 0;

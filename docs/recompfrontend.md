@@ -13,7 +13,12 @@ game-specific geometry/fog/camera fixes, replay and the guest input-release barr
 owned by the port.
 
 Open settings with F1, Escape, or the controller menu button. The same overlay is rendered
-in fullscreen. Controls > Assign players binds devices to N64 ports 1-4. At startup, player one
+in fullscreen. Inside it the D-pad or left stick moves focus, South (A) accepts, West (X) goes
+back, and the shoulder buttons switch tabs. Menu actions use the same controller profile the
+overlay opens with, so a pad can open and navigate the overlay before it is assigned to a
+player; the bindings can be changed in Controls.
+
+Controls > Assign players binds devices to N64 ports 1-4. At startup, player one
 uses the connected legacy preferred controller, or the first available controller, with
 keyboard fallback when no controller is available. Assign controllers explicitly
 before multiplayer. Separate keyboard-player profiles can be configured, but players 2-4
@@ -80,9 +85,9 @@ and both current library pins.
 coverage, Apply/Discard, cross-surface fullscreen updates, legacy profile conversion,
 pre-attached SDL controllers without added events, preferred-device selection, imported
 device mappings, profile save/reload, duplicate added events, four SDL virtual controllers,
-reassignment and cross-player isolation. The controller-Pak
-test also verifies all four players' buttons and signed stick bytes through the actual
-guest Joybus bridge. The normal
+reassignment, cross-player isolation and menu-action resolution for an unassigned
+controller. The controller-Pak test also verifies all four players' buttons and signed stick
+bytes through the actual guest Joybus bridge. The normal
 `tools/run_game_scenario.py scenarios/harness-smoke.json` checks the game/replay path.
 Native Windows overlay and race smoke checks were run for this migration. Linux, macOS,
 Android and physical-controller/haptic validation still need platform/device testing.

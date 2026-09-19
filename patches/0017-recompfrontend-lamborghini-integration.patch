@@ -209,6 +209,47 @@ index 277a421..1bc650e 100644
          },
          []() {},
          recompui::ButtonStyle::Danger,
+@@ -580,12 +582,22 @@ bool check_menu_button_pressed(int profile_index, recompinput::GameInput input, int32_t event_button) {
+     return false;
+ }
+-
++
++// The controller profile that owns menu navigation for a joystick. The settings
++// open check and the button-to-action mapping share this so both use one profile.
++int controller_menu_profile_index(SDL_JoystickID joystick_id) {
++    if (recompinput::players::is_single_player_mode()) {
++        return recompinput::profiles::get_sp_controller_profile_index();
++    }
++    auto* controller = recompinput::get_controller_from_joystick_id(joystick_id);
++    return recompinput::profiles::get_controller_profile_index_from_sdl_controller(controller);
++}
++
+ int cont_button_to_key(SDL_ControllerButtonEvent& button) {
+-    int player1_profile = recompinput::profiles::get_input_profile_for_player(0, recompinput::InputDevice::Controller);
+-
++    const int profile_index = controller_menu_profile_index(button.which);
++
+     for (const auto& mapping_pair : recompui::menu_action_mapping::rml_key_to_action) {
+         const auto& mapping = mapping_pair.second;
+-        if (check_menu_button_pressed(player1_profile, mapping.input, button.button)) {
++        if (profile_index >= 0 && check_menu_button_pressed(profile_index, mapping.input, button.button)) {
+             return mapping.sdl;
+         }
+     }
+@@ -823,11 +841,4 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer* swap_chain_framebuffer) {
+                 SDL_JoystickID joystick_id = button_event->which;
+-                int profile_index;
+-                if (recompinput::players::is_single_player_mode()) {
+-                    profile_index = recompinput::profiles::get_sp_controller_profile_index();
+-                }
+-                else {
+-                    auto controller = recompinput::get_controller_from_joystick_id(joystick_id);
+-                    profile_index = recompinput::profiles::get_controller_profile_index_from_sdl_controller(controller);
+-                }
+-
++                const int profile_index = controller_menu_profile_index(joystick_id);
++
+                 if (check_menu_button_pressed(profile_index, recompinput::GameInput::TOGGLE_MENU, cur_event.cbutton.button)) {
 diff --git a/recompui/src/config/ui_config.cpp b/recompui/src/config/ui_config.cpp
 index 6c84c05..1ad8f7b 100644
 --- a/recompui/src/config/ui_config.cpp

@@ -6,6 +6,10 @@ submodules by the build scripts or by CMake. They are not a private fork.
 The patch files are the source of truth for exact hunks. The descriptions below
 explain why each patch exists and which changes need comparison with upstream.
 
+A patch file is itself a diff, so a blank context line inside a hunk is a line
+holding one space. Adding one while editing a patch fails `git diff --check` as
+trailing whitespace; write such a blank line as a removed/added pair instead.
+
 | Patch | Dependency | Purpose and current status |
 | --- | --- | --- |
 | 0001 | N64ModernRuntime | Scheduler dispatch, audio/VI runtime behavior, and port runtime integration. Required on desktop and Android. Separate generic runtime behavior from game policy before proposing a fix. |
@@ -22,7 +26,7 @@ explain why each patch exists and which changes need comparison with upstream.
 | 0014 | Plume inside RT64 | Android SDL/Vulkan window integration. Android-only. |
 | 0015 | SDL dependency | Android USB receiver registration compatibility. Android-only. |
 | 0016 | N64ModernRuntime | Host-owned configuration storage for the frontend integration. Applied by CMake; project integration. |
-| 0017 | RecompFrontend | Host event handling and Lamborghini frontend integration. Applied by CMake; project integration. |
+| 0017 | RecompFrontend | Host event handling and Lamborghini frontend integration, including controller menu actions resolved from the pressing device instead of only player one. Applied by CMake; the player-one-only lookup still exists on upstream `main`, so this hunk is an upstream proposal candidate. |
 | 0018 | N64ModernRuntime | Game presentation behavior used by the launcher and normal game path. Applied by CMake; project integration. |
 
 ## Application matrix
