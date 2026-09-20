@@ -3,7 +3,7 @@ index 0789c20..b357fd0 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -17,7 +17,7 @@ string(COMPARE EQUAL ${CMAKE_SYSTEM_NAME} "Linux" IS_LINUX)
-
+ 
  # Project options
  include(CMakeDependentOption)
 -cmake_dependent_option(PLUME_SDL_VULKAN_ENABLED "Enable SDL Vulkan integration" OFF IS_LINUX OFF)
