@@ -78,10 +78,9 @@ The Build & Release workflow's Android job is **required**. All four signing
 secrets must be set or the entire release is blocked — Windows and Linux
 publication does not proceed without the APK, and the workflow never
 substitutes a debug key. Android build, packaging, signature, and alignment
-failures all fail the release. Configure the secrets once after the initial
-release and never rotate the release key (a different signing key prevents
-installing updates over the previous release). Back up the keystore and
-passwords securely.
+failures all fail the release. Configure the secrets **before** the initial release and never rotate the
+release key (a different signing key prevents installing updates over the
+previous release). Back up the keystore and passwords securely.
 
 The four secrets match the [`aerogauge-recomp` Android signing setup](https://github.com/alondero/aerogauge-recomp/blob/main/docs/android.md)
 one-for-one so the same machine-level signing identity model works across both

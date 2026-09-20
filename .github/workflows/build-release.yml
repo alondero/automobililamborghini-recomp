@@ -208,26 +208,31 @@ jobs:
           retention-days: 14
 
   build-android:
-    # Android signing is required for a release. All four secrets must be set
-    # or the release job is blocked; the desktop archives never ship without
-    # the APK, and the workflow never substitutes a debug key. Configure once
-    # with scripts/setup_android_signing.ps1; see docs/ANDROID.md.
+    # Android signing is required for a release. All four signing secrets
+    # and both ROM asset secrets are validated up front in Step 1 so the
+    # job fails fast (before toolchain install, before the keystore is
+    # materialised on disk) if anything is missing. The keystore is
+    # decoded to the runner's temporary directory only when the APK build
+    # step needs it, minimising the time private signing material lives
+    # on disk. Configure once with scripts/setup_android_signing.ps1;
+    # see docs/ANDROID.md.
     runs-on: ubuntu-latest
     steps:
-      - name: Check Android signing configuration
+      - name: Check release prerequisites
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ROM_ASSETS_REPO: ${{ vars.ROM_ASSETS_REPO }}
+          ROM_ASSETS_PAT: ${{ secrets.ROM_ASSETS_PAT }}
         run: |
-          for key in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+          for key in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD ROM_ASSETS_REPO ROM_ASSETS_PAT; do
             if [ -z "${!key}" ]; then
-              echo "::error::Missing $key. Configure Android release signing as described in docs/ANDROID.md."
+              echo "::error::Missing $key. Configure Android release signing (docs/ANDROID.md) or the ROM asset repo before retrying."
               exit 1
             fi
           done
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/android-release.jks"
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -249,24 +254,17 @@ jobs:
           sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build python3
           sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358'
 
-      - name: Check release prerequisites
-        env:
-          ROM_ASSETS_REPO: ${{ vars.ROM_ASSETS_REPO }}
-          ROM_ASSETS_PAT: ${{ secrets.ROM_ASSETS_PAT }}
-        run: |
-          for key in ROM_ASSETS_REPO ROM_ASSETS_PAT; do
-            if [ -z "${!key}" ]; then
-              echo "::error::Missing $key; see docs/ANDROID.md for release setup."
-              exit 1
-            fi
-          done
-
       - name: Fetch ROM from private assets repo
         uses: actions/checkout@v4
         with:
           repository: ${{ vars.ROM_ASSETS_REPO }}
           token: ${{ secrets.ROM_ASSETS_PAT }}
           path: rom-assets
+
+      - name: Decode keystore to runner temp
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/android-release.jks"
 
       - name: Build and verify signed APK
         env:
