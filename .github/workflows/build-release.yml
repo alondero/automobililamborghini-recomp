@@ -247,6 +247,15 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Override the action's default package list (tools platform-tools).
+          # The "tools" package is deprecated and sdkmanager rejects it with
+          # `Warning: Failed to find package 'tools'`, which fails the action.
+          # cmdline-tools (installed by the action itself) covers sdkmanager
+          # for the heavy packages in the next step; only platform-tools is
+          # needed because scripts/build_android.py --install shells out to
+          # $ANDROID_HOME/platform-tools/adb.
+          packages: platform-tools
 
       - name: Install build dependencies
         run: |
