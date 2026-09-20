@@ -116,7 +116,7 @@ falls through to the squeeze path → the whole composite is a centred 4:3 image
 pillarbars.
 
 Fix (two coupled pieces):
-- **RT64 (`patches/0008`)**: a new viewport-origin tag `G_EX_ORIGIN_WIDE` (`0xC00`, ≥ `NONE`
+- **RT64 (`patches/0009`)**: a new viewport-origin tag `G_EX_ORIGIN_WIDE` (`0xC00`, ≥ `NONE`
   so `movedFromOrigin()` leaves the translate untouched). A perspective viewport carrying it
   takes the wide branch in *both* gates — `rt64_projection_processor.cpp` (FOV Hor+) and
   `rt64_framebuffer_renderer.cpp` (NDC scale) — skipping the whole-width requirement. The

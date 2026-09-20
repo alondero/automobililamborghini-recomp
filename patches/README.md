@@ -17,7 +17,6 @@ trailing whitespace; write such a blank line as a removed/added pair instead.
 | 0005 | RT64 | MinGW compiler compatibility in the texture hasher. Windows-only. Compare with current RT64 before proposing a generic fix. |
 | 0006 | RT64 | Frame-interpolation transform matching used by this port. All desktop/Android paths that use the patch series. Needs a generic reproducer before proposing a fix. |
 | 0007 | N64ModernRuntime | Save-state thread-context relinking used by the port's developer save-state tool. Not a player quick-save guarantee. |
-| 0008 | RT64 | Historical zero-translation sky stretch. Kept as a patch-series input; 0011 removes the heuristic because it magnifies sky motion. |
 | 0009 | RT64 | Widescreen split-screen viewport origin used by the Lamborghini HUD path. Project-specific unless another game needs the same API. |
 | 0010 | RT64 | Intel automatic backend-selection workaround. Keep tied to a reproducible device and driver case. |
 | 0011 | RT64 | Explicit backdrop tag, world-matched horizontal projection and independent vertical coverage. The port extends panorama tiles; see [sky motion evidence](../docs/sky-panorama.md). |
@@ -33,9 +32,9 @@ trailing whitespace; write such a blank line as a removed/added pair instead.
 
 | Build path | Applies |
 | --- | --- |
-| Linux script | 0001, 0007, 0012, 0006, 0008, 0009, 0010, 0011, then 0016 through 0018 in CMake. |
+| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0018 in CMake. |
 | Windows script | The Linux set plus 0005 and 0004, then 0016 through 0018 in CMake. |
-| Android script | 0001, 0007, 0012, 0006, 0008, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0018 in CMake. |
+| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0018 in CMake. |
 
 If a patch no longer applies to its pinned submodule, stop and update the
 patch or pin as a deliberate change. Do not reset a developer's unrelated
@@ -49,8 +48,8 @@ hooks, projection policy, split-screen policy, texture paths, and defaults.
 
 The project does not maintain a private RT64 fork. The local renderer-related
 exceptions are visible in this patch list: interpolation matching (0006),
-skybox and backdrop behavior (0008 and 0011), split-screen viewport origin
-(0009), backend selection policy (0010), and platform compatibility (0004,
+backdrop behavior (0011), split-screen viewport origin (0009), backend selection
+policy (0010), and platform compatibility (0004,
 0005, 0013-0015). `src/stub_renderer.cpp` is a separate port-owned diagnostic
 renderer, not an RT64 feature.
 

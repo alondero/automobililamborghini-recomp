@@ -534,12 +534,12 @@ func = "func_80050860"
 before_vram = 0x8005027C
 text = "lambo_ws_pin_reset(rdram);"
 
-# Issue #3 — widescreen skybox is handled in the renderer (RT64), NOT here. The earlier
-# ROM-side hook that widened func_8004384C's frustum aspect was removed: it only runs when
-# the game's frame loop runs, so it left the sky wrong whenever that loop is frozen (e.g.
-# paused), and it double-widened at-infinity backgrounds on top of RT64's own aspect adjust.
-# The renderer now stretches any zero-view-translation (parallax-free) perspective backdrop
-# to fill the frame every presented frame. See patches/0008-rt64-skybox-stretch-parallaxless-backdrop.patch.
+# Issue #3 — widescreen skybox coverage is coordinated by the ROM hooks below and RT64's
+# explicit backdrop projection mode. The sky hooks tag each finite panorama projection with
+# G_EX_ASPECT_BACKDROP; patch 0011 preserves the world's horizontal FOV while restoring
+# independent vertical coverage. The native panorama replacement then supplies the extra
+# columns/caps needed for wide viewports. This keeps sky motion tied to the world projection
+# without relying on the removed zero-translation heuristic.
 
 # Issue #12 — developer warp menu. Per-frame warp tick at the entry of the TOP-LEVEL
 # state dispatcher func_800028D0 (runtime 0x80001CD0, argument-free, jump-table over
@@ -638,7 +638,7 @@ text = "lambo_flare_ws_aspect_reset(rdram);"
 # the framebuffer width, so under ar_option Expand RT64 squeezes it to the 4:3 centre and the
 # composite is pillarboxed (dark side bars). Setting gEXSetViewportAlign(G_EX_ORIGIN_WIDE)
 # makes RT64 render a tagged quadrant wide -- filling its output quarter with a Hor+-widened
-# FOV (patches/0008); it is a no-op on the already-full-width viewports. The origin is sticky
+# FOV (patches/0009); it is a no-op on the already-full-width viewports. The origin is sticky
 # global RSP state, so WIDE is set once before the scene's DL calls (0x800044DC, the cursor
 # alloc for the first gSPDisplayList of the tail) and reset at the entry of the 2D HUD
 # dispatcher func_80050860 (0x8004FC60) -- which func_800030F8 calls after emitting the whole

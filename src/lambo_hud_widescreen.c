@@ -360,7 +360,7 @@ void lambo_ws_quad_panel_reset(uint8_t* rdram) {
 // 3P/4P split-screen widescreen. Unlike the rect-align pins above
 // (which move 2D texrects), this tags the 3D quadrant VIEWPORTS: each player's view is a
 // half-width quadrant that RT64 would otherwise squeeze to the 4:3 centre (pillarbox).
-// G_EX_ORIGIN_WIDE (patches/0008) makes RT64 render a tagged viewport wide -- filling its
+// G_EX_ORIGIN_WIDE (patches/0009) makes RT64 render a tagged viewport wide -- filling its
 // output quarter with a Hor+-widened FOV -- so the bracket wraps the race renderer's
 // quadrant-scene DL call. Self-gated on the player count so 1P (full screen) and 2P
 // (top/bottom, already full width) emit nothing.
