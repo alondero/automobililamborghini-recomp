@@ -681,6 +681,15 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         target_compile_options(${frontend_target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-include>" "$<$<COMPILE_LANGUAGE:CXX>:cstdint>")
         target_include_directories(${frontend_target} PRIVATE ${SDL2_INCLUDE_DIRS})
     endforeach()
+    if(ANDROID)
+        # recompui includes SDL through the installed <SDL2/...> prefix, which the
+        # shared SDL2_INCLUDE_DIRS above (SDL's flat source include/) cannot satisfy.
+        # Linking the target supplies SDL's generated header tree and orders this
+        # compile after sdl_headers_copy has produced it. See docs/ANDROID.md; scoped
+        # to recompui because it is the only target here whose sources include SDL
+        # with the SDL2/ prefix.
+        target_link_libraries(recompui PRIVATE SDL2::SDL2)
+    endif()
     # recompui/src/renderer/rt64_render_context.cpp assigns ultramodern's
     # WindowHandle to RT64's Core::window -- a plume::RenderWindow. plume only
     # typedefs RenderWindow as SDL_Window* when PLUME_SDL_VULKAN_ENABLED is set;
