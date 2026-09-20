@@ -7,8 +7,12 @@ The patch files are the source of truth for exact hunks. The descriptions below
 explain why each patch exists and which changes need comparison with upstream.
 
 A patch file is itself a diff, so a blank context line inside a hunk is a line
-holding one space. Adding one while editing a patch fails `git diff --check` as
-trailing whitespace; write such a blank line as a removed/added pair instead.
+holding one space — exactly what `git diff` emits. Never strip that space:
+after a CRLF checkout (standard on Windows CI) a stripped blank line becomes
+a lone carriage return and `git apply` rejects the whole patch as corrupt.
+`.gitattributes` forces LF checkouts for `*.patch` and exempts their
+significant single-space lines from `git diff --check`;
+`tests/test_patch_line_endings.py` enforces both properties.
 
 | Patch | Dependency | Purpose and current status |
 | --- | --- | --- |

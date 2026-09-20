@@ -7,13 +7,13 @@ index a370cbe..8762d65 100644
  #define G_EX_ASPECT_STRETCH         0x1
  #define G_EX_ASPECT_ADJUST          0x2
 +#define G_EX_ASPECT_BACKDROP        0x3
-
+ 
  #define G_EX_VERTEX_POSITION        0x0
  #define G_EX_VERTEX_VELOCITY        0x1
 @@ -329,6 +330,14 @@ typedef union {
          0 \
      )
-
+ 
 +// The second command's word 1 was reserved by matrix-group V1. Backdrop groups
 +// use it to carry the IEEE-754 projection multiplier computed alongside the
 +// exact game FOV, keeping live configuration changes frame-consistent.
@@ -24,20 +24,20 @@ index a370cbe..8762d65 100644
 +
  #define gEXMatrixGroupSimple(cmd, id, push, proj, pos, rot, persp, vert, tile, order, edit, tc, lookat) \
      gEXMatrixGroup(cmd, id, G_EX_INTERPOLATE_SIMPLE, push, proj, pos, rot, G_EX_COMPONENT_SKIP, G_EX_COMPONENT_SKIP, persp, vert, tile, order, edit, G_EX_ASPECT_AUTO, tc, lookat)
-
+ 
 diff --git a/src/gbi/rt64_gbi_extended.cpp b/src/gbi/rt64_gbi_extended.cpp
 index 20c0d4d..13fc6ea 100644
 --- a/src/gbi/rt64_gbi_extended.cpp
 +++ b/src/gbi/rt64_gbi_extended.cpp
 @@ -4,6 +4,9 @@
-
+ 
  #include "rt64_gbi_extended.h"
-
+ 
 +#include <cmath>
 +#include <cstring>
 +
  #include "../include/rt64_extended_gbi.h"
-
+ 
  namespace RT64 {
 @@ -147,7 +150,16 @@ namespace RT64 {
              const uint8_t editable = (*dl)->p0(19, 1);
@@ -55,10 +55,10 @@ index 20c0d4d..13fc6ea 100644
 +            }
 +            state->rsp->matrixId(id, push, proj, mode, pos, rot, scale, skew, persp, vpos, vtc, tile, lookat, order, aspect, editable, projectionFovScale, idIsAddress, editGroup);
          }
-
+ 
          void matrixGroupV1(State *state, DisplayList **dl) {
 @@ -156,7 +168,10 @@ namespace RT64 {
-
+ 
          void popMatrixGroupV1(State *state, DisplayList **dl) {
              const uint8_t popCount = (*dl)->p1(0, 8);
 -            const uint8_t proj = (*dl)->p0(8, 1);
@@ -68,7 +68,7 @@ index 20c0d4d..13fc6ea 100644
 +            const uint8_t proj = (*dl)->p1(8, 1);
              state->rsp->popMatrixId(popCount, proj);
          }
-
+ 
 diff --git a/src/hle/rt64_rsp.cpp b/src/hle/rt64_rsp.cpp
 index ee2030b..8a62045 100644
 --- a/src/hle/rt64_rsp.cpp
@@ -76,11 +76,11 @@ index ee2030b..8a62045 100644
 @@ -1190,7 +1190,7 @@ namespace RT64 {
          state->updateDrawStatusAttribute(DrawAttribute::ExtendedType);
      }
-
+ 
 -    void RSP::matrixId(uint32_t id, bool push, bool proj, bool decompose, uint8_t pos, uint8_t rot, uint8_t scale, uint8_t skew, uint8_t persp, uint8_t vpos, uint8_t vtc, uint8_t tile, uint8_t lookat, uint8_t order, uint8_t aspect, uint8_t editable, bool idIsAddress, bool editGroup) {
 +    void RSP::matrixId(uint32_t id, bool push, bool proj, bool decompose, uint8_t pos, uint8_t rot, uint8_t scale, uint8_t skew, uint8_t persp, uint8_t vpos, uint8_t vtc, uint8_t tile, uint8_t lookat, uint8_t order, uint8_t aspect, uint8_t editable, float projectionFovScale, bool idIsAddress, bool editGroup) {
          assert((idIsAddress == editGroup) && "This case is not supported yet.");
-
+ 
          auto setGroupProperties = [=](TransformGroup* dstGroup, bool newGroup) {
 @@ -1208,6 +1208,7 @@ namespace RT64 {
                  dstGroup->ordering = order;
@@ -89,7 +89,7 @@ index ee2030b..8a62045 100644
 +                dstGroup->projectionFovScale = projectionFovScale;
              }
          };
-
+ 
 @@ -1247,6 +1248,13 @@ namespace RT64 {
              dstGroup->matrixId = id;
              setGroupProperties(dstGroup, true);
@@ -103,7 +103,7 @@ index ee2030b..8a62045 100644
 +            }
          }
      }
-
+ 
 @@ -1258,6 +1266,9 @@ namespace RT64 {
              count--;
              stackSize--;
@@ -113,7 +113,7 @@ index ee2030b..8a62045 100644
 +            }
          }
      }
-
+ 
 diff --git a/src/hle/rt64_rsp.h b/src/hle/rt64_rsp.h
 index 61bb3b1..0a6f761 100644
 --- a/src/hle/rt64_rsp.h
@@ -172,11 +172,11 @@ index 6b2b974..abb843f 100644
 +++ b/src/render/rt64_framebuffer_renderer.cpp
 @@ -14,6 +14,7 @@
  #include "shared/rt64_raster_params.h"
-
+ 
  #include "rt64_descriptor_sets.h"
 +#include "rt64_projection_processor.h"
  #include "rt64_render_worker.h"
-
+ 
  // TODO: Move to shared.
 @@ -1495,7 +1496,16 @@ namespace RT64 {
                  // so taking the wide branch (screenScale.x stays 1.0) lets it fill that half
@@ -209,15 +209,15 @@ index d7bf957..121c5af 100644
 +++ b/src/render/rt64_projection_processor.cpp
 @@ -3,7 +3,10 @@
  //
-
+ 
  #include "rt64_projection_processor.h"
 +#include "rt64_backdrop_projection.h"
-
+ 
 +#include <cmath>
 +
  #include "common/rt64_math.h"
  #include "hle/rt64_workload_queue.h"
-
+ 
 @@ -88,7 +91,13 @@ namespace RT64 {
              // is exactly right -- without it the quadrant, stretched to fill its output quarter,
              // would be horizontally distorted.
@@ -235,7 +235,7 @@ index d7bf957..121c5af 100644
 @@ -118,7 +127,18 @@ namespace RT64 {
                  projMatrix = workload.debuggerCamera.projMatrix;
              }
-
+ 
 -            adjustProjectionMatrix(projMatrix, projRatioScale);
 +            float backdropFovScale = 1.0f;
 +            if (fovIndependentBackdrop) {
@@ -249,7 +249,7 @@ index d7bf957..121c5af 100644
 +            else {
 +                adjustProjectionMatrix(projMatrix, projRatioScale);
 +            }
-
+ 
              interop::float4x4 &prevViewTransform = drawData.prevViewTransforms[proj.transformsIndex];
              interop::float4x4 &prevProjTransform = drawData.prevProjTransforms[proj.transformsIndex];
 @@ -126,7 +146,15 @@ namespace RT64 {
@@ -268,9 +268,9 @@ index d7bf957..121c5af 100644
 +                }
                  viewMatrix = rigidBody->lerp(p.curFrameWeight, *prevViewMatrix, curViewTransform, true);
                  prevViewTransform = rigidBody->lerp(p.prevFrameWeight, *prevViewMatrix, curViewTransform, true);
-
+ 
 @@ -166,4 +194,4 @@ namespace RT64 {
-
+ 
          bufferUploader->submit(p.worker, uploads);
      }
 -};
@@ -281,17 +281,17 @@ index 5bc3a2a..fccf412 100644
 --- a/src/render/rt64_projection_processor.h
 +++ b/src/render/rt64_projection_processor.h
 @@ -4,11 +4,29 @@
-
+ 
  #pragma once
-
+ 
 +#include <cmath>
 +
 +#include "../include/rt64_extended_gbi.h"
 +
  #include "hle/rt64_game_frame.h"
-
+ 
  #include "rt64_buffer_uploader.h"
-
+ 
  namespace RT64 {
 +    inline bool isParallaxlessView(const interop::float4x4 &viewTransform) {
 +        constexpr float translationEpsilon = 0.5f;
