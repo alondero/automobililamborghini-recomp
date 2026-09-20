@@ -73,14 +73,6 @@ jobs:
           cp "rom-assets/$ROM_FILENAME" "./$ROM_FILENAME"
           rm -rf rom-assets
 
-      - name: Reset submodules before patching
-        # Defensive: a previous run that patched partially would otherwise
-        # leave 0005 failing with "patch failed: ... rt64_optimus.cpp:8".
-        run: |
-          git -C lib/N64ModernRuntime checkout -- .
-          git -C lib/rt64 checkout -- .
-          git -C lib/rt64/src/contrib/plume checkout -- .
-
       - name: Build via shared script
         # Delegate to build.sh — the single source of truth for the build
         # sequence (submodule reset, patch apply, configure x2, build tools,
@@ -164,18 +156,6 @@ jobs:
         run: |
           Copy-Item "rom-assets\$env:ROM_FILENAME" ".\$env:ROM_FILENAME"
           Remove-Item -Recurse -Force rom-assets
-
-      - name: Reset submodules before patching
-        shell: pwsh
-        # Defensive: a previous run that patched partially would otherwise
-        # leave 0005 failing with "patch failed: ... rt64_optimus.cpp:8".
-        # autocrlf=false also neutralises CRLF the Windows runner's git
-        # might inject.
-        run: |
-          git config --global core.autocrlf false
-          git -C lib/N64ModernRuntime checkout -- .
-          git -C lib/rt64 checkout -- .
-          git -C lib/rt64/src/contrib/plume checkout -- .
 
       - name: Build via shared script
         shell: pwsh
