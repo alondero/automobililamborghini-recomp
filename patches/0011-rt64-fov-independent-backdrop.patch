@@ -204,18 +204,21 @@ index 6b2b974..abb843f 100644
 \ No newline at end of file
 +*/
 diff --git a/src/render/rt64_projection_processor.cpp b/src/render/rt64_projection_processor.cpp
-index c5dd321..121c5af 100644
+index d7bf957..121c5af 100644
 --- a/src/render/rt64_projection_processor.cpp
 +++ b/src/render/rt64_projection_processor.cpp
-@@ -3,6 +3,7 @@
+@@ -3,7 +3,10 @@
  //
 
  #include "rt64_projection_processor.h"
 +#include "rt64_backdrop_projection.h"
 
- #include <cmath>
++#include <cmath>
++
+ #include "common/rt64_math.h"
+ #include "hle/rt64_workload_queue.h"
 
-@@ -90,7 +91,13 @@ namespace RT64 {
+@@ -88,7 +91,13 @@ namespace RT64 {
              // is exactly right -- without it the quadrant, stretched to fill its output quarter,
              // would be horizontally distorted.
              const bool wideSubViewport = (viewportOrigin == G_EX_ORIGIN_WIDE);
@@ -229,34 +232,7 @@ index c5dd321..121c5af 100644
              if ((curProjGroup.aspectMode == G_EX_ASPECT_AUTO) && !wideSubViewport) {
                  FixedRect intersectionRect = proj.scissorRect;
                  if (proj.usesViewport()) {
-@@ -109,26 +116,3 @@ namespace RT64 {
--            // Skybox / at-infinity backdrop stretch (Automobili Lamborghini issue #3 follow-up):
--            // a perspective scene rendered from a camera with zero view-space translation is a
--            // rotation-only backdrop with no parallax (the game's sky billboard). Hor+-widening
--            // its FOV (the default aspect adjust below) shrinks a FINITE backdrop away from the
--            // screen edges, exposing gaps at wide aspects. A no-parallax backdrop must instead
--            // STRETCH to fill: keep the source-aspect FOV so its NDC-space extent maps to the
--            // full (wide) viewport. Detected by a rotation-only view whose translation is
--            // within a small epsilon of zero, so real 3D scenes (which carry a camera position
--            // far from the origin -- the race camera and even menu cameras) are unaffected. The
--            // sky's view translation is measured as exactly zero; the epsilon is slack for
--            // float noise, kept well below any real scene's camera offset. This runs in the
--            // render thread every presented frame, so it also covers the paused state where the
--            // game's own per-frame frustum builder (func_8004384C) is frozen.
--            if (adjustAspectRatio && (proj.type == Projection::Type::Perspective)) {
--                const interop::float4x4 &vT = drawData.viewTransforms[proj.transformsIndex];
--                const float translationEpsilon = 0.5f;
--                if ((fabsf((float)vT[3][0]) < translationEpsilon) &&
--                    (fabsf((float)vT[3][1]) < translationEpsilon) &&
--                    (fabsf((float)vT[3][2]) < translationEpsilon)) {
--                    adjustAspectRatio = false;
--                }
--            }
--
-             float projRatioScale = adjustAspectRatio ? (1.0f / p.aspectRatioScale) : 1.0f;
-             interop::float4x4 &viewMatrix = drawData.modViewTransforms[proj.transformsIndex];
-             interop::float4x4 &projMatrix = drawData.modProjTransforms[proj.transformsIndex];
-@@ -143,7 +127,18 @@ namespace RT64 {
+@@ -118,7 +127,18 @@ namespace RT64 {
                  projMatrix = workload.debuggerCamera.projMatrix;
              }
 
@@ -276,7 +252,7 @@ index c5dd321..121c5af 100644
 
              interop::float4x4 &prevViewTransform = drawData.prevViewTransforms[proj.transformsIndex];
              interop::float4x4 &prevProjTransform = drawData.prevProjTransforms[proj.transformsIndex];
-@@ -151,7 +146,15 @@ namespace RT64 {
+@@ -126,7 +146,15 @@ namespace RT64 {
                  const interop::float4x4 curViewTransform = viewMatrix;
                  const interop::float4x4 curProjTransform = projMatrix;
                  interop::float4x4 adjustedPrevProj = *prevProjMatrix;
@@ -293,7 +269,7 @@ index c5dd321..121c5af 100644
                  viewMatrix = rigidBody->lerp(p.curFrameWeight, *prevViewMatrix, curViewTransform, true);
                  prevViewTransform = rigidBody->lerp(p.prevFrameWeight, *prevViewMatrix, curViewTransform, true);
 
-@@ -191,4 +194,4 @@ namespace RT64 {
+@@ -166,4 +194,4 @@ namespace RT64 {
 
          bufferUploader->submit(p.worker, uploads);
      }
