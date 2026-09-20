@@ -171,9 +171,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'submodule update failed.' }
 
     # --- 5. Defensive submodule reset -----------------------------------------
-    # Mirrors CI's "Reset submodules before patching" — a previous partial
-    # apply would otherwise leave patches failing with "patch failed: ... file:N".
-    Write-Host "[2/5] Resetting submodules to clean state before patching..." -ForegroundColor Cyan
     # A prior run that patched only partially (or died mid-apply) would otherwise
     # break the next apply: checkout restores tracked files, but patch-created new
     # files survive as untracked and make `git apply --check` fail with "already
@@ -181,7 +178,12 @@ try {
     # alone (clean needs -ff to recurse), so `git submodule update --init` stays
     # authoritative for those. Keep this complete instead of listing patch-created
     # paths by hand: such a list drifts from patches/ every time a patch adds a file.
-    foreach ($sub in @('lib/N64ModernRuntime', 'lib/rt64', 'lib/rt64/src/contrib/plume')) {
+    # The list must cover every submodule the build patches, including the two that
+    # cmake/Frontend.cmake patches (0016/0018 on N64ModernRuntime, 0017 on
+    # RecompFrontend) - lambo_frontend_patch refuses to configure a dirty tree
+    # rather than reset it.
+    Write-Host "[2/5] Resetting submodules to clean state before patching..." -ForegroundColor Cyan
+    foreach ($sub in @('lib/N64ModernRuntime', 'lib/rt64', 'lib/rt64/src/contrib/plume', 'lib/RecompFrontend')) {
         git -C $sub checkout -- . | Out-Null
         git -C $sub clean -fd | Out-Null
     }

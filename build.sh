@@ -90,7 +90,7 @@ log ""
 log "[1/5] Initialising submodules..."
 git submodule update --init --recursive
 
-# --- 5. Defensive submodule reset (mirrors CI) ------------------------------
+# --- 5. Defensive submodule reset -------------------------------------------
 # A prior run that patched only partially (or died mid-apply) would otherwise
 # break the next apply: checkout restores tracked files, but patch-created new
 # files survive as untracked and make `git apply --check` fail with "already
@@ -98,8 +98,12 @@ git submodule update --init --recursive
 # alone (clean needs -ff to recurse), so `git submodule update --init` stays
 # authoritative for those. Keep this complete instead of listing patch-created
 # paths by hand: such a list drifts from patches/ every time a patch adds a file.
+# The list must cover every submodule the build patches, including the two that
+# cmake/Frontend.cmake patches (0016/0018 on N64ModernRuntime, 0017 on
+# RecompFrontend) — lambo_frontend_patch refuses to configure a dirty tree rather
+# than reset it.
 log "[2/5] Resetting submodules to clean state before patching..."
-for sub in lib/N64ModernRuntime lib/rt64 lib/rt64/src/contrib/plume; do
+for sub in lib/N64ModernRuntime lib/rt64 lib/rt64/src/contrib/plume lib/RecompFrontend; do
     git -C "$sub" checkout -- .
     git -C "$sub" clean -fd
 done
