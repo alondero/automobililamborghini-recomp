@@ -5,7 +5,7 @@ not part of the current support claim; use the checks below before promising a
 device or driver combination.
 
 The Android build is an ARM64 APK using SDL2, RT64/Vulkan, and the same
-recompiled game/runtime as the desktop port. Minimum OS: Android 8 (API 26).
+recompiled game/runtime as the desktop port. Minimum OS: Android 9 (API 28).
 The GPU driver must support Vulkan 1.1, descriptor indexing, and scalar block
 layout. A Vulkan version number alone does not guarantee compatibility. The APK contains no ROM. Import your own USA cartridge dump using
 the launcher; `.z64`, `.v64`, and `.n64` byte orders are accepted and the complete
