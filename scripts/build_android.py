@@ -172,7 +172,7 @@ def main():
         run(host / "bin" / f"RSPRecomp{suffix}", "aspMain.us.toml")
         run(args.cmake, "-S", ROOT, "-B", WORK / "native", "-G", "Ninja",
             f"-DCMAKE_TOOLCHAIN_FILE={ndk.as_posix()}/build/cmake/android.toolchain.cmake",
-            "-DANDROID_ABI=arm64-v8a", "-DANDROID_PLATFORM=android-26", "-DANDROID_STL=c++_shared",
+            "-DANDROID_ABI=arm64-v8a", "-DANDROID_PLATFORM=android-28", "-DANDROID_STL=c++_shared",
             "-DCMAKE_BUILD_TYPE=Release", f"-DLAMBO_HOST_TOOLS={host.as_posix()}/bin")
         run(args.cmake, "--build", WORK / "native", "--target", "lamborghini_modern", "-j", args.jobs)
     apk = package(ndk, sdk, "release" if args.release else "debug")
