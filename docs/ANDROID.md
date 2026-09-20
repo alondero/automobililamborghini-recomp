@@ -74,42 +74,46 @@ belongs in Git. Keep ROM-derived C and RSP sources ignored as on desktop.
 
 ## Release signing (one-time repository setup)
 
-The Build & Release workflow includes an Android job and attaches
-`lamborghini-recomp-android-arm64.apk` alongside the Windows and Linux archives
-when Android signing is configured. The Android job is optional for a desktop
-release: if its signing secrets are absent, Windows and Linux publication still
-proceeds and the release logs that the APK was omitted. Configure the secrets
-below before publishing a release that must include the APK. A persistent
-release key is required because a different key prevents installing updates over
-the previous release. Back up the keystore and passwords securely.
+The Build & Release workflow's Android job is **required**. All four signing
+secrets must be set or the entire release is blocked — Windows and Linux
+publication does not proceed without the APK, and the workflow never
+substitutes a debug key. Android build, packaging, signature, and alignment
+failures all fail the release. Configure the secrets **before** the initial release and never rotate the
+release key (a different signing key prevents installing updates over the
+previous release). Back up the keystore and passwords securely.
 
-Create a key locally with JDK `keytool` (it prompts for passwords):
+The four secrets match the [`aerogauge-recomp` Android signing setup](https://github.com/alondero/aerogauge-recomp/blob/main/docs/android.md)
+one-for-one so the same machine-level signing identity model works across both
+ports.
 
-```sh
-keytool -genkeypair -v -keystore android-release.jks -alias lamborghini \
-  -keyalg RSA -keysize 4096 -validity 10000
+Configure with PowerShell on Windows (uses Windows DPAPI to encrypt the
+password backup, tied to this Windows user and machine):
+
+```powershell
+./scripts/setup_android_signing.ps1
 ```
 
-Set these GitHub Actions repository secrets:
+The script generates `lamborghini-release.jks` under
+`%LOCALAPPDATA%\LamborghiniRecomp\Signing`, secures the directory with
+`icacls`, encrypts a DPAPI backup of the keystore password alongside it,
+generates the key with a CSPRNG-derived 48-byte base64 password, decodes it
+into a PKCS12 keystore via JDK `keytool`, and configures all four GitHub
+Actions repository secrets via `gh secret set`. It refuses to overwrite an
+existing backup so a second run cannot silently destroy a working release
+identity.
 
-| Secret | Value |
-| --- | --- |
-| `ANDROID_KEYSTORE_BASE64` | Base64 encoding of the complete `.jks` file |
-| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
-| `ANDROID_KEY_ALIAS` | `lamborghini` (or your existing alias) |
-| `ANDROID_KEY_PASSWORD` | Private key password |
+After it returns, retain the `.jks` file and the four secret values in a
+separate offline backup. `credentials.clixml` cannot be moved to another
+machine.
 
 The workflow also uses the existing `ROM_ASSETS_REPO` variable and
-`ROM_ASSETS_PAT` secret. If signing setup is missing, the optional Android job is
-skipped after its configuration check and the desktop release proceeds without
-an APK; it never substitutes a debug key. When signing is configured, Android
-build, packaging, signature, and alignment failures fail the release. Keystore
-material is written only to the runner's temporary directory, removed after the
-build, and excluded from artifacts.
+`ROM_ASSETS_PAT` secret. Keystore material is written only to the runner's
+temporary directory, removed after the build, and excluded from artifacts.
 
-For a local signed build, set `ANDROID_KEYSTORE_PATH` to the keystore's absolute
-path plus the three password/alias variables above, then run
-`python scripts/build_android.py --release`. Never commit signing keys or secrets.
+For a local signed build, set `ANDROID_KEYSTORE_PATH` to the keystore's
+absolute path plus the three password/alias variables above, then run
+`python scripts/build_android.py --release`. Never commit signing keys or
+secrets.
 
 APK `versionName` and `versionCode` are derived from the root CMake project version
 (`major * 1000000 + minor * 1000 + patch`). Bump that version for each new release.
