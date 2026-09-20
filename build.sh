@@ -91,15 +91,18 @@ log "[1/5] Initialising submodules..."
 git submodule update --init --recursive
 
 # --- 5. Defensive submodule reset (mirrors CI) ------------------------------
+# A prior run that patched only partially (or died mid-apply) would otherwise
+# break the next apply: checkout restores tracked files, but patch-created new
+# files survive as untracked and make `git apply --check` fail with "already
+# exists in working directory". clean removes them. Nested submodules are left
+# alone (clean needs -ff to recurse), so `git submodule update --init` stays
+# authoritative for those. Keep this complete instead of listing patch-created
+# paths by hand: such a list drifts from patches/ every time a patch adds a file.
 log "[2/5] Resetting submodules to clean state before patching..."
-git -C lib/N64ModernRuntime checkout -- .
-# checkout does not remove untracked files added by patch 0012. Remove its two
-# known targets so incremental builds return to a clean pre-patch state.
-rm -f \
-    lib/N64ModernRuntime/librecomp/include/librecomp/rdram_memory.hpp \
-    lib/N64ModernRuntime/librecomp/src/rdram_memory.cpp
-git -C lib/rt64 checkout -- .
-git -C lib/rt64/src/contrib/plume checkout -- . 2>/dev/null || true
+for sub in lib/N64ModernRuntime lib/rt64 lib/rt64/src/contrib/plume; do
+    git -C "$sub" checkout -- .
+    git -C "$sub" clean -fd
+done
 
 # --- 6. Apply Lamborghini patches (Linux: 0001, 0007, 0012, 0006, 0008, 0009, 0010, 0011) ----------------
 # Mirrors CI's Linux job exactly (workflow lines 93-95). 0001 then 0007 both

@@ -174,15 +174,17 @@ try {
     # Mirrors CI's "Reset submodules before patching" — a previous partial
     # apply would otherwise leave patches failing with "patch failed: ... file:N".
     Write-Host "[2/5] Resetting submodules to clean state before patching..." -ForegroundColor Cyan
-    git -C lib/N64ModernRuntime checkout -- . | Out-Null
-    # checkout does not remove untracked files added by patch 0012. Remove its
-    # two known targets so an incremental build returns to a genuinely clean
-    # pre-patch state instead of looking like a partial application.
-    Remove-Item -Force -ErrorAction SilentlyContinue `
-        'lib/N64ModernRuntime/librecomp/include/librecomp/rdram_memory.hpp', `
-        'lib/N64ModernRuntime/librecomp/src/rdram_memory.cpp'
-    git -C lib/rt64 checkout -- . | Out-Null
-    git -C lib/rt64/src/contrib/plume checkout -- . | Out-Null
+    # A prior run that patched only partially (or died mid-apply) would otherwise
+    # break the next apply: checkout restores tracked files, but patch-created new
+    # files survive as untracked and make `git apply --check` fail with "already
+    # exists in working directory". clean removes them. Nested submodules are left
+    # alone (clean needs -ff to recurse), so `git submodule update --init` stays
+    # authoritative for those. Keep this complete instead of listing patch-created
+    # paths by hand: such a list drifts from patches/ every time a patch adds a file.
+    foreach ($sub in @('lib/N64ModernRuntime', 'lib/rt64', 'lib/rt64/src/contrib/plume')) {
+        git -C $sub checkout -- . | Out-Null
+        git -C $sub clean -fd | Out-Null
+    }
 
     # --- 6. Apply Lamborghini patches (Windows: 0001, 0007, 0012, 0006, 0008, 0009, 0010, 0011, 0005, 0004) -
     # Mirrors CI's Windows job exactly (workflow lines 210-214). 0001 then 0007
