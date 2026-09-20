@@ -1,0 +1,10 @@
+# Dependency patches under patches/ are applied with `git apply
+# --ignore-whitespace` by build.sh, build.ps1, and scripts/build_android.py.
+# They must check out with LF endings on every platform: a blank context line
+# is a single space, and a CRLF checkout turns a stripped blank line into a
+# carriage return that `git apply` rejects as a corrupt patch
+# (Windows release builds failed on patch 0011 for exactly this reason).
+*.patch text eol=lf
+# The single-space blank context lines above are significant patch content,
+# not trailing whitespace.
+*.patch whitespace=-blank-at-eol

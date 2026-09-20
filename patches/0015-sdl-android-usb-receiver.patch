@@ -5,7 +5,7 @@ index 21a1c1d..9c5d3c8 100644
 @@ -139,6 +139,8 @@ public class HIDDeviceManager {
          return result;
      }
-
+ 
 +    // The legacy registration branch is used only below API 33.
 +    @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
      private void initializeUSB() {
@@ -21,6 +21,6 @@ index 21a1c1d..9c5d3c8 100644
 +        } else {
 +            mContext.registerReceiver(mUsbBroadcast, filter);
 +        }
-
+ 
          for (UsbDevice usbDevice : mUsbManager.getDeviceList().values()) {
              handleUsbDeviceAttached(usbDevice);
