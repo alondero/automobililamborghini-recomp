@@ -680,6 +680,19 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     foreach(frontend_target recompui recompinput rmlui_core rmlui_debugger)
         target_compile_options(${frontend_target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-include>" "$<$<COMPILE_LANGUAGE:CXX>:cstdint>")
         target_include_directories(${frontend_target} PRIVATE ${SDL2_INCLUDE_DIRS})
+        # recompui compiles recompui/src/renderer/rt64_render_context.cpp, which
+        # assigns ultramodern's WindowHandle to RT64's Core::window -- a
+        # plume::RenderWindow. plume only typedefs RenderWindow as SDL_Window* when
+        # PLUME_SDL_VULKAN_ENABLED is set; otherwise Linux/Android get the X11 /
+        # ANativeWindow form and the assignment stops compiling. rt64's own
+        # add_compile_definitions is directory-scoped to rt64, so the frontend
+        # targets need the same definitions the app target gets above.
+        if(NOT WIN32 AND NOT APPLE)
+            target_compile_definitions(${frontend_target} PRIVATE
+                PLUME_SDL_VULKAN_ENABLED
+                RT64_SDL_WINDOW_VULKAN
+            )
+        endif()
     endforeach()
     target_link_libraries(lamborghini_modern PRIVATE recompui recompinput)
     if(BUILD_TESTING)
