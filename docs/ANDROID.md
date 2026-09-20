@@ -62,6 +62,16 @@ FreeType and AdrenoTools sources, builds host recompilers and `file_to_c`, regen
 cross-compiles the native libraries, and packages a debug APK. Host DXC creates
 SPIR-V shader blobs; Android executables are never run on the build machine.
 
+RecompFrontend includes SDL through the `<SDL2/...>` prefix, which only SDL's
+generated header tree satisfies: SDL copies its public headers into
+`build-android/native/SDL/include/SDL2` and writes the generated `SDL_config.h`
+to a sibling `build-android/native/SDL/include-config-<build type>/SDL2`
+directory. The Android build therefore does not use SDL's flat source
+`include/` directory for that target; the root `CMakeLists.txt` links
+`recompui` against the SDL2 target, which both supplies that tree and orders
+the compile after `sdl_headers_copy` has produced it. A missing `SDL2/...`
+header on this platform means that wiring, not the SDL fetch.
+
 Output: `dist/lamborghini-recomp-android-arm64-debug.apk`. `--package-only`
 repackages an already compiled native build. `--install` uses `adb install -r`;
 connect one device and authorize USB debugging first. Open **Lamborghini
