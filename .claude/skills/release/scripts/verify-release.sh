@@ -16,6 +16,7 @@ VERSION="$1"
 EXPECTED_ASSETS=(
   "lamborghini-recomp-linux-x64.zip"
   "lamborghini-recomp-windows-x64.zip"
+  "lamborghini-recomp-android-arm64.apk"
 )
 
 PASS=0
