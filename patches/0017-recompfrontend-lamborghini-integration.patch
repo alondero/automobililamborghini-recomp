@@ -334,10 +334,47 @@ index 4fdf81f..ff84e45 100644
  
              return config;
 diff --git a/recompui/src/util/file.cpp b/recompui/src/util/file.cpp
-index 7ee84ed..340879c 100644
+index 7ee84ed..2f8f25c 100644
 --- a/recompui/src/util/file.cpp
 +++ b/recompui/src/util/file.cpp
-@@ -120,7 +120,10 @@ namespace recompui {
+@@ -1,7 +1,9 @@
+ #include "file.h"
+ 
+ #include <SDL.h>
++#if !defined(__ANDROID__)
+ #include "nfd.h"
++#endif
+ #include "RmlUi/Core.h"
+ 
+ #include "recompui/program_config.h"
+@@ -20,6 +22,18 @@
+ #endif
+ 
+ namespace recompui {
++#if defined(__ANDROID__)
++    // The Android build neither fetches nor links nativefiledialog-extended, so
++    // these dialogs report a cancelled selection. The launcher imports the ROM and
++    // the GPU driver through the Activity's Storage Access Framework picker.
++    static void perform_file_dialog_operation(const std::function<void(bool, const std::filesystem::path&)>& callback) {
++        callback(false, std::filesystem::path{});
++    }
++
++    static void perform_file_dialog_operation_multiple(const std::function<void(bool, const std::list<std::filesystem::path>&)>& callback) {
++        callback(false, std::list<std::filesystem::path>{});
++    }
++#else
+     static void perform_file_dialog_operation(const std::function<void(bool, const std::filesystem::path&)>& callback) {
+         nfdnchar_t* native_path = nullptr;
+         nfdresult_t result = NFD_OpenDialogN(&native_path, nullptr, 0, nullptr);
+@@ -57,6 +71,7 @@ namespace recompui {
+ 
+         callback(success, paths);
+     }
++#endif
+ 
+     std::filesystem::path file::get_app_folder_path() {
+         // directly check for portable.txt (windows and native linux binary)
+@@ -120,7 +135,10 @@ namespace recompui {
  #elif defined(__linux__) && defined(RECOMP_FLATPAK)
          return "/app/bin";
  #else
