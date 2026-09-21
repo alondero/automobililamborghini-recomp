@@ -29,7 +29,7 @@ significant single-space lines from `git diff --check`;
 | 0014 | Plume inside RT64 | Android SDL/Vulkan window integration. Android-only. |
 | 0015 | SDL dependency | Android USB receiver registration compatibility. Android-only. |
 | 0016 | N64ModernRuntime | Host-owned configuration storage for the frontend integration. Applied by CMake; project integration. |
-| 0017 | RecompFrontend | Host event handling and Lamborghini frontend integration, including controller menu actions resolved from the pressing device instead of only player one. Applied by CMake; the player-one-only lookup still exists on upstream `main`, so this hunk is an upstream proposal candidate. |
+| 0017 | RecompFrontend | Host event handling and Lamborghini frontend integration, including controller menu actions resolved from the pressing device instead of only player one. Also stubs the NFD-backed file dialogs on Android, where the build neither fetches nor links nativefiledialog-extended (see 0013); the Activity imports the ROM and GPU driver instead. Applied by CMake; the player-one-only lookup still exists on upstream `main`, so this hunk is an upstream proposal candidate. |
 | 0018 | N64ModernRuntime | Game presentation behavior used by the launcher and normal game path. Applied by CMake; project integration. |
 
 ## Application matrix
