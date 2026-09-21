@@ -15,7 +15,8 @@ The expected output is a published GitHub release at
 `https://github.com/alondero/automobililamborghini-recomp/releases/tag/<tag>`
 with `draft: false, prerelease: false` (matching v0.1.0 / v0.3.0 / v0.4.0 /
 v0.4.1 / v0.4.2 — see `references/prior-release-format.md`), the workflow's
-two build artifacts attached, and rich release-notes body replacing the
+three build artifacts (Linux, Windows, and Android) attached, and a rich
+release-notes body replacing the
 `Automated build from commit ...` placeholder.
 
 ## When to invoke
@@ -91,7 +92,8 @@ Checks, in order:
 2. Release accessible via `gh api .../releases/tags/<version>` (not 404)
 3. `html_url` ends with `releases/tag/<version>` (NOT `untagged-<id>`)
 4. `isDraft: false`, `isPrerelease: false`
-5. Both expected assets uploaded (`lamborghini-recomp-{linux,windows}-x64.zip`)
+5. All expected assets uploaded (`lamborghini-recomp-{linux,windows}-x64.zip`
+   and `lamborghini-recomp-android-arm64.apk`)
 
 If any check fails, prints a diagnostic and exits non-zero. Common failures:
 - workflow hasn't finished → re-run after a moment
