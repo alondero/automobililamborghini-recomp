@@ -103,8 +103,12 @@ If any check fails, prints a diagnostic and exits non-zero. Common failures:
 ./scripts/update-notes.sh <version> <path-to-notes.md>
 ```
 
-`gh release edit <version> --notes-file <path>` — replaces the workflow's
-placeholder notes with the rich body. The notes file should match the
+`gh release edit <version> --title <title> --notes-file <path>` — replaces the workflow's
+placeholder notes with the rich body **and** sets the release title. The
+workflow creates the release with `--title` set to the bare tag, so without this
+step the title is `v0.7.2` instead of `Automobili Lamborghini Recompiled v0.7.2`.
+The script applies the project prefix; export `RELEASE_TITLE` to override it.
+The notes file should match the
 template in `references/release-notes-template.md`.
 
 ## Variable parts (handled by Claude)
