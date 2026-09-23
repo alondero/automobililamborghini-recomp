@@ -36,7 +36,7 @@ for AdrenoTools hooks. NDK 28 supplies 16 KiB-aligned native libraries.
 
 ## Build locally
 
-Requirements: Python 3, Git, CMake 3.22+, Ninja, JDK 17, Android SDK platform 35,
+Requirements: Python 3.11 or newer, Git, CMake 3.22+, Ninja, JDK 17, Android SDK platform 35,
 build tools 35.0.0, and NDK 28.2.13676358. Windows host tools use MinGW-w64 GCC
 (put its `bin` directory on PATH); Linux uses GCC. Use native Windows CMake,
 not an MSYS CMake. Gradle 8.12 is bootstrapped by the checked-in wrapper.

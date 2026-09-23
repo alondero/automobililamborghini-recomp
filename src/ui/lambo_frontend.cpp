@@ -2,6 +2,7 @@
 #include "lambo_frontend_input.h"
 #include "lambo_frontend_overlay.h"
 #include "lambo_config.h"
+#include "lambo_mods.h"
 #include "lambo_startup.h"
 #include "recompui/recompui.h"
 #include "recompui/config.h"
@@ -25,6 +26,8 @@ void create_frontend_settings();
 void refresh_frontend_settings();
 namespace {
 std::atomic<bool> ready{false};
+std::mutex mod_error_mutex;
+std::string mod_error;
 OverlayCaptureGate overlay;
 lambo::StartupController* startup = nullptr;
 
@@ -54,6 +57,20 @@ void initialize(plume::RenderInterface* interface, plume::RenderDevice* device) 
 
 void render(plume::RenderCommandList* commands, plume::RenderFramebuffer* framebuffer) {
     std::lock_guard lock(frontend_mutex());
+    // The runtime invokes its error callback before resetting its game status.
+    // Wait for that reset before offering mod changes and an explicit retry.
+    if (!ultramodern::is_game_started()) {
+        std::string error;
+        { std::lock_guard error_lock(mod_error_mutex); error.swap(mod_error); }
+        if (!error.empty()) {
+            if (startup) startup->start_failed();
+            recompui::show_context(recompui::get_launcher_context_id(), "");
+            recompui::config::open();
+            recompui::config::set_tab("mods");
+            recompui::update_mod_list(false);
+            recompui::open_info_prompt("Unable to start with these mods", error, "OK", {}, recompui::ButtonStyle::Tertiary);
+        }
+    }
     const OverlayRequest action = overlay.take_request();
     refresh_frontend_settings();
     if (action.kind == OverlayRequestKind::Close) {
@@ -79,6 +96,7 @@ void render(plume::RenderCommandList* commands, plume::RenderFramebuffer* frameb
             case Page::Controls: id = "controls-framework"; break;
             case Page::Haptics: id = "pedals"; break;
             case Page::Player: id = "driver"; break;
+            case Page::Mods: id = "mods"; break;
             default: break;
             }
             recompui::config::set_tab(id);
@@ -107,6 +125,7 @@ void install_render_hooks() {
     recompinput::players::set_player_count_range(1, 4);
     recompinput::players::set_single_player_mode(false);
     configure_frontend_input_defaults();
+    recompui::update_game_mod_id(lambo::mods::game_id);
     create_frontend_settings();
     create_frontend_pedal_settings();
     const bool new_profiles = !std::filesystem::exists(lambo::config::app_config_dir() / "controls-framework.json");
@@ -152,6 +171,7 @@ void install_render_hooks() {
             context.create_element<recompui::Button>(container, label, recompui::ButtonStyle::Primary)->add_pressed_callback(action);
         };
         button("Play", [] { if (startup && startup->request_play()) recompui::hide_all_contexts(); });
+        button("Mods", [] { recompui::config::open(); recompui::config::set_tab("mods"); });
         button("Settings", [] { recompui::config::open(); });
         button("Assign 1-4 players", [] { recompinput::playerassignment::start(); });
     });
@@ -159,10 +179,8 @@ void install_render_hooks() {
 }
 
 bool handle_event(const SDL_Event& event) {
-    // No mod loader is enabled by this migration. Do not route dropped files
-    // into the frontend's mod installer (whose tab is deliberately absent).
-    if (event.type == SDL_DROPFILE || event.type == SDL_DROPTEXT) { SDL_free(event.drop.file); return true; }
-    if (event.type == SDL_DROPBEGIN || event.type == SDL_DROPCOMPLETE) return true;
+    // SDL owns dropped text; the shared installer owns file-drop payloads.
+    if (event.type == SDL_DROPTEXT) { SDL_free(event.drop.file); return true; }
     SDL_Event copy = event;
     recompinput::handle_event(copy);
     return captures_input();
@@ -174,6 +192,11 @@ void open_graphics() { request(Page::Graphics); }
 void open_enhancements() { request(Page::Enhancements); }
 void open_haptics() { request(Page::Haptics); }
 void open_player() { request(Page::Player); }
+void open_mods() { request(Page::Mods); }
+void report_mod_load_error(const char* message) {
+    std::lock_guard lock(mod_error_mutex);
+    mod_error = message;
+}
 void close_top_page() { overlay.request_close(); }
 void toggle_settings() { if (captures_input()) close_top_page(); else open_settings(); }
 bool is_initialized() { return ready.load(std::memory_order_acquire); }

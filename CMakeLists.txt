@@ -45,6 +45,11 @@ if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/CMakeLists.txt)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(lambo_mod_api_tests tests/test_mod_api.cpp src/lambo_mod_api.cpp)
+    target_include_directories(lambo_mod_api_tests PRIVATE src
+        ${N64MR}/N64Recomp/include ${N64MR}/librecomp/include ${N64MR}/ultramodern/include)
+    add_test(NAME lambo_mod_logging COMMAND lambo_mod_api_tests)
+
     add_executable(lambo_vi_context_tests tests/test_vi_context.cpp src/lambo_vi.cpp)
     target_include_directories(lambo_vi_context_tests PRIVATE src)
     add_test(NAME lambo_vi_context COMMAND lambo_vi_context_tests)
@@ -508,6 +513,11 @@ if(FUNC_C_SOURCES OR FUNC_CXX_SOURCES)
 
     target_compile_options(RecompiledFuncs PRIVATE
         -fno-strict-aliasing
+        # Runtime mod replacement writes a 12-byte x64 / 16-byte ARM64 jump.
+        # Reserve space even for tiny stubs and preserve separate entrypoints.
+        -fpatchable-function-entry=16
+        -falign-functions=16
+        $<$<C_COMPILER_ID:GNU>:-fno-ipa-icf>
         -ggdb
         -Wno-unused-variable
         # implicit-function-declaration is a C-only diagnostic; lookup.cpp is C++.
@@ -537,6 +547,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_player_name.cpp # remember player one's confirmed name for later name-entry screens
         src/lambo_menu.cpp     # lightweight native Win32 menu bar; live config actions + persistence
         src/lambo_startup.cpp  # runtime-ready -> Play startup state machine
+        src/lambo_mods.cpp
+        src/lambo_mod_api.cpp
         src/lambo_input_gate.cpp # controller capture/neutral-release barrier
         src/lambo_replay.cpp
         src/lambo_replay_runtime.cpp
@@ -587,6 +599,23 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     else()
         add_executable(lamborghini_modern ${LAMBO_SOURCES})
     endif()
+    find_program(LAMBO_PYTHON_EXECUTABLE NAMES python python3 REQUIRED)
+    execute_process(COMMAND ${LAMBO_PYTHON_EXECUTABLE} -c
+        "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)"
+        RESULT_VARIABLE LAMBO_PYTHON_VERSION_RESULT)
+    if(NOT LAMBO_PYTHON_VERSION_RESULT EQUAL 0)
+        message(FATAL_ERROR "Python 3.11 or newer is required for mod patch metadata; set LAMBO_PYTHON_EXECUTABLE")
+    endif()
+    set(LAMBO_MOD_GUARDS ${CMAKE_CURRENT_BINARY_DIR}/generated/lambo_mod_patch_guards.inc)
+    add_custom_command(OUTPUT ${LAMBO_MOD_GUARDS}
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_mod_patch_guards.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/lamborghini.us.toml
+            ${CMAKE_CURRENT_SOURCE_DIR}/lamborghini.syms.toml ${LAMBO_MOD_GUARDS}
+        DEPENDS scripts/gen_mod_patch_guards.py lamborghini.us.toml lamborghini.syms.toml
+        VERBATIM)
+    target_sources(lamborghini_modern PRIVATE ${LAMBO_MOD_GUARDS})
+    target_include_directories(lamborghini_modern PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
+
     target_compile_definitions(lamborghini_modern PRIVATE
         HLSL_CPU
         LAMBO_VERSION="${PROJECT_VERSION}"

@@ -76,14 +76,15 @@ raw MPK/PAK files, four-controller MPK files, Mupen64Plus-Next SRM files, and
 DexDrive N64 files. Drag a save onto the executable or use the import-save
 option. The source file is not changed.
 
-## Texture packs and track changes
+## Mods, texture packs and track changes
 
-The port can load a texture pack. It does not ship replacement artwork.
+The launcher and Settings include a Mods tab for code mods and texture packs.
+Code packages must target Lamborghini Recompiled. See [Modding](docs/modding.md).
+The port does not ship replacement artwork.
 See [Texture packs](docs/TEXTURES.md).
 
 Track Lab can apply experimental visibility corrections to stock tracks. It
-does not support general custom tracks, collision, navigation, AI, or game-code
-mods. See [Modding](docs/modding.md) and [Track Lab](docs/TRACK_LAB.md).
+does not support general custom tracks, collision, navigation, or AI. See [Modding](docs/modding.md) and [Track Lab](docs/TRACK_LAB.md).
 
 ## Known limits
 
@@ -92,7 +93,7 @@ mods. See [Modding](docs/modding.md) and [Track Lab](docs/TRACK_LAB.md).
 - Android is an experimental build target. No current APK or Android device
   verification is part of the support claim.
 - No current macOS release or end-to-end support claim is documented.
-- Texture packs and Track Lab are narrower than a general mod system.
+- Mod support is experimental; port-patched functions have hook restrictions.
 - The port is in progress. A problem may depend on the graphics driver,
   controller, save format, or platform.
 

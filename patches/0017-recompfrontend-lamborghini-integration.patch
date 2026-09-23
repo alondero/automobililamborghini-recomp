@@ -71,7 +71,7 @@ index c76a1dc..08c7c4d 100644
          ControllerGUID guid = profiles::get_guid_from_sdl_controller(controller);
          if (profiles::get_controller_by_guid(guid) < 0) {
              if (players::is_single_player_mode()) {
-@@ -246,6 +249,19 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
+@@ -246,6 +249,20 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
      return false;
  }
  
@@ -82,8 +82,9 @@ index c76a1dc..08c7c4d 100644
 +void finish_events() {
 +    binding::stop_skipping_events();
 +    static bool started = false;
-+    if (!started && ultramodern::is_game_started()) {
-+        started = true;
++    const bool now_started = ultramodern::is_game_started();
++    if (started != now_started) {
++        started = now_started;
 +        recompui::process_game_started();
 +    }
 +}
@@ -386,3 +387,29 @@ index 7ee84ed..2f8f25c 100644
  #endif
      }
  
+diff --git a/recompui/src/composites/ui_mod_menu.cpp b/recompui/src/composites/ui_mod_menu.cpp
+index 02455fd..55d55dd 100644
+--- a/recompui/src/composites/ui_mod_menu.cpp
++++ b/recompui/src/composites/ui_mod_menu.cpp
+@@ -639,17 +639,14 @@ void ModMenu::process_event(const Event &e) {
+             mods_dirty = false;
+             mod_scan_queued = false;
+         }
+-        if (ultramodern::is_game_started()) {
+-            install_mods_button->set_enabled(false);
+-            refresh_button->set_enabled(false);
+-        }
++        // A failed mod load returns to the launcher; restore its controls too.
++        install_mods_button->set_enabled(!ultramodern::is_game_started());
++        refresh_button->set_enabled(!ultramodern::is_game_started());
+         if (active_mod_index != -1) {        
+             bool auto_enabled = recomp::mods::is_mod_auto_enabled(mod_details[active_mod_index].mod_id);
+             bool deprecated = recomp::mods::is_mod_deprecated(mod_details[active_mod_index].mod_id, mod_details[active_mod_index].version);
+             bool toggle_enabled = !auto_enabled && !deprecated && (mod_details[active_mod_index].runtime_toggleable || !ultramodern::is_game_started());
+-            if (!toggle_enabled) {
+-                mod_details_panel->disable_toggle();
+-            }
++            mod_details_panel->get_enable_toggle()->set_enabled(toggle_enabled);
+         }
+     }
+ }

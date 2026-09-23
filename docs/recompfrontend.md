@@ -33,6 +33,7 @@ controller profile choices persist.
 | Graphics | Resolution, 1/2/3/4x downsampling, aspect, HUD placement, window mode, original/display/manual presentation rate, MSAA through 8x, HPFB, graphics API, developer overlay, initial window dimensions, texture pack/dump paths | Existing `graphics.json`, Apply/Discard |
 | Enhancements | Multiplayer fog/sky matching, full geometry and six circuit switches, draw distance, fog density, camera distance/height/FOV | Existing `graphics.json`, immediate |
 | Controls | N64 button/stick remapping, keyboard/controller profiles, 1-4 player assignment | Framework `controls-framework.json` |
+| Mods | Package installation, enable/disable, ordering, per-mod settings | Runtime `mods.json` and `mod_config/` |
 | Driver | Driver-one name, startup launcher preference | Existing `player.json` and `graphics.json` |
 | Pedals | Analog/digital throttle and brake, source axis/direction, deadzone and saturation | Framework `pedals.json`, Apply/Discard |
 
@@ -63,8 +64,8 @@ then lives separately and applies to the controller assigned to player one, cons
 the existing player-one analog race hooks. N64 digital bindings remain available in menus.
 This does not add new analog gameplay mechanics to players 2-4.
 
-This migration does not enable the mod loader, add a ROM picker, or add an unconnected sound
-tab. The existing launcher/ROM selection policy and audio sink are retained.
+The subsequent [mod integration](modding.md) enables the shared mod loader and Mods tab.
+The existing launcher/ROM selection policy and audio sink are retained.
 
 ## Building and checking
 

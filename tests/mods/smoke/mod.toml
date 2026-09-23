@@ -1,0 +1,14 @@
+[manifest]
+id = "lambo_mod_smoke"
+version = "1.0.0"
+display_name = "Mod execution smoke test"
+description = "Writes one boot-hook marker to the log. Developer test only."
+authors = ["Lamborghini Recompiled contributors"]
+game_id = "lamborghini"
+minimum_recomp_version = "0.5.0"
+
+[inputs]
+elf_path = "../../../build/mod-smoke/smoke.elf"
+mod_filename = "lambo_mod_smoke"
+func_reference_syms_file = "../../../lamborghini.syms.toml"
+data_reference_syms_files = []

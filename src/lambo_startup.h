@@ -37,6 +37,9 @@ public:
     // Requests the first graphical Play transition. Repeated requests are safe
     // and return false after startup begins.
     bool request_play();
+    // A rejected mod load returns the runtime to its pre-game state. Retry is
+    // always explicit, including after a failed automatic launch.
+    void start_failed();
 
     // Explicit application shutdown, including a launcher quit before the first
     // VI, is distinct from a failed boot probe.

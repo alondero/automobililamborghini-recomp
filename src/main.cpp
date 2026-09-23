@@ -50,6 +50,7 @@
 #include "lambo_rt64.h"
 #include "lambo_audio.h"
 #include "lambo_config.h"
+#include "lambo_mods.h"
 #include "lambo_paths.h"
 #include "lambo_crash.h"   // native crash reporting
 #include "lambo_gpu_advisory.h"  // graphics-driver advisory
@@ -228,6 +229,11 @@ static RspUcodeFunc* get_rsp_microcode_stub(const OSTask* task) {
 
 static void message_box_stub(const char* msg) {
     LAMBO_LOG("probe", "message_box: %s\n", msg);
+    if (std::strncmp(msg, "Error loading mods:", 19) == 0) {
+        lambo::mods::discard_failed_load();
+        if (!lambo_rt64::enabled()) harness_summary_and_exit("mod_load_failed", 2);
+        lambo::ui::report_mod_load_error(msg);
+    }
 }
 
 // Input — defined below in the input section; used by the window/pump callbacks above them.
@@ -351,6 +357,7 @@ static void update_gfx_stub(void* /*gfx_data*/) {
                 else if (page == "graphics") lambo::ui::open_graphics();
                 else if (page == "enhancements") lambo::ui::open_enhancements();
                 else if (page == "haptics") lambo::ui::open_haptics();
+                else if (page == "mods") lambo::ui::open_mods();
                 else if (page == "player") lambo::ui::open_player();
                 else if (page == "launcher") lambo::ui::open_launcher();
             } else if (g_startup_controller->mode() == lambo::StartupMode::InteractiveLauncher) {
@@ -935,6 +942,7 @@ static int application_main(int argc, char** argv) {
     game.rom_hash          = 0x525201d7279f34e3ULL; // XXH3_64(big-endian .z64, padded to /4)
     game.internal_name     = "LAMBORGHINI         "; // ROM header name @0x20 (20 bytes)
     game.game_id           = u8"lamborghini.us";
+    game.mod_game_id       = lambo::mods::game_id;
     game.display_name      = "Automobili Lamborghini";
     game.is_enabled        = true;
     game.entrypoint_address = (gpr)(int32_t)0x80000400u;
@@ -942,6 +950,7 @@ static int application_main(int argc, char** argv) {
     game.on_init_callback  = on_init_cb;
     game.thread_create_callback = thread_create_cb;
     recomp::register_game(game);
+    lambo::mods::register_content();
 
     std::u8string game_id = u8"lamborghini.us";
     recomp::RomValidationError verr = recomp::select_rom(rom_path, game_id);
