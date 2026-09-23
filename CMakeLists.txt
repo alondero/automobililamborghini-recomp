@@ -54,8 +54,10 @@ if(BUILD_TESTING)
     target_include_directories(lambo_vi_context_tests PRIVATE src)
     add_test(NAME lambo_vi_context COMMAND lambo_vi_context_tests)
 
-    add_executable(lambo_mods_rtz_tests tests/test_mods_rtz.cpp)
-    target_include_directories(lambo_mods_rtz_tests PRIVATE src)
+    # Links the production lambo_mods.cpp against test fakes for the runtime
+    # mod API (tests/fakes); production builds use the submodule headers.
+    add_executable(lambo_mods_rtz_tests tests/test_mods_rtz.cpp src/lambo_mods.cpp)
+    target_include_directories(lambo_mods_rtz_tests PRIVATE src tests/fakes)
     add_test(NAME lambo_mods_rtz_container COMMAND lambo_mods_rtz_tests)
 
     find_program(LAMBO_PYTHON_EXECUTABLE NAMES python python3)
