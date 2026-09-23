@@ -236,7 +236,7 @@ static void message_box_stub(const char* msg) {
     }
 }
 
-// Input â€” defined below in the input section; used by the window/pump callbacks above them.
+// Input — defined below in the input section; used by the window/pump callbacks above them.
 static void input_sample();
 static void rumble_apply();  // rumble-pak sink; defined in the input section below
 static std::atomic<uint32_t> g_multiplayer_snapshot[4]{};
