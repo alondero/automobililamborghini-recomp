@@ -38,8 +38,8 @@ Developers need evidence, ownership, and exact boundaries.
   comparison workflow, and reproducible investigations.
 - [Configuration reference](configuration.md) lists persistent files and
   environment overrides.
-- [Modding](modding.md) states what texture and track support can do today and
-  what proper code mod support would require.
+- [Modding](modding.md) explains package installation, code-hook restrictions,
+  texture priority, and the developer smoke package.
 - [Glossary](glossary.md) translates project terms into plain English.
 - [Patch inventory](../patches/README.md) describes every local dependency
   patch.
@@ -70,6 +70,9 @@ status line before relying on a historical measurement.
 | [Android guide](ANDROID.md) | ARM64 build, launcher, signing, and device limits. |
 
 ## Reference pages
+
+- [Mod support comparison](mod-support-research.md) records the Banjo and
+  Donkey Kong runtime, frontend, and authoring patterns used by this integration.
 
 - [Peer-project comparison](peer-projects.md) records durable documentation
   patterns from official reference projects and marks hands-on claims that have

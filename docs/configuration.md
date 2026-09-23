@@ -25,6 +25,8 @@ The main configuration and save files are:
 | controls.json | legacy port import | Read as an import source when the framework profile does not exist. It is not the current writer. |
 | player.json | port | Driver name and player identity. |
 | pedals.json | frontend/port integration | Pedal bindings and settings. |
+| mods.json | runtime | Enabled mods and package order. |
+| mod_config/ | runtime | Individual mod configuration. |
 | general.json | frontend | General frontend settings. |
 | lambo_controller_pak.mpk | port | The normal 32 KiB Controller Pak save image. |
 

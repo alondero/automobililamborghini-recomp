@@ -57,7 +57,7 @@ bool StartupController::runtime_ready() {
 }
 
 bool StartupController::request_play() {
-    if (mode_ != StartupMode::InteractiveLauncher ||
+    if (state_.load(std::memory_order_acquire) != StartupState::WaitingForPlay ||
         !runtime_ready_.load(std::memory_order_acquire)) {
         return false;
     }
@@ -65,9 +65,9 @@ bool StartupController::request_play() {
 }
 
 bool StartupController::begin_start() {
-    StartupState expected = mode_ == StartupMode::Automatic
-        ? StartupState::WaitingForRuntime
-        : StartupState::WaitingForPlay;
+    StartupState expected = state_.load(std::memory_order_acquire);
+    if (expected != StartupState::WaitingForRuntime && expected != StartupState::WaitingForPlay)
+        return false;
     if (!state_.compare_exchange_strong(expected, StartupState::Starting,
                                          std::memory_order_acq_rel)) {
         return false;
@@ -81,6 +81,12 @@ bool StartupController::begin_start() {
 bool StartupController::request_exit() {
     state_.store(StartupState::Exiting, std::memory_order_release);
     return true;
+}
+
+void StartupController::start_failed() {
+    StartupState expected = StartupState::Started;
+    state_.compare_exchange_strong(expected, StartupState::WaitingForPlay,
+                                  std::memory_order_acq_rel);
 }
 
 bool StartupController::watchdog_armed() const {

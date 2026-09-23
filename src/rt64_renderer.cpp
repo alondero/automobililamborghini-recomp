@@ -2,7 +2,7 @@
 // fallback are documented in patches/README.md.
 //
 // Adapted from Zelda64Recomp's src/main/rt64_render_context.cpp (MIT), minus the
-// texture-pack / mod / UI plumbing. The seam is identical to the headless swrender
+// upstream UI plumbing; mod texture snapshots are owned by lambo_mods. The seam is identical to the headless swrender
 // path: ultramodern's gfx thread calls RendererContext::send_dl(OSTask*) with the
 // game's real F3DEX (v1) display list; RT64's HLE interpreter auto-detects the ucode
 // from the task's ucode/ucode_data pointers and renders via plume (Vulkan on Linux).
@@ -28,6 +28,7 @@
 
 #include "lambo_rt64.h"
 #include "lambo_config.h"
+#include "lambo_mods.h"
 #include "lambo_gpu_advisory.h"
 #include "lambo_hud_widescreen.h"
 #include "lambo_sky_panorama.h"
@@ -451,6 +452,15 @@ public:
     }
 
     void update_screen() override {
+        if (auto paths = lambo::mods::take_texture_pack_update()) {
+            std::vector<RT64::ReplacementDirectory> directories;
+            for (const auto& path : *paths) directories.emplace_back(path);
+            // Explicit legacy/environment overrides retain highest priority.
+            const auto legacy = lambo::config::texture_pack_path();
+            if (!legacy.empty()) directories.emplace_back(std::filesystem::u8path(legacy));
+            if (directories.empty()) app->textureCache->clearReplacementDirectories();
+            else app->textureCache->loadReplacementDirectories(directories);
+        }
         app->updateScreen();
     }
 

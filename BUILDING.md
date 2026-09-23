@@ -16,7 +16,7 @@ All desktop builds need:
 
 - Git with recursive submodule support;
 - CMake 3.20 or newer;
-- Python 3;
+- Python 3.11 or newer;
 - Ninja;
 - a legal copy of the North American USA ROM;
 - a network connection for dependency configuration.

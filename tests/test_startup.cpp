@@ -71,6 +71,14 @@ int main() {
     expect(automatic.runtime_ready(), "automatic mode starts when runtime is ready");
     expect(automatic_starts == 1, "automatic startup calls start action once");
     expect(!automatic.runtime_ready(), "duplicate runtime readiness is ignored");
+    automatic.start_failed();
+    expect(automatic.state() == lambo::StartupState::WaitingForPlay,
+           "failed automatic mod load waits for explicit retry");
+    expect(automatic.request_play(), "failed automatic startup can be retried from launcher");
+    expect(automatic_starts == 2, "retry starts exactly once");
+    expect(!automatic.request_play(), "duplicate retry is ignored");
+    interactive.start_failed();
+    expect(interactive.request_play(), "failed interactive mod load can be retried");
 
     lambo::StartupController quit(lambo::StartupMode::InteractiveLauncher);
     quit.runtime_ready();

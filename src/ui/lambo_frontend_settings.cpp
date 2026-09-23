@@ -131,6 +131,7 @@ void create_frontend_settings() {
     number(enhancements, "camera_fov", "Additional field of view (degrees)", port::camera_fov_add(), -20, 60, 1, port::set_camera_fov_add);
 
     settings::create_controls_tab();
+    settings::create_mods_tab();
     auto& driver = settings::create_config_tab("Driver", "driver", true);
     driver.external_storage = true;
     driver.add_string_option("name", "Driver name", "Player one: 1-12 letters or spaces. Also saved by the Championship name editor.", lambo::player::saved_name());
