@@ -52,6 +52,7 @@
 #include "lambo_config.h"
 #include "lambo_mods.h"
 #include "lambo_paths.h"
+#include "lambo_rom_path.h"
 #include "lambo_crash.h"   // native crash reporting
 #include "lambo_gpu_advisory.h"  // graphics-driver advisory
 #include "lambo_log.h"   
@@ -792,7 +793,7 @@ static int application_main(int argc, char** argv) {
     if (std::getenv("LAMBO_LIGHTING_SELFTEST")) {
         return headless::run_lighting_selftest();
     }
-    const char* rom_path = "Automobili Lamborghini (USA).z64";
+    const char* rom_path = lambo::default_rom_filename;
     const char* import_path = nullptr;
     const char* controller_pak_path = nullptr;
     std::filesystem::path track_patch_path;
@@ -834,6 +835,7 @@ static int application_main(int argc, char** argv) {
             // they must never be mistaken for a ROM or save path here.
         }
     }
+    if (!rom_was_selected) rom_path = lambo::find_default_rom_filename();
     LAMBO_LOG("probe", "ROM: %s\n", rom_path);
 
     register_overlays();

@@ -11,12 +11,15 @@ Supported release packages are provided for Windows x64 and Linux x64:
    [Releases page](https://github.com/alondero/automobililamborghini-recomp/releases/latest).
 2. Extract it to a folder you control.
 3. Add your own legal copy of the North American USA cartridge dump. The
-   simplest path is to name it Automobili Lamborghini (USA).z64 and place it
-   beside the game executable.
-4. Start the game executable.
+   simplest path is to name it Automobili Lamborghini (USA).z64 or
+   Automobili Lamborghini (USA).n64 and place it beside the game executable.
+4. Start the game executable from that folder.
 
 The project does not include the game data. Only the USA release is supported.
 If the game cannot find the ROM, check its name and location first.
+When both default filenames exist, the .z64 file takes priority. You can also
+pass a different ROM filename as the first command-line argument. Byte order
+is detected from the file contents; the original file is not changed.
 
 An Android ARM64 build path exists. It has a file picker for importing the
 ROM, but this checkout did not verify an APK or a device run. Treat Android
