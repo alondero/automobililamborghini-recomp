@@ -58,6 +58,7 @@ if(BUILD_TESTING)
     # mod API (tests/fakes); production builds use the submodule headers.
     add_executable(lambo_mods_rtz_tests tests/test_mods_rtz.cpp src/lambo_mods.cpp)
     target_include_directories(lambo_mods_rtz_tests PRIVATE src tests/fakes)
+    target_link_libraries(lambo_mods_rtz_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_mods_rtz_container COMMAND lambo_mods_rtz_tests)
 
     find_program(LAMBO_PYTHON_EXECUTABLE NAMES python python3)
