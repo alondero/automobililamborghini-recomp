@@ -1,4 +1,5 @@
 #include "lambo_mods.h"
+#include "lambo_log.h"
 #include "librecomp/mods.hpp"
 #include "librecomp/overlays.hpp"
 #include <algorithm>
@@ -42,7 +43,10 @@ void register_content() {
         },
         .on_reordered = publish,
     });
-    recomp::mods::register_mod_container_type(".rtz", {textures}, false);
+    if (!recomp::mods::register_mod_container_type(
+            texture_pack_container_extension, {textures}, false)) {
+        LAMBO_LOG_ERROR("mods", "failed to register .rtz texture-pack container type\n");
+    }
 }
 
 std::optional<std::vector<std::filesystem::path>> take_texture_pack_update() {
