@@ -109,6 +109,10 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_portable_paths COMMAND lambo_portable_paths_tests)
 
+    add_executable(lambo_rom_path_tests tests/test_rom_path.cpp)
+    target_include_directories(lambo_rom_path_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_test(NAME lambo_rom_path COMMAND lambo_rom_path_tests)
+
     add_executable(lambo_camera_projection_tests
         tests/test_camera_projection.cpp
     )
