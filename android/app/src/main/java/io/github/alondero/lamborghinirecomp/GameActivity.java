@@ -40,7 +40,9 @@ public final class GameActivity extends SDLActivity {
         button("B", KeyEvent.KEYCODE_C, 94, 22, true);
         button("Z", KeyEvent.KEYCODE_Z, 172, 22, true);
         button("Start", KeyEvent.KEYCODE_ENTER, 16, 180, true);
-        button("Menu", KeyEvent.KEYCODE_ESCAPE, 16, 260, true);
+        // The menu toggle (F1), not Escape: the native loop toggles Settings on F1
+        // before the frontend sees it, while Escape also reaches the modal and closes it.
+        button("Menu", KeyEvent.KEYCODE_F1, 16, 260, true);
     }
 
     private void button(String label, int key, int x, int y, boolean right) {
