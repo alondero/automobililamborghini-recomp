@@ -87,3 +87,8 @@ nextsessionprompt.md
 verify_*/
 # Host-compiled unit-test binaries
 tests/*.exe
+
+# --- Branding assets -------------------------------------------------------
+# assets/lambo-icon.bmp is committed source (the SDL window icon), not a
+# render capture, so re-include it after the blanket *.bmp rules above.
+!assets/lambo-icon.bmp

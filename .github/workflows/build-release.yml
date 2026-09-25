@@ -93,6 +93,7 @@ jobs:
           mkdir -p dist
           cp build/lamborghini_modern dist/
           cp -r build/assets dist/
+          cp scripts/install_linux_launcher.sh dist/
           # Crash-handler symbol table: probed next to the exe at runtime so
           # field crash dumps show function names, not raw N64 PCs (issue #80).
           cp lamborghini.syms.toml dist/
