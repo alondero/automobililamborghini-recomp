@@ -255,6 +255,10 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_input_capture_gate COMMAND lambo_input_gate_tests)
 
+    add_executable(lambo_driving_assists_tests tests/test_driving_assists.cpp src/lambo_driving_assists.cpp)
+    target_include_directories(lambo_driving_assists_tests PRIVATE src)
+    add_test(NAME lambo_input_driving_assists COMMAND lambo_driving_assists_tests)
+
     add_executable(lambo_input_replay_tests
         tests/test_lambo_replay.cpp
         src/lambo_replay.cpp
@@ -321,6 +325,8 @@ if(BUILD_TESTING)
 
     add_executable(lambo_replay_runtime_tests
         tests/test_lambo_replay_runtime.cpp
+        src/lambo_driving_assists.cpp
+        src/lambo_driving_assists_runtime.cpp
         src/lambo_replay_runtime.cpp
         src/lambo_replay.cpp
         src/lambo_file.cpp
@@ -563,6 +569,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_input_gate.cpp # controller capture/neutral-release barrier
         src/lambo_replay.cpp
         src/lambo_replay_runtime.cpp
+        src/lambo_driving_assists_runtime.cpp
         src/lambo_harness_report.cpp
         src/lambo_file.cpp
         src/lambo_analog_throttle.cpp # host-to-guest throttle bridge + race hook
@@ -571,6 +578,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/ui/lambo_frontend.cpp
         src/ui/lambo_frontend_settings.cpp
         src/ui/lambo_frontend_input.cpp
+        src/lambo_driving_assists.cpp
         src/lambo_crash.cpp    # native crash backtrace: Win32 EXCEPTION_POINTERS +
                                # POSIX sigaction handler printing KSEG0/RDRAM offset + a 32-entry
                                # function-lookup trace ring. No deps beyond libc + DbgHelp (Win) /
@@ -749,7 +757,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     if(BUILD_TESTING)
         add_executable(lambo_frontend_settings_tests
             tests/test_frontend_settings.cpp src/ui/lambo_frontend_settings.cpp
-            src/ui/lambo_frontend_input.cpp src/controls/lambo_controls.cpp
+            src/ui/lambo_frontend_input.cpp src/controls/lambo_controls.cpp src/lambo_driving_assists.cpp
+            src/lambo_input_gate.cpp
             src/lambo_config.cpp src/lambo_player_name.cpp src/lambo_log.cpp src/lambo_file.cpp)
         target_include_directories(lambo_frontend_settings_tests PRIVATE src ${SDL2_INCLUDE_DIRS})
         target_link_libraries(lambo_frontend_settings_tests PRIVATE

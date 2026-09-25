@@ -583,7 +583,7 @@ text = "{ extern void lambo_replay_dispatch_end(uint8_t*); lambo_replay_dispatch
 [[patches.hook]]
 func = "BootLoadInitialAssets"
 before_vram = 0x8000193C
-text = "{ extern void lambo_replay_input_tick(uint8_t*); lambo_replay_input_tick(rdram); }"
+text = "{ extern void lambo_driving_assists_tick(uint8_t*); extern void lambo_replay_input_tick(uint8_t*); lambo_driving_assists_tick(rdram); lambo_replay_input_tick(rdram); }"
 
 # Issue #128 — true analog throttle. Capture the pedal demand immediately before the
 # stock human-driver A/Z branch, then apply the selected native port's continuous target

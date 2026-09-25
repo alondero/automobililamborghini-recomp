@@ -6,8 +6,36 @@ evidence. It is for input changes and bug reports, not a timeline of research.
 ## Player-facing behavior
 
 Player one uses the preferred connected controller and falls back to the
-keyboard. Players two through four must be assigned in the Controls screen.
+keyboard. Players two through four must be assigned in Button bindings.
 Bindings are stored in the RecompFrontend controller profile.
+
+Controls offers **Gyro steering** and **Auto-accelerate** for player one. Both
+default to off and are saved when you select Apply. Button bindings remain in
+the adjacent **Button bindings** tab.
+
+Gyro steering uses the Android phone's gyroscope and accelerometer. Hold the
+screen upright in either landscape orientation and tilt it like a steering
+wheel. Sensors are opened while gyro steering is enabled and the app window is
+focused, including menus and race countdowns; steering is only applied
+during active driving. The phone's current position becomes neutral when a race
+starts or resumes from a pause, and when you return from the settings overlay.
+Adjust the full-steering angle, deadzone, or inversion in Controls. Any manual
+stick input or digital left/right steering takes priority over gyro steering.
+Missing, stale, or invalid sensor samples temporarily fall back to normal
+steering without changing the calibrated neutral. Controller motion
+sensors are not used by this option.
+
+Auto-accelerate holds the race accelerator until you brake. Both digital and
+analog braking suspend automatic acceleration; releasing the brake resumes it.
+Manual accelerator input still works. Assists are inactive during countdowns,
+menus, pause, attract demos, player-one completion, and replay playback.
+
+Status: **Experimental**. Host tests cover steering, calibration retention,
+manual steering priority, race gating, the dedicated guest assistance hook,
+and replay capture of its final pad state.
+Physical phone handling remains **Unverified**. The
+[research notes](gyro-steering-research.md) record the comparison with DKR-R,
+SDL sensor details, and guest-state evidence.
 
 The port has separate host input and game input paths. Host events update the
 active profile and publish a controller snapshot. The recompiled game consumes

@@ -73,6 +73,16 @@ The complete list is the add_test list in CMakeLists.txt; keep this page
 updated when a test is added or renamed. Some tests are only registered when
 Python, generated functions, Windows, or an RT64 build is available.
 
+`lambo_input_driving_assists` checks tilt direction, landscape centering,
+held-angle steering, calibration retention after invalid samples, manual
+steering priority, race gates, and brake override. The guest runtime test
+checks the dedicated assistance hook against synthetic RAM and confirms that
+the replay hook alone does not apply assists while a configured recorder still
+captures the final assisted pad.
+On Android, additionally check both landscape orientations, background/resume,
+opening settings while tilted, a phone without sensors, braking, and finishing
+a race. These hardware checks are not replaced by host tests.
+
 ## End-to-end scenario
 
 After a successful build, run the checked-in headless smoke scenario:
