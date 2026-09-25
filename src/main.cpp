@@ -261,6 +261,33 @@ static void toggle_fullscreen() {
     lambo::menu::toggle_fullscreen();
 }
 
+// Desktop window/taskbar icon. Windows also embeds assets/lambo-icon.ico as an exe
+// resource (src/lambo_manifest.rc), so this mainly covers Linux WM hints; a missing
+// icon is not fatal, so both failures log and carry on.
+static void set_application_icon(SDL_Window* window) {
+#if !defined(__ANDROID__)
+    char* base_path = SDL_GetBasePath();
+    if (base_path == nullptr) {
+        LAMBO_LOG("window", "SDL_GetBasePath failed while locating the window icon: %s\n",
+                      SDL_GetError());
+        return;
+    }
+    const std::string icon_path = std::string(base_path) + "assets/lambo-icon.bmp";
+    SDL_free(base_path);
+
+    SDL_Surface* icon = SDL_LoadBMP(icon_path.c_str());
+    if (icon == nullptr) {
+        LAMBO_LOG("window", "Could not load window icon at %s: %s\n",
+                      icon_path.c_str(), SDL_GetError());
+        return;
+    }
+    SDL_SetWindowIcon(window, icon);
+    SDL_FreeSurface(icon);
+#else
+    (void)window;
+#endif
+}
+
 static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/) {
     // RT64 default presenter: RT64 needs a real window with a Vulkan surface
     // (Linux). Created on the main thread; the SDL event pump runs in update_gfx_stub
@@ -307,6 +334,7 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
             return ultramodern::renderer::WindowHandle{};
         }
         g_sdl_window = window;
+        set_application_icon(window);
         lambo::menu::attach(window);
         lambo::ui::set_window(window);
         lambo::ui::initialize_frontend_controllers();

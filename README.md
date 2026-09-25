@@ -1,5 +1,7 @@
 # Automobili Lamborghini: Recompiled
 
+![Automobili Lamborghini: Recompiled fan art by Gary (POOTERMAN)](docs/lambo-fan-art.png)
+
 Automobili Lamborghini: Recompiled is a native port of the North American
 Nintendo 64 game Automobili Lamborghini. It is still in development.
 
@@ -13,7 +15,11 @@ Supported release packages are provided for Windows x64 and Linux x64:
 3. Add your own legal copy of the North American USA cartridge dump. The
    simplest path is to name it Automobili Lamborghini (USA).z64 or
    Automobili Lamborghini (USA).n64 and place it beside the game executable.
-4. Start the game executable from that folder.
+4. On Windows, start `lamborghini_modern.exe`. On Linux, start
+   `./lamborghini_modern`. To add Automobili Lamborghini to the Linux
+   applications menu with its icon (including native Wayland taskbars), run
+   `./install_linux_launcher.sh` once and start it from the menu. If you move
+   the extracted folder, run the installer again to refresh the launcher.
 
 The project does not include the game data. Only the USA release is supported.
 If the game cannot find the ROM, check its name and location first.
@@ -103,6 +109,12 @@ does not support general custom tracks, collision, navigation, or AI. See [Moddi
 For developer information, start at the
 [documentation map](docs/README.md). The short build path is in
 [BUILDING.md](BUILDING.md).
+
+## Special thanks
+
+Thanks to [Gary (POOTERMAN)](https://www.deviantart.com/pooterman) for creating
+and sharing the fan art featured at the top of this README and used for the
+Windows, Linux, and Android application icons.
 
 ## Legal
 

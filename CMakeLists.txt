@@ -792,16 +792,23 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         target_link_libraries(lamborghini_modern PRIVATE ${SDL2_LIBRARIES})
     endif()
 
+    # Release and source-build output needs the frontend assets and RmlUi fonts
+    # beside the executable. Desktop builds also stage the window icon here.
+    set(LAMBO_RUNTIME_ASSETS
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend/recompui/lib/RmlUi/Samples/assets/LatoLatin-Regular.ttf
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend/recompui/lib/RmlUi/Samples/assets/LatoLatin-Bold.ttf)
+    if(NOT ANDROID)
+        list(APPEND LAMBO_RUNTIME_ASSETS
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/lambo-icon.bmp
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/lambo-icon.png)
+    endif()
     add_custom_command(TARGET lamborghini_modern POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             ${CMAKE_CURRENT_SOURCE_DIR}/assets/frontend
             $<TARGET_FILE_DIR:lamborghini_modern>/assets
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend/recompui/lib/RmlUi/Samples/assets/LatoLatin-Regular.ttf
-            $<TARGET_FILE_DIR:lamborghini_modern>/assets/LatoLatin-Regular.ttf
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend/recompui/lib/RmlUi/Samples/assets/LatoLatin-Bold.ttf
-            $<TARGET_FILE_DIR:lamborghini_modern>/assets/LatoLatin-Bold.ttf
+            ${LAMBO_RUNTIME_ASSETS}
+            $<TARGET_FILE_DIR:lamborghini_modern>/assets
     )
 
     if(WIN32)
@@ -809,19 +816,21 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         # process gets true physical pixel dimensions at >100% display scaling --
         # without it DWM bitmap-stretches the window by the scale factor and a
         # 1600x900 window overflows 1080p screens at 175% scaling. MinGW ld has no
-        # /MANIFEST switch, so compile the .rc (which references the manifest) with
-        # windres and link the object.
+        # /MANIFEST switch, so compile the resource script with windres and
+        # link the manifest and application icon.
         find_program(LAMBO_WINDRES_EXECUTABLE NAMES windres REQUIRED)
-        set(LAMBO_MANIFEST_OBJ ${CMAKE_CURRENT_BINARY_DIR}/lambo_manifest.rc.o)
-        add_custom_command(OUTPUT ${LAMBO_MANIFEST_OBJ}
+        set(LAMBO_WINDOWS_RESOURCES_OBJ ${CMAKE_CURRENT_BINARY_DIR}/lambo_resources.rc.o)
+        add_custom_command(OUTPUT ${LAMBO_WINDOWS_RESOURCES_OBJ}
             COMMAND ${LAMBO_WINDRES_EXECUTABLE}
                 -I ${CMAKE_CURRENT_SOURCE_DIR}/src
-                -O coff -o ${LAMBO_MANIFEST_OBJ}
+                -I ${CMAKE_CURRENT_SOURCE_DIR}/assets
+                -O coff -o ${LAMBO_WINDOWS_RESOURCES_OBJ}
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/lambo_manifest.rc
             DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/lambo_manifest.rc
                     ${CMAKE_CURRENT_SOURCE_DIR}/src/app.manifest
-            COMMENT "Embedding DPI-awareness manifest (windres)")
-        target_sources(lamborghini_modern PRIVATE ${LAMBO_MANIFEST_OBJ})
+                    ${CMAKE_CURRENT_SOURCE_DIR}/assets/lambo-icon.ico
+            COMMENT "Embedding Windows manifest and application icon")
+        target_sources(lamborghini_modern PRIVATE ${LAMBO_WINDOWS_RESOURCES_OBJ})
         # Native crash backtrace: CaptureStackBackTrace lives in
         # dbghelp.dll. MinGW64 ships the import lib (libdbghelp.a) so an explicit
         # target_link_libraries entry is enough; we don't ship the DLL — the
