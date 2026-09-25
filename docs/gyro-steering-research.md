@@ -147,6 +147,10 @@ Checked on Windows with MinGW-w64 GCC 15.2.0, 2026-09-25:
 - USA ROM SHA-256:
   `cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c`.
   No generated output was edited or regenerated for this work.
-- No Android device was connected. Android compilation, phone handling, sensor
-  lifecycle, and interactive race/pause/results transitions remain unverified
-  on hardware. Follow the Android checks in [Testing](testing.md).
+- The supported Android build completed with NDK 28.2.13676358, then installed
+  successfully over the existing debug-signed app on a Pixel 5 (Android 13) via
+  `adb install -r`. The package data directory still contains the imported USA
+  ROM and existing game data after the update. This confirms packaging and the
+  in-place update path; gyro feel, sensor lifecycle, and interactive
+  race/pause/results transitions still need a play session on the device.
+  Follow the Android checks in [Testing](testing.md).
