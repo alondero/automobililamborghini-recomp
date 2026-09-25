@@ -31,7 +31,7 @@ controller profile choices persist.
 | --- | --- | --- |
 | General | Rumble strength, stick deadzone, background input | Framework `general.json` |
 | Graphics | Resolution, 1/2/3/4x downsampling, aspect, HUD placement, window mode, original/display/manual presentation rate, MSAA through 8x, HPFB, graphics API, developer overlay, initial window dimensions, texture pack/dump paths | Existing `graphics.json`, Apply/Discard |
-| Enhancements | Multiplayer fog/sky matching, full geometry and six circuit switches, draw distance, fog density, camera distance/height/FOV | Existing `graphics.json`, immediate |
+| Enhancements | Automatic pit-stops (off by default), multiplayer fog/sky matching, full geometry and six circuit switches, draw distance, fog density, camera distance/height/FOV | Existing `graphics.json`, immediate |
 | Controls | N64 button/stick remapping, keyboard/controller profiles, 1-4 player assignment | Framework `controls-framework.json` |
 | Mods | Package installation, enable/disable, ordering, per-mod settings | Runtime `mods.json` and `mod_config/` |
 | Driver | Driver-one name, startup launcher preference | Existing `player.json` and `graphics.json` |

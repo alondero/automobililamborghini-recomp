@@ -62,6 +62,7 @@ groups include:
 ctest --test-dir build -R "lambo_(portable_paths|logging_policy|config_live_updates)"
 ctest --test-dir build -R "lambo_rom_path"
 ctest --test-dir build -R "lambo_(controls|input|analog)"
+ctest --test-dir build -R "lambo_automatic_pit_stops"
 ctest --test-dir build -R "lambo_(controller_pak|startup_state_machine)"
 ctest --test-dir build -R "lambo_(no_lod|track_patch|interpolation)"
 ctest --test-dir build -R "lambo_rt64|lambo_audio"

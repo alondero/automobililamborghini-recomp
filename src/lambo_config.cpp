@@ -53,6 +53,7 @@ std::atomic_bool g_widescreen_sky_match{true};
 // record pointer being non-null, so segments without a scenery DL are unaffected.
 std::atomic_bool g_no_lod{true};
 std::atomic_bool g_show_launcher{false};
+std::atomic_bool g_automatic_pit_stops{false};
 
 // Per-circuit refinement of the global no_lod. Rationale + JSON key in
 // lambo_config.h; see that header for the ship-safe default and the
@@ -136,6 +137,7 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"widescreen_fog_match", g_widescreen_fog_match.load()},
         {"widescreen_sky_match", g_widescreen_sky_match.load()},
         {"no_lod", g_no_lod.load()},
+        {"automatic_pit_stops", g_automatic_pit_stops.load()},
         {"no_lod_circuit", nlohmann::json::array({
             g_no_lod_circuit[0].load(), g_no_lod_circuit[1].load(),
             g_no_lod_circuit[2].load(), g_no_lod_circuit[3].load(),
@@ -172,6 +174,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     bool widescreen_fog_match = g_widescreen_fog_match.load();
     bool widescreen_sky_match = g_widescreen_sky_match.load();
     bool no_lod = g_no_lod.load();
+    bool automatic_pit_stops = false;
     std::array<bool, 6> no_lod_circuit{};
     for (size_t i = 0; i < no_lod_circuit.size(); ++i) {
         no_lod_circuit[i] = g_no_lod_circuit[i].load();
@@ -185,6 +188,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "widescreen_fog_match", widescreen_fog_match);
     from_or_default(j, "widescreen_sky_match", widescreen_sky_match);
     from_or_default(j, "no_lod", no_lod);
+    from_or_default(j, "automatic_pit_stops", automatic_pit_stops);
     from_or_default(j, "no_lod_circuit", no_lod_circuit);
     from_or_default(j, "fog_scale", fog_scale);
     from_or_default(j, "fog_scale_circuit", g_fog_scale_circuit);
@@ -197,6 +201,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     g_widescreen_fog_match.store(widescreen_fog_match);
     g_widescreen_sky_match.store(widescreen_sky_match);
     g_no_lod.store(no_lod);
+    g_automatic_pit_stops.store(automatic_pit_stops);
     for (size_t i = 0; i < no_lod_circuit.size(); ++i) {
         g_no_lod_circuit[i].store(no_lod_circuit[i]);
     }
@@ -512,6 +517,15 @@ bool widescreen_sky_match() {
 void set_widescreen_sky_match(bool enabled) {
     g_widescreen_sky_match.store(enabled);
     save_graphics_updates({{"widescreen_sky_match", enabled}});
+}
+
+bool automatic_pit_stops() {
+    return g_automatic_pit_stops.load();
+}
+
+void set_automatic_pit_stops(bool enabled) {
+    g_automatic_pit_stops.store(enabled);
+    save_graphics_updates({{"automatic_pit_stops", enabled}});
 }
 
 // LAMBO_NO_LOD=1/0 overrides the JSON key for headless capture/testing.

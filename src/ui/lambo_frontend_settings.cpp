@@ -75,6 +75,7 @@ void refresh_frontend_settings() {
     sync_value(enhancements, "fog_match", port::widescreen_fog_match());
     sync_value(enhancements, "sky_match", port::widescreen_sky_match());
     sync_value(enhancements, "no_lod", port::no_lod());
+    sync_value(enhancements, "automatic_pit_stops", port::automatic_pit_stops());
     for (int i = 0; i < 6; ++i) sync_value(enhancements, "circuit_" + std::to_string(i + 1), port::no_lod_circuit(i));
     sync_value(enhancements, "draw_distance", port::global_draw_distance());
     sync_value(enhancements, "fog_scale", port::global_fog_scale());
@@ -117,6 +118,7 @@ void create_frontend_settings() {
 
     auto& enhancements = settings::create_config_tab("Enhancements", "enhancements", false);
     enhancements.external_storage = true;
+    boolean(enhancements, "automatic_pit_stops", "Automatic pit-stops (refuelling and tyres)", port::automatic_pit_stops(), port::set_automatic_pit_stops);
     boolean(enhancements, "fog_match", "Match multiplayer fog to single player", port::widescreen_fog_match(), port::set_widescreen_fog_match);
     boolean(enhancements, "sky_match", "Show sky in 3-4 player races", port::widescreen_sky_match(), port::set_widescreen_sky_match);
     boolean(enhancements, "no_lod", "Full track geometry", port::no_lod(), port::set_no_lod);

@@ -89,6 +89,11 @@ void set_widescreen_fog_match(bool enabled);
 bool widescreen_sky_match();
 void set_widescreen_sky_match(bool enabled);
 
+// Opt-in assistance for the pit-stop stick mini-games. Applied live, persisted
+// as automatic_pit_stops in graphics.json; default false.
+bool automatic_pit_stops();
+void set_automatic_pit_stops(bool enabled);
+
 // Remove the ROM's per-mode LOD reductions: emit each track
 // segment's scenery layer in 2P-4P races like 1P does. graphics.json key
 // "no_lod" (default true), overridable by LAMBO_NO_LOD=1/0.

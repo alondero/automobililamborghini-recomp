@@ -81,6 +81,7 @@ enum Command : UINT {
     CMD_FOG_MATCH = 1200,
     CMD_SKY_MATCH,
     CMD_NO_LOD,
+    CMD_AUTOMATIC_PIT_STOPS,
     CMD_PVS_CIRCUIT_1,
     CMD_PVS_CIRCUIT_2,
     CMD_PVS_CIRCUIT_3,
@@ -236,6 +237,7 @@ void refresh() {
     check(g_enhancements_menu, CMD_FOG_MATCH, lambo::config::widescreen_fog_match());
     check(g_enhancements_menu, CMD_SKY_MATCH, lambo::config::widescreen_sky_match());
     check(g_enhancements_menu, CMD_NO_LOD, lambo::config::no_lod());
+    check(g_enhancements_menu, CMD_AUTOMATIC_PIT_STOPS, lambo::config::automatic_pit_stops());
     for (size_t i = 0; i < kPvsCircuitCommands.size(); ++i) {
         check(g_pvs_menu, kPvsCircuitCommands[i], lambo::config::no_lod_circuit(static_cast<int>(i)));
     }
@@ -313,6 +315,7 @@ void dispatch(UINT command) {
         }
         case CMD_FOG_MATCH: lambo::config::set_widescreen_fog_match(!lambo::config::widescreen_fog_match()); break;
         case CMD_SKY_MATCH: lambo::config::set_widescreen_sky_match(!lambo::config::widescreen_sky_match()); break;
+        case CMD_AUTOMATIC_PIT_STOPS: lambo::config::set_automatic_pit_stops(!lambo::config::automatic_pit_stops()); break;
         case CMD_NO_LOD: lambo::config::set_no_lod(!lambo::config::no_lod()); break;
         case CMD_PVS_CIRCUIT_1: case CMD_PVS_CIRCUIT_2: case CMD_PVS_CIRCUIT_3:
         case CMD_PVS_CIRCUIT_4: case CMD_PVS_CIRCUIT_5: case CMD_PVS_CIRCUIT_6: {
@@ -407,6 +410,7 @@ void attach(SDL_Window* window) {
     append_item(enhancements, CMD_FOG_MATCH, "3P/4P widescreen fog");
     append_item(enhancements, CMD_SKY_MATCH, "3P/4P widescreen sky");
     append_item(enhancements, CMD_NO_LOD, "Remove N64 LOD reductions");
+    append_item(enhancements, CMD_AUTOMATIC_PIT_STOPS, "Automatic pit-stops (refuelling and tyres)");
     HMENU pvs = g_pvs_menu = append_submenu(enhancements, "Full-track visibility by circuit");
     for (size_t i = 0; i < kPvsCircuitCommands.size(); ++i) {
         std::string label = "Circuit " + std::to_string(i + 1);

@@ -715,6 +715,22 @@ value = 0x00000000
 # 0x800A39CC; natives in src/lambo_hud_widescreen.c. TIME stays centered (no tag needed
 # under RT64 Expand); the minimap is polyline/viewport-drawn, not texrects — pinning it
 # is a separate follow-up (rect-align cannot move it).
+# Opt-in pit-stop inputs; ROM evidence: docs/automatic-pit-stops.md.
+[[patches.hook]]
+func = "func_8006B470"
+before_vram = 0x8006AAD8
+text = "{ extern void lambo_pit_start(uint8_t*, recomp_context*); lambo_pit_start(rdram, ctx); }"
+
+[[patches.hook]]
+func = "func_8006B470"
+before_vram = 0x8006AC8C
+text = "{ extern void lambo_pit_fuel(uint8_t*, recomp_context*); lambo_pit_fuel(rdram, ctx); }"
+
+[[patches.hook]]
+func = "func_8006B470"
+before_vram = 0x8006B610
+text = "{ extern void lambo_pit_tyres(uint8_t*, recomp_context*); lambo_pit_tyres(rdram, ctx); }"
+
 [[patches.hook]]
 func = "func_80050860"
 before_vram = 0x8004FF60
