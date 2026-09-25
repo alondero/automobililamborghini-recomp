@@ -81,6 +81,19 @@ if(BUILD_TESTING)
             ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
         target_link_libraries(lambo_player_records_tests PRIVATE Threads::Threads)
         add_test(NAME lambo_player_records COMMAND lambo_player_records_tests)
+        add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/pit_stop_funcs.c
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_pit_stop_funcs.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs
+                ${CMAKE_CURRENT_BINARY_DIR}/pit_stop_funcs.c
+            DEPENDS tests/extract_pit_stop_funcs.py ${PLAYER_RECORD_RECOMP_SOURCES}
+            VERBATIM)
+        add_executable(lambo_pit_stop_tests tests/test_automatic_pit_stops.cpp
+            ${CMAKE_CURRENT_BINARY_DIR}/pit_stop_funcs.c src/lambo_automatic_pit_stops.cpp)
+        target_include_directories(lambo_pit_stop_tests PRIVATE src RecompiledFuncs
+            ${N64MR}/N64Recomp/include ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
+        add_test(NAME lambo_automatic_pit_stops COMMAND lambo_pit_stop_tests)
+
     endif()
 
     add_executable(lambo_config_tests
@@ -572,6 +585,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_driving_assists_runtime.cpp
         src/lambo_harness_report.cpp
         src/lambo_file.cpp
+        src/lambo_automatic_pit_stops.cpp
         src/lambo_analog_throttle.cpp # host-to-guest throttle bridge + race hook
         src/lambo_analog_brake.cpp    # host-to-guest brake bridge + race hook
         src/controls/lambo_controls.cpp

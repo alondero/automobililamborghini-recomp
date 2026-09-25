@@ -63,6 +63,7 @@ status line before relying on a historical measurement.
 | [Sky panorama](sky-panorama.md) | Sky motion, projection coverage and task-owned panorama extensions. |
 | [No-LOD audit](no_lod_audit.md) | Historical LOD measurements and later addenda. |
 | [Rumble audit](rumble-triggers.md) | Rumble discovery and Controller Pak coexistence evidence. |
+| [Automatic pit-stops](automatic-pit-stops.md) | Pit assistance hooks and ROM-backed tests. |
 | [Analog throttle](analog-throttle.md) | Throttle bridge measurements and tests. |
 | [Analog brake](analog-brake.md) | Brake bridge measurements and tests. |
 | [Controllers and input](controllers.md) | Current input path and guest-layout evidence. |

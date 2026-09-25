@@ -69,6 +69,7 @@ The port adds these keys:
 | texture_dump | empty | Directory for runtime texture dumps. |
 | widescreen_fog_match | true | Use the open one-player fog policy for three- and four-player views. |
 | widescreen_sky_match | true | Draw the sky panorama in three- and four-player views. |
+| automatic_pit_stops | false | Automatically operate the refuelling and tyre-change stick controls during a pit stop. |
 | no_lod | true | Enable port-side removal of some stock distance reductions. |
 | no_lod_circuit | [true,true,true,false,false,false] | Per-circuit visibility-list policy. |
 | fog_scale | 1.0 | Global fog density multiplier. |

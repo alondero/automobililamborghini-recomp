@@ -56,6 +56,14 @@ int main() {
 #endif
 
     auto cfg = lambo::config::load_and_apply_graphics();
+    expect(!lambo::config::automatic_pit_stops(), "pit assistance defaults off");
+    lambo::config::set_automatic_pit_stops(true);
+    lambo::config::flush_pending_graphics_updates();
+    expect(read_json(path).at("automatic_pit_stops") == true, "pit assistance persists");
+    lambo::config::load_and_apply_graphics();
+    expect(lambo::config::automatic_pit_stops(), "pit assistance reloads");
+    lambo::config::set_automatic_pit_stops(false);
+    lambo::config::flush_pending_graphics_updates();
     expect(std::filesystem::exists(path), "first load creates graphics.json");
     expect(cfg.ar_option == ultramodern::renderer::AspectRatio::Expand,
            "enhancement-oriented aspect default is preserved");
