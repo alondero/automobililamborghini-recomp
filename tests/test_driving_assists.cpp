@@ -37,11 +37,21 @@ int main() {
         settings.invert = false;
         for (int i = 1; i <= 100; ++i) step(neutral - .7f + .7f * i / 100, .7f, .01f);
         expect(tilt.steering(settings) == 0, "returning to neutral steers straight");
-        expect(!step(neutral, 0, 1), "background gap invalidates sensor state");
-        expect(step(neutral + .5f, 0, .01f) && tilt.steering(settings) == 0,
-               "resume centers current pose");
+        for (int i = 0; i < 500; ++i) step(neutral - .7f, 0, .01f);
+        expect(tilt.steering(settings) == 80, "held corner pose remains calibrated");
+        const auto steering_before_gap = tilt.steering(settings);
+        expect(!step(neutral - .7f, 0, 1), "background gap invalidates sensor sample");
+        expect(step(neutral - .7f, 0, .01f) && tilt.steering(settings) == steering_before_gap,
+               "valid samples after a hitch retain the calibrated neutral");
         expect(!tilt.sample(0, 0, 0, .01f), "flat phone fails to manual input");
+        expect(step(neutral - .7f, 0, .01f) && tilt.steering(settings) == steering_before_gap,
+               "flat readings do not recalibrate a banked phone");
         expect(!tilt.sample(std::numeric_limits<float>::quiet_NaN(), 0, 9.81f, .01f), "NaN rejected");
+        expect(step(neutral - .7f, 0, .01f) && tilt.steering(settings) == steering_before_gap,
+               "non-finite readings preserve neutral calibration");
+        tilt.recenter();
+        expect(step(neutral - .7f, 0, .01f) && tilt.steering(settings) == 0,
+               "explicit recenter adopts the current phone pose");
     }
     std::uint16_t buttons = 0;
     std::int8_t stick = 0;
@@ -53,6 +63,15 @@ int main() {
     expect(buttons == 0 && stick == 0, "inactive assists leave physical input unchanged");
     apply(demand, true, false, buttons, stick);
     expect(buttons == 0x8000 && stick == -60, "race assists steer and accelerate");
+    buttons = 0; stick = 15;
+    apply({true, 60, false}, true, false, buttons, stick);
+    expect(stick == 15, "any manual stick correction takes priority over gyro");
+    buttons = 0x0200; stick = 0;
+    apply({true, 60, false}, true, false, buttons, stick);
+    expect(stick == 0 && buttons == 0x0200, "digital left steering takes priority over gyro");
+    buttons = 0x0100; stick = 0;
+    apply({true, -60, false}, true, false, buttons, stick);
+    expect(stick == 0 && buttons == 0x0100, "digital right steering takes priority over gyro");
     buttons = 0x4000; stick = 80;
     apply(demand, true, false, buttons, stick);
     expect(buttons == 0x4000 && stick == 80, "braking cancels auto throttle and manual steering wins");

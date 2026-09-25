@@ -128,12 +128,17 @@ where the XY gravity projection becomes small.
 
 The port uses phone sensors, a complementary gravity/gyro filter, and the
 active-race checks above. These settings affect player one. Controller gyro
-support remains outside this implementation. The phone pose at the first valid
-driving sample establishes neutral; missing/stale sensors fall back to manual
-steering. Synthetic input is applied before recording and excluded from replay
-playback and the physical-input release barrier.
+support remains outside this implementation. While gyro is enabled, the sensor
+subsystem and available phone sensors stay open while the app window is focused,
+including menus and countdowns. They close on background or focus loss. Steering
+output remains gated to active driving.
+The phone pose at race start/resume establishes neutral. Invalid or stale
+samples temporarily yield to manual steering and preserve the existing neutral.
+Synthetic input is applied by a dedicated guest hook before replay recording and
+is excluded during replay playback and the physical-input release barrier.
 
-Checked on Windows with MinGW-w64 GCC 15.2.0, 2026-09-25:
+The initial implementation (`f333daa`) was checked on Windows with MinGW-w64
+GCC 15.2.0 on 2026-09-25:
 
 - Three focused native suites passed: driving-assist policy/filter, guest
   replay/input integration, and frontend settings persistence/Apply/Discard.
@@ -146,11 +151,17 @@ Checked on Windows with MinGW-w64 GCC 15.2.0, 2026-09-25:
   This checks regression/playback, not physical gyro or assisted driving.
 - USA ROM SHA-256:
   `cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c`.
-  No generated output was edited or regenerated for this work.
-- The supported Android build completed with NDK 28.2.13676358, then installed
-  successfully over the existing debug-signed app on a Pixel 5 (Android 13) via
-  `adb install -r`. The package data directory still contains the imported USA
-  ROM and existing game data after the update. This confirms packaging and the
-  in-place update path; gyro feel, sensor lifecycle, and interactive
-  race/pause/results transitions still need a play session on the device.
-  Follow the Android checks in [Testing](testing.md).
+
+Review fixes were checked on 2026-09-25 with MinGW-w64 GCC 15.2.0:
+
+- `tests/test_driving_assists.cpp` passed with the hitch-recovery and manual
+  steering-priority cases.
+- `tests/test_lambo_replay_runtime.cpp` passed with the separate assistance
+  hook, replay ownership gate, and replay-hook isolation cases.
+- The supported Android build completed with NDK 28.2.13676358. The debug APK
+  at `dist/lamborghini-recomp-android-arm64-debug.apk` installed to a connected
+  Pixel 5 (Android 13) using `adb install -r`; Android reported
+  `lastUpdateTime=2026-09-25 15:06:46`.
+- No interactive gyro steering session has been performed on the phone. Sensor
+  feel and race/countdown/pause/background transitions remain unverified. Use
+  the Android checks in [Testing](testing.md).

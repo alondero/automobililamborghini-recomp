@@ -326,6 +326,7 @@ if(BUILD_TESTING)
     add_executable(lambo_replay_runtime_tests
         tests/test_lambo_replay_runtime.cpp
         src/lambo_driving_assists.cpp
+        src/lambo_driving_assists_runtime.cpp
         src/lambo_replay_runtime.cpp
         src/lambo_replay.cpp
         src/lambo_file.cpp
@@ -568,6 +569,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_input_gate.cpp # controller capture/neutral-release barrier
         src/lambo_replay.cpp
         src/lambo_replay_runtime.cpp
+        src/lambo_driving_assists_runtime.cpp
         src/lambo_harness_report.cpp
         src/lambo_file.cpp
         src/lambo_analog_throttle.cpp # host-to-guest throttle bridge + race hook

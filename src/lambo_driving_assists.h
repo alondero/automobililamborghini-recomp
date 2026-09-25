@@ -15,7 +15,9 @@ struct Settings {
 // driving session establishes neutral from the current way the phone is held.
 class TiltSteering {
 public:
-    void reset();
+    // Explicitly establish a new neutral on the next valid sample. Invalid
+    // sensor readings only suspend steering and must not call this.
+    void recenter();
     bool sample(float gyro_z, float gravity_x, float gravity_y, float dt);
     std::int8_t steering(const Settings& settings) const;
 private:
@@ -35,6 +37,8 @@ void publish(Demand demand);
 Demand sample();
 void set_racing(bool racing);
 bool racing();
+void set_replay_playback(bool playback);
+bool replay_playback();
 bool race_allows_assists(int state, int phase, int pause, int mode);
 void apply(Demand demand, bool allowed, bool analog_braking,
            std::uint16_t& buttons, std::int8_t& stick_x);
