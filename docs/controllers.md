@@ -6,8 +6,30 @@ evidence. It is for input changes and bug reports, not a timeline of research.
 ## Player-facing behavior
 
 Player one uses the preferred connected controller and falls back to the
-keyboard. Players two through four must be assigned in the Controls screen.
+keyboard. Players two through four must be assigned in Button bindings.
 Bindings are stored in the RecompFrontend controller profile.
+
+Controls offers **Gyro steering** and **Auto-accelerate** for player one. Both
+default to off and are saved when you select Apply. Button bindings remain in
+the adjacent **Button bindings** tab.
+
+Gyro steering uses the Android phone's gyroscope and accelerometer. Hold the
+screen upright in either landscape orientation and tilt it like a steering
+wheel. Your position when driving starts or resumes becomes the center. Open
+and close the settings while holding the phone comfortably to recenter. Adjust
+the full-steering angle, deadzone, or inversion in Controls. A larger manual
+stick or touch steering input takes priority. Missing or stale sensors fall
+back to normal steering. Controller motion sensors are not used by this option.
+
+Auto-accelerate holds the race accelerator until you brake. Both digital and
+analog braking suspend automatic acceleration; releasing the brake resumes it.
+Manual accelerator input still works. Assists are inactive during countdowns,
+menus, pause, attract demos, player-one completion, and replay playback.
+
+Status: **Experimental**. Host tests cover steering, gating, and guest input
+injection. Physical phone handling remains **Unverified**. The
+[research notes](gyro-steering-research.md) record the comparison with DKR-R,
+SDL sensor details, and guest-state evidence.
 
 The port has separate host input and game input paths. Host events update the
 active profile and publish a controller snapshot. The recompiled game consumes

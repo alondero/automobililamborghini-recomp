@@ -1,14 +1,50 @@
 #include "lambo_frontend_input.h"
 #include "lambo_config.h"
+#include "lambo_driving_assists.h"
+#include "lambo_input_gate.h"
 #include "recompinput/profiles.h"
 #include "recompinput/input_events.h"
 #include "recompui/config.h"
 #include <mutex>
+#include <SDL.h>
 
 namespace lambo::ui {
 namespace {
 std::mutex pedal_mutex;
 lambo::controls::Profile pedal_profile = lambo::controls::default_profile();
+lambo::driving::Settings driving_settings;
+lambo::driving::TiltSteering tilt;
+SDL_Sensor* phone_gyro = nullptr;
+SDL_Sensor* phone_accel = nullptr;
+bool sensors_initialized = false;
+Uint32 sensor_retry = 0, sensor_sample_time = 0;
+Uint32 gyro_event_time = 0, accel_event_time = 0;
+bool have_gyro_event = false, have_accel_event = false;
+bool motion_valid = false;
+
+void close_phone_sensors() {
+    if (phone_gyro) SDL_SensorClose(phone_gyro);
+    if (phone_accel) SDL_SensorClose(phone_accel);
+    phone_gyro = phone_accel = nullptr;
+    if (sensors_initialized) SDL_QuitSubSystem(SDL_INIT_SENSOR);
+    sensors_initialized = false;
+    sensor_sample_time = 0;
+    have_gyro_event = have_accel_event = false;
+    motion_valid = false;
+    tilt.reset();
+}
+
+void read_driving_settings() {
+    auto& page = recompui::config::get_config("driving-controls");
+    driving_settings.gyro = std::get<bool>(page.get_option_value("gyro"));
+    driving_settings.auto_accelerate = std::get<bool>(page.get_option_value("auto_accelerate"));
+    driving_settings.invert = std::get<bool>(page.get_option_value("gyro_invert"));
+    driving_settings.full_lock_degrees = float(std::get<double>(page.get_option_value("gyro_range")));
+    driving_settings.deadzone_degrees = float(std::get<double>(page.get_option_value("gyro_deadzone")));
+    // Settings and sensor sampling both run under frontend_mutex().
+    tilt.reset();
+    motion_valid = false;
+}
 using namespace recompinput;
 using recomp::config::ConfigOptionEnumOption;
 constexpr GameInput targets[] = {GameInput::A, GameInput::B, GameInput::Z, GameInput::START,
@@ -36,6 +72,76 @@ void read_pedals() {
 }
 }
 
+void create_frontend_driving_settings() {
+    auto& page = recompui::config::create_config_tab("Controls", "driving-controls", true);
+    page.add_bool_option("gyro", "Gyro steering", "Player one only, during races. Tilt your Android phone like a steering wheel. Requires a phone gyroscope and accelerometer; keep the screen upright. Hold it comfortably when starting or resuming a race to center steering. Button mappings are in Button bindings.", false);
+    page.add_bool_option("auto_accelerate", "Auto-accelerate", "Accelerate automatically during races. Hold the brake to stop automatic acceleration. Player one only; off in menus and while paused.", false);
+    page.add_number_option("gyro_range", "Tilt for full steering (degrees)", "Smaller angles make steering more sensitive.", 15, 90, 5, 0, false, 35);
+    page.add_number_option("gyro_deadzone", "Gyro deadzone (degrees)", "Ignore small movements around the center.", 0, 10, 1, 0, false, 2);
+    page.add_bool_option("gyro_invert", "Invert gyro steering", "Reverse the steering direction.", false);
+    page.set_load_callback(read_driving_settings);
+    page.set_save_callback(read_driving_settings);
+}
+
+void driving_sensor_event(const SDL_Event& event) {
+    if (event.type != SDL_SENSORUPDATE) return;
+    // Android's SDL2 backend supplies zero hardware timestamps. Event freshness
+    // uses SDL's millisecond clock instead, including unsigned wraparound.
+    if (phone_gyro && event.sensor.which == SDL_SensorGetInstanceID(phone_gyro)) {
+        gyro_event_time = event.sensor.timestamp;
+        have_gyro_event = true;
+    }
+    if (phone_accel && event.sensor.which == SDL_SensorGetInstanceID(phone_accel)) {
+        accel_event_time = event.sensor.timestamp;
+        have_accel_event = true;
+    }
+}
+
+void sample_frontend_driving_assists() {
+    const bool active = lambo::driving::racing() && !lambo::input_gate::guest_input_suppressed() &&
+                        SDL_GetKeyboardFocus() != nullptr;
+    lambo::driving::Demand demand{};
+    demand.auto_accelerate = active && driving_settings.auto_accelerate;
+    const Uint32 now = SDL_GetTicks();
+    if (!active || !driving_settings.gyro) {
+        close_phone_sensors();
+        sensor_retry = now - 1000u;
+    } else {
+        if (!phone_gyro && now - sensor_retry >= 1000u) {
+            sensor_retry = now;
+            sensors_initialized = SDL_InitSubSystem(SDL_INIT_SENSOR) == 0;
+            if (sensors_initialized) {
+                for (int i = 0; i < SDL_NumSensors(); ++i) {
+                    const auto type = SDL_SensorGetDeviceType(i);
+                    if (!phone_gyro && type == SDL_SENSOR_GYRO) phone_gyro = SDL_SensorOpen(i);
+                    if (!phone_accel && type == SDL_SENSOR_ACCEL) phone_accel = SDL_SensorOpen(i);
+                }
+            }
+            if (!phone_gyro || !phone_accel) close_phone_sensors();
+            sensor_sample_time = now;
+        }
+        if (phone_gyro && phone_accel) {
+            float gyro[3]{}, accel[3]{};
+            const float dt = float(now - sensor_sample_time) / 1000.0f;
+            if (dt > 0) {
+                sensor_sample_time = now;
+                const bool fresh = have_gyro_event && have_accel_event &&
+                    now - gyro_event_time < 250u && now - accel_event_time < 250u;
+                if (fresh && SDL_SensorGetData(phone_gyro, gyro, 3) == 0 &&
+                    SDL_SensorGetData(phone_accel, accel, 3) == 0) {
+                    motion_valid = tilt.sample(gyro[2], accel[0], accel[1], dt);
+                } else {
+                    tilt.reset();
+                    motion_valid = false;
+                }
+            }
+            demand.gyro_valid = motion_valid;
+            demand.steering = tilt.steering(driving_settings);
+        }
+    }
+    lambo::driving::publish(demand);
+}
+
 void create_frontend_pedal_settings() {
     const auto legacy = lambo::controls::load_config();
     pedal_profile = lambo::controls::profile_for_guid(legacy.config, legacy.config.preferred_controller_guid);
@@ -47,7 +153,7 @@ void create_frontend_pedal_settings() {
         const char* names[] = {"LX", "LY", "RX", "RY", "LT", "RT"};
         for (int axis = 0; axis < 6; ++axis) axes.emplace_back(axis + 1, names[axis]);
         uint32_t selected = pedal.source ? 1 + uint32_t(pedal.source->axis) : 0;
-        page.add_enum_option(prefix + "axis", label + " source", "Uses the controller assigned to player one in Controls.", axes, selected);
+        page.add_enum_option(prefix + "axis", label + " source", "Uses the controller assigned to player one in Button bindings.", axes, selected);
         page.add_bool_option(prefix + "negative", label + " negative half-axis", "Use the negative direction of a stick axis. Leave off for triggers.",
             pedal.source && pedal.source->direction == lambo::controls::AxisDirection::Negative);
         page.add_number_option(prefix + "deadzone", label + " deadzone", "Input below this level is ignored.", 0, .95, .01, 2, false, pedal.deadzone);

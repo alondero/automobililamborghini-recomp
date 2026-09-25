@@ -130,7 +130,7 @@ void create_frontend_settings() {
     number(enhancements, "camera_height", "Camera height", port::camera_height_scale(), .2, 3, .05, port::set_camera_height_scale);
     number(enhancements, "camera_fov", "Additional field of view (degrees)", port::camera_fov_add(), -20, 60, 1, port::set_camera_fov_add);
 
-    settings::create_controls_tab();
+    settings::create_controls_tab("Button bindings");
     settings::create_mods_tab();
     auto& driver = settings::create_config_tab("Driver", "driver", true);
     driver.external_storage = true;

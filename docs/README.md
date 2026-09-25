@@ -66,6 +66,7 @@ status line before relying on a historical measurement.
 | [Analog throttle](analog-throttle.md) | Throttle bridge measurements and tests. |
 | [Analog brake](analog-brake.md) | Brake bridge measurements and tests. |
 | [Controllers and input](controllers.md) | Current input path and guest-layout evidence. |
+| [Gyro steering research](gyro-steering-research.md) | Racing recomp comparison, Android sensors, and race-only gates. |
 | [Player names](player-names.md) | Driver-name persistence notes. |
 | [Android guide](ANDROID.md) | ARM64 build, launcher, signing, and device limits. |
 

@@ -14,6 +14,7 @@
 #include "lambo_analog_brake.h"
 #include "lambo_analog_throttle.h"
 #include "lambo_input_gate.h"
+#include "lambo_driving_assists.h"
 #include "lambo_input_quantize.h"
 #include "lambo_log.h"
 #include "recomp.h"
@@ -412,6 +413,29 @@ void dispatch_end_impl(std::uint8_t* rdram) {
 
 void input_tick_impl(std::uint8_t* rdram) {
     std::lock_guard lock(g_state.mutex);
+    // Game-thread-only, word-swapped signed halfwords in the USA ROM. State 8
+    // is the race dispatcher; phase 3 is driving, pause 0 excludes its menus,
+    // and mode 4 is attract playback. See docs/gyro-steering-research.md.
+    // Run after pad acquisition and before edge synthesis/recording. Checking
+    // here avoids a stale main-thread race snapshot ever steering a menu.
+    // Replace fixed addresses with a named race-input hook/state contract when
+    // the race dispatcher and player records have source-level definitions.
+    const bool driving = lambo::driving::race_allows_assists(
+        MEM_H(0, kGameStateAddress), MEM_H(0, (gpr)(int32_t)0x800CE6B0u),
+        MEM_H(0, (gpr)(int32_t)0x800CE808u), MEM_H(0, (gpr)(int32_t)0x800CE6B4u));
+    // Player-one completion flag: s16 at record base 0x800A5EE8 + 1*0x84 + 2.
+    const bool player_finished = MEM_H(0, (gpr)(int32_t)0x800A5F6Eu) != 0;
+    const bool assists_allowed = driving && !player_finished && !lambo::input_gate::guest_input_suppressed() &&
+                                 !g_state.trace;
+    lambo::driving::set_racing(assists_allowed);
+    if (assists_allowed) {
+        auto pad = read_guest_pad(rdram);
+        lambo::driving::apply(lambo::driving::sample(), true,
+            g_state.physical_analog.brake_analog && g_state.physical_analog.brake > 0,
+            pad.buttons, pad.stick_x);
+        MEM_H(0, kPortZeroPadAddress) = pad.buttons;
+        MEM_B(2, kPortZeroPadAddress) = pad.stick_x;
+    }
     if (!g_state.configured || g_state.failed) return;
 
     if (g_state.trace && g_state.complete) {
