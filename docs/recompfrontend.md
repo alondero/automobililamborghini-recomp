@@ -16,9 +16,9 @@ Open settings with F1, Escape, or the controller menu button. The same overlay i
 in fullscreen. Inside it the D-pad or left stick moves focus, South (A) accepts, West (X) goes
 back, and the shoulder buttons switch tabs. Menu actions use the same controller profile the
 overlay opens with, so a pad can open and navigate the overlay before it is assigned to a
-player; the bindings can be changed in Controls.
+player; the bindings can be changed in Button bindings.
 
-Controls > Assign players binds devices to N64 ports 1-4. At startup, player one
+Button bindings > Assign players binds devices to N64 ports 1-4. At startup, player one
 uses the connected legacy preferred controller, or the first available controller, with
 keyboard fallback when no controller is available. Assign controllers explicitly
 before multiplayer. Separate keyboard-player profiles can be configured, but players 2-4
@@ -32,7 +32,8 @@ controller profile choices persist.
 | General | Rumble strength, stick deadzone, background input | Framework `general.json` |
 | Graphics | Resolution, 1/2/3/4x downsampling, aspect, HUD placement, window mode, original/display/manual presentation rate, MSAA through 8x, HPFB, graphics API, developer overlay, initial window dimensions, texture pack/dump paths | Existing `graphics.json`, Apply/Discard |
 | Enhancements | Automatic pit-stops (off by default), multiplayer fog/sky matching, full geometry and six circuit switches, draw distance, fog density, camera distance/height/FOV | Existing `graphics.json`, immediate |
-| Controls | N64 button/stick remapping, keyboard/controller profiles, 1-4 player assignment | Framework `controls-framework.json` |
+| Button bindings | N64 button/stick remapping, keyboard/controller profiles, 1-4 player assignment | Framework `controls-framework.json` |
+| Controls | Default-off Android gyro steering, steering range/deadzone/inversion, auto-accelerate | Framework driving-controls.json, Apply/Discard |
 | Mods | Package installation, enable/disable, ordering, per-mod settings | Runtime `mods.json` and `mod_config/` |
 | Driver | Driver-one name, startup launcher preference | Existing `player.json` and `graphics.json` |
 | Pedals | Analog/digital throttle and brake, source axis/direction, deadzone and saturation | Framework `pedals.json`, Apply/Discard |
@@ -52,7 +53,7 @@ fullscreen/native-menu change.
 Legacy `controls.json` is left untouched. On first launch its custom controller mappings are
 imported as selectable `Imported ...` profiles. Startup matches the actual connected device's
 SDL GUID to its imported profile when there is no existing framework association. Previously
-saved framework profile choices take precedence; they can be changed in Controls. Framework
+saved framework profile choices take precedence; they can be changed in Button bindings. Framework
 identity hashes are reconstructed on load so those choices survive restarting the game.
 The framework supports two bindings per input
 and uses its shared stick deadzone/digital-axis threshold; extra legacy bindings and per-axis
@@ -97,7 +98,7 @@ Android and physical-controller/haptic validation still need platform/device tes
 race and requires `PresentEarly` on the first game display list. The before/after replay
 confirmed 30 Hz detection and four interpolated frames at 120 Hz after the repair. This
 checks the presentation contract, not subjective motion quality. Controller auto-selection
-is a startup policy; hotplug reassignment remains available through Controls > Assign players.
+is a startup policy; hotplug reassignment remains available through Button bindings > Assign players.
 
 The original standalone exploration remains under `experiments/recompfrontend`; it is not
 the game's build or runtime path.

@@ -399,6 +399,7 @@ static void update_gfx_stub(void* /*gfx_data*/) {
     if (lambo_rt64::enabled()) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            lambo::ui::driving_sensor_event(event);
             // Quit/window-close is handled before any UI or guest dispatch. In particular,
             // a launcher close before the first VI is a successful application exit, not a
             // failed boot probe.
@@ -614,6 +615,7 @@ static void input_sample() {
         (analog_mode && physical_throttle > 0.0f) || (brake_analog_mode && physical_brake > 0.0f))
         ? (snap | 1u) : snap;
     lambo::input_gate::publish_physical_snapshot(gated_snap);
+    lambo::ui::sample_frontend_driving_assists();
     const float throttle = lambo::input_gate::guest_input_suppressed()
         ? 0.0f : physical_throttle;
     const float brake = lambo::input_gate::guest_input_suppressed()

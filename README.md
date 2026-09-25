@@ -34,12 +34,16 @@ as experimental. See the [Android guide](docs/ANDROID.md).
 ## Controls
 
 Use a controller if possible. The game opens its settings with Esc, F1, or the
-controller menu button. Open Controls to see or change the current keyboard and
+controller menu button. Open Button bindings to see or change the current keyboard and
 controller bindings.
 
 Player one uses the preferred connected controller, then falls back to the
-keyboard. Players two through four must be assigned in Controls. Bindings are
+keyboard. Players two through four must be assigned in Button bindings. Bindings are
 saved per controller profile.
+
+Controls also offers optional Android gyro steering and auto-accelerate for
+player one. Both default to off and activate only during races. See
+[controller help](docs/controllers.md) for setup and tuning.
 
 ## Settings
 

@@ -14,6 +14,7 @@
 #include "lambo_analog_brake.h"
 #include "lambo_analog_throttle.h"
 #include "lambo_input_gate.h"
+#include "lambo_driving_assists.h"
 #include "lambo_input_quantize.h"
 #include "lambo_log.h"
 #include "recomp.h"
@@ -72,6 +73,7 @@ RuntimeState g_state;
 // A single atomic is reserved for the exceptional path because a guest hook
 // must never let a C++ exception escape into recompiled code.
 std::atomic<bool> g_hook_exception{false};
+std::atomic<bool> g_replay_configured{false};
 
 void set_error_locked(std::string message, std::string reason) {
     g_state.error = std::move(message);
@@ -464,6 +466,7 @@ namespace lambo::replay_runtime {
 
 bool initialize_from_environment() {
     try {
+        lambo::driving::set_replay_playback(false);
         const char* replay_path = std::getenv("LAMBO_INPUT_REPLAY");
         const char* record_path = std::getenv("LAMBO_INPUT_RECORD");
         const bool wants_replay = replay_path != nullptr && replay_path[0] != '\0';
@@ -510,6 +513,8 @@ bool initialize_from_environment() {
         g_state.recorder = std::move(recorder);
         g_state.recording = wants_record;
         g_state.configured = true;
+        g_replay_configured.store(true, std::memory_order_release);
+        lambo::driving::set_replay_playback(wants_replay);
         if (g_state.trace) {
             LAMBO_LOG_INFO("replay", "armed %llu game frame(s) from %s; start_state=%d delay=%llu\n",
                            static_cast<unsigned long long>(g_state.trace->total_frames()),
@@ -626,13 +631,16 @@ extern "C" void lambo_replay_state_loaded() noexcept {
 }
 
 extern "C" void lambo_replay_dispatch_begin(std::uint8_t* rdram) noexcept {
+    if (!g_replay_configured.load(std::memory_order_acquire)) return;
     invoke_guest_hook([rdram] { dispatch_begin_impl(rdram); });
 }
 
 extern "C" void lambo_replay_dispatch_end(std::uint8_t* rdram) noexcept {
+    if (!g_replay_configured.load(std::memory_order_acquire)) return;
     invoke_guest_hook([rdram] { dispatch_end_impl(rdram); });
 }
 
 extern "C" void lambo_replay_input_tick(std::uint8_t* rdram) noexcept {
+    if (!g_replay_configured.load(std::memory_order_acquire)) return;
     invoke_guest_hook([rdram] { input_tick_impl(rdram); });
 }

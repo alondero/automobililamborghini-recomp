@@ -33,6 +33,7 @@ int main(int argc, char** argv) {
         // run's intentionally remapped startup controller cannot affect this run.
         { std::ofstream file(path / "controls-framework.json");
           file << R"({"version":3,"profiles":[],"controllers":[]})"; }
+        std::filesystem::remove(path / "driving-controls.json");
         const nlohmann::json initial = {
             {"res_option", "Original2x"}, {"ds_option", 3}, {"msaa_option", "MSAA8X"},
             {"window_width", 1920}, {"window_height", 1080},
@@ -43,8 +44,27 @@ int main(int argc, char** argv) {
         lambo::config::load_and_apply_graphics();
         require(lambo::player::set_saved_name("RACER"), "driver cache fixture");
         lambo::ui::create_frontend_settings();
+        lambo::ui::create_frontend_driving_settings();
         lambo::ui::create_frontend_pedal_settings();
         recompui::config::finalize();
+        auto& driving = recompui::config::get_config("driving-controls");
+        require(!std::get<bool>(driving.get_option_value("gyro")) &&
+                !std::get<bool>(driving.get_option_value("auto_accelerate")), "driving assists must default off");
+        driving.set_option_value("gyro", true);
+        require(!std::get<bool>(driving.get_option_value("gyro")), "unapplied gyro change escaped");
+        driving.revert_temp_config();
+        require(!std::get<bool>(driving.get_temp_option_value("gyro")), "gyro discard failed");
+        driving.set_option_value("gyro", true);
+        driving.set_option_value("auto_accelerate", true);
+        driving.set_option_value("gyro_range", 45.0);
+        require(driving.save_config(), "driving settings save failed");
+        driving.update_option_value("gyro", false);
+        driving.apply_option_value("gyro");
+        require(driving.load_config(), "driving settings reload failed");
+        require(std::get<bool>(driving.get_option_value("gyro")) &&
+                std::get<bool>(driving.get_option_value("auto_accelerate")) &&
+                std::get<double>(driving.get_option_value("gyro_range")) == 45.0,
+                "driving options did not persist");
 
         // The SDL pump posts the toggle and the presentation callback
         // publishes the applied context state. Verify both edges of that
