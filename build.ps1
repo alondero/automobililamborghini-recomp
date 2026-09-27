@@ -178,8 +178,8 @@ try {
     # alone (clean needs -ff to recurse), so `git submodule update --init` stays
     # authoritative for those. Keep this complete instead of listing patch-created
     # paths by hand: such a list drifts from patches/ every time a patch adds a file.
-    # The list must cover every submodule the build patches, including the two that
-    # cmake/Frontend.cmake patches (0016/0018 on N64ModernRuntime, 0017 on
+    # The list must cover every submodule the build patches, including the three that
+    # cmake/Frontend.cmake patches (0016/0018 on N64ModernRuntime, 0017 and 0019 on
     # RecompFrontend) - lambo_frontend_patch refuses to configure a dirty tree
     # rather than reset it.
     Write-Host "[2/5] Resetting submodules to clean state before patching..." -ForegroundColor Cyan

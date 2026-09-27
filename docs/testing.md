@@ -64,6 +64,7 @@ ctest --test-dir build -R "lambo_rom_path"
 ctest --test-dir build -R "lambo_(controls|input|analog)"
 ctest --test-dir build -R "lambo_automatic_pit_stops"
 ctest --test-dir build -R "lambo_cheats|lambo_frontend_settings"
+ctest --test-dir build -R "lambo_prompt_back_action"
 ctest --test-dir build -R "lambo_menu_stick_scale"
 ctest --test-dir build -R "lambo_(controller_pak|startup_state_machine)"
 ctest --test-dir build -R "lambo_(no_lod|track_patch|interpolation)"
@@ -85,6 +86,15 @@ captures the final assisted pad.
 On Android, additionally check both landscape orientations, background/resume,
 opening settings while tilted, a phone without sensors, braking, and finishing
 a race. These hardware checks are not replaced by host tests.
+
+`lambo_prompt_back_action` checks the settings quit confirmation's controller
+contract in the build input: the prompt must answer the Back action, that action
+must be the mapped Back rather than a fixed button, and the affirmative quit
+must stay on its own confirmation. The prompt itself needs a live render
+context, so this is a patch-content check, not a played confirmation.
+`lambo_frontend_settings_tests` covers the binding side: that the pressing
+controller's default and remapped Back both produce the Back menu action. A
+controller playthrough is still the only way to confirm the prompt visually.
 
 ## End-to-end scenario
 

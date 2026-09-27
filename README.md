@@ -41,6 +41,10 @@ Player one uses the preferred connected controller, then falls back to the
 keyboard. Players two through four must be assigned in Button bindings. Bindings are
 saved per controller profile.
 
+The settings screen uses its own controller bindings: A accepts and Back backs
+out. Pressing Back on a confirmation, such as the quit confirmation, cancels it
+and returns to the settings. Quit still needs its own confirmation.
+
 Controls also offers optional Android gyro steering and auto-accelerate for
 player one. Both default to off and activate only during races. See
 [controller help](docs/controllers.md) for setup and tuning.

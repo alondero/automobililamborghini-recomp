@@ -42,6 +42,20 @@ active profile and publish a controller snapshot. The recompiled game consumes
 that snapshot on the game thread. A menu binding working does not prove that a
 race receives the same input.
 
+The settings overlay has its own bindings, separate from the N64 button
+bindings: A accepts the highlighted item and Back backs out. The same Back
+binding answers a confirmation prompt, including the quit confirmation, by
+running that prompt's own cancel action. The affirmative Quit stays on its own
+confirmation. One case is worth knowing: on the graphics "unapplied changes"
+confirmation, Back discards those changes, exactly like its Discard button. The
+bindings are changed in Button bindings, and the overlay uses the profile of the
+pad that opened it.
+
+Status: **Confirmed** for the binding resolution and the prompt wiring.
+**Unverified** on a controller; see
+[frontend notes](recompfrontend.md#the-quit-confirmation) for what was traced
+and what was not run.
+
 ## Pre-race menu navigation
 
 The pre-race menus turn the analog stick into menu movement with a fixed
