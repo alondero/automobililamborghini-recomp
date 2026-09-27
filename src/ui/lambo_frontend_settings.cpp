@@ -80,6 +80,7 @@ void refresh_frontend_settings() {
     sync_value(enhancements, "sky_match", port::widescreen_sky_match());
     sync_value(enhancements, "no_lod", port::no_lod());
     sync_value(enhancements, "automatic_pit_stops", port::automatic_pit_stops());
+    sync_value(enhancements, "menu_stick_sensitivity", port::menu_stick_sensitivity());
     for (int i = 0; i < 6; ++i) sync_value(enhancements, "circuit_" + std::to_string(i + 1), port::no_lod_circuit(i));
     sync_value(enhancements, "draw_distance", port::global_draw_distance());
     sync_value(enhancements, "fog_scale", port::global_fog_scale());
@@ -135,6 +136,7 @@ void create_frontend_settings() {
     number(enhancements, "camera_distance", "Camera distance", port::camera_distance_scale(), .2, 3, .05, port::set_camera_distance_scale);
     number(enhancements, "camera_height", "Camera height", port::camera_height_scale(), .2, 3, .05, port::set_camera_height_scale);
     number(enhancements, "camera_fov", "Additional field of view (degrees)", port::camera_fov_add(), -20, 60, 1, port::set_camera_fov_add);
+    number(enhancements, "menu_stick_sensitivity", "Menu stick sensitivity", port::menu_stick_sensitivity(), 1.0, 2.5, 0.1, port::set_menu_stick_sensitivity);
 
     auto& cheats = settings::create_config_tab("Cheats", "cheats", false);
     cheats.external_storage = true; // Session-only: never restore cheats on launch.

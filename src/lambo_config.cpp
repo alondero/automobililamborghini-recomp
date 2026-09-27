@@ -78,6 +78,10 @@ std::atomic<double> g_camera_distance_scale{1.0};
 std::atomic<double> g_camera_height_scale{1.0};
 std::atomic<double> g_camera_fov_add{0.0};
 
+// Opt-in menu-navigation stick sensitivity (see lambo_config.h). 1.0 = the ROM's
+// authored behaviour (byte-for-byte no-op); only func_800427D4 consults it.
+std::atomic<double> g_menu_stick_sensitivity{1.0};
+
 // Main-thread-owned snapshot used by native menu actions. It avoids reading the
 // runtime's reference-returning getter while another thread may be applying a change.
 ultramodern::renderer::GraphicsConfig g_current_graphics{};
@@ -149,6 +153,7 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"camera_distance_scale", g_camera_distance_scale.load()},
         {"camera_height_scale", g_camera_height_scale.load()},
         {"camera_fov_add", g_camera_fov_add.load()},
+        {"menu_stick_sensitivity", g_menu_stick_sensitivity.load()},
         {"show_launcher", g_show_launcher.load()},
     });
     return result;
@@ -184,6 +189,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     double camera_distance_scale = g_camera_distance_scale.load();
     double camera_height_scale = g_camera_height_scale.load();
     double camera_fov_add = g_camera_fov_add.load();
+    double menu_stick_sensitivity = g_menu_stick_sensitivity.load();
     bool show_launcher = g_show_launcher.load();
     from_or_default(j, "widescreen_fog_match", widescreen_fog_match);
     from_or_default(j, "widescreen_sky_match", widescreen_sky_match);
@@ -197,6 +203,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "camera_distance_scale", camera_distance_scale);
     from_or_default(j, "camera_height_scale", camera_height_scale);
     from_or_default(j, "camera_fov_add", camera_fov_add);
+    from_or_default(j, "menu_stick_sensitivity", menu_stick_sensitivity);
     from_or_default(j, "show_launcher", show_launcher);
     g_widescreen_fog_match.store(widescreen_fog_match);
     g_widescreen_sky_match.store(widescreen_sky_match);
@@ -210,6 +217,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     g_camera_distance_scale.store(camera_distance_scale);
     g_camera_height_scale.store(camera_height_scale);
     g_camera_fov_add.store(camera_fov_add);
+    g_menu_stick_sensitivity.store(menu_stick_sensitivity);
     g_show_launcher.store(show_launcher);
     // Sanity-bound the window size: below the N64 framebuffer is useless, above 8K
     // is a typo -- either way SDL_CreateWindow would fail and the port would run
@@ -679,6 +687,29 @@ void set_camera_fov_add(double v) {
     if (v > 60.0) v = 60.0;
     g_camera_fov_add.store(v);
     save_graphics_updates({{"camera_fov_add", v}});
+}
+
+// LAMBO_MENU_STICK_SENSITIVITY=<float> overrides the JSON key for capture/testing.
+// Multiplier on the parsed pad stick byte inside the pre-race menu routine only;
+// 1.0 = stock, and values <= 1.0 are a no-op. Bounded so a typo cannot exceed the
+// signed-byte pad domain (the native clamps to +/-127 anyway).
+double menu_stick_sensitivity() {
+    double v;
+    if (const char* s = std::getenv("LAMBO_MENU_STICK_SENSITIVITY")) {
+        v = std::atof(s);
+    } else {
+        v = g_menu_stick_sensitivity.load();
+    }
+    if (!(v > 1.0)) return 1.0;
+    if (v > 2.5) v = 2.5;
+    return v;
+}
+
+void set_menu_stick_sensitivity(double v) {
+    if (!(v > 1.0)) v = 1.0;
+    if (v > 2.5) v = 2.5;
+    g_menu_stick_sensitivity.store(v);
+    save_graphics_updates({{"menu_stick_sensitivity", v}});
 }
 
 bool show_launcher() {

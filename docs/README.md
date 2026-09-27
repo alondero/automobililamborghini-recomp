@@ -67,6 +67,7 @@ status line before relying on a historical measurement.
 | [Cheats](cheats.md) | Live cheat toggles, reference review, native seams and tests. |
 | [Analog throttle](analog-throttle.md) | Throttle bridge measurements and tests. |
 | [Analog brake](analog-brake.md) | Brake bridge measurements and tests. |
+| [Menu stick sensitivity](menu-input.md) | Opt-in pre-race menu analog-stick scaling. |
 | [Controllers and input](controllers.md) | Current input path and guest-layout evidence. |
 | [Gyro steering research](gyro-steering-research.md) | Racing recomp comparison, Android sensors, and race-only gates. |
 | [Player names](player-names.md) | Driver-name persistence notes. |

@@ -153,6 +153,16 @@ void set_camera_height_scale(double v);
 double camera_fov_add();
 void set_camera_fov_add(double v);
 
+// Opt-in menu-navigation stick sensitivity (issue #238). Multiplies the parsed
+// pad stick byte inside the ROM's pre-race menu routine func_800427D4 only; the
+// race steering path is a different consumer and never sees it. 1.0 = the ROM's
+// authored behaviour and a byte-for-byte no-op, so stock is the default; range
+// (1.0, 2.5]. graphics.json key "menu_stick_sensitivity", overridable by
+// LAMBO_MENU_STICK_SENSITIVITY for headless capture/testing. The native the hook
+// text calls lives in src/lambo_menu_stick.cpp.
+double menu_stick_sensitivity();
+void set_menu_stick_sensitivity(double v);
+
 // Draw-distance multiplier applied (while no_lod is on) to the authored per-circuit
 // segment-cull radii the scene builder tests visibility-list entries against.
 // 1.0 = the N64 radii, larger = see further, 0 (or negative) = unlimited: the whole
