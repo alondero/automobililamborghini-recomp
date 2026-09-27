@@ -320,6 +320,42 @@ ignored = [
     "func_8007AB10",
 ]
 
+# Native, session-only cheats. Evidence and contracts: docs/cheats.md.
+[[patches.hook]]
+func = "BootLoadInitialAssets"
+before_vram = 0x80001754
+text = "{ extern void lambo_cheat_current_lap_timer(uint8_t*, recomp_context*); lambo_cheat_current_lap_timer(rdram, ctx); }"
+
+[[patches.hook]]
+func = "BootLoadInitialAssets"
+before_vram = 0x80001558
+text = "{ extern void lambo_cheat_countdown(uint8_t*, recomp_context*); lambo_cheat_countdown(rdram, ctx); }"
+
+[[patches.hook]]
+func = "BootLoadInitialAssets"
+before_vram = 0x800015DC
+text = "{ extern void lambo_cheat_lap_timer(uint8_t*, recomp_context*); lambo_cheat_lap_timer(rdram, ctx); }"
+
+[[patches.hook]]
+func = "func_8003F40C"
+before_vram = 0x8003E8AC
+text = "{ extern int lambo_cheat_extra_vehicles(void); if (lambo_cheat_extra_vehicles()) ctx->r12 = 1; }"
+
+[[patches.hook]]
+func = "func_8003F40C"
+before_vram = 0x8003E954
+text = "{ extern int lambo_cheat_extra_vehicles(void); if (lambo_cheat_extra_vehicles()) ctx->r11 = 1; }"
+
+[[patches.hook]]
+func = "func_8003F56C"
+before_vram = 0x8003EA0C
+text = "{ extern int lambo_cheat_extra_vehicles(void); if (lambo_cheat_extra_vehicles()) ctx->r11 = 1; }"
+
+[[patches.hook]]
+func = "func_8003F56C"
+before_vram = 0x8003EAB4
+text = "{ extern int lambo_cheat_extra_vehicles(void); if (lambo_cheat_extra_vehicles()) ctx->r25 = 1; }"
+
 # Issue #4 — game-side geometry-LOD distance-test, NOT covered by RT64's
 # renderer-level forceBranch (which only touches RSP G_BRANCH_Z/W).
 # NOPs the bc1f +0xDC in func_80060464 that gates the per-car high-poly

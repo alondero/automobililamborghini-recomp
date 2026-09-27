@@ -2,6 +2,7 @@
 #include <iostream>
 #include <stdexcept>
 #include "lambo_config.h"
+#include "lambo_cheats.h"
 #include "lambo_player_name.h"
 #include "lambo_paths.h"
 #include "ui/lambo_ui.h"
@@ -47,6 +48,21 @@ int main(int argc, char** argv) {
         lambo::ui::create_frontend_driving_settings();
         lambo::ui::create_frontend_pedal_settings();
         recompui::config::finalize();
+        auto& cheats = recompui::config::get_config("cheats");
+        require(!cheats.requires_confirmation && cheats.external_storage, "cheats must be live and session-only");
+        for (const auto& entry : lambo::cheats::catalog) {
+            require(!std::get<bool>(cheats.get_option_value(entry.id)), "cheat defaults on");
+            cheats.set_option_value(entry.id, true);
+            require(lambo::cheats::enabled(entry.cheat), "cheat enable requires Apply");
+            cheats.set_option_value(entry.id, false);
+            require(!lambo::cheats::enabled(entry.cheat), "cheat disable requires Apply");
+            lambo::cheats::set_enabled(entry.cheat, true);
+            lambo::ui::refresh_frontend_settings();
+            require(std::get<bool>(cheats.get_option_value(entry.id)), "cheat UI refresh failed");
+            cheats.set_option_value(entry.id, false);
+        }
+        require(cheats.save_config() && !std::filesystem::exists(path / "cheats.json"),
+                "session cheats were persisted");
         auto& driving = recompui::config::get_config("driving-controls");
         require(!std::get<bool>(driving.get_option_value("gyro")) &&
                 !std::get<bool>(driving.get_option_value("auto_accelerate")), "driving assists must default off");

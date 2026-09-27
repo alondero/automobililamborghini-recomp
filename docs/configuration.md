@@ -1,5 +1,8 @@
 # Configuration
 
+The [Cheats tab](cheats.md) offers immediate, session-only toggles. Cheats start
+disabled on each launch and are not saved to a configuration file.
+
 The game creates its configuration on first launch. The in-game frontend is
 the normal editor. Direct JSON editing is useful for advanced options and
 diagnosis.
