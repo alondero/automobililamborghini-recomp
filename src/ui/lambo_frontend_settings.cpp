@@ -1,4 +1,5 @@
 #include "lambo_config.h"
+#include "lambo_cheats.h"
 #include "lambo_player_name.h"
 #include "recompui/config.h"
 
@@ -72,6 +73,9 @@ void refresh_frontend_settings() {
     auto& graphics = recompui::config::get_graphics_config();
     if (!graphics.is_dirty() && seeded_graphics != port::current_graphics()) seed_graphics();
     auto& enhancements = recompui::config::get_config("enhancements");
+    auto& cheats = recompui::config::get_config("cheats");
+    for (const auto& entry : lambo::cheats::catalog)
+        sync_value(cheats, entry.id, lambo::cheats::enabled(entry.cheat));
     sync_value(enhancements, "fog_match", port::widescreen_fog_match());
     sync_value(enhancements, "sky_match", port::widescreen_sky_match());
     sync_value(enhancements, "no_lod", port::no_lod());
@@ -131,6 +135,14 @@ void create_frontend_settings() {
     number(enhancements, "camera_distance", "Camera distance", port::camera_distance_scale(), .2, 3, .05, port::set_camera_distance_scale);
     number(enhancements, "camera_height", "Camera height", port::camera_height_scale(), .2, 3, .05, port::set_camera_height_scale);
     number(enhancements, "camera_fov", "Additional field of view (degrees)", port::camera_fov_add(), -20, 60, 1, port::set_camera_fov_add);
+
+    auto& cheats = settings::create_config_tab("Cheats", "cheats", false);
+    cheats.external_storage = true; // Session-only: never restore cheats on launch.
+    for (const auto& entry : lambo::cheats::catalog) {
+        boolean(cheats, entry.id, entry.name, lambo::cheats::enabled(entry.cheat),
+            [cheat = entry.cheat](bool value) { lambo::cheats::set_enabled(cheat, value); });
+        cheats.update_option_description(entry.id, entry.description);
+    }
 
     settings::create_controls_tab("Button bindings");
     settings::create_mods_tab();

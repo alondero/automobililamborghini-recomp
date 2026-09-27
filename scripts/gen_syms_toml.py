@@ -692,6 +692,42 @@ NATIVE_OVERRIDES = [
 # generated lamborghini.us.toml (issues #2/#4 landed them by editing the toml directly; the
 # generator must carry them or a regen silently drops the widescreen HUD + LOD patches).
 PATCH_BLOCKS = """
+# Native, session-only cheats. Evidence and contracts: docs/cheats.md.
+[[patches.hook]]
+func = "BootLoadInitialAssets"
+before_vram = 0x80001754
+text = "{ extern void lambo_cheat_current_lap_timer(uint8_t*, recomp_context*); lambo_cheat_current_lap_timer(rdram, ctx); }"
+
+[[patches.hook]]
+func = "BootLoadInitialAssets"
+before_vram = 0x80001558
+text = "{ extern void lambo_cheat_countdown(uint8_t*, recomp_context*); lambo_cheat_countdown(rdram, ctx); }"
+
+[[patches.hook]]
+func = "BootLoadInitialAssets"
+before_vram = 0x800015DC
+text = "{ extern void lambo_cheat_lap_timer(uint8_t*, recomp_context*); lambo_cheat_lap_timer(rdram, ctx); }"
+
+[[patches.hook]]
+func = "func_8003F40C"
+before_vram = 0x8003E8AC
+text = "{ extern int lambo_cheat_extra_vehicles(void); if (lambo_cheat_extra_vehicles()) ctx->r12 = 1; }"
+
+[[patches.hook]]
+func = "func_8003F40C"
+before_vram = 0x8003E954
+text = "{ extern int lambo_cheat_extra_vehicles(void); if (lambo_cheat_extra_vehicles()) ctx->r11 = 1; }"
+
+[[patches.hook]]
+func = "func_8003F56C"
+before_vram = 0x8003EA0C
+text = "{ extern int lambo_cheat_extra_vehicles(void); if (lambo_cheat_extra_vehicles()) ctx->r11 = 1; }"
+
+[[patches.hook]]
+func = "func_8003F56C"
+before_vram = 0x8003EAB4
+text = "{ extern int lambo_cheat_extra_vehicles(void); if (lambo_cheat_extra_vehicles()) ctx->r25 = 1; }"
+
 # Issue #4 — game-side geometry-LOD distance-test, NOT covered by RT64's
 # renderer-level forceBranch (which only touches RSP G_BRANCH_Z/W).
 # NOPs the bc1f +0xDC in func_80060464 that gates the per-car high-poly
@@ -789,7 +825,10 @@ text = "lambo_ws_minimap_reset(rdram);"
 [[patches.hook]]
 func = "func_8004384C"
 before_vram = 0x80043C88
-text = "extern unsigned int lambo_ws_minimap_outline_x(unsigned int); ctx->r5 = S32(lambo_ws_minimap_outline_x((uint32_t)ctx->r5));"
+# Android Clang rejects hook declarations that cross generated labels. Keep
+# each extern and call in a block; this is valid for desktop and preserves the
+# same hook order in every generated build.
+text = "{ extern unsigned int lambo_ws_minimap_outline_x(unsigned int); ctx->r5 = S32(lambo_ws_minimap_outline_x((uint32_t)ctx->r5)); }"
 
 # Issue #42 — widescreen HUD for 2P split screen. func_80050860 keys on the player
 # count at 0x800CE6A4 ($s0): ==2 branches to the top/bottom section (L_80050BEC).
@@ -874,7 +913,7 @@ text = "lambo_ws_pin_reset(rdram);"
 [[patches.hook]]
 func = "func_80050860"
 before_vram = 0x80050DB4
-text = "extern void lambo_ws_minimap_pin_2p(unsigned char*); lambo_ws_minimap_pin_2p(rdram);"
+text = "{ extern void lambo_ws_minimap_pin_2p(unsigned char*); lambo_ws_minimap_pin_2p(rdram); }"
 
 [[patches.hook]]
 func = "func_80050860"
@@ -884,7 +923,7 @@ text = "lambo_ws_minimap_reset(rdram);"
 [[patches.hook]]
 func = "func_80050860"
 before_vram = 0x80050FF8
-text = "extern void lambo_ws_minimap_pin_2p(unsigned char*); lambo_ws_minimap_pin_2p(rdram);"
+text = "{ extern void lambo_ws_minimap_pin_2p(unsigned char*); lambo_ws_minimap_pin_2p(rdram); }"
 
 [[patches.hook]]
 func = "func_80050860"
@@ -936,16 +975,21 @@ text = "lambo_ws_pin_reset(rdram);"
 [[patches.hook]]
 func = "func_800028D0"
 before_vram = 0x80001CD0
-text = "extern void lambo_warp_tick(uint8_t*, recomp_context*); lambo_warp_tick(rdram, ctx);"
+# State 7 replaces menu asset memory. The main loop normally permits two queued
+# graphics tasks, so defer this dispatch until its existing completion counter
+# drains. Return before the stack prologue: the main loop must keep receiving
+# task-done messages (blocking here would deadlock). Check after warp handling.
+# Guest addresses and lifetime evidence: docs/sky-panorama.md.
+text = "{ extern void lambo_warp_tick(uint8_t*, recomp_context*); lambo_warp_tick(rdram, ctx); if (MEM_H(0, (gpr)(int32_t)0x800CE6ACu) == 7 && MEM_H(0, (gpr)(int32_t)0x80098270u) > 0) return; }"
 
 # Issue #22 — developer save-state. Same top-level dispatcher (runs every frame in every
 # state), one instruction past the warp hook: N64Recomp rejects two hooks on the exact same
 # vram, and 0x80001CD4 is still the frame-boundary entry. Snapshots/restores rdram[0..8MiB)
-# on an F5/F9 or LAMBO_STATE_LOAD request; native in src/lambo_savestate.c.
+# on an F7/F8 or LAMBO_STATE_LOAD request; native in src/lambo_savestate.c.
 [[patches.hook]]
 func = "func_800028D0"
 before_vram = 0x80001CD4
-text = "extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_savestate_tick(rdram, ctx);"
+text = "{ extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_savestate_tick(rdram, ctx); }"
 
 # Car-differences measurement campaign: per-frame vehicle-record trace (one
 # instruction past the savestate hook). Gated behind LAMBO_CAR_TRACE; native in
@@ -953,17 +997,17 @@ text = "extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_saves
 [[patches.hook]]
 func = "func_800028D0"
 before_vram = 0x80001CD8
-text = "extern void lambo_replay_dispatch_begin(uint8_t*); extern void lambo_car_trace_tick(uint8_t*, recomp_context*); lambo_replay_dispatch_begin(rdram); lambo_car_trace_tick(rdram, ctx);"
+text = "{ extern void lambo_replay_dispatch_begin(uint8_t*); extern void lambo_car_trace_tick(uint8_t*, recomp_context*); lambo_replay_dispatch_begin(rdram); lambo_car_trace_tick(rdram, ctx); }"
 
 [[patches.hook]]
 func = "func_800028D0"
 before_vram = 0x800024E8
-text = "extern void lambo_replay_dispatch_end(uint8_t*); lambo_replay_dispatch_end(rdram);"
+text = "{ extern void lambo_replay_dispatch_end(uint8_t*); lambo_replay_dispatch_end(rdram); }"
 
 [[patches.hook]]
 func = "BootLoadInitialAssets"
 before_vram = 0x8000193C
-text = "extern void lambo_replay_input_tick(uint8_t*); lambo_replay_input_tick(rdram);"
+text = "{ extern void lambo_driving_assists_tick(uint8_t*); extern void lambo_replay_input_tick(uint8_t*); lambo_driving_assists_tick(rdram); lambo_replay_input_tick(rdram); }"
 
 # Issue #128 — true analog throttle. Capture the pedal demand immediately before the
 # stock human-driver A/Z branch, then apply the selected native port's continuous target
@@ -972,12 +1016,12 @@ text = "extern void lambo_replay_input_tick(uint8_t*); lambo_replay_input_tick(r
 [[patches.hook]]
 func = "func_80019D20"
 before_vram = 0x80019FBC
-text = "extern void lambo_analog_throttle_begin(uint8_t*); lambo_analog_throttle_begin(rdram);"
+text = "{ extern void lambo_analog_throttle_begin(uint8_t*); lambo_analog_throttle_begin(rdram); }"
 
 [[patches.hook]]
 func = "func_80019D20"
 before_vram = 0x8001A120
-text = "extern void lambo_analog_throttle_apply(uint8_t*); lambo_analog_throttle_apply(rdram);"
+text = "{ extern void lambo_analog_throttle_apply(uint8_t*); lambo_analog_throttle_apply(rdram); }"
 
 # Analog brake. The stock brake block sits LATER in the same updater (0x8001A690-
 # 0x8001A990): its not-B release handler (func_8002A070, vram tail 0x800295D8)
@@ -991,7 +1035,7 @@ text = "extern void lambo_analog_throttle_apply(uint8_t*); lambo_analog_throttle
 [[patches.hook]]
 func = "func_80019D20"
 before_vram = 0x8001A9A0
-text = "extern void lambo_analog_brake_apply(uint8_t*); lambo_analog_brake_apply(rdram);"
+text = "{ extern void lambo_analog_brake_apply(uint8_t*); lambo_analog_brake_apply(rdram); }"
 
 # Issue #40 — widescreen lens flare. The sun flare emitter func_80036854 draws a chain of
 # 10 translucent "ghost" texrects. Under ar_option Expand RT64 squishes each small untagged
@@ -1049,6 +1093,50 @@ func = "func_800030F8"
 before_vram = 0x80004E94
 text = "{ extern uint32_t lambo_sky_match_1p_guard(uint8_t*, uint32_t); ctx->r1 = lambo_sky_match_1p_guard(rdram, (uint32_t)ctx->r1); }"
 
+# Both calls assemble the finite sky panorama with a rotation-only view and the
+# current race projection. Tag the projection load as well as the emitted draw
+# so RT64 allocates a backdrop-only transform; tagging after the load would also
+# modify later world/HUD draws that reuse its transform index. The first load has
+# two mutually-exclusive branches. The first end hook sits on the sky guard's
+# merge label, so the native ignores an unmatched end.
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x80004DEC
+text = "{ extern void lambo_sky_backdrop_begin(uint8_t*); lambo_sky_backdrop_begin(rdram); }"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x80004E34
+text = "{ extern void lambo_sky_backdrop_begin(uint8_t*); lambo_sky_backdrop_begin(rdram); }"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x80004EA4
+text = "{ extern void lambo_sky_backdrop_end(uint8_t*); lambo_sky_backdrop_end(rdram); }"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x800052C0
+text = "{ extern void lambo_sky_backdrop_begin(uint8_t*); lambo_sky_backdrop_begin(rdram); }"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x80005308
+text = "{ extern void lambo_sky_backdrop_end(uint8_t*); lambo_sky_backdrop_end(rdram); }"
+
+# Remember the tile commands after the sky matrices and material setup. The
+# native replacement commits only after validating/building its entire list.
+[[patches.hook]]
+func = "func_800102D8"
+before_vram = 0x8000F9AC
+text = "{ extern void lambo_sky_panorama_start(uint8_t*); lambo_sky_panorama_start(rdram); }"
+
+# Replace the flat strip with an angular panorama before its state cleanup.
+[[patches.hook]]
+func = "func_800102D8"
+before_vram = 0x8001025C
+text = "{ extern void lambo_sky_extend_panorama(uint8_t*); lambo_sky_extend_panorama(rdram); }"
+
 # Track Lab v0 -- apply a guarded, same-size PVS correction after the stock track
 # loader has populated the active context. Companion disassembly labels this point
 # 0x80006C94; the whole-ROM recomp uses runtime addresses (splat - 0xC00), hence
@@ -1088,7 +1176,11 @@ text = "{ extern uint32_t lambo_no_lod_scenery_guard(uint8_t*, uint32_t); ctx->r
 # sits on the world-draw path (0x8000CD3C, after the 0x200 state gate, before the first
 # table read) and rewrites the radii when no_lod() to authored * draw_distance config
 # (0 = unlimited 1e9): per frame, not once at load, because a savestate restore brings
-# the ROM values back. Cone/half-plane tests are untouched, so nothing is synthesised --
+# the ROM values back. The same hook also rewrites the forward-cone cosine doubles at
+# 0x8008D8C0/C8 (authored 0.886, the constants' only readers are this builder's cull
+# tests) so the view cone tracks camera_fov_add -- without that, a widened projection
+# renders past the authored cone and peripheral segments pop in as they cross it.
+# Half-plane tests stay untouched, so nothing is synthesised --
 # the game just stops hiding segments it already streamed. Native in src/lambo_no_lod.cpp.
 [[patches.hook]]
 func = "func_8000A6C0"
@@ -1505,9 +1597,13 @@ func = "func_800030F8"
 before_vram = 0x80004374
 text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6); }"
 
-# Player-one persistence: editor setup/Done and both independent record writers.
-# Keep these hooks aligned with lamborghini.us.toml; record writers use zero-based
-# player indices, unlike the name editor's one-based current-driver selector.
+# Remember player one's name across launches. The name editor owns four one-based,
+# 13-byte buffers at 0x800A4819 + driver*13 (12 chars + NUL); player one is therefore
+# 0x800A4826. The setup hook runs after the screen selects its driver but before the
+# ROM scans the buffer to calculate its length, so a saved name is immediately reflected
+# by both the text and cursor. The Done hook captures the final buffer before the ROM
+# advances to the next player / pak flow. Native persistence is in player.json via
+# lambo_player_name.cpp, separate from the main-thread-owned graphics configuration.
 [[patches.hook]]
 func = "func_8003CD84"
 before_vram = 0x8003CE68
@@ -1518,6 +1614,11 @@ func = "func_800400EC"
 before_vram = 0x8003F4EC
 text = "{ extern void lambo_player_name_save(uint8_t*); lambo_player_name_save(rdram); }"
 
+# No-edit runs never enter the name screen. Restore the source buffer before
+# both independent ROM record writers; do not write leaderboard/history rows.
+# Lap completion: 0x80029628 (symbol func_8002A228). At 0x80029C48 the
+# faster-lap branch has resolved vehicle ownership to a zero-based player in
+# s16[sp+0x2E]. All four mode/direction name-copy branches follow this point.
 [[patches.hook]]
 func = "func_8002A228"
 before_vram = 0x80029C48
