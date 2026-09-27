@@ -42,6 +42,17 @@ active profile and publish a controller snapshot. The recompiled game consumes
 that snapshot on the game thread. A menu binding working does not prove that a
 race receives the same input.
 
+## Pre-race menu navigation
+
+The pre-race menus turn the analog stick into menu movement with a fixed
+threshold of about 51 of the game's 80-point stick range (roughly 64% of full
+deflection), so a device with a limited analog range can feel unresponsive. The
+Enhancements settings tab offers an opt-in **Menu stick sensitivity** multiplier
+(1.0 = stock, up to 2.5) that scales the stick inside the menu routine only. It
+is off by default, is saved as `menu_stick_sensitivity`, and never affects race
+steering, the D-pad, or the keyboard. See [menu input](menu-input.md) for the
+ROM seams.
+
 ## Guest layout evidence
 
 The following layout is reported by an external measurement, but this checkout

@@ -70,6 +70,7 @@ The port adds these keys:
 | widescreen_fog_match | true | Use the open one-player fog policy for three- and four-player views. |
 | widescreen_sky_match | true | Draw the sky panorama in three- and four-player views. |
 | automatic_pit_stops | false | Automatically operate the refuelling and tyre-change stick controls during a pit stop. |
+| menu_stick_sensitivity | 1.0 | Multiplier on the pre-race menu analog-stick deflection; 1.0 = stock. |
 | no_lod | true | Enable port-side removal of some stock distance reductions. |
 | no_lod_circuit | [true,true,true,false,false,false] | Per-circuit visibility-list policy. |
 | fog_scale | 1.0 | Global fog density multiplier. |
@@ -95,7 +96,8 @@ Known bounds are intentionally small and practical: window size is 320..7680
 by 240..4320; fog scale is clamped to 0..8; positive draw distance is clamped
 to 0.1..100, while zero or a negative value means unlimited; camera distance
 and height scales are clamped to 0.2..3; and the added camera FOV is clamped
-to -20..60 degrees. The per-circuit arrays have six entries. Other enum names
+to -20..60 degrees; menu stick sensitivity is clamped to 1..2.5. The per-circuit
+arrays have six entries. Other enum names
 and shared-runtime fields should be changed through the frontend unless a
 developer is testing a specific JSON value.
 
@@ -119,6 +121,7 @@ LAMBO_DRAW_DISTANCE
 LAMBO_CAMERA_DISTANCE_SCALE
 LAMBO_CAMERA_HEIGHT_SCALE
 LAMBO_CAMERA_FOV_ADD
+LAMBO_MENU_STICK_SENSITIVITY
 LAMBO_CONTROLLER_PAK_FILE
 LAMBO_PLAYER_CONFIG
 ~~~

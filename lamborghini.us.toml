@@ -359,6 +359,36 @@ func = "func_8006B470"
 before_vram = 0x8006B610
 text = "{ extern void lambo_pit_tyres(uint8_t*, recomp_context*); lambo_pit_tyres(rdram, ctx); }"
 
+# Issue #238 — opt-in menu-navigation stick sensitivity. func_800427D4 (runtime
+# 0x80041BD4) reads the parsed controller pad at 0x800A39E0 + channel*6 (OSContPad
+# shape: buttons +0, stick_x +2, stick_y +3) and derives menu movement two ways: a
+# cursor-velocity path (stick_x at 0x800424FC -> 0x8009873E, stick_y at 0x800426E0
+# -> 0x80098760; deadzone 7, clamped +/-48/+/-32), and a discrete +/-51 direction
+# threshold (stick_x at 0x800428D0 slti 0x33 -> synth D-right, and at 0x80042948
+# slti -0x32 -> synth D-left). Each hook rewrites the register that already holds
+# the loaded byte, just before its consumer, via the native in
+# src/lambo_menu_stick.cpp. 1.0 (default) is a byte-for-byte no-op; race steering
+# never passes through this routine. ROM evidence: docs/menu-input.md.
+[[patches.hook]]
+func = "func_800427D4"
+before_vram = 0x80042500
+text = "{ extern int lambo_menu_stick_scale(int); ctx->r8 = (gpr)(int32_t)lambo_menu_stick_scale((int32_t)ctx->r8); }"
+
+[[patches.hook]]
+func = "func_800427D4"
+before_vram = 0x800426E4
+text = "{ extern int lambo_menu_stick_scale(int); ctx->r9 = (gpr)(int32_t)lambo_menu_stick_scale((int32_t)ctx->r9); }"
+
+[[patches.hook]]
+func = "func_800427D4"
+before_vram = 0x800428D4
+text = "{ extern int lambo_menu_stick_scale(int); ctx->r15 = (gpr)(int32_t)lambo_menu_stick_scale((int32_t)ctx->r15); }"
+
+[[patches.hook]]
+func = "func_800427D4"
+before_vram = 0x8004294C
+text = "{ extern int lambo_menu_stick_scale(int); ctx->r14 = (gpr)(int32_t)lambo_menu_stick_scale((int32_t)ctx->r14); }"
+
 [[patches.hook]]
 func = "func_80050860"
 before_vram = 0x8004FF60

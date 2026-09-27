@@ -45,6 +45,10 @@ Controls also offers optional Android gyro steering and auto-accelerate for
 player one. Both default to off and activate only during races. See
 [controller help](docs/controllers.md) for setup and tuning.
 
+The Enhancements settings tab also offers an optional menu stick sensitivity so
+a shorter stick deflection moves between pre-race menu options. It defaults to
+off and does not affect race steering.
+
 ## Settings
 
 The settings screen includes:

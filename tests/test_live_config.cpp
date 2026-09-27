@@ -50,9 +50,11 @@ int main() {
 #if defined(_WIN32)
     _putenv_s("LAMBO_GRAPHICS_CONFIG", path.string().c_str());
     _putenv_s("LAMBO_PLAYER_CONFIG", player_path.string().c_str());
+    _putenv_s("LAMBO_MENU_STICK_SENSITIVITY", "");
 #else
     setenv("LAMBO_GRAPHICS_CONFIG", path.string().c_str(), 1);
     setenv("LAMBO_PLAYER_CONFIG", player_path.string().c_str(), 1);
+    unsetenv("LAMBO_MENU_STICK_SENSITIVITY");
 #endif
 
     auto cfg = lambo::config::load_and_apply_graphics();
@@ -63,6 +65,30 @@ int main() {
     lambo::config::load_and_apply_graphics();
     expect(lambo::config::automatic_pit_stops(), "pit assistance reloads");
     lambo::config::set_automatic_pit_stops(false);
+
+    expect(lambo::config::menu_stick_sensitivity() == 1.0, "menu stick sensitivity defaults to stock");
+    lambo::config::set_menu_stick_sensitivity(1.8);
+    lambo::config::flush_pending_graphics_updates();
+    expect(read_json(path).at("menu_stick_sensitivity") == 1.8, "menu stick sensitivity persists");
+    lambo::config::load_and_apply_graphics();
+    expect(lambo::config::menu_stick_sensitivity() == 1.8, "menu stick sensitivity reloads");
+    lambo::config::set_menu_stick_sensitivity(0.0);
+    expect(lambo::config::menu_stick_sensitivity() == 1.0, "menu stick sensitivity clamps up to stock");
+    lambo::config::set_menu_stick_sensitivity(9.0);
+    expect(lambo::config::menu_stick_sensitivity() == 2.5, "menu stick sensitivity clamps down to max");
+#if defined(_WIN32)
+    _putenv_s("LAMBO_MENU_STICK_SENSITIVITY", "2.0");
+#else
+    setenv("LAMBO_MENU_STICK_SENSITIVITY", "2.0", 1);
+#endif
+    expect(lambo::config::menu_stick_sensitivity() == 2.0, "menu stick sensitivity env override");
+    lambo::config::set_menu_stick_sensitivity(1.0);
+    lambo::config::flush_pending_graphics_updates();
+#if defined(_WIN32)
+    _putenv_s("LAMBO_MENU_STICK_SENSITIVITY", "");
+#else
+    unsetenv("LAMBO_MENU_STICK_SENSITIVITY");
+#endif
     lambo::config::flush_pending_graphics_updates();
     expect(std::filesystem::exists(path), "first load creates graphics.json");
     expect(cfg.ar_option == ultramodern::renderer::AspectRatio::Expand,
