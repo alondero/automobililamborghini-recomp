@@ -2,7 +2,12 @@
 
 #include <cmath>
 
-#include "lambo_config.h"
+// Declared in lambo_config.h. Forward-declared so this hook helper does not pull
+// the config header's <filesystem>/<string>/ultramodern/json dependencies into
+// every translation unit (and the isolated host test) that includes it.
+namespace lambo::config {
+double menu_stick_sensitivity();
+}
 
 // Issue #238 -- opt-in pre-race menu stick sensitivity.
 //

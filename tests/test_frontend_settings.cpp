@@ -133,20 +133,23 @@ int main(int argc, char** argv) {
         graphics.set_option_value("ds_option", uint32_t(4));
         graphics.save_config();
         auto& enhancements = recompui::config::get_config("enhancements");
-        for (const char* key : {"automatic_pit_stops", "fog_match", "sky_match", "no_lod", "draw_distance", "fog_scale", "camera_distance", "camera_height", "camera_fov"})
+        for (const char* key : {"automatic_pit_stops", "fog_match", "sky_match", "no_lod", "draw_distance", "fog_scale", "camera_distance", "camera_height", "camera_fov", "menu_stick_sensitivity"})
             require(enhancements.has_option(key), "missing enhancement");
         require(!lambo::config::automatic_pit_stops(), "pit assistance defaults off");
         enhancements.set_option_value("automatic_pit_stops", true);
         require(lambo::config::automatic_pit_stops(), "pit assistance live update");
         enhancements.set_option_value("camera_distance", .8);
         enhancements.set_option_value("circuit_2", true);
+        enhancements.set_option_value("menu_stick_sensitivity", 1.8);
         require(lambo::config::camera_distance_scale() == .8, "camera update");
         require(lambo::config::no_lod_circuit(1), "circuit update");
+        require(lambo::config::menu_stick_sensitivity() == 1.8, "menu stick sensitivity update");
         lambo::config::flush_pending_graphics_updates();
         nlohmann::json saved;
         { std::ifstream file(path / "graphics.json"); file >> saved; }
         require(saved.at("future_option") == "preserve me", "unknown settings lost");
         require(saved.at("automatic_pit_stops") == true, "pit assistance persistence");
+        require(saved.at("menu_stick_sensitivity") == 1.8, "menu stick sensitivity persistence");
         require(saved.at("ds_option") == 4, "graphics persistence");
         require(!std::filesystem::exists(path / "enhancements.json"), "duplicate enhancement owner");
         require(recompui::config::get_config("pedals").has_option("brake_saturation"), "brake calibration missing");

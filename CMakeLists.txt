@@ -342,9 +342,6 @@ if(BUILD_TESTING)
     )
     target_include_directories(lambo_menu_stick_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${N64MR}/ultramodern/include
-        ${N64MR}/N64Recomp/include
-        ${N64MR}/thirdparty
     )
     add_test(NAME lambo_menu_stick_scale COMMAND lambo_menu_stick_tests)
 
