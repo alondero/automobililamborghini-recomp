@@ -64,13 +64,13 @@ if(BUILD_TESTING)
     find_program(LAMBO_PYTHON_EXECUTABLE NAMES python python3)
 
     if(LAMBO_PYTHON_EXECUTABLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs/funcs.h")
-        file(GLOB PLAYER_RECORD_RECOMP_SOURCES CONFIGURE_DEPENDS RecompiledFuncs/funcs_*.c)
+        file(GLOB ROM_RECOMP_SOURCES CONFIGURE_DEPENDS RecompiledFuncs/funcs_*.c)
         add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/player_record_funcs.c
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_player_record_funcs.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs
                 ${CMAKE_CURRENT_BINARY_DIR}/player_record_funcs.c
-            DEPENDS tests/extract_player_record_funcs.py ${PLAYER_RECORD_RECOMP_SOURCES}
+            DEPENDS tests/extract_player_record_funcs.py ${ROM_RECOMP_SOURCES}
             VERBATIM)
         add_executable(lambo_player_records_tests
             tests/test_player_records.cpp
@@ -86,13 +86,27 @@ if(BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_pit_stop_funcs.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs
                 ${CMAKE_CURRENT_BINARY_DIR}/pit_stop_funcs.c
-            DEPENDS tests/extract_pit_stop_funcs.py ${PLAYER_RECORD_RECOMP_SOURCES}
+            DEPENDS tests/extract_pit_stop_funcs.py ${ROM_RECOMP_SOURCES}
             VERBATIM)
         add_executable(lambo_pit_stop_tests tests/test_automatic_pit_stops.cpp
             ${CMAKE_CURRENT_BINARY_DIR}/pit_stop_funcs.c src/lambo_automatic_pit_stops.cpp)
         target_include_directories(lambo_pit_stop_tests PRIVATE src RecompiledFuncs
             ${N64MR}/N64Recomp/include ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
         add_test(NAME lambo_automatic_pit_stops COMMAND lambo_pit_stop_tests)
+
+        add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/cheat_funcs.c
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_cheat_funcs.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs
+                ${CMAKE_CURRENT_BINARY_DIR}/cheat_funcs.c
+            DEPENDS tests/extract_cheat_funcs.py ${ROM_RECOMP_SOURCES}
+            VERBATIM)
+        add_executable(lambo_cheat_tests tests/test_cheats.cpp
+            ${CMAKE_CURRENT_BINARY_DIR}/cheat_funcs.c
+            src/lambo_cheats.cpp src/lambo_cheats_runtime.cpp)
+        target_include_directories(lambo_cheat_tests PRIVATE src RecompiledFuncs
+            ${N64MR}/N64Recomp/include)
+        add_test(NAME lambo_cheats COMMAND lambo_cheat_tests)
 
     endif()
 
@@ -586,6 +600,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_harness_report.cpp
         src/lambo_file.cpp
         src/lambo_automatic_pit_stops.cpp
+        src/lambo_cheats.cpp
+        src/lambo_cheats_runtime.cpp
         src/lambo_analog_throttle.cpp # host-to-guest throttle bridge + race hook
         src/lambo_analog_brake.cpp    # host-to-guest brake bridge + race hook
         src/controls/lambo_controls.cpp
@@ -771,6 +787,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     if(BUILD_TESTING)
         add_executable(lambo_frontend_settings_tests
             tests/test_frontend_settings.cpp src/ui/lambo_frontend_settings.cpp
+            src/lambo_cheats.cpp
             src/ui/lambo_frontend_input.cpp src/controls/lambo_controls.cpp src/lambo_driving_assists.cpp
             src/lambo_input_gate.cpp
             src/lambo_config.cpp src/lambo_player_name.cpp src/lambo_log.cpp src/lambo_file.cpp)
