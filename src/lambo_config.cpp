@@ -2,7 +2,7 @@
 //
 // The schema follows the shared runtime GraphicsConfig vocabulary. The port
 // owns persistence, per-key fallback, and the portable-directory escape hatch.
-// A lightweight native menu handles the common live-safe options.
+// The in-game settings overlay is the only player-facing settings surface.
 #include "lambo_config.h"
 
 #include <array>
@@ -82,8 +82,9 @@ std::atomic<double> g_camera_fov_add{0.0};
 // authored behaviour (byte-for-byte no-op); only func_800427D4 consults it.
 std::atomic<double> g_menu_stick_sensitivity{1.0};
 
-// Main-thread-owned snapshot used by native menu actions. It avoids reading the
-// runtime's reference-returning getter while another thread may be applying a change.
+// Main-thread-owned snapshot read by the settings overlay and the window-mode
+// reconciliation in the event pump. It avoids reading the runtime's
+// reference-returning getter while another thread may be applying a change.
 ultramodern::renderer::GraphicsConfig g_current_graphics{};
 
 // The renderer's API is selected when it is constructed. Keep its last applied

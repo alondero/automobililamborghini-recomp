@@ -398,6 +398,9 @@ if(BUILD_TESTING)
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 -m tests.test_prompt_back_action
         )
+        add_test(NAME lambo_native_menu_retired
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE} -m tests.test_native_menu_retired
+        )
         add_test(NAME lambo_track_lab_codec
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 -m unittest tests.test_track_lab
@@ -411,6 +414,7 @@ if(BUILD_TESTING)
             lambo_track_lab_codec
             lambo_track_patch_python_interop
             lambo_prompt_back_action
+            lambo_native_menu_retired
             PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         )
     else()
@@ -423,8 +427,8 @@ set(BUILD_SHARED_LIBS OFF)
 set(RMLUI_TESTS OFF CACHE BOOL "" FORCE)
 set(RMLUI_SAMPLES OFF CACHE BOOL "" FORCE)
 
-# lambo_config.cpp coalesces menu persistence on a portable std::thread. Keep
-# every executable that compiles it explicitly linked to the platform thread
+# lambo_config.cpp coalesces graphics.json persistence on a portable std::thread.
+# Keep every executable that compiles it explicitly linked to the platform thread
 # implementation; relying on a transitive SDL/runtime dependency breaks test
 # targets and older Linux toolchains.
 foreach(lambo_config_thread_target
@@ -603,7 +607,6 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_audio_override.cpp # audio status getter override
         src/lambo_config.cpp   # persistent graphics.json -> GraphicsConfig
         src/lambo_player_name.cpp # remember player one's confirmed name for later name-entry screens
-        src/lambo_menu.cpp     # lightweight native Win32 menu bar; live config actions + persistence
         src/lambo_startup.cpp  # runtime-ready -> Play startup state machine
         src/lambo_mods.cpp
         src/lambo_mod_api.cpp

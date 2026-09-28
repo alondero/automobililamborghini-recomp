@@ -58,7 +58,6 @@
 #include "lambo_log.h"   
 #include "lambo_pak_io.h"
 #include "lambo_pak_storage.h"
-#include "lambo_menu.h"
 #include "lambo_input_gate.h"
 #include "lambo_analog_throttle.h"
 #include "lambo_analog_brake.h"
@@ -257,8 +256,20 @@ static lambo::StartupController* g_startup_controller = nullptr;
 //    (get_graphics_config returns a reference whose guard is released on return --
 //    an upstream ultramodern flaw). Nothing renderer-side consumes wm_option, so the
 //    live config staying at its startup value is harmless.
+// This is the only window-mode writer now that the Windows native menu bar is gone
+// (issue #242); the settings overlay writes wm_option through graphics.json and the
+// pump below reconciles SDL with that snapshot.
 static void toggle_fullscreen() {
-    lambo::menu::toggle_fullscreen();
+    if (g_sdl_window == nullptr) return;
+    const bool fullscreen = (SDL_GetWindowFlags(g_sdl_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == 0;
+    if (SDL_SetWindowFullscreen(g_sdl_window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0) != 0) {
+        LAMBO_LOG_WARN("config", "fullscreen toggle FAILED: %s\n", SDL_GetError());
+        return;
+    }
+    // Window mode is owned by SDL and deliberately not sent through RT64.
+    lambo::config::update_saved_window_mode(fullscreen ? ultramodern::renderer::WindowMode::Fullscreen
+                                                       : ultramodern::renderer::WindowMode::Windowed);
+    LAMBO_LOG_INFO("config", "fullscreen %s (F11 / Alt+Enter)\n", fullscreen ? "ON" : "OFF");
 }
 
 // Desktop window/taskbar icon. Windows also embeds assets/lambo-icon.ico as an exe
@@ -335,7 +346,6 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
         }
         g_sdl_window = window;
         set_application_icon(window);
-        lambo::menu::attach(window);
         lambo::ui::set_window(window);
         lambo::ui::initialize_frontend_controllers();
 #if defined(__linux__)
@@ -413,9 +423,6 @@ static void update_gfx_stub(void* /*gfx_data*/) {
                 application_exit_success();
             }
 
-            // Hotplug is always consumed, even while the launcher owns input.
-            if (lambo::menu::handle_event(event)) continue;
-
             // The menu button (F1 or the pad's Back/Guide) toggles the options overlay:
             // it opens Settings from gameplay and closes it again from anywhere inside.
             // This runs before lambo::ui::handle_event so the press still toggles once the
@@ -452,14 +459,14 @@ static void update_gfx_stub(void* /*gfx_data*/) {
             }
         }
         // The shared settings schema owns the requested mode, but SDL (not
-        // RT64) must apply it on this thread. Native/F11 changes already match.
+        // RT64) must apply it on this thread. F11 / Alt+Enter already match.
         static std::optional<ultramodern::renderer::WindowMode> last_window_request;
         const auto desired_mode = lambo::config::current_graphics().wm_option;
         if (g_sdl_window && last_window_request != desired_mode) {
             last_window_request = desired_mode;
             const bool desired_fullscreen = desired_mode == ultramodern::renderer::WindowMode::Fullscreen;
             const bool actual_fullscreen = (SDL_GetWindowFlags(g_sdl_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
-            if (desired_fullscreen != actual_fullscreen) lambo::menu::toggle_fullscreen();
+            if (desired_fullscreen != actual_fullscreen) toggle_fullscreen();
         }
         // Severe GPU-driver advisory posted by renderer setup: the affected
         // user sees only a black window, so show it as a modal box. Main thread owns all
@@ -891,7 +898,7 @@ static int application_main(int argc, char** argv) {
 
     // Load + apply graphics.json BEFORE recomp::start: ultramodern latches the config
     // and the RT64 context constructor reads it via get_graphics_config(). This is the
-    // authoritative backing store for the shared frontend and native menu.
+    // authoritative backing store for the shared frontend.
     lambo::config::load_and_apply_graphics();
 
     // librecomp's config path is where game SAVES (EEPROM/SRAM/pak) and mod config
