@@ -56,17 +56,36 @@ Note the second row: on the graphics confirmation, Back discards unapplied chang
 is the same action as its Discard button, but it is the one prompt where an accidental
 Back press costs unsaved edits, so it is worth knowing.
 
-Status: **Confirmed** for the source wiring. The patched translation unit compiles, and
-the dispatch path was traced through the pinned RmlUi: a keydown goes to the focused
-element and walks `GetParentNode()` up to that element's document root, so the prompt's
-window element is reached once per press, in the bubble phase, and the walk cannot leave
-the prompt's document to reach the settings page. Hiding the context blurs the document,
-so a held button repeats into the page underneath, where Back has no callback.
+Status: **Confirmed** in a played build. The quit confirmation was opened in the
+running game, before and after patch 0019, with `tools/drive_input.py`:
 
-**Unverified** on a controller: no playthrough was performed in this worktree, because
-the prompt needs a live render context. `tests/test_prompt_back_action.py` checks the
-patch content and `lambo_frontend_settings_tests` checks that the pressing controller's
-Back binding, including a remap, produces the Back menu action.
+| Step | Result |
+| --- | --- |
+| Unpatched build, Back on the confirmation | Prompt stays open. This is the bug. |
+| Patched build, Back on the confirmation | Prompt closes, the game keeps running, the settings page that opened it is showing again. |
+| Patched build, Quit on the confirmation | The game exits. |
+
+F15 was used for the Back action. `recompui.h` maps the Back menu action to
+`SDLK_F15` / `KI_F15`, and `cont_button_to_key` translates the controller's B
+button to that same key, so a real F15 keypress takes the identical path. F16 and
+F17 reach nothing: `RmlSDL::ConvertKey` in the pinned RmlUi has no case past
+`SDLK_F15`.
+
+The prompt's window element is reached once per press, in the bubble phase, and
+the walk cannot leave the prompt's document to reach the settings page, so one
+Back press cannot both dismiss the prompt and navigate the page below it. Hiding
+the context blurs the document, so a held button repeats into the page underneath,
+where Back has no callback.
+
+**Unverified** with a physical gamepad: the button-to-`SDLK_F15` hop was not
+played, in the running game or otherwise. `lambo_frontend_settings_tests` covers
+it for the default and a remapped binding, and
+`tests/test_prompt_back_action.py` checks the patch content.
+
+Reaching the confirmation needs the keyboard. The header's Quit and Close buttons
+are laid out past the right edge of the modal, so they cannot be clicked; the
+route is F1 to open the overlay, then the Back action to focus the active tab,
+then Right through the eight tabs and one more to leave them onto Quit.
 
 ## Options and storage
 

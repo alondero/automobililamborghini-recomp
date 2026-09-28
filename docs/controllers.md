@@ -51,10 +51,13 @@ confirmation, Back discards those changes, exactly like its Discard button. The
 bindings are changed in Button bindings, and the overlay uses the profile of the
 pad that opened it.
 
-Status: **Confirmed** for the binding resolution and the prompt wiring.
-**Unverified** on a controller; see
-[frontend notes](recompfrontend.md#the-quit-confirmation) for what was traced
-and what was not run.
+Status: **Confirmed** in a played build for the quit confirmation, which was
+opened in the running game and dismissed with the Back action both before and
+after the patch. **Unverified** with a physical gamepad: the button-to-key hop
+that turns a pad's B into the Back action was covered by
+`lambo_frontend_settings_tests`, not played. See
+[frontend notes](recompfrontend.md#the-quit-confirmation) for the route, the
+F15 substitution, and what the playthrough showed.
 
 ## Pre-race menu navigation
 
