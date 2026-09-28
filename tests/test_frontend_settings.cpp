@@ -118,8 +118,16 @@ int main(int argc, char** argv) {
         lambo::ui::refresh_frontend_settings();
         require(std::get<std::string>(driver.get_option_value("name")) == "RACER",
                 "driver refresh missed an external name save");
-        for (const char* key : {"api_option", "hpfb_option", "developer_mode", "window_width", "window_height", "texture_pack", "texture_dump"})
+        for (const char* key : {"api_option", "hpfb_option", "window_width", "window_height", "texture_pack", "texture_dump"})
             require(graphics.has_option(key) && !graphics.is_config_option_hidden(graphics.get_config_schema().options_by_id.at(key)), "missing primary graphics option");
+        // The framework still defines developer_mode on the Graphics page; the
+        // Debug tab is its single visible owner (issue #244).
+        require(graphics.has_option("developer_mode") && graphics.is_config_option_hidden(graphics.get_config_schema().options_by_id.at("developer_mode")),
+                "developer mode still offered under graphics");
+        auto& debug = recompui::config::get_config("debug");
+        require(debug.has_option("developer_mode") && !debug.is_config_option_hidden(debug.get_config_schema().options_by_id.at("developer_mode")),
+                "missing developer mode on the debug tab");
+        require(!std::filesystem::exists(path / "debug.json"), "duplicate debug owner");
         graphics.set_option_value("ds_option", uint32_t(2));
         require(lambo::config::current_graphics().ds_option == 3, "unapplied edit escaped");
         graphics.revert_temp_config();
@@ -146,8 +154,16 @@ int main(int argc, char** argv) {
         require(std::get<uint32_t>(graphics.get_temp_option_value("ds_option")) == 3, "refresh discarded pending edit");
         graphics.save_config();
         require(lambo::config::current_graphics().wm_option == WindowMode::Windowed, "apply undid external fullscreen toggle");
+        // Developer Mode lives on the Debug tab, but keeps its graphics.json key
+        // and its restart-only runtime behaviour.
+        require(!lambo::config::developer_mode(), "developer mode defaults off");
+        debug.set_option_value("developer_mode", true);
+        require(lambo::config::developer_mode(), "developer mode live update");
         graphics.set_option_value("ds_option", uint32_t(4));
         graphics.save_config();
+        // A Graphics Apply starts from the port snapshot, so it must carry the
+        // Debug tab's value through instead of writing the seeded one back.
+        require(lambo::config::developer_mode(), "graphics apply reverted the debug tab value");
         auto& enhancements = recompui::config::get_config("enhancements");
         for (const char* key : {"automatic_pit_stops", "fog_match", "sky_match", "no_lod", "draw_distance", "fog_scale", "camera_distance", "camera_height", "camera_fov", "menu_stick_sensitivity"})
             require(enhancements.has_option(key), "missing enhancement");
@@ -167,6 +183,7 @@ int main(int argc, char** argv) {
         require(saved.at("automatic_pit_stops") == true, "pit assistance persistence");
         require(saved.at("menu_stick_sensitivity") == 1.8, "menu stick sensitivity persistence");
         require(saved.at("ds_option") == 4, "graphics persistence");
+        require(saved.at("developer_mode") == true, "developer mode persistence");
         require(!std::filesystem::exists(path / "enhancements.json"), "duplicate enhancement owner");
         require(recompui::config::get_config("pedals").has_option("brake_saturation"), "brake calibration missing");
         using namespace recompinput;

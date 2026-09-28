@@ -27,7 +27,6 @@ void seed_graphics() {
     ENUM(ds_option);
 #undef ENUM
     sync_value(page, "rr_manual_value", double(cfg.rr_manual_value));
-    sync_value(page, "developer_mode", cfg.developer_mode);
     sync_value(page, "window_width", double(port::window_size().width));
     sync_value(page, "window_height", double(port::window_size().height));
     sync_value(page, "texture_pack", port::texture_pack_path());
@@ -46,8 +45,8 @@ void apply_graphics() {
 #undef ENUM
     const int rate = int(std::get<double>(page.get_option_value("rr_manual_value")));
     if (rate != seeded_graphics.rr_manual_value) cfg.rr_manual_value = rate;
-    const bool developer = std::get<bool>(page.get_option_value("developer_mode"));
-    if (developer != seeded_graphics.developer_mode) cfg.developer_mode = developer;
+    // developer_mode is not read here: the Debug tab owns it, and cfg starts
+    // from current_graphics() so Apply carries the Debug tab's value through.
     lambo::config::apply_graphics(cfg);
 }
 
@@ -74,6 +73,8 @@ void refresh_frontend_settings() {
     if (!graphics.is_dirty() && seeded_graphics != port::current_graphics()) seed_graphics();
     auto& enhancements = recompui::config::get_config("enhancements");
     auto& cheats = recompui::config::get_config("cheats");
+    auto& debug = recompui::config::get_config("debug");
+    sync_value(debug, "developer_mode", port::developer_mode());
     for (const auto& entry : lambo::cheats::catalog)
         sync_value(cheats, entry.id, lambo::cheats::enabled(entry.cheat));
     sync_value(enhancements, "fog_match", port::widescreen_fog_match());
@@ -105,7 +106,21 @@ void create_frontend_settings() {
     graphics.external_storage = true;
     graphics.set_load_callback(seed_graphics);
     graphics.update_option_description("api_option", "Graphics backend. Changes take effect after restarting the application.");
-    graphics.update_option_description("developer_mode", "RT64 developer overlay. Changes take effect after restarting the application.");
+    // The framework's Graphics page carries its own developer_mode option. It is
+    // a diagnostic overlay rather than a graphics setting, so the Debug tab owns
+    // the control and this copy is hidden to avoid two owners of one value.
+    //
+    // Hiding rather than deleting is forced: Config has no remove_option. The
+    // hidden copy stays inert because the port replaces both graphics-tab
+    // callbacks below, so the framework's apply_graphics_config() -- the only
+    // other reader of this field -- cannot run from load/save. Its one direct
+    // caller, graphics::toggle_fullscreen(), is reached only via
+    // recompinput::handle_event, and main.cpp consumes F11/Alt-Enter before the
+    // frontend handler sees them, routing F11 to update_saved_window_mode()
+    // instead. If that interception is ever removed, re-check this: the
+    // framework path would then publish this never-seeded default as the live
+    // developer_mode.
+    graphics.update_option_hidden("developer_mode", true);
     graphics.add_number_option("window_width", "Window width (restart)", "Initial window dimensions after restart.", 320, 7680, 1, 0, false, port::window_size().width);
     graphics.add_number_option("window_height", "Window height (restart)", "Initial window dimensions after restart.", 240, 4320, 1, 0, false, port::window_size().height);
     graphics.add_string_option("texture_pack", "Texture pack path (restart)", "RT64 texture replacement pack. Environment overrides take priority.", port::texture_pack_path());
@@ -145,6 +160,13 @@ void create_frontend_settings() {
             [cheat = entry.cheat](bool value) { lambo::cheats::set_enabled(cheat, value); });
         cheats.update_option_description(entry.id, entry.description);
     }
+
+    // Diagnostic options, kept out of the player-facing Graphics page. The port
+    // still owns the graphics.json key, so the tab borrows the schema only.
+    auto& debug = settings::create_config_tab("Debug", "debug", false);
+    debug.external_storage = true;
+    boolean(debug, "developer_mode", "Developer mode", port::developer_mode(), port::set_developer_mode);
+    debug.update_option_description("developer_mode", "RT64 developer overlay. Changes take effect after restarting the application.");
 
     settings::create_controls_tab("Button bindings");
     settings::create_mods_tab();
