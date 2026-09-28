@@ -38,8 +38,8 @@ contains unnamed symbols, stubs, native hooks, and direct guest-memory access.
 | ROM-derived game functions | N64Recomp output | Never edit generated output by hand. Change symbols, config, or source hooks, then regenerate. |
 | RSP audio output | RSPRecomp output plus the audio bridge | Keep guest task data and host audio state separate. |
 | Game-specific behavior | src/ port code and source patches | A shortcut must name its invariant, failure mode, and replacement path. |
-| Runtime and threads | lib/N64ModernRuntime after local patches | Do not silently change the pinned dependency. Record a patch or upstream proposal. |
-| Rendering | RT64 after local patches, plus port display-list hooks | Put generic renderer behavior upstream when possible; keep game-specific projection and display-list policy in the port. |
+| Runtime and threads | lib/N64ModernRuntime after local patches | Do not silently change the pinned dependency. Record a patch and the comparison with upstream. |
+| Rendering | RT64 after local patches, plus port display-list hooks | Keep generic renderer behavior in a reviewable local patch and game-specific projection and display-list policy in the port. |
 | Settings and input UI | lib/RecompFrontend adapted by src/ui/ | There must be one owner for persistence and one event path. |
 | Saves | Port-owned Controller Pak storage | The game thread produces Pak traffic; host storage publishes it without blocking the emulation thread. |
 | Build and patch application | build.ps1, build.sh, and Android script | Manual commands are useful for diagnosis, but the scripts define the supported sequence. |
@@ -138,15 +138,19 @@ local patch as an RT64 feature without checking the pinned source.
 ## Patches and upstreaming
 
 The build scripts apply patches to pinned public submodules. A patch is not
-automatically an upstream contribution. To turn a local delta into an upstream
-proposal, a human maintainer must:
+automatically an upstream contribution. To record a local delta, a human
+maintainer must:
 
 1. reduce it to a generic problem and a small reproducer;
 2. compare it with current upstream code, not only the pinned checkout;
 3. decide whether the behavior is reusable outside this game;
-4. add tests or a capture that upstream can run;
-5. use the upstream project's own issue or pull request as the canonical
-   record of any proposal.
+4. add tests or a capture that proves the behavior locally;
+5. record the comparison, the purpose, and the limitation in
+   [patches/README.md](../patches/README.md) and the pull request.
+
+The record stays local. This project does not open issues on the upstream
+projects it patches: their maintainers have said they do not want proposals
+raised from this repository.
 
 If a change is only needed for Lamborghini's game data, keep it in the port
 and explain why.
