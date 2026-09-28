@@ -37,17 +37,18 @@ Closing the preview exited successfully. Four physical controllers and gameplay
 have not been tested. The sample remapping remains in the isolated preview config
 so it can be inspected; it is not a migrated game profile.
 
-## What the port actually uses
+## What the port used when this experiment ran
 
 The comment about AeroGauge and [PR #125](https://github.com/alondero/automobililamborghini-recomp/pull/125)
-does not describe the current Lamborghini settings surface.
+did not describe the Lamborghini settings surface as it stood for this
+experiment.
 
-The table below records the checkout as it stood when this experiment ran, before
-the RecompFrontend migration, so its frontend rows are historical rather than
-current. For today's settings surface see
+The table below records the Lamborghini checkout as it stood when this
+experiment ran, before the RecompFrontend migration, so its frontend rows are
+historical rather than current. For today's settings surface see
 [shared configuration frontend](../../docs/recompfrontend.md).
 
-| Area | Current Lamborghini checkout |
+| Area | Lamborghini checkout when this experiment ran |
 | --- | --- |
 | Toolkit | RmlUi, already a required submodule; custom RT64 render bridge |
 | Shared frontend | RecompFrontend is not linked |
