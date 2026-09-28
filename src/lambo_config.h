@@ -58,6 +58,14 @@ void update_saved_window_mode(ultramodern::renderer::WindowMode wm);
 struct WindowSize { int width; int height; };
 WindowSize window_size();
 
+// RT64 developer overlay. graphics.json key "developer_mode" (default false).
+// Read once when the render context is built at startup, so a change is
+// persisted immediately but only takes effect on the next launch. The Debug
+// settings tab owns the toggle (see src/ui/lambo_frontend_settings.cpp); the
+// value itself stays in graphics.json next to the other renderer fields.
+bool developer_mode();
+void set_developer_mode(bool enabled);
+
 // Startup launcher gate: false = auto-boot directly into game with in-game
 // configuration overlay available via Menu/Back/Guide/Esc; true = show launcher.
 // graphics.json key "show_launcher" (default false), overridable by LAMBO_LAUNCHER=1/0.

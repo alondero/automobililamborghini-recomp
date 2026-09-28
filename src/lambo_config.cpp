@@ -470,6 +470,23 @@ void update_saved_window_mode(ultramodern::renderer::WindowMode wm) {
     save_graphics_updates({{"wm_option", wm}});
 }
 
+// The Debug tab owns this toggle (it is a diagnostic overlay, not a graphics
+// setting), but the value is a GraphicsConfig field, so update the same
+// main-thread snapshot an Apply would. Leaving it stale would make a later
+// Graphics Apply -- which starts from current_graphics() -- silently write the
+// pre-Debug value back to graphics.json and undo the user's choice.
+bool developer_mode() {
+    return g_current_graphics.developer_mode;
+}
+
+void set_developer_mode(bool enabled) {
+    // Restart-only, like the API option: persist the value and the main-thread
+    // snapshot, but do not push it into the renderer's live config queue. RT64
+    // latches developer mode when the context is constructed.
+    g_current_graphics.developer_mode = enabled;
+    save_graphics_updates({{"developer_mode", enabled}});
+}
+
 void save_graphics(const ultramodern::renderer::GraphicsConfig& cfg) {
     save_graphics_updates_sync(to_json(cfg));
 }
