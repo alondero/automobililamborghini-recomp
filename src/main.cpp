@@ -387,7 +387,11 @@ static void update_gfx_stub(void* /*gfx_data*/) {
                 else if (page == "enhancements") lambo::ui::open_enhancements();
                 else if (page == "haptics") lambo::ui::open_haptics();
                 else if (page == "mods") lambo::ui::open_mods();
-                else if (page == "player") lambo::ui::open_player();
+                // Deliberate scope decision for #249: "player" is kept as a
+                // working alias onto General so existing local workflows do not
+                // break, even though no Player page exists any more. Drop it
+                // once nobody needs it.
+                else if (page == "player") lambo::ui::open_settings();
                 else if (page == "launcher") lambo::ui::open_launcher();
             } else if (g_startup_controller->mode() == lambo::StartupMode::InteractiveLauncher) {
                 lambo::ui::open_launcher();

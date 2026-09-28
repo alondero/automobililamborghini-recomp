@@ -67,6 +67,27 @@ void number(Config& page, const std::string& id, const std::string& label,
         if (context == OptionChangeContext::Permanent) setter(std::get<double>(value));
     });
 }
+
+// description is defaulted so this stays drop-in with the helpers above; the
+// driver name is the only string option here and its validation rule is only
+// discoverable from the description.
+void text(Config& page, const std::string& id, const std::string& label,
+           std::string initial, std::function<void(std::string)> setter,
+           const std::string& description = "") {
+    page.add_string_option(id, label, description, initial);
+    page.add_option_change_callback(id, [setter](ConfigValueVariant value, ConfigValueVariant, OptionChangeContext context) {
+        if (context == OptionChangeContext::Permanent) setter(std::get<std::string>(value));
+    });
+}
+
+// Whether this option alone holds an unapplied edit. is_dirty() is page-wide, so
+// on General it would also report the rumble, deadzone and background-input
+// sliders and wrongly freeze the name field.
+bool option_pending_edit(const Config& page, const std::string& id) {
+    const auto& by_id = page.get_config_schema().options_by_id;
+    const auto it = by_id.find(id);
+    return it != by_id.end() && page.modified_options.contains(it->second);
+}
 }
 
 void refresh_frontend_settings() {
@@ -90,18 +111,28 @@ void refresh_frontend_settings() {
     sync_value(enhancements, "camera_distance", port::camera_distance_scale());
     sync_value(enhancements, "camera_height", port::camera_height_scale());
     sync_value(enhancements, "camera_fov", port::camera_fov_add());
-    auto& driver = recompui::config::get_config("driver");
-    // The name editor is confirmation-backed. Refresh it only while clean so
-    // a Championship save can appear in the page without overwriting an
-    // in-progress text edit (and without touching player.json per frame).
-    if (!driver.is_dirty()) sync_value(driver, "name", lambo::player::saved_name());
-    sync_value(driver, "show_launcher", port::show_launcher());
+    auto& general = recompui::config::get_general_config();
+    // Refreshed only while the option is clean, so a Championship save can
+    // appear in the page without replacing a text edit still being typed.
+    if (!option_pending_edit(general, "name")) sync_value(general, "name", lambo::player::saved_name());
+    sync_value(general, "show_launcher", port::show_launcher());
 }
 
 void create_frontend_settings() {
     namespace settings = recompui::config;
     namespace port = lambo::config;
-    settings::create_general_tab({.has_rumble_strength = true, .has_gyro_sensitivity = false, .has_mouse_sensitivity = false});
+    // The driver name is a staged text edit: player.json is written once when
+    // Apply publishes the field, not on every keystroke. General is the only page
+    // the framework offers for it now, so it takes the confirmation footer the
+    // Driver tab had, and rumble/deadzone/background input share that footer.
+    // This reference dies at the next create_*_tab call, so finish here.
+    auto& general = settings::create_general_tab({.has_rumble_strength = true, .has_gyro_sensitivity = false, .has_mouse_sensitivity = false});
+    general.requires_confirmation = true;
+    text(general, "name", "Driver name", lambo::player::saved_name(), [](std::string name) {
+        // save_config() re-applies every option, so publish only a real change.
+        if (name != lambo::player::saved_name()) lambo::player::set_saved_name(name);
+    }, "Player one: 1-12 letters or spaces. Also saved by the Championship name editor.");
+    boolean(general, "show_launcher", "Show launcher at startup", port::show_launcher(), port::set_show_launcher);
     auto& graphics = settings::create_graphics_tab();
     // The port remains the single owner of graphics.json, including unknown keys,
     // environment overrides, enhancement values and restart-only API changes.
@@ -170,12 +201,5 @@ void create_frontend_settings() {
 
     settings::create_controls_tab("Button bindings");
     settings::create_mods_tab();
-    auto& driver = settings::create_config_tab("Driver", "driver", true);
-    driver.external_storage = true;
-    driver.add_string_option("name", "Driver name", "Player one: 1-12 letters or spaces. Also saved by the Championship name editor.", lambo::player::saved_name());
-    driver.add_option_change_callback("name", [](ConfigValueVariant value, ConfigValueVariant, OptionChangeContext context) {
-        if (context == OptionChangeContext::Permanent) lambo::player::set_saved_name(std::get<std::string>(value));
-    });
-    boolean(driver, "show_launcher", "Show launcher at startup", port::show_launcher(), port::set_show_launcher);
 }
 }

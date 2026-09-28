@@ -227,7 +227,7 @@ int main() {
     }
     expect(seeded == edited, "next run seeds the persisted name into the ROM buffer");
 
-    // The Driver-name options page shares the same player.json vocabulary as
+    // The General options page shares the same player.json vocabulary as
     // the ROM hooks: lowercase is uppercased, surrounding whitespace trimmed.
     expect(lambo::player::set_saved_name("  speed  Racer  ") == true,
            "options-page name normalises whitespace and case");

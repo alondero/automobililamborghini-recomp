@@ -31,7 +31,7 @@ The main configuration and save files are:
 | driving-controls.json | frontend/port integration | Default-off gyro steering, tuning, and auto-accelerate. |
 | mods.json | runtime | Enabled mods and package order. |
 | mod_config/ | runtime | Individual mod configuration. |
-| general.json | frontend | General frontend settings. |
+| general.json | frontend | General settings. Also keeps a copy of the Driver name and Show launcher at startup options. |
 | lambo_controller_pak.mpk | port | The normal 32 KiB Controller Pak save image. |
 
 Logs use the state directory, not the Linux config directory:
@@ -61,7 +61,7 @@ The standard renderer fields are written by the shared runtime schema:
 | rr_manual_value | Used when rr_option is Manual. |
 | hpfb_option | Auto; high-precision framebuffer policy. |
 | ds_option | Runtime supersampling option. |
-| developer_mode | RT64 developer overlay; toggled on the Debug settings tab. Requires restart. |
+| developer_mode | RT64 developer overlay; toggled on the Debug tab. Requires restart. |
 
 The port adds these keys:
 

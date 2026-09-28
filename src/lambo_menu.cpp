@@ -306,7 +306,7 @@ void dispatch(UINT command) {
         case CMD_FULLSCREEN: lambo::menu::toggle_fullscreen(); break;
         case CMD_SETTINGS: lambo::ui::open_settings(); break;
         case CMD_CONTROLS: lambo::ui::open_controls(); break;
-        case CMD_PLAYER_NAME: lambo::ui::open_player(); break;
+        case CMD_PLAYER_NAME: lambo::ui::open_settings(); break;
         case CMD_QUIT: {
             SDL_Event quit{};
             quit.type = SDL_QUIT;

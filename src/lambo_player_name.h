@@ -11,8 +11,8 @@ namespace player {
 
 // Player one's persisted identity (player.json "name", shared with the ROM's
 // Championship name editor which auto-saves on confirm). Uppercase A-Z plus
-// space, 1-12 characters; lowercase input is uppercased. Used by the Driver
-// name options page and the launcher so the name is visible outside the game.
+// space, 1-12 characters; lowercase input is uppercased. Used by the General
+// options page and the launcher so the name is visible outside the game.
 std::string saved_name();
 bool set_saved_name(const std::string& name);
 void clear_saved_name();
