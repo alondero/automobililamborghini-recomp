@@ -75,6 +75,15 @@ void set_show_launcher(bool enabled);
 // RT64 texture-replacement paths. Both are extra graphics.json string keys
 // (empty = feature off), overridable by env var for headless capture/testing:
 //   texture_pack  / LAMBO_TEXTURE_PACK  -- directory or .rtz to auto-load at startup.
+//                                          Compatibility override only. Players install
+//                                          and enable packs in the Mods tab, so the
+//                                          Graphics tab no longer offers this control.
+//                                          The key is still read, written back unchanged
+//                                          and loaded at highest priority, so an existing
+//                                          value keeps working until it is cleared.
+//                                          set_texture_pack_path() is the only writer and
+//                                          has no UI caller: it exists so the key can be
+//                                          cleared (pass "") to migrate to Mods.
 //   texture_dump  / LAMBO_TEXTURE_DUMP  -- directory RT64 writes every used texture to
 //                                          (raw TMEM/RDRAM dumps; decode with
 //                                          tools/decode_dump.py). Enables headless dump

@@ -42,6 +42,18 @@ namespace {
 uint8_t DMEM[0x1000];
 uint8_t IMEM[0x1000];
 
+// Both the startup auto-load and the Mods update path must decode a configured
+// pack path the same way, or a non-ASCII path loads at startup and then fails
+// to resolve on the first Mods toggle. graphics.json and LAMBO_TEXTURE_PACK
+// hand us UTF-8 bytes, so decode as UTF-8 rather than as the native narrow
+// encoding. The project is C++20, where u8path is deprecated; the u8string
+// reinterpretation is the replacement form, and it is what the bundled JSON
+// reader uses for the same bytes.
+std::filesystem::path decode_pack_path(const std::string& utf8) {
+    return std::filesystem::path(
+        std::u8string(reinterpret_cast<const char8_t*>(utf8.data()), utf8.size()));
+}
+
 uint32_t MI_INTR_REG = 0;
 uint32_t DPC_START_REG = 0;
 uint32_t DPC_END_REG = 0;
@@ -339,8 +351,9 @@ public:
 
         // Texture replacement wiring. RT64 already owns the whole
         // dump/hash/replace machinery; the port just points it at directories. Both
-        // are opt-in (empty path = off) and independent of developerMode, so an
-        // end-user pack loads without the F1 developer overlay.
+        // are opt-in (empty path = off) and independent of developerMode, so a
+        // pack loads without the F1 developer overlay. Enabled Mods packs arrive
+        // later through take_texture_pack_update() in update_screen().
         const std::string dump_dir = lambo::config::texture_dump_dir();
         if (!dump_dir.empty()) {
             // Setting this non-empty makes TextureManager::dumpTexture write every
@@ -349,12 +362,26 @@ public:
             LAMBO_LOG_INFO("rt64", "texture dump enabled -> %s\n", dump_dir.c_str());
         }
 
+        // Compatibility path. The legacy graphics.json `texture_pack` key (or
+        // LAMBO_TEXTURE_PACK) still auto-loads one pack at startup; the Graphics
+        // tab no longer exposes it because the Mods tab owns pack installation,
+        // activation and ordering. The value is preserved by the config merge, so
+        // an existing pack is never dropped -- name it in the log so a player can
+        // see the override is still there and how to hand control back to Mods.
         const std::string pack = lambo::config::texture_pack_path();
         if (!pack.empty()) {
             const bool ok = app->textureCache->loadReplacementDirectory(
-                RT64::ReplacementDirectory(std::filesystem::path(pack)));
+                RT64::ReplacementDirectory(decode_pack_path(pack)));
             LAMBO_LOG_INFO("rt64", "texture pack %s: %s\n",
                          ok ? "loaded" : "FAILED to load", pack.c_str());
+            // Only claim the override took effect when it did. On failure the
+            // path is still the one the port keeps using, so say that instead
+            // of promising a pack that is not on screen.
+            if (ok) {
+                LAMBO_LOG_INFO("rt64", "legacy texture_pack override active: this pack is loaded ahead of any pack enabled in the Mods tab. Set \"texture_pack\" to \"\" in graphics.json (and unset LAMBO_TEXTURE_PACK) to manage textures in Mods only.\n");
+            } else {
+                LAMBO_LOG_INFO("rt64", "legacy texture_pack override FAILED to load: fix or remove \"texture_pack\" in graphics.json (and LAMBO_TEXTURE_PACK) before enabling a pack in the Mods tab.\n");
+            }
         }
     }
 
@@ -455,9 +482,10 @@ public:
         if (auto paths = lambo::mods::take_texture_pack_update()) {
             std::vector<RT64::ReplacementDirectory> directories;
             for (const auto& path : *paths) directories.emplace_back(path);
-            // Explicit legacy/environment overrides retain highest priority.
+            // The legacy/environment override stays at the end of the list, so it
+            // keeps the highest priority it had before packs moved to Mods.
             const auto legacy = lambo::config::texture_pack_path();
-            if (!legacy.empty()) directories.emplace_back(std::filesystem::u8path(legacy));
+            if (!legacy.empty()) directories.emplace_back(decode_pack_path(legacy));
             if (directories.empty()) app->textureCache->clearReplacementDirectories();
             else app->textureCache->loadReplacementDirectories(directories);
         }

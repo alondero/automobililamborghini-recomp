@@ -31,13 +31,28 @@ Supported package types:
 
 Banjo and Donkey Kong code mods are game-specific and cannot run in this port.
 Required dependencies and minimum port versions are checked by the runtime.
-Earlier texture packs in the Mods list take priority over later ones. An explicit
-Graphics texture-pack path or `LAMBO_TEXTURE_PACK` overrides managed packs.
+Earlier texture packs in the Mods list take priority over later ones. The Mods
+tab is the only place to install, enable, disable, and order texture packs.
 See [Texture packs](TEXTURES.md) for artwork formats and texture dumping.
 
 Android's native file picker is not connected to this tab. Installing through
 the tab and desktop drag-and-drop are desktop workflows; Android mod loading
 and ARM64 code patching still need device verification.
+
+## Legacy texture pack setting
+
+Earlier versions also let you type a texture pack directory or `.rtz` file into
+Settings > Graphics. That control is gone. A pack configured that way still
+loads, so nothing is lost by upgrading:
+
+- `texture_pack` in `graphics.json` is still read and written back unchanged.
+- It is loaded ahead of any pack enabled in the Mods tab, so it keeps priority.
+- Startup logs `legacy texture_pack override active` when the value loaded, or
+  `legacy texture_pack override FAILED to load` when the path did not load.
+
+To move that pack into the Mods tab, install it through the tab, enable it, then
+set `"texture_pack": ""` in `graphics.json` and remove `LAMBO_TEXTURE_PACK` from
+your environment if you use it. An empty value disables the override.
 
 ## Code mod contract
 

@@ -29,7 +29,9 @@ void seed_graphics() {
     sync_value(page, "rr_manual_value", double(cfg.rr_manual_value));
     sync_value(page, "window_width", double(port::window_size().width));
     sync_value(page, "window_height", double(port::window_size().height));
-    sync_value(page, "texture_pack", port::texture_pack_path());
+    // No texture_pack entry: the Mods tab owns pack installation, activation and
+    // ordering. The legacy graphics.json key stays readable by lambo_config and
+    // is preserved verbatim by the save path, so an existing pack keeps loading.
     sync_value(page, "texture_dump", port::texture_dump_dir());
     page.revert_temp_config();
     seeded_graphics = cfg;
@@ -123,13 +125,11 @@ void create_frontend_settings() {
     graphics.update_option_hidden("developer_mode", true);
     graphics.add_number_option("window_width", "Window width (restart)", "Initial window dimensions after restart.", 320, 7680, 1, 0, false, port::window_size().width);
     graphics.add_number_option("window_height", "Window height (restart)", "Initial window dimensions after restart.", 240, 4320, 1, 0, false, port::window_size().height);
-    graphics.add_string_option("texture_pack", "Texture pack path (restart)", "RT64 texture replacement pack. Environment overrides take priority.", port::texture_pack_path());
-    graphics.add_string_option("texture_dump", "Texture dump directory (restart)", "Destination for dumped textures. Leave blank to disable.", port::texture_dump_dir());
+    graphics.add_string_option("texture_dump", "Texture dump directory (restart)", "Destination for dumped textures. Leave blank to disable. Texture packs are installed and enabled in the Mods tab.", port::texture_dump_dir());
     graphics.set_save_callback([] {
         apply_graphics();
         auto& page = recompui::config::get_graphics_config();
         lambo::config::set_window_size({int(std::get<double>(page.get_option_value("window_width"))), int(std::get<double>(page.get_option_value("window_height")))});
-        lambo::config::set_texture_pack_path(std::get<std::string>(page.get_option_value("texture_pack")));
         lambo::config::set_texture_dump_dir(std::get<std::string>(page.get_option_value("texture_dump")));
         // Seed after every field has been published so Apply leaves the UI
         // and the port snapshot in agreement with the saved values.

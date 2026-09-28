@@ -107,7 +107,11 @@ int main(int argc, char** argv) {
         require(std::get<uint32_t>(graphics.get_option_value("msaa_option")) == uint32_t(Antialiasing::MSAA8X), "8x MSAA import");
         require(std::get<double>(graphics.get_option_value("window_width")) == 1920, "window width import");
         require(std::get<double>(graphics.get_option_value("window_height")) == 1080, "window height import");
-        require(std::get<std::string>(graphics.get_option_value("texture_pack")) == "seed-pack", "texture pack import");
+        // Mods owns texture packs, so Graphics must not present a second
+        // selector. The legacy graphics.json key is still read, which is what
+        // keeps a pack configured before the Mods route from being lost.
+        require(!graphics.has_option("texture_pack"), "graphics must not offer a texture-pack selector");
+        require(lambo::config::texture_pack_path() == "seed-pack", "legacy texture pack import");
         require(std::get<std::string>(graphics.get_option_value("texture_dump")) == "seed-dump", "texture dump import");
         auto& driver = recompui::config::get_config("driver");
         driver.set_option_value("name", std::string{});
@@ -118,7 +122,10 @@ int main(int argc, char** argv) {
         lambo::ui::refresh_frontend_settings();
         require(std::get<std::string>(driver.get_option_value("name")) == "RACER",
                 "driver refresh missed an external name save");
-        for (const char* key : {"api_option", "hpfb_option", "window_width", "window_height", "texture_pack", "texture_dump"})
+        // Neither developer_mode nor texture_pack belongs here: the Debug tab is
+        // the single visible owner of the former (issue #244), and the Mods tab
+        // owns texture packs (issue #245), so Graphics drops it entirely.
+        for (const char* key : {"api_option", "hpfb_option", "window_width", "window_height", "texture_dump"})
             require(graphics.has_option(key) && !graphics.is_config_option_hidden(graphics.get_config_schema().options_by_id.at(key)), "missing primary graphics option");
         // The framework still defines developer_mode on the Graphics page; the
         // Debug tab is its single visible owner (issue #244).
@@ -137,14 +144,30 @@ int main(int argc, char** argv) {
         require(lambo::config::current_graphics().ds_option == 4, "apply failed");
         graphics.set_option_value("window_width", 2560.0);
         graphics.set_option_value("window_height", 1440.0);
-        graphics.set_option_value("texture_pack", std::string("applied-pack"));
         graphics.set_option_value("texture_dump", std::string("applied-dump"));
         graphics.save_config();
         lambo::config::flush_pending_graphics_updates();
         require(lambo::config::window_size().width == 2560 && lambo::config::window_size().height == 1440,
                 "restart window options did not apply");
-        require(lambo::config::texture_pack_path() == "applied-pack", "texture pack option did not apply");
         require(lambo::config::texture_dump_dir() == "applied-dump", "texture dump option did not apply");
+        // Applying Graphics must leave the compatibility key exactly as it was, so
+        // the pack a player set up earlier still loads. Clearing it is a separate,
+        // explicit write -- that is the documented migration to Mods-only.
+        nlohmann::json after_graphics_save;
+        { std::ifstream file(path / "graphics.json"); file >> after_graphics_save; }
+        require(after_graphics_save.at("texture_pack") == "seed-pack",
+                "graphics save dropped the legacy texture_pack key");
+        require(lambo::config::texture_pack_path() == "seed-pack",
+                "graphics save cleared the legacy texture pack");
+        lambo::config::set_texture_pack_path("");
+        lambo::config::flush_pending_graphics_updates();
+        require(lambo::config::texture_pack_path().empty(), "legacy texture pack did not clear");
+        nlohmann::json after_migration;
+        { std::ifstream file(path / "graphics.json"); file >> after_migration; }
+        require(after_migration.at("texture_pack") == "", "cleared texture_pack key was not persisted");
+        lambo::config::set_texture_pack_path("seed-pack");
+        lambo::config::flush_pending_graphics_updates();
+        require(lambo::config::texture_pack_path() == "seed-pack", "texture pack fixture restore failed");
         lambo::config::update_saved_window_mode(WindowMode::Fullscreen);
         lambo::ui::refresh_frontend_settings();
         require(std::get<uint32_t>(graphics.get_option_value("wm_option")) == uint32_t(WindowMode::Fullscreen), "external fullscreen refresh");

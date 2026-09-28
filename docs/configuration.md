@@ -68,7 +68,7 @@ The port adds these keys:
 | Key | Default | Effect |
 | --- | --- | --- |
 | window_width, window_height | 1600, 900 | Initial window size. |
-| texture_pack | empty | One RT64 loose pack or .rtz pack at startup. |
+| texture_pack | empty | Compatibility override: one RT64 loose pack or .rtz pack loaded at startup, ahead of Mods packs. Not shown in Settings; manage packs in the Mods tab and clear this key to migrate. |
 | texture_dump | empty | Directory for runtime texture dumps. |
 | widescreen_fog_match | true | Use the open one-player fog policy for three- and four-player views. |
 | widescreen_sky_match | true | Draw the sky panorama in three- and four-player views. |
