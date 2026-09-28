@@ -29,16 +29,17 @@ significant single-space lines from `git diff --check`;
 | 0014 | Plume inside RT64 | Android SDL/Vulkan window integration. Android-only. |
 | 0015 | SDL dependency | Android USB receiver registration compatibility. Android-only. |
 | 0016 | N64ModernRuntime | Host-owned configuration storage for the frontend integration. Applied by CMake; project integration. |
-| 0017 | RecompFrontend | Host event handling and Lamborghini frontend integration, including controller menu actions resolved from the pressing device instead of only player one, and restoring mod controls after a rejected load ([upstream proposal](https://github.com/N64Recomp/RecompFrontend/issues/43)). Also stubs the NFD-backed file dialogs on Android, where the build neither fetches nor links nativefiledialog-extended (see 0013); the Activity imports the ROM and GPU driver instead. Applied by CMake; the player-one-only lookup still exists on upstream `main`, so this hunk is an upstream proposal candidate. |
+| 0017 | RecompFrontend | Host event handling and Lamborghini frontend integration, including controller menu actions resolved from the pressing device instead of only player one, and restoring mod controls after a rejected load ([upstream proposal](https://github.com/N64Recomp/RecompFrontend/issues/43)). Also stubs the NFD-backed file dialogs on Android, where the build neither fetches nor links nativefiledialog-extended (see 0013); the Activity imports the ROM and GPU driver instead. Applied by CMake; the player-one-only lookup still exists on upstream `main`, so this hunk is a local patch with a recorded upstream comparison. |
 | 0018 | N64ModernRuntime | Game presentation behavior used by the launcher and normal game path. Applied by CMake; project integration. |
+| 0019 | RecompFrontend | The shared prompt dismisses on the mapped Back action, so a controller's cancel button backs out of the quit confirmation. Applied by CMake after 0017. Compared with upstream `main`, which builds the prompt with no element that listens for menu actions, so no controller action can dismiss it. Generic frontend behavior, kept local. |
 
 ## Application matrix
 
 | Build path | Applies |
 | --- | --- |
-| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0018 in CMake. |
-| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0018 in CMake. |
-| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0018 in CMake. |
+| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0019 in CMake. |
+| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0019 in CMake. |
+| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0019 in CMake. |
 
 If a patch no longer applies to its pinned submodule, stop and update the
 patch or pin as a deliberate change. Do not reset a developer's unrelated
@@ -60,9 +61,11 @@ renderer, not an RT64 feature.
 The current boundary is imperfect where a patch combines reusable runtime
 behavior with Lamborghini policy. That is a maintenance risk, not proof that
 the patch violates an upstream contract. Separate those concerns before
-replacing or proposing the patch.
+replacing the patch.
 
 Do not call a local patch upstream-supported without checking the pinned source
-and the current upstream project. If a change may be reusable, make the
-upstream project's issue or pull request the canonical proposal record. Keep
-the local purpose, test, and limitation here and in the pull request.
+and the current upstream project. Record that comparison, the local purpose, the
+test, and the limitation here and in the pull request. This project does not open
+issues on the upstream projects it patches; their maintainers have said they do
+not want proposals raised from this repository, so the local record is the only
+proposal record.

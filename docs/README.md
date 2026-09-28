@@ -82,8 +82,8 @@ status line before relying on a historical measurement.
   patterns from official reference projects and marks hands-on claims that have
   not been checked.
 - [Patch inventory](../patches/README.md) records local dependency and renderer
-  boundaries. Upstream proposals belong in the relevant upstream project's
-  issue or pull request.
+  boundaries. A generic dependency change is compared with upstream and recorded
+  there, not as an issue on the upstream project.
 
 ## Status words
 

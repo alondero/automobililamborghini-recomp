@@ -89,6 +89,8 @@ not restore those controls on a later failed-load transition back to the
 launcher. The local 0017 patch assigns both enabled and disabled states and
 notifies the UI on both transitions. The native Windows failure/disable/retry
 workflow was exercised locally. This is a downstream fix, not an upstream
-support claim. The canonical proposal is
-[RecompFrontend issue 43](https://github.com/N64Recomp/RecompFrontend/issues/43).
+support claim. It was reported upstream as
+[RecompFrontend issue 43](https://github.com/N64Recomp/RecompFrontend/issues/43),
+which is closed; the local patch and this note are the record, since the
+project no longer opens upstream issues.
 [Upstream mod-menu state handling](https://github.com/N64Recomp/RecompFrontend/blob/main/recompui/src/composites/ui_mod_menu.cpp).

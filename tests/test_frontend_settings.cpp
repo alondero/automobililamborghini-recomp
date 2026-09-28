@@ -369,6 +369,32 @@ int main(int argc, char** argv) {
         require(cont_button_to_key(shoulder) == SDLK_F16, "unassigned controller lost tab-left");
         shoulder.button = SDL_CONTROLLER_BUTTON_RIGHTSHOULDER;
         require(cont_button_to_key(shoulder) == SDLK_F17, "unassigned controller lost tab-right");
+        // The quit confirmation is a recompui prompt and dismisses on the Back menu
+        // action, so the pressing controller's Back binding is what has to reach it.
+        // The default controller profile binds Back to the west button, and a remapped
+        // Back has to move the action with it rather than leave it on that button.
+        const int menu_profile = profiles::get_controller_profile_index_from_sdl_controller(menu_controller);
+        require(menu_profile >= 0, "menu controller profile not resolved");
+        SDL_ControllerButtonEvent back_button{};
+        back_button.which = menu_instance;
+        back_button.button = SDL_CONTROLLER_BUTTON_WEST;
+        // Measure, then restore, then assert. require() returns from main, so
+        // asserting inline would leave the shared profile remapped for whatever
+        // runs next.
+        const int default_back = cont_button_to_key(back_button);
+        profiles::set_input_binding(menu_profile, GameInput::BACK_MENU, 0,
+            InputField::controller_digital(SDL_CONTROLLER_BUTTON_Y));
+        const int remapped_old_button = cont_button_to_key(back_button);
+        back_button.button = SDL_CONTROLLER_BUTTON_Y;
+        const int remapped_new_button = cont_button_to_key(back_button);
+        profiles::reset_input_binding(menu_profile, InputDevice::Controller, GameInput::BACK_MENU);
+        back_button.button = SDL_CONTROLLER_BUTTON_WEST;
+        const int after_reset = cont_button_to_key(back_button);
+
+        require(default_back == SDLK_F15, "default Back (B) produced no Back menu action");
+        require(remapped_old_button == 0, "remapped Back left the previous button bound");
+        require(remapped_new_button == SDLK_F15, "remapped Back produced no Back menu action");
+        require(after_reset == SDLK_F15, "reset did not restore the default Back binding");
         // An unresolved device has no profile at all; menu actions must be inert while
         // the profile-free D-pad fallback still works.
         SDL_ControllerButtonEvent unknown_pad{};

@@ -1,0 +1,53 @@
+diff --git a/recompui/src/composites/ui_prompt.cpp b/recompui/src/composites/ui_prompt.cpp
+index 56a0b70..0894432 100644
+--- a/recompui/src/composites/ui_prompt.cpp
++++ b/recompui/src/composites/ui_prompt.cpp
+@@ -46,6 +46,39 @@ void run_cancel_callback() {
+     // or just remove it as the usage of the prompt can change now
+ }
+ 
++namespace recompui {
++
++// A prompt is a modal overlay, so the Back menu action must dismiss it the same way
++// its cancel button does. Controller presses arrive as MenuAction::Back because
++// menu_action_mapping resolves the pressing device's current Back binding first, so a
++// remapped cancel button is honored without naming a physical button here.
++//
++// Dispatch: RmlUi sends a keydown to the focused element and walks GetParentNode() up
++// to that element's document root. This element is an ancestor of the prompt's buttons
++// and the only one in the tree that listens for menu actions, so it is reached exactly
++// once per press, in the bubble phase, and the walk cannot leave the prompt's document
++// to reach the page underneath. The prompt focuses one of its own buttons when it
++// opens, which is what starts the walk inside the prompt. Hiding the context blurs the
++// document, so a held button's key repeat is dispatched from the page underneath, where
++// Back has no callback.
++class PromptWindow : public Element {
++    void process_event(const Event &e) override {
++        if (e.type != EventType::MenuAction) {
++            return;
++        }
++
++        if (std::get<EventMenuAction>(e.variant).action == MenuAction::Back) {
++            run_cancel_callback();
++        }
++    }
++    std::string_view get_type_name() override { return "PromptWindow"; }
++public:
++    PromptWindow(ResourceId rid, Element* parent) : Element(rid, parent, Events(EventType::MenuAction), "div", false) {
++    }
++};
++
++} // namespace recompui
++
+ void recompui::init_prompt_context() {
+     ContextId context = create_context();
+ 
+@@ -55,7 +88,7 @@ void recompui::init_prompt_context() {
+ 
+     prompt_state.ui_context = context;
+ 
+-    Element* window = context.create_element<Element>(context.get_root_element());
++    Element* window = context.create_element<PromptWindow>(context.get_root_element());
+     window->set_display(Display::Flex);
+     window->set_flex_direction(FlexDirection::Column);
+     window->set_background_color(theme::color::Transparent);

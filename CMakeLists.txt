@@ -394,6 +394,10 @@ if(BUILD_TESTING)
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_game_scenario.py
         )
+        add_test(NAME lambo_prompt_back_action
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+                -m tests.test_prompt_back_action
+        )
         add_test(NAME lambo_track_lab_codec
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 -m unittest tests.test_track_lab
@@ -406,6 +410,7 @@ if(BUILD_TESTING)
         set_tests_properties(
             lambo_track_lab_codec
             lambo_track_patch_python_interop
+            lambo_prompt_back_action
             PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         )
     else()

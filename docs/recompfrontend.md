@@ -25,6 +25,68 @@ before multiplayer. Separate keyboard-player profiles can be configured, but pla
 start unbound to avoid overlapping keys. Device assignments are session-local; mappings and
 controller profile choices persist.
 
+## The quit confirmation
+
+Selecting Quit in the settings overlay while the game is running opens a confirmation.
+Back cancels it and the game keeps running; the affirmative Quit stays on its own
+confirmation. Back is the mapped menu action, not a fixed button, so the West button by
+default and any remapped Back both work.
+
+Before patch 0019 the prompt could not be dismissed with a controller at all. Upstream
+builds it from plain elements that do not listen for menu actions, so a Back press never
+became a menu action. A accepted because its mapping resolves to Return, which the
+frontend's own element handling activates on the focused button. Patch 0019 makes the
+prompt's window element answer the Back action through the same cancel path as its Cancel
+button.
+
+Back means the same thing on every prompt that uses the shared prompt, because it runs
+that prompt's own cancel action. The call sites are unchanged, so this table is read from
+`open_choice_prompt` and not introduced by patch 0019.
+
+| Prompt | Confirm | Back / Cancel |
+| --- | --- | --- |
+| Quit confirmation | `ultramodern::quit()` | No-op. The game keeps running and you return to the settings. |
+| Graphics options have unapplied changes | Saves the config, and closes if the tab was closing | Discards the unapplied graphics changes. Graphics is the only tab with `requires_confirmation`; General and Sound are not. |
+| Overwrite Mods? | Installs, overwriting existing files | Aborts the installation. |
+| Error Installing Mods | Hides the prompt | Hides the prompt. The install was already cancelled when this opened. |
+| Unable to start with these mods | Hides the prompt | Hides the prompt. |
+| Installing Mods / Please Wait | No buttons | Hides it. It closes itself once the synchronous install returns. |
+
+Note the second row: on the graphics confirmation, Back discards unapplied changes. That
+is the same action as its Discard button, but it is the one prompt where an accidental
+Back press costs unsaved edits, so it is worth knowing.
+
+Status: **Confirmed** in a played build. The quit confirmation was opened in the
+running game, before and after patch 0019, with `tools/drive_input.py`:
+
+| Step | Result |
+| --- | --- |
+| Unpatched build, Back on the confirmation | Prompt stays open. This is the bug. |
+| Patched build, Back on the confirmation | Prompt closes, the game keeps running, the settings page that opened it is showing again. |
+| Patched build, Quit on the confirmation | The game exits. |
+
+F15 was used for the Back action. `recompui.h` maps the Back menu action to
+`SDLK_F15` / `KI_F15`, and `cont_button_to_key` translates the controller's B
+button to that same key, so a real F15 keypress takes the identical path. F16 and
+F17 reach nothing: `RmlSDL::ConvertKey` in the pinned RmlUi has no case past
+`SDLK_F15`.
+
+The prompt's window element is reached once per press, in the bubble phase, and
+the walk cannot leave the prompt's document to reach the settings page, so one
+Back press cannot both dismiss the prompt and navigate the page below it. Hiding
+the context blurs the document, so a held button repeats into the page underneath,
+where Back has no callback.
+
+**Unverified** with a physical gamepad: the button-to-`SDLK_F15` hop was not
+played, in the running game or otherwise. `lambo_frontend_settings_tests` covers
+it for the default and a remapped binding, and
+`tests/test_prompt_back_action.py` checks the patch content.
+
+Reaching the confirmation needs the keyboard. The header's Quit and Close buttons
+are laid out past the right edge of the modal, so they cannot be clicked; the
+route is F1 to open the overlay, then the Back action to focus the active tab,
+then Right through the eight tabs and one more to leave them onto Quit.
+
 ## Options and storage
 
 | Tab | Options | Persistence |
@@ -77,7 +139,7 @@ The existing launcher/ROM selection policy and audio sink are retained.
 RecompFrontend is pinned at `b1a1477c6556aeb7ed45defbfb5924f721efebc1` and
 N64ModernRuntime at `cdf5abbd5026fef5c364c676e4667c45e42b6863`. RmlUi is now the frontend's
 nested dependency, not a second direct submodule. Use recursive submodule initialization
-and the normal build scripts. CMake applies patches 0016/0017/0018 idempotently and refuses
+and the normal build scripts. CMake applies patches 0016/0017/0018/0019 idempotently and refuses
 conflicting dependency edits. Existing scheduler/audio/VI and lazy-RDRAM patches still apply;
 the newer runtime already includes the former dummy-VI control-register fix. Patch 0018
 restores the first-game-display-list call to the port renderer's `enable_instant_present()`.
@@ -94,7 +156,8 @@ cross-surface fullscreen updates, legacy profile conversion,
 pre-attached SDL controllers without added events, preferred-device selection, imported
 device mappings, profile save/reload, duplicate added events, four SDL virtual controllers,
 reassignment, cross-player isolation and menu-action resolution for unassigned and
-unresolved controllers. The controller-Pak test also verifies all four players' buttons
+unresolved controllers, including the default and a remapped Back binding. The
+controller-Pak test also verifies all four players' buttons
 and signed stick bytes through the actual guest Joybus bridge. The normal
 `tools/run_game_scenario.py scenarios/harness-smoke.json` checks the game/replay path.
 Native Windows overlay and race smoke checks were run for this migration. Linux, macOS,

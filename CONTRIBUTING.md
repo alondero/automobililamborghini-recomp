@@ -47,10 +47,15 @@ The build scripts and CMake apply the dependency patches. The patch inventory
 is [patches/README.md](patches/README.md).
 
 If a dependency change may be generic, compare it with the current upstream
-project and use that project's issue or pull request as the canonical proposal
-record. Keep the local purpose and test in `patches/README.md` and this pull
-request. If it only exists to handle Lamborghini data, keep it in the port and
-explain why. Do not create a private renderer fork.
+project and record that comparison here and in the pull request. This project
+does not open issues on the upstream projects it patches: the RecompFrontend
+maintainers have said they do not want proposals raised from this repository
+(stated by the repository owner when this rule was retired, in review of
+[#251](https://github.com/alondero/automobililamborghini-recomp/pull/251); it is
+a verbal report, so re-check before relying on it for a new project). Keep the
+local purpose and test in `patches/README.md` and this pull request instead. If a
+change only exists to handle Lamborghini data, keep it in the port and explain
+why. Do not create a private renderer fork.
 
 ## Guest and host boundaries
 
