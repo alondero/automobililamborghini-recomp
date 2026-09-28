@@ -116,6 +116,32 @@ int main() {
                read_json(path).at("texture_pack") == "manual-texture-pack",
            "graphics menu changes preserve unrelated hand edits");
 
+    // The legacy texture pack stays a compatibility override after it lost its
+    // Graphics control: LAMBO_TEXTURE_PACK wins over the file for the renderer,
+    // is never written back to graphics.json, and stops applying once unset.
+    // Drive the file side through the port writer, which is also the documented
+    // migration path; a hand edit alone would not refresh the in-memory snapshot.
+    lambo::config::set_texture_pack_path("manual-texture-pack");
+    lambo::config::flush_pending_graphics_updates();
+    expect(lambo::config::texture_pack_path() == "manual-texture-pack",
+           "the compatibility texture pack persists to graphics.json");
+#if defined(_WIN32)
+    _putenv_s("LAMBO_TEXTURE_PACK", "env-texture-pack");
+#else
+    setenv("LAMBO_TEXTURE_PACK", "env-texture-pack", 1);
+#endif
+    expect(lambo::config::texture_pack_path() == "env-texture-pack",
+           "LAMBO_TEXTURE_PACK overrides the graphics.json texture pack");
+    expect(read_json(path).at("texture_pack") == "manual-texture-pack",
+           "the environment override is not persisted to graphics.json");
+#if defined(_WIN32)
+    _putenv_s("LAMBO_TEXTURE_PACK", "");
+#else
+    unsetenv("LAMBO_TEXTURE_PACK");
+#endif
+    expect(lambo::config::texture_pack_path() == "manual-texture-pack",
+           "unsetting LAMBO_TEXTURE_PACK restores the graphics.json texture pack");
+
     const int live_apply_count_before_api_change = ultramodern::renderer::graphics_config_apply_count;
     cfg.api_option = ultramodern::renderer::GraphicsApi::Vulkan;
     lambo::config::apply_graphics(cfg, false);

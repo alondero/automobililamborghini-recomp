@@ -96,6 +96,8 @@ option. The source file is not changed.
 ## Mods, texture packs and track changes
 
 The launcher and Settings include a Mods tab for code mods and texture packs.
+Install, enable, disable, and order texture packs there; Settings > Graphics no
+longer has a separate texture-pack path.
 Code packages must target Lamborghini Recompiled. See [Modding](docs/modding.md).
 The port does not ship replacement artwork.
 See [Texture packs](docs/TEXTURES.md).

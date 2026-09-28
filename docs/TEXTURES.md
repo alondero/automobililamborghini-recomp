@@ -7,9 +7,9 @@ This is the end-to-end guide for creating native RT64 replacement packs for the 
 Texture-pack support is content-agnostic: an HD-art pack, a readable-text pack, or a small
 one-texture experiment all use the same runtime facility. Everything below was verified with
 a config-driven texture dump, an offline decode, a loose replacement directory, and a packaged
-`.rtz` loaded in-game.
-
-This guide covers the generic RT64 dump, authoring, manifest, and loading contract.
+`.rtz` loaded in-game. The two `.rtz` loading routes are separate: players install through
+the Mods tab, while the config key is a development override. See
+[Modding](modding.md) for the mod-system contract.
 
 ## What RT64 already gives us (and what the port adds)
 
@@ -23,7 +23,8 @@ through startup configuration and supplies the dump-decoding and manifest-genera
 | Dump every uploaded texture (raw TMEM/RDRAM + tile JSON) | RT64 | `hle/rt64_rdp_tmem.cpp` `dumpTexture()`, gated on `state->dumpingTexturesDirectory` |
 | Pack manifest `rt64.json` (hash → file, per-texture stream/preload + shift) | RT64 | `common/rt64_replacement_database.*` |
 | Load a pack (loose directory **or** `.rtz`) | RT64 | `TextureCache::loadReplacementDirectory(ReplacementDirectory)` |
-| **Config-driven dump + startup pack auto-load** | **port** | `src/rt64_renderer.cpp` (after `app->setup()`), `src/lambo_config.cpp` |
+| **Config-driven dump, startup pack auto-load, and the legacy override notice** | **port** | `src/rt64_renderer.cpp` (after `app->setup()`), `src/lambo_config.cpp` |
+| **Mods tab install/enable/order for `.rtz` packs** | **port + framework** | `src/lambo_mods.cpp`, `recompui::config::create_mods_tab()` |
 | Dump → viewable PNG decode | **port** | `tools/decode_dump.py` |
 | Generate `rt64.json` from replacement files | **port** | `tools/make_pack.py` |
 | Build `.rtz` (+ low-mip cache) | RT64 | `build/rt64/src/tools/texture_packer/texture_packer.exe` |
@@ -32,19 +33,32 @@ Texture identity is the **TMEM content hash**, not an RDRAM address. A replaceme
 hash survives the source asset moving in memory, but a different palette or tile state can
 produce another hash for artwork that otherwise looks identical.
 
-## Config keys (graphics.json)
+## Loading a pack
 
-Two string keys alongside the standard `GraphicsConfig` fields, each overridable by an
-environment variable so a capture or test run never has to modify `graphics.json`:
+Players install a pack as a mod. Copy the `.rtz` into the `mods/` directory, or
+use **Install Mods** in **Settings > Mods**, then enable it there. The Mods tab
+owns activation, deactivation, and priority, so it is the route to use.
+
+A bare loose replacement directory is not a mod: the mod system opens a
+directory only when it contains a `mod.json` manifest. Point `texture_pack` or
+`LAMBO_TEXTURE_PACK` at a loose directory while authoring, then ship a `.rtz`.
+
+Two lower-level paths remain for development and capture work. Both are set in
+`graphics.json` and each has an environment override, so a capture or test run
+never has to modify the file:
 
 | Key | Type | Default | Env override | Effect |
 |---|---|---|---|---|
-| `texture_pack` | string | `""` | `LAMBO_TEXTURE_PACK` | Directory or `.rtz` auto-loaded at startup. |
+| `texture_pack` | string | `""` | `LAMBO_TEXTURE_PACK` | Directory or `.rtz` auto-loaded at startup, ahead of Mods packs. Compatibility override; not shown in the Graphics tab. |
 | `texture_dump` | string | `""` | `LAMBO_TEXTURE_DUMP` | Directory RT64 writes every used texture to. |
 
-Both are independent of `developer_mode`, so an end-user pack loads **without** the F1
-developer overlay. On success the log prints `[rt64] texture pack loaded: …` /
-`[rt64] texture dump enabled -> …`.
+`texture_dump` is independent of `developer_mode`, so a headless dump runs
+without the F1 developer overlay. On success the log prints
+`[rt64] texture pack loaded: …` / `[rt64] texture dump enabled -> …`. A non-empty
+`texture_pack` also logs `legacy texture_pack override active` when it loaded, or
+`legacy texture_pack override FAILED to load` when it did not; clear the key to
+hand texture management back to the Mods tab. See
+[Modding](modding.md#legacy-texture-pack-setting).
 
 ## End-to-end workflow
 
@@ -122,18 +136,22 @@ python tools/make_pack.py /path/to/pack            # writes rt64.json from the <
 `texture_hasher` only *upgrades* an existing manifest, it won't create one. `make_pack.py`
 fills that gap.
 
-Point the port at the directory to test:
+Point the port at the directory to test. This is the development shortcut; it
+bypasses the Mods tab:
 
 ```bash
 LAMBO_TEXTURE_PACK=/path/to/pack  ./build/lamborghini_modern
 ```
 
-To ship, zip to a `.rtz` (loads identically):
+To ship, zip to a `.rtz` and install it through **Settings > Mods**:
 
 ```bash
 build/rt64/src/tools/texture_packer/texture_packer.exe /path/to/pack --create-low-mip-cache
 build/rt64/src/tools/texture_packer/texture_packer.exe /path/to/pack --create-pack
 ```
+
+Keep the `.rtz` filename stable. The mod system synthesizes its manifest from
+the file stem, so renaming a pack changes its mod id.
 
 (The low-mip cache is only meaningful for DDS mipmaps; with PNG it is empty, which is fine.)
 
@@ -141,12 +159,15 @@ build/rt64/src/tools/texture_packer/texture_packer.exe /path/to/pack --create-pa
 
 With `developer_mode: true`, RT64's overlay opens on **F1** (Inspector) / **F4** (Replacements),
 giving a live per-draw-call texture view, "Start dumping textures", and interactive replace.
-The config-driven dump/pack above avoids the overlay entirely, which is why it is the
-recommended path here.
+The Mods tab and the config-driven dump above avoid the overlay entirely, which is why they
+are the recommended paths here.
 
 ## Files
 
-- `src/rt64_renderer.cpp` — startup wiring (dump dir + `loadReplacementDirectory`).
+- `src/rt64_renderer.cpp` — startup wiring (dump dir + `loadReplacementDirectory`), and the
+  Mods update path in `update_screen()`.
+- `src/lambo_mods.cpp` — `.rtz` container registration and the enabled-pack snapshot the
+  renderer consumes.
 - `src/lambo_config.{h,cpp}` — `texture_pack` / `texture_dump` keys + env overrides.
 - `tools/decode_dump.py` — dump → PNG (+ contact sheet).
 - `tools/make_pack.py` — replacement files → `rt64.json`.

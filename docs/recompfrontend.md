@@ -30,17 +30,19 @@ controller profile choices persist.
 | Tab | Options | Persistence |
 | --- | --- | --- |
 | General | Rumble strength, stick deadzone, background input | Framework `general.json` |
-| Graphics | Resolution, 1/2/3/4x downsampling, aspect, HUD placement, window mode, original/display/manual presentation rate, MSAA through 8x, HPFB, graphics API, initial window dimensions, texture pack/dump paths | Existing `graphics.json`, Apply/Discard |
-| Enhancements | Automatic pit-stops (off by default), multiplayer fog/sky matching, full geometry and six circuit switches, draw distance, fog density, camera distance/height/FOV | Existing `graphics.json`, immediate |
+| Graphics | Resolution, 1/2/3/4x downsampling, aspect, HUD placement, window mode, original/display/manual presentation rate, MSAA through 8x, HPFB, graphics API, initial window dimensions, texture dump path | Existing `graphics.json`, Apply/Discard |
+| Enhancements | Automatic pit-stops (off by default), multiplayer fog/sky matching, full geometry and six circuit switches, draw distance, fog density, camera distance/height/FOV, menu stick sensitivity | Existing `graphics.json`, immediate |
 | Debug | Developer overlay | Existing `graphics.json`, immediate save, restart for effect |
 | Button bindings | N64 button/stick remapping, keyboard/controller profiles, 1-4 player assignment | Framework `controls-framework.json` |
 | Controls | Default-off Android gyro steering, steering range/deadzone/inversion, auto-accelerate | Framework driving-controls.json, Apply/Discard |
-| Mods | Package installation, enable/disable, ordering, per-mod settings | Runtime `mods.json` and `mod_config/` |
+| Mods | Package installation, enable/disable, ordering, per-mod settings, and texture packs | Runtime `mods.json` and `mod_config/` |
 | Driver | Driver-one name, startup launcher preference | Existing `player.json` and `graphics.json` |
 | Pedals | Analog/digital throttle and brake, source axis/direction, deadzone and saturation | Framework `pedals.json`, Apply/Discard |
 
-API, the Debug tab's developer overlay, initial dimensions and texture paths require
-restart. Unsupported
+API, the Debug tab's developer overlay, initial dimensions and the texture dump path require
+restart. Texture packs are not a Graphics option: the Mods tab installs, enables, disables, and
+orders them. The legacy `texture_pack` key still loads ahead of Mods packs and survives a
+Graphics save; it is not editable from the UI. Unsupported
 MSAA options are disabled using the port renderer's actual device capabilities. Downsampling
 only affects Original/Original2x resolution, matching the renderer. Game simulation remains
 at its original rate independently of the presentation setting.
@@ -86,7 +88,9 @@ interpolated frames per workload instead of four. The fix retains display-rate i
 and both current library pins.
 
 `lambo_frontend_settings_tests` checks legacy graphics/unknown-key preservation, option
-coverage, Apply/Discard, cross-surface fullscreen updates, legacy profile conversion,
+coverage, the absence of a Graphics texture-pack control, `texture_pack` survival across a
+graphics save and the explicit clear that migrates a pack to Mods, Apply/Discard,
+cross-surface fullscreen updates, legacy profile conversion,
 pre-attached SDL controllers without added events, preferred-device selection, imported
 device mappings, profile save/reload, duplicate added events, four SDL virtual controllers,
 reassignment, cross-player isolation and menu-action resolution for unassigned and
