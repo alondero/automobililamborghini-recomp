@@ -6,7 +6,7 @@ See the [source comparison](mod-support-research.md).
 
 ## Install and manage mods
 
-1. In Settings > Driver, enable **Show launcher at startup**, then restart.
+1. In Settings > General, enable **Show launcher at startup**, then Apply and restart.
 2. Choose **Mods** in the launcher, or open Settings > Mods.
 3. Use **Install Mods**, or drag a package onto the game window before Play.
 4. Enable the mods you want, adjust their order or configuration, then close

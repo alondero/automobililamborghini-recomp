@@ -91,14 +91,13 @@ then Right through the eight tabs and one more to leave them onto Quit.
 
 | Tab | Options | Persistence |
 | --- | --- | --- |
-| General | Rumble strength, stick deadzone, background input | Framework `general.json` |
+| General | Rumble strength, stick deadzone, background input, driver-one name, startup launcher preference | Framework `general.json`, Apply/Discard; the name and launcher preference are also saved to `player.json` and `graphics.json` |
 | Graphics | Resolution, 1/2/3/4x downsampling, aspect, HUD placement, window mode, original/display/manual presentation rate, MSAA through 8x, HPFB, graphics API, initial window dimensions, texture dump path | Existing `graphics.json`, Apply/Discard |
 | Enhancements | Automatic pit-stops (off by default), multiplayer fog/sky matching, full geometry and six circuit switches, draw distance, fog density, camera distance/height/FOV, menu stick sensitivity | Existing `graphics.json`, immediate |
 | Debug | Developer overlay | Existing `graphics.json`, immediate save, restart for effect |
 | Button bindings | N64 button/stick remapping, keyboard/controller profiles, 1-4 player assignment | Framework `controls-framework.json` |
 | Controls | Default-off Android gyro steering, steering range/deadzone/inversion, auto-accelerate | Framework driving-controls.json, Apply/Discard |
 | Mods | Package installation, enable/disable, ordering, per-mod settings, and texture packs | Runtime `mods.json` and `mod_config/` |
-| Driver | Driver-one name, startup launcher preference | Existing `player.json` and `graphics.json` |
 | Pedals | Analog/digital throttle and brake, source axis/direction, deadzone and saturation | Framework `pedals.json`, Apply/Discard |
 
 API, the Debug tab's developer overlay, initial dimensions and the texture dump path require
@@ -115,6 +114,16 @@ framework's Config schema has a small downstream external-storage hook; there is
 graphics/enhancements JSON writer. Native-menu changes and the guest Championship name editor
 are synchronized back into the shared settings. An unrelated Apply does not undo a concurrent
 fullscreen/native-menu change.
+
+The driver name and startup launcher preference moved from the old Driver page onto General,
+which is the page the framework offers them. General therefore carries the same Apply/Discard
+footer the Driver page had, and rumble strength, stick deadzone and background input are staged
+behind that footer too. The name is a staged text edit: `player.json` is written when Apply
+publishes the field rather than on every keystroke, so a half-typed name never reaches a saved
+record. A pending name edit is judged on its own, so an unrelated pending slider does not stop a
+Championship name save from appearing in the field. General is not external-storage: because the
+framework owns `general.json` and serialises every option on the page, that file also carries a
+copy of the two values. `player.json` and `graphics.json` remain the port's authoritative copies.
 
 Legacy `controls.json` is left untouched. On first launch its custom controller mappings are
 imported as selectable `Imported ...` profiles. Startup matches the actual connected device's

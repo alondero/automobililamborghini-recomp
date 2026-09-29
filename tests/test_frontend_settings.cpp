@@ -113,15 +113,54 @@ int main(int argc, char** argv) {
         require(!graphics.has_option("texture_pack"), "graphics must not offer a texture-pack selector");
         require(lambo::config::texture_pack_path() == "seed-pack", "legacy texture pack import");
         require(std::get<std::string>(graphics.get_option_value("texture_dump")) == "seed-dump", "texture dump import");
-        auto& driver = recompui::config::get_config("driver");
-        driver.set_option_value("name", std::string{});
+        // The driver name and the startup launcher preference live on General,
+        // which is confirmation-backed so the name can be staged instead of
+        // written to player.json on every keystroke.
+        auto& general = recompui::config::get_general_config();
+        require(general.requires_confirmation, "General must stage the driver name edit");
+        require(general.has_option("name") && general.has_option("show_launcher"),
+                "driver name and launcher preference must be on General");
+        // Narrow the check: several unrelated config errors also throw
+        // std::runtime_error, and one of those must not read as "page removed".
+        std::string missing_page;
+        try { recompui::config::get_config("driver"); }
+        catch (const std::exception& e) { missing_page = e.what(); }
+        require(missing_page.find("driver") != std::string::npos,
+                "the standalone Driver page still exists");
+        general.set_option_value("name", std::string{});
         lambo::ui::refresh_frontend_settings();
-        require(std::get<std::string>(driver.get_temp_option_value("name")).empty(),
-                "driver refresh clobbered an active text edit");
-        driver.revert_temp_config();
+        require(std::get<std::string>(general.get_temp_option_value("name")).empty(),
+                "General refresh clobbered an active name edit");
+        general.revert_temp_config();
         lambo::ui::refresh_frontend_settings();
-        require(std::get<std::string>(driver.get_option_value("name")) == "RACER",
-                "driver refresh missed an external name save");
+        require(std::get<std::string>(general.get_option_value("name")) == "RACER",
+                "General refresh missed an external name save");
+        // An unapplied name edit must not reach player.json; Apply publishes it.
+        general.set_option_value("name", std::string("CHAMPS"));
+        require(lambo::player::saved_name() == "RACER", "unapplied name edit reached player.json");
+        general.save_config();
+        require(lambo::player::saved_name() == "CHAMPS", "applied name edit did not reach player.json");
+        // A pending rumble edit must not stop an external name save appearing.
+        general.set_option_value("rumble_strength", 60.0);
+        require(general.is_dirty(), "rumble edit should be pending");
+        lambo::player::set_saved_name("CHAMPER");
+        lambo::ui::refresh_frontend_settings();
+        require(std::get<std::string>(general.get_temp_option_value("name")) == "CHAMPER",
+                "an unrelated pending edit froze the name field");
+        // The framework's own General options are staged on the same footer.
+        general.save_config();
+        { std::ifstream file(path / "general.json"); nlohmann::json saved_general; file >> saved_general;
+          require(saved_general.at("rumble_strength") == 60, "staged General option did not reach general.json"); }
+        general.revert_temp_config();
+        general.set_option_value("show_launcher", true);
+        general.save_config();
+        require(lambo::config::show_launcher(), "launcher preference did not apply");
+        lambo::config::flush_pending_graphics_updates();
+        { std::ifstream file(path / "graphics.json"); nlohmann::json launcher; file >> launcher;
+          require(launcher.at("show_launcher") == true, "launcher preference did not persist"); }
+        general.set_option_value("show_launcher", false);
+        general.save_config();
+        require(!lambo::config::show_launcher(), "launcher preference did not turn back off");
         // Neither developer_mode nor texture_pack belongs here: the Debug tab is
         // the single visible owner of the former (issue #244), and the Mods tab
         // owns texture packs (issue #245), so Graphics drops it entirely.

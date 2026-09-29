@@ -19,7 +19,6 @@ enum class Page {
     Enhancements,
     Controls,
     Haptics,
-    Player,
     Mods,
 };
 
@@ -38,7 +37,6 @@ void open_controls();
 void open_graphics();
 void open_enhancements();
 void open_haptics();
-void open_player();
 void open_mods();
 void report_mod_load_error(const char* message);
 void close_top_page();

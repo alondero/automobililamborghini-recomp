@@ -95,7 +95,6 @@ void render(plume::RenderCommandList* commands, plume::RenderFramebuffer* frameb
             case Page::Enhancements: id = "enhancements"; break;
             case Page::Controls: id = "driving-controls"; break;
             case Page::Haptics: id = "pedals"; break;
-            case Page::Player: id = "driver"; break;
             case Page::Mods: id = "mods"; break;
             default: break;
             }
@@ -192,7 +191,6 @@ void open_controls() { request(Page::Controls); }
 void open_graphics() { request(Page::Graphics); }
 void open_enhancements() { request(Page::Enhancements); }
 void open_haptics() { request(Page::Haptics); }
-void open_player() { request(Page::Player); }
 void open_mods() { request(Page::Mods); }
 void report_mod_load_error(const char* message) {
     std::lock_guard lock(mod_error_mutex);
