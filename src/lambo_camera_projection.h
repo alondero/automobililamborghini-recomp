@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 // The scene builder's authored forward view-cone cosine (ROM doubles at
 // 0x8008D8C0/C8). A C double literal 0.886 is bit-identical to the ROM value,
@@ -82,4 +83,4 @@ inline double lambo_view_cone_cos(double authored_cone_cos,
     return std::clamp(widened, 1.0e-4, 1.0);
 }
 
-extern "C" unsigned int lambo_camera_backdrop_projection_scale_bits();
+extern "C" unsigned int lambo_camera_backdrop_projection_scale_bits(uint8_t* rdram);

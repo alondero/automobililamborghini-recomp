@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 // The USA sky emitter scrolls eight 128-unit tiles at z=-220. Its three
 // original columns cover [-128, 256] before subtracting a phase in [0,128).
@@ -45,6 +46,6 @@ inline int lambo_sky_column_radius(double vertical_fov, double aspect, bool two_
 
 // Zero when RT64 is unavailable (the diagnostic renderer uses the stock sky).
 extern "C" float lambo_sky_target_aspect();
-extern "C" float lambo_camera_sky_vertical_fov();
+extern "C" float lambo_camera_sky_vertical_fov(uint8_t* rdram);
 extern "C" void lambo_sky_extend_panorama(unsigned char* rdram);
 extern "C" void lambo_sky_panorama_start(unsigned char* rdram);

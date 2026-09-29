@@ -83,7 +83,9 @@ non-default settings and synthetic word-swapped guest RAM. It covers sequence
 transitions, race modes, all authored FOV layouts, pause framing, and restoration
 of sky, backdrop, and view-cone values. It does not prove visual framing: compare
 intro and attract shots with default and non-default settings in a game build,
-then enter a race and repeat the transitions.
+then enter a race and repeat the transitions. The measured tuples and current
+visual evidence are in [Camera sequences](camera-sequences.md). Companion tests
+also cover state changes without any intervening FOV hook.
 
 `lambo_input_driving_assists` checks tilt direction, landscape centering,
 held-angle steering, calibration retention after invalid samples, manual

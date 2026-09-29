@@ -1027,7 +1027,7 @@ text = "{ extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_sav
 [[patches.hook]]
 func = "func_800028D0"
 before_vram = 0x80001CD8
-text = "{ extern void lambo_replay_dispatch_begin(uint8_t*); extern void lambo_car_trace_tick(uint8_t*, recomp_context*); lambo_replay_dispatch_begin(rdram); lambo_car_trace_tick(rdram, ctx); }"
+text = "{ extern void lambo_replay_dispatch_begin(uint8_t*); extern void lambo_car_trace_tick(uint8_t*, recomp_context*); lambo_replay_dispatch_begin(rdram); lambo_car_trace_tick(rdram, ctx); extern void lambo_camera_sequence_probe(uint8_t*); lambo_camera_sequence_probe(rdram); }"
 
 [[patches.hook]]
 func = "func_800028D0"

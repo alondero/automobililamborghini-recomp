@@ -10,8 +10,8 @@
 extern "C" unsigned int lambo_camera_scale_bits(unsigned int, uint8_t*);
 extern "C" unsigned int lambo_camera_height_bits(unsigned int, uint8_t*);
 extern "C" unsigned int lambo_camera_fov_bits(unsigned int, uint8_t*);
-extern "C" float lambo_camera_sky_vertical_fov();
-extern "C" unsigned long long lambo_camera_view_cone_cos_bits();
+extern "C" float lambo_camera_sky_vertical_fov(uint8_t* rdram);
+extern "C" unsigned long long lambo_camera_view_cone_cos_bits(uint8_t* rdram);
 
 // Only configuration and logging are faked; exercise the production shims.
 namespace lambo::config {
@@ -39,6 +39,7 @@ unsigned int bits(float value) {
 int main() {
     std::vector<uint8_t> ram(8 * 1024 * 1024);
     auto half = [&](uint32_t address, int16_t value) {
+        // Host RAM stores each big-endian guest halfword at byte offset XOR 2.
         std::memcpy(ram.data() + ((address & 0x7fffff) ^ 2), &value, sizeof(value));
     };
     auto check = [&](bool racing) {
@@ -49,11 +50,11 @@ int main() {
         for (float fov : {20.0f, 32.0f, 40.0f, 52.0f}) {
             expect(lambo_camera_fov_bits(bits(fov), ram.data()) ==
                        bits(racing ? fov + 20.0f : fov), "FOV follows current sequence");
-            expect(lambo_camera_sky_vertical_fov() == (racing ? fov + 20.0f : fov),
+            expect(lambo_camera_sky_vertical_fov(ram.data()) == (racing ? fov + 20.0f : fov),
                    "sky FOV follows the current projection");
-            expect((lambo_camera_backdrop_projection_scale_bits() == bits(1.0f)) == !racing,
+            expect((lambo_camera_backdrop_projection_scale_bits(ram.data()) == bits(1.0f)) == !racing,
                    "backdrop correction resets on leaving gameplay");
-            expect((lambo_camera_view_cone_cos_bits() == 0x3FEC5A1CAC083127ull) == !racing,
+            expect((lambo_camera_view_cone_cos_bits(ram.data()) == 0x3FEC5A1CAC083127ull) == !racing,
                    "view cone resets bit-for-bit on leaving gameplay");
         }
     };
@@ -79,6 +80,34 @@ int main() {
         half(0x800CE6AC, 0);
         check(false);
     }
+    // Measured boot/title, attract, and countdown tuples (camera-sequences.md),
+    // plus results: read companions after an adjusted race with NO intervening
+    // FOV hook. The initial test only exercised transitions that called FOV.
+    constexpr int scripted[][3] = {
+        {4, -1, 0}, {6, -1, 0}, {6, -1, 4}, {8, 2, 0},
+        {8, 2, 1}, {8, 2, 4}, {8, 3, 4}, {8, 4, 0}, {8, 5, 0}
+    };
+    for (const auto& scene : scripted) {
+        half(0x800CE6AC, 8);
+        half(0x800CE6B0, 3);
+        half(0x800CE6B4, 0);
+        lambo_camera_fov_bits(bits(20.0f), ram.data());
+        half(0x800CE6AC, scene[0]);
+        half(0x800CE6B0, scene[1]);
+        half(0x800CE6B4, scene[2]);
+        expect(lambo_camera_backdrop_projection_scale_bits(ram.data()) == bits(1.0f),
+               "state exit must neutralize backdrop without another FOV hook");
+        expect(lambo_camera_view_cone_cos_bits(ram.data()) == 0x3FEC5A1CAC083127ull,
+               "state exit must neutralize view cone without another FOV hook");
+        expect(lambo_camera_sky_vertical_fov(ram.data()) == 20.0f,
+               "state exit must use authored sky FOV without another FOV hook");
+    }
+    expect(lambo_camera_backdrop_projection_scale_bits(nullptr) == bits(1.0f),
+           "missing guest RAM neutralizes backdrop correction");
+    expect(lambo_camera_view_cone_cos_bits(nullptr) == 0x3FEC5A1CAC083127ull,
+           "missing guest RAM neutralizes view-cone correction");
+    expect(lambo_camera_sky_vertical_fov(nullptr) == 20.0f,
+           "missing guest RAM preserves authored sky FOV");
     expect(lambo_camera_scale_bits(bits(900.0f), nullptr) == bits(900.0f),
            "missing guest RAM preserves distance");
     expect(lambo_camera_height_bits(bits(300.0f), nullptr) == bits(300.0f),

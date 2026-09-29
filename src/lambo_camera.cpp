@@ -26,11 +26,13 @@
 
 namespace {
 
-// USA ROM signed halfwords in word-swapped RDRAM, read on the guest thread
-// at each camera hook so transitions and savestate loads cannot leave a cached
-// gate stale. State 8 dispatches racing; phase 3 is active driving; mode 4 is
-// attract playback. Evidence: docs/gyro-steering-research.md, Local guest gate
-// evidence. Pause/input suppression deliberately do not change race framing.
+// USA ROM unitless s16 codes: state at 0x800CE6AC, phase at 0x800CE6B0,
+// mode at 0x800CE6B4. MEM_H reads word-swapped RDRAM on the guest thread at
+// each hook/consumer, so transitions and savestate loads cannot cache the gate.
+// State 8 dispatches racing; phase 3 is driving; mode 4 is attract playback.
+// Evidence: docs/gyro-steering-research.md#local-guest-gate-evidence and
+// docs/camera-sequences.md. Unlike input assists, this visual gate ignores
+// pause/input suppression: pausing must not change the race's framing.
 // Missing RAM fails closed. Replace fixed addresses with symbols when available.
 bool overrides_allowed(uint8_t* rdram) {
     if (rdram == nullptr) return false;
@@ -81,6 +83,7 @@ double g_dist_last = -1.0;
 double g_height_last = -1.0;
 std::atomic<unsigned int> g_backdrop_projection_scale_bits{0x3F800000u};
 std::atomic<float> g_sky_vertical_fov{40.0f};
+std::atomic<float> g_authored_sky_vertical_fov{40.0f};
 // Bits of the scene-builder forward-view-cone cosine (a full double, NOT a
 // float round-trip: stock must restore the ROM double bit-for-bit), recomputed
 // alongside each guPerspective FOV so the cull cone tracks the rendered frustum
@@ -117,6 +120,7 @@ extern "C" unsigned int lambo_camera_fov_bits(unsigned int authored_bits, uint8_
         static_cast<double>(authored) + lambo::config::camera_fov_add()) : authored;
     // Always refresh projection companions, even when overrides are disabled:
     // the first scripted projection after racing must restore authored values.
+    g_authored_sky_vertical_fov.store(authored, std::memory_order_release);
     g_sky_vertical_fov.store(static_cast<float>(out), std::memory_order_release);
     const float backdrop_scale = static_cast<float>(
         lambo_backdrop_fov_restore_scale(static_cast<double>(authored), out));
@@ -141,10 +145,14 @@ extern "C" unsigned int lambo_camera_fov_bits(unsigned int authored_bits, uint8_
     return allowed ? float_bits(out) : authored_bits;
 }
 
+// Consumers also gate against current guest state: a scene outside the race
+// dispatcher may never call the FOV hooks. Strip the configured contribution
+// without requiring a new projection, retaining the last authored sky FOV.
 // The display-list tag embeds the correction computed alongside the exact FOV
 // passed to guPerspective. RT64 therefore never re-reads live configuration for
 // an older workload when a menu change lands between game and render threads.
-extern "C" unsigned int lambo_camera_backdrop_projection_scale_bits() {
+extern "C" unsigned int lambo_camera_backdrop_projection_scale_bits(uint8_t* rdram) {
+    if (!overrides_allowed(rdram)) return 0x3F800000u;
     const unsigned int bits = g_backdrop_projection_scale_bits.load(std::memory_order_acquire);
     static int remaining = 5;
     if (cam_trace() && remaining > 0) {
@@ -156,13 +164,17 @@ extern "C" unsigned int lambo_camera_backdrop_projection_scale_bits() {
     return bits;
 }
 
-extern "C" float lambo_camera_sky_vertical_fov() {
+extern "C" float lambo_camera_sky_vertical_fov(uint8_t* rdram) {
+    if (!overrides_allowed(rdram)) {
+        return g_authored_sky_vertical_fov.load(std::memory_order_acquire);
+    }
     return g_sky_vertical_fov.load(std::memory_order_acquire);
 }
 
 // Double bits of the widened forward-view-cone cosine for the scene builder's
 // segment cull (consumed by the per-frame RDRAM rewrite in lambo_no_lod.cpp).
-extern "C" unsigned long long lambo_camera_view_cone_cos_bits() {
+extern "C" unsigned long long lambo_camera_view_cone_cos_bits(uint8_t* rdram) {
+    if (!overrides_allowed(rdram)) return 0x3FEC5A1CAC083127ull;
     const unsigned long long bits = g_view_cone_cos_bits.load(std::memory_order_acquire);
     static int remaining = 5;
     if (cam_trace() && remaining > 0) {
@@ -212,3 +224,19 @@ extern "C" void lambo_camera_entry_probe(unsigned int gate, unsigned int idx,
               n, gate, idx, ex, ey, ez);
 }
 
+
+// Optional transition evidence from the top-level dispatcher, including scenes
+// that never visit a camera/FOV hook. Same guest-thread s16 layout as the gate.
+extern "C" void lambo_camera_sequence_probe(uint8_t* rdram) {
+    if (!cam_trace() || rdram == nullptr) return;
+    const int state = MEM_H(0, (gpr)(int32_t)0x800CE6ACu);
+    const int phase = MEM_H(0, (gpr)(int32_t)0x800CE6B0u);
+    const int mode = MEM_H(0, (gpr)(int32_t)0x800CE6B4u);
+    static int last_state = -999, last_phase = -999, last_mode = -999;
+    if (state == last_state && phase == last_phase && mode == last_mode) return;
+    last_state = state;
+    last_phase = phase;
+    last_mode = mode;
+    LAMBO_LOG("camera", "sequence state=%d phase=%d mode=%d overrides=%d\n",
+              state, phase, mode, overrides_allowed(rdram));
+}
