@@ -1535,37 +1535,37 @@ text = "lambo_ws_quad_panel_bg_reset(rdram);"
 [[patches.hook]]
 func = "func_80032450"
 before_vram = 0x80032708
-text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f6.u32l = lambo_camera_scale_bits((uint32_t)ctx->f6.u32l); }"
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int, uint8_t*); ctx->f6.u32l = lambo_camera_scale_bits((uint32_t)ctx->f6.u32l, rdram); }"
 
 [[patches.hook]]
 func = "func_80032450"
 before_vram = 0x800320E4
-text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f6.u32l = lambo_camera_scale_bits((uint32_t)ctx->f6.u32l); }"
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int, uint8_t*); ctx->f6.u32l = lambo_camera_scale_bits((uint32_t)ctx->f6.u32l, rdram); }"
 
 [[patches.hook]]
 func = "func_80032450"
 before_vram = 0x80032124
-text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f16.u32l = lambo_camera_scale_bits((uint32_t)ctx->f16.u32l); }"
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int, uint8_t*); ctx->f16.u32l = lambo_camera_scale_bits((uint32_t)ctx->f16.u32l, rdram); }"
 
 [[patches.hook]]
 func = "func_80032450"
 before_vram = 0x800321F8
-text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f18.u32l = lambo_camera_scale_bits((uint32_t)ctx->f18.u32l); }"
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int, uint8_t*); ctx->f18.u32l = lambo_camera_scale_bits((uint32_t)ctx->f18.u32l, rdram); }"
 
 [[patches.hook]]
 func = "func_80032450"
 before_vram = 0x80031E80
-text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f6.u32l = lambo_camera_scale_bits((uint32_t)ctx->f6.u32l); }"
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int, uint8_t*); ctx->f6.u32l = lambo_camera_scale_bits((uint32_t)ctx->f6.u32l, rdram); }"
 
 [[patches.hook]]
 func = "boot_pad_apply_calibration"
 before_vram = 0x80007CF4
-text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f18.u32l = lambo_camera_scale_bits((uint32_t)ctx->f18.u32l); }"
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int, uint8_t*); ctx->f18.u32l = lambo_camera_scale_bits((uint32_t)ctx->f18.u32l, rdram); }"
 
 [[patches.hook]]
 func = "boot_pad_apply_calibration"
 before_vram = 0x80007D4C
-text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f4.u32l = lambo_camera_scale_bits((uint32_t)ctx->f4.u32l); }"
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int, uint8_t*); ctx->f4.u32l = lambo_camera_scale_bits((uint32_t)ctx->f4.u32l, rdram); }"
 
 # Race-camera HEIGHT: replaces the authored +300 constant (mtc1 $at,$f6 at
 # 0x80032774) right before its add.s consumer.
@@ -1590,42 +1590,42 @@ text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f4.u32
 [[patches.hook]]
 func = "func_80032450"
 before_vram = 0x80033E5C
-text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f16.u32l = lambo_camera_scale_bits((uint32_t)ctx->f16.u32l); }"
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int, uint8_t*); ctx->f16.u32l = lambo_camera_scale_bits((uint32_t)ctx->f16.u32l, rdram); }"
 
 [[patches.hook]]
 func = "func_80032450"
 before_vram = 0x80033ED8
-text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int); ctx->f16.u32l = lambo_camera_scale_bits((uint32_t)ctx->f16.u32l); }"
+text = "{ extern unsigned int lambo_camera_scale_bits(unsigned int, uint8_t*); ctx->f16.u32l = lambo_camera_scale_bits((uint32_t)ctx->f16.u32l, rdram); }"
 
 [[patches.hook]]
 func = "func_80032450"
 before_vram = 0x80034A08
-text = "{ extern unsigned int lambo_camera_height_bits(unsigned int); ctx->f4.u32l = lambo_camera_height_bits((uint32_t)ctx->f4.u32l); }"
+text = "{ extern unsigned int lambo_camera_height_bits(unsigned int, uint8_t*); ctx->f4.u32l = lambo_camera_height_bits((uint32_t)ctx->f4.u32l, rdram); }"
 
 [[patches.hook]]
 func = "func_800030F8"
 before_vram = 0x800041AC
-text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6); }"
+text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int, uint8_t*); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6, rdram); }"
 
 [[patches.hook]]
 func = "func_800030F8"
 before_vram = 0x80004248
-text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6); }"
+text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int, uint8_t*); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6, rdram); }"
 
 [[patches.hook]]
 func = "func_800030F8"
 before_vram = 0x800042A4
-text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6); }"
+text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int, uint8_t*); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6, rdram); }"
 
 [[patches.hook]]
 func = "func_800030F8"
 before_vram = 0x80004300
-text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6); }"
+text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int, uint8_t*); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6, rdram); }"
 
 [[patches.hook]]
 func = "func_800030F8"
 before_vram = 0x80004374
-text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6); }"
+text = "{ extern unsigned int lambo_camera_fov_bits(unsigned int, uint8_t*); ctx->r6 = (gpr)(int32_t)lambo_camera_fov_bits((uint32_t)ctx->r6, rdram); }"
 
 # Remember player one's name across launches. The name editor owns four one-based,
 # 13-byte buffers at 0x800A4819 + driver*13 (12 chars + NUL); player one is therefore

@@ -11,20 +11,33 @@
 //   eye.y   = track anchor table entry + 300.0
 //             -- height adder add.s at 0x80032780 (height site 1)
 // The demo/attract camera is produced by boot_pad_apply_calibration with an
-// absolute eye = car - dir*900, carY+1000; its mul.s consumers take the same
-// distance SCALE so both camera families respond consistently. func_80032450's
-// unused-in-race chase paths and its follow-distance compare are scaled too, so
-// any mode that does wake them stays self-consistent.
+// absolute eye = car - dir*900, carY+1000. Shared hooks preserve authored
+// values outside active player races, including this demo/attract camera.
 //
-// With all knobs at their defaults (1.0 / 1.0 / +0) every shim returns exactly`r`n// what the ROM computed, so stock presentation is untouched.
+// With all knobs at their defaults (1.0 / 1.0 / +0) every shim returns exactly
+// what the ROM computed, so stock presentation is untouched.
 #include <atomic>
 #include <cstring>
 
 #include "lambo_camera_projection.h"
 #include "lambo_config.h"
 #include "lambo_log.h"
+#include "recomp.h"
 
 namespace {
+
+// USA ROM signed halfwords in word-swapped RDRAM, read on the guest thread
+// at each camera hook so transitions and savestate loads cannot leave a cached
+// gate stale. State 8 dispatches racing; phase 3 is active driving; mode 4 is
+// attract playback. Evidence: docs/gyro-steering-research.md, Local guest gate
+// evidence. Pause/input suppression deliberately do not change race framing.
+// Missing RAM fails closed. Replace fixed addresses with symbols when available.
+bool overrides_allowed(uint8_t* rdram) {
+    if (rdram == nullptr) return false;
+    return MEM_H(0, (gpr)(int32_t)0x800CE6ACu) == 8 &&
+           MEM_H(0, (gpr)(int32_t)0x800CE6B0u) == 3 &&
+           MEM_H(0, (gpr)(int32_t)0x800CE6B4u) != 4;
+}
 
 unsigned int float_bits(double v) {
     float f = static_cast<float>(v);
@@ -83,22 +96,27 @@ std::atomic<unsigned long long> g_view_cone_cos_bits{0x3FEC5A1CAC083127ull};
 
 // Scale an authored length (float bits in, float bits out). Used at every site
 // that multiplies an authored camera distance into an eye offset.
-extern "C" unsigned int lambo_camera_scale_bits(unsigned int authored_bits) {
+extern "C" unsigned int lambo_camera_scale_bits(unsigned int authored_bits, uint8_t* rdram) {
+    if (!overrides_allowed(rdram)) return authored_bits;
     return scaled_bits(authored_bits, lambo::config::camera_distance_scale(),
                        "dist scale", g_dist_last);
 }
 
 // Scale the authored eye-height offset (float bits of float(s16 table value) in).
-extern "C" unsigned int lambo_camera_height_bits(unsigned int authored_bits) {
+extern "C" unsigned int lambo_camera_height_bits(unsigned int authored_bits, uint8_t* rdram) {
+    if (!overrides_allowed(rdram)) return authored_bits;
     return scaled_bits(authored_bits, lambo::config::camera_height_scale(),
                        "height scale", g_height_last);
 }
 
-extern "C" unsigned int lambo_camera_fov_bits(unsigned int authored_bits) {
+extern "C" unsigned int lambo_camera_fov_bits(unsigned int authored_bits, uint8_t* rdram) {
     float authored;
     std::memcpy(&authored, &authored_bits, sizeof(authored));
-    const double out = lambo_clamp_vertical_fov(
-        static_cast<double>(authored) + lambo::config::camera_fov_add());
+    const bool allowed = overrides_allowed(rdram);
+    const double out = allowed ? lambo_clamp_vertical_fov(
+        static_cast<double>(authored) + lambo::config::camera_fov_add()) : authored;
+    // Always refresh projection companions, even when overrides are disabled:
+    // the first scripted projection after racing must restore authored values.
     g_sky_vertical_fov.store(static_cast<float>(out), std::memory_order_release);
     const float backdrop_scale = static_cast<float>(
         lambo_backdrop_fov_restore_scale(static_cast<double>(authored), out));
@@ -120,7 +138,7 @@ extern "C" unsigned int lambo_camera_fov_bits(unsigned int authored_bits) {
             LAMBO_LOG("camera", "fov %.1f -> %.1f\n", (double)authored, out);
         }
     }
-    return float_bits(out);
+    return allowed ? float_bits(out) : authored_bits;
 }
 
 // The display-list tag embeds the correction computed alongside the exact FOV

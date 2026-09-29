@@ -85,6 +85,11 @@ The port adds these keys:
 | camera_fov_add | 0 | Extra field-of-view degrees. |
 | show_launcher | false | Show the launcher instead of booting directly into the game. |
 
+Camera distance, height, and FOV settings apply during active player races.
+Intro cinematics, countdowns, results, and title-screen demos retain authored
+values. Saved settings take effect again when racing begins. Pausing a race
+keeps its configured framing.
+
 Invalid or missing values fall back to defaults. The file is merged and
 rewritten with known keys. Keep a backup before hand-editing it.
 
