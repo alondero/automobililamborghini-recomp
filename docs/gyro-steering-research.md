@@ -60,7 +60,7 @@ the project.
 
 ## Recommended Lamborghini boundary
 
-Keep both assists default-off and persist them in Controls. Sample phone
+Keep both assists default-off and persist them in Driving. Sample phone
 motion on the SDL/event thread and publish a host-owned sample; do not call
 platform sensor APIs from guest execution. Apply the sample only at the final
 race input boundary, after confirming local human driving, and suppress it in

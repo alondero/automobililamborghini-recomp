@@ -27,8 +27,8 @@ The main configuration and save files are:
 | controls-framework.json | RecompFrontend | Current controller profiles and bindings. |
 | controls.json | legacy port import | Read as an import source when the framework profile does not exist. It is not the current writer. |
 | player.json | port | Driver name and player identity. |
-| pedals.json | frontend/port integration | Pedal bindings and settings. |
-| driving-controls.json | frontend/port integration | Default-off gyro steering, tuning, and auto-accelerate. |
+| pedals.json | legacy import | Read once to seed the Driving page with previously saved pedal settings. It is not the current writer. |
+| driving-controls.json | frontend/port integration | Pedal bindings plus default-off gyro steering, tuning, and auto-accelerate. |
 | mods.json | runtime | Enabled mods and package order. |
 | mod_config/ | runtime | Individual mod configuration. |
 | general.json | frontend | General settings. Also keeps a copy of the Driver name and Show launcher at startup options. |

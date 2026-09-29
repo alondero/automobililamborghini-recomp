@@ -5,6 +5,9 @@
 #include "recompinput/profiles.h"
 #include "recompinput/input_events.h"
 #include "recompui/config.h"
+#include "librecomp/game.hpp"
+#include "json/json.hpp"
+#include <fstream>
 #include <mutex>
 #include <SDL.h>
 
@@ -84,7 +87,7 @@ constexpr GameInput targets[] = {GameInput::A, GameInput::B, GameInput::Z, GameI
     GameInput::DPAD_RIGHT, GameInput::C_UP, GameInput::C_DOWN, GameInput::C_LEFT, GameInput::C_RIGHT};
 
 void read_pedals() {
-    auto& page = recompui::config::get_config("pedals");
+    auto& page = recompui::config::get_config("driving-controls");
     std::lock_guard lock(pedal_mutex);
     auto apply = [&page](const std::string& prefix, auto& pedal) {
         pedal.mode = static_cast<decltype(pedal.mode)>(std::get<uint32_t>(page.get_option_value(prefix + "mode")));
@@ -104,15 +107,113 @@ void read_pedals() {
 }
 }
 
+namespace {
+// Pedal calibration as the merged Driving page needs it: the enum values and
+// shaping a Config option needs, not the evaluator's source struct.
+struct PedalOptionDefaults {
+    uint32_t mode = 0;
+    uint32_t axis = 0;
+    bool negative = false;
+    double deadzone = 0.0;
+    double saturation = 1.0;
+};
+
+template <typename Pedal>
+PedalOptionDefaults pedal_option_defaults(const Pedal& pedal) {
+    PedalOptionDefaults defaults;
+    defaults.mode = static_cast<uint32_t>(pedal.mode);
+    if (pedal.source) {
+        defaults.axis = 1 + uint32_t(pedal.source->axis);
+        defaults.negative = pedal.source->direction == lambo::controls::AxisDirection::Negative;
+    }
+    defaults.deadzone = pedal.deadzone;
+    defaults.saturation = pedal.saturation;
+    return defaults;
+}
+
+uint32_t pedal_mode_from_key(const std::string& key) { return key == "Analog" ? 1u : 0u; }
+
+uint32_t pedal_axis_from_key(const std::string& key) {
+    static const char* const names[] = {"None", "LX", "LY", "RX", "RY", "LT", "RT"};
+    for (uint32_t value = 0; value < 7; ++value) {
+        if (key == names[value]) return value;
+    }
+    return 0;
+}
+
+// Pedal calibration used to be stored in pedals.json. That file is no longer
+// written, but an existing one seeds the merged options so previously saved
+// pedal settings survive. A key already present in driving-controls.json wins,
+// because Config overrides these defaults when it loads the file.
+void merge_legacy_pedal_defaults(const std::string& prefix, PedalOptionDefaults& defaults) {
+    std::ifstream file(recomp::get_config_path() / "pedals.json");
+    if (!file.good()) return;
+    nlohmann::json json;
+    try {
+        file >> json;
+    } catch (const nlohmann::json::exception&) {
+        return;
+    }
+    if (!json.is_object()) return;
+    const auto take_string = [&json, &prefix](const char* suffix, auto&& set) {
+        const auto it = json.find(prefix + suffix);
+        if (it != json.end() && it->is_string()) set(it->get<std::string>());
+    };
+    const auto take_bool = [&json, &prefix](const char* suffix, bool& out) {
+        const auto it = json.find(prefix + suffix);
+        if (it != json.end() && it->is_boolean()) out = it->get<bool>();
+    };
+    const auto take_number = [&json, &prefix](const char* suffix, double& out) {
+        const auto it = json.find(prefix + suffix);
+        if (it != json.end() && it->is_number()) out = it->get<double>();
+    };
+    take_string("mode", [&defaults](const std::string& key) { defaults.mode = pedal_mode_from_key(key); });
+    take_string("axis", [&defaults](const std::string& key) { defaults.axis = pedal_axis_from_key(key); });
+    take_bool("negative", defaults.negative);
+    take_number("deadzone", defaults.deadzone);
+    take_number("saturation", defaults.saturation);
+}
+}
+
+// The pedals and driving-controls pages used to be separate tabs with separate
+// files. They now share one Driving tab and driving-controls.json: pedal
+// options first, then the Android gyro/auto-accelerate assists.
 void create_frontend_driving_settings() {
-    auto& page = recompui::config::create_config_tab("Controls", "driving-controls", true);
+    const auto legacy = lambo::controls::load_config();
+    pedal_profile = lambo::controls::profile_for_guid(legacy.config, legacy.config.preferred_controller_guid);
+
+    auto& page = recompui::config::create_config_tab("Driving", "driving-controls", true);
+
+    auto add_pedal = [&page](const std::string& prefix, const std::string& label, const PedalOptionDefaults& pedal) {
+        page.add_enum_option(prefix + "mode", label + " mode", "Analog pedals affect player one during races; digital N64 bindings remain available in menus.",
+            {{0, "Digital"}, {1, "Analog"}}, pedal.mode);
+        std::vector<ConfigOptionEnumOption> axes{{0, "None"}};
+        const char* names[] = {"LX", "LY", "RX", "RY", "LT", "RT"};
+        for (int axis = 0; axis < 6; ++axis) axes.emplace_back(axis + 1, names[axis]);
+        page.add_enum_option(prefix + "axis", label + " source", "Uses the controller assigned to player one in Button bindings.", axes, pedal.axis);
+        page.add_bool_option(prefix + "negative", label + " negative half-axis", "Use the negative direction of a stick axis. Leave off for triggers.", pedal.negative);
+        page.add_number_option(prefix + "deadzone", label + " deadzone", "Input below this level is ignored.", 0, .95, .01, 2, false, pedal.deadzone);
+        page.add_number_option(prefix + "saturation", label + " saturation", "Input at this level reaches full demand.", .05, 1, .01, 2, false, pedal.saturation);
+    };
+
+    PedalOptionDefaults throttle = pedal_option_defaults(pedal_profile.throttle);
+    PedalOptionDefaults brake = pedal_option_defaults(pedal_profile.brake);
+    merge_legacy_pedal_defaults("throttle_", throttle);
+    merge_legacy_pedal_defaults("brake_", brake);
+    add_pedal("throttle_", "Throttle", throttle);
+    add_pedal("brake_", "Brake", brake);
+
     page.add_bool_option("gyro", "Gyro steering", "Player one only, during races. Tilt your Android phone like a steering wheel. Requires a phone gyroscope and accelerometer; keep the screen upright. Hold it comfortably when starting or resuming a race to center steering. Button mappings are in Button bindings.", false);
     page.add_bool_option("auto_accelerate", "Auto-accelerate", "Accelerate automatically during races. Hold the brake to stop automatic acceleration. Player one only; off in menus and while paused.", false);
     page.add_number_option("gyro_range", "Tilt for full steering (degrees)", "Smaller angles make steering more sensitive.", 15, 90, 5, 0, false, 35);
     page.add_number_option("gyro_deadzone", "Gyro deadzone (degrees)", "Ignore small movements around the center.", 0, 10, 1, 0, false, 2);
     page.add_bool_option("gyro_invert", "Invert gyro steering", "Reverse the steering direction.", false);
-    page.set_load_callback(read_driving_settings);
-    page.set_save_callback(read_driving_settings);
+    const auto read_merged_page = [] {
+        read_driving_settings();
+        read_pedals();
+    };
+    page.set_load_callback(read_merged_page);
+    page.set_save_callback(read_merged_page);
 }
 
 void driving_sensor_event(const SDL_Event& event) {
@@ -181,29 +282,6 @@ void sample_frontend_driving_assists() {
     }
     was_active = active;
     lambo::driving::publish(demand);
-}
-
-void create_frontend_pedal_settings() {
-    const auto legacy = lambo::controls::load_config();
-    pedal_profile = lambo::controls::profile_for_guid(legacy.config, legacy.config.preferred_controller_guid);
-    auto& page = recompui::config::create_config_tab("Pedals", "pedals", true);
-    auto add = [&page](const std::string& prefix, const std::string& label, const auto& pedal) {
-        page.add_enum_option(prefix + "mode", label + " mode", "Analog pedals affect player one during races; digital N64 bindings remain available in menus.",
-            {{0, "Digital"}, {1, "Analog"}}, uint32_t(pedal.mode));
-        std::vector<ConfigOptionEnumOption> axes{{0, "None"}};
-        const char* names[] = {"LX", "LY", "RX", "RY", "LT", "RT"};
-        for (int axis = 0; axis < 6; ++axis) axes.emplace_back(axis + 1, names[axis]);
-        uint32_t selected = pedal.source ? 1 + uint32_t(pedal.source->axis) : 0;
-        page.add_enum_option(prefix + "axis", label + " source", "Uses the controller assigned to player one in Button bindings.", axes, selected);
-        page.add_bool_option(prefix + "negative", label + " negative half-axis", "Use the negative direction of a stick axis. Leave off for triggers.",
-            pedal.source && pedal.source->direction == lambo::controls::AxisDirection::Negative);
-        page.add_number_option(prefix + "deadzone", label + " deadzone", "Input below this level is ignored.", 0, .95, .01, 2, false, pedal.deadzone);
-        page.add_number_option(prefix + "saturation", label + " saturation", "Input at this level reaches full demand.", .05, 1, .01, 2, false, pedal.saturation);
-    };
-    add("throttle_", "Throttle", pedal_profile.throttle);
-    add("brake_", "Brake", pedal_profile.brake);
-    page.set_load_callback(read_pedals);
-    page.set_save_callback(read_pedals);
 }
 
 void configure_frontend_input_defaults() {

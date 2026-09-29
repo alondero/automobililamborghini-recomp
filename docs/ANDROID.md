@@ -17,7 +17,7 @@ your saves. Configuration, Controller Pak, and logs live in app-private storage;
 uninstalling or clearing the app's data removes them. An APK update signed with
 the same key retains this data.
 
-In **Controls**, enable **Gyro steering** to steer by tilting the phone, or
+In **Driving**, enable **Gyro steering** to steer by tilting the phone, or
 **Auto-accelerate** to drive without holding the accelerator. Both default to
 off and apply only to player one during active racing. Braking suspends
 automatic acceleration. Gyro requires a gyroscope and accelerometer; hold the

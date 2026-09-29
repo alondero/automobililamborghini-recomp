@@ -9,9 +9,10 @@ Player one uses the preferred connected controller and falls back to the
 keyboard. Players two through four must be assigned in Button bindings.
 Bindings are stored in the RecompFrontend controller profile.
 
-Controls offers **Gyro steering** and **Auto-accelerate** for player one. Both
-default to off and are saved when you select Apply. Button bindings remain in
-the adjacent **Button bindings** tab.
+**Driving** holds the throttle and brake configuration and offers **Gyro
+steering** and **Auto-accelerate** for player one. The assists default to off and
+everything is saved when you select Apply. Button bindings remain in the
+adjacent **Button bindings** tab.
 
 Gyro steering uses the Android phone's gyroscope and accelerometer. Hold the
 screen upright in either landscape orientation and tilt it like a steering
@@ -19,7 +20,7 @@ wheel. Sensors are opened while gyro steering is enabled and the app window is
 focused, including menus and race countdowns; steering is only applied
 during active driving. The phone's current position becomes neutral when a race
 starts or resumes from a pause, and when you return from the settings overlay.
-Adjust the full-steering angle, deadzone, or inversion in Controls. Any manual
+Adjust the full-steering angle, deadzone, or inversion in Driving. Any manual
 stick input or digital left/right steering takes priority over gyro steering.
 Missing, stale, or invalid sensor samples temporarily fall back to normal
 steering without changing the calibrated neutral. Controller motion

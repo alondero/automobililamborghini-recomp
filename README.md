@@ -45,9 +45,9 @@ The settings screen uses its own controller bindings: A accepts and Back backs
 out. Pressing Back on a confirmation, such as the quit confirmation, cancels it
 and returns to the settings. Quit still needs its own confirmation.
 
-Controls also offers optional Android gyro steering and auto-accelerate for
-player one. Both default to off and activate only during races. See
-[controller help](docs/controllers.md) for setup and tuning.
+Driving holds the pedal bindings and offers optional Android gyro steering and
+auto-accelerate for player one. The assists default to off and activate only
+during races. See [controller help](docs/controllers.md) for setup and tuning.
 
 The Enhancements settings tab also offers an optional menu stick sensitivity so
 a shorter stick deflection moves between pre-race menu options. It defaults to
@@ -59,8 +59,8 @@ The settings screen includes:
 
 - graphics and window options;
 - widescreen, frame presentation, fog, camera, and draw-distance options;
-- controller profiles and player assignment;
-- pedal bindings;
+- controller profiles and player assignment (Button bindings);
+- pedal bindings and driving assists (Driving);
 - driver name;
 - optional texture-pack paths.
 
