@@ -37,16 +37,22 @@ Closing the preview exited successfully. Four physical controllers and gameplay
 have not been tested. The sample remapping remains in the isolated preview config
 so it can be inspected; it is not a migrated game profile.
 
-## What the port actually uses
+## What the port used when this experiment ran
 
 The comment about AeroGauge and [PR #125](https://github.com/alondero/automobililamborghini-recomp/pull/125)
-does not describe the current Lamborghini settings surface.
+did not describe the Lamborghini settings surface as it stood for this
+experiment.
 
-| Area | Current Lamborghini checkout |
+The table below records the Lamborghini checkout as it stood when this
+experiment ran, before the RecompFrontend migration, so its frontend rows are
+historical rather than current. For today's settings surface see
+[shared configuration frontend](../../docs/recompfrontend.md).
+
+| Area | Lamborghini checkout when this experiment ran |
 | --- | --- |
 | Toolkit | RmlUi, already a required submodule; custom RT64 render bridge |
 | Shared frontend | RecompFrontend is not linked |
-| Settings UI | Custom RmlUi launcher and fullscreen-capable overlay; additional Windows menu bar |
+| Settings UI | Custom RmlUi launcher and fullscreen-capable overlay |
 | Navigation | Custom keyboard/controller navigation and input capture |
 | Persistence | Port-owned `graphics.json`, `controls.json`, and `player.json`; enhancements are extra graphics keys |
 | Controller mapping | Custom SDL adapter and GUID-based controller profiles; keyboard fallback is hardcoded |

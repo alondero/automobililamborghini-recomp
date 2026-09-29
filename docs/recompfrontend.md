@@ -13,10 +13,13 @@ game-specific geometry/fog/camera fixes, replay and the guest input-release barr
 owned by the port.
 
 Open settings with F1, Escape, or the controller menu button. The same overlay is rendered
-in fullscreen. Inside it the D-pad or left stick moves focus, South (A) accepts, West (X) goes
-back, and the shoulder buttons switch tabs. Menu actions use the same controller profile the
-overlay opens with, so a pad can open and navigate the overlay before it is assigned to a
-player; the bindings can be changed in Button bindings.
+in fullscreen. It is the only settings surface: the Windows build has no native menu bar,
+so every option below is reached here. Inside it the D-pad or left stick moves focus,
+South (A) accepts, West (X) goes back, and the shoulder buttons switch tabs. Menu actions
+use the same controller profile the overlay opens with, so a pad can open and navigate the
+overlay before it is assigned to a player; the bindings can be changed in Button bindings.
+F11 and Alt+Enter still toggle fullscreen, and the window's own close button and Alt+F4
+still exit.
 
 Button bindings > Assign players binds devices to N64 ports 1-4. At startup, player one
 uses the connected legacy preferred controller, or the first available controller, with
@@ -111,9 +114,9 @@ at its original rate independently of the presentation setting.
 Graphics/enhancement persistence stays in the existing port implementation so unknown keys,
 per-circuit numeric overrides, portable paths and environment overrides are preserved. The
 framework's Config schema has a small downstream external-storage hook; there is no second
-graphics/enhancements JSON writer. Native-menu changes and the guest Championship name editor
-are synchronized back into the shared settings. An unrelated Apply does not undo a concurrent
-fullscreen/native-menu change.
+graphics/enhancements JSON writer. A fullscreen change made outside the overlay (F11 /
+Alt+Enter) and the guest Championship name editor are synchronized back into the shared
+settings. An unrelated Apply does not undo a concurrent fullscreen change.
 
 The driver name and startup launcher preference moved from the old Driver page onto General,
 which is the page the framework offers them. General therefore carries the same Apply/Discard

@@ -38,9 +38,9 @@ ultramodern::renderer::GraphicsConfig default_graphics_config();
 // users always have a complete, editable file on disk. Returns the applied config.
 ultramodern::renderer::GraphicsConfig load_and_apply_graphics();
 
-// Snapshot/apply helpers for the in-app menu. apply_graphics() persists the changed
-// fields and, unless apply_live is false, updates RT64 through ultramodern's config
-// action queue. API selection is startup-only, so its callers pass false.
+// Snapshot/apply helpers for the settings overlay. apply_graphics() persists the
+// changed fields and, unless apply_live is false, updates RT64 through ultramodern's
+// config action queue. API selection is startup-only, so its callers pass false.
 ultramodern::renderer::GraphicsConfig current_graphics();
 void apply_graphics(const ultramodern::renderer::GraphicsConfig& cfg, bool apply_live = true);
 
@@ -50,7 +50,7 @@ void apply_graphics(const ultramodern::renderer::GraphicsConfig& cfg, bool apply
 void save_graphics(const ultramodern::renderer::GraphicsConfig& cfg);
 void flush_pending_graphics_updates();
 
-// Persist a runtime window-mode change (F11/menu) in the main-thread snapshot.
+// Persist a runtime window-mode change (F11 / Alt+Enter) in the main-thread snapshot.
 void update_saved_window_mode(ultramodern::renderer::WindowMode wm);
 
 // Requested window size for windowed mode (from graphics.json; defaults 1600x900,
