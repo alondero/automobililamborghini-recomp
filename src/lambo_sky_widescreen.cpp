@@ -123,7 +123,7 @@ extern "C" void lambo_sky_extend_panorama(uint8_t* rdram) {
     const int32_t vertical_bits = word(0x800A2F90u);
     float vertical_offset;
     std::memcpy(&vertical_offset, &vertical_bits, sizeof(vertical_offset));
-    const int radius = lambo_sky_column_radius(lambo_camera_sky_vertical_fov(),
+    const int radius = lambo_sky_column_radius(lambo_camera_sky_vertical_fov(rdram),
         target_aspect, half(0x800CE6A4u) == 2, vertical_offset);
     uint32_t vertex = buffer;
     const uint32_t list = buffer + max_quads * 64;
@@ -236,7 +236,7 @@ extern "C" void lambo_sky_backdrop_begin(uint8_t* rdram) {
                    G_EX_COMPONENT_AUTO, G_EX_ORDER_AUTO, G_EX_EDIT_NONE,
                    G_EX_ASPECT_BACKDROP, G_EX_COMPONENT_SKIP, G_EX_COMPONENT_AUTO);
     gEXSetMatrixGroupProjectionFovScale(
-        group, lambo_camera_backdrop_projection_scale_bits());
+        group, lambo_camera_backdrop_projection_scale_bits(rdram));
     emit_group_commands(rdram, group, 2);
     s_backdrop_group_open = true;
     s_panorama_start = 0;

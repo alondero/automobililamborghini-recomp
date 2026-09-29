@@ -71,12 +71,21 @@ ctest --test-dir build -R "lambo_(controller_pak|startup_state_machine)"
 ctest --test-dir build -R "lambo_(no_lod|track_patch|interpolation)"
 ctest --test-dir build -R "lambo_rt64|lambo_audio"
 ctest --test-dir build -R "lambo_mods_rtz_container"
-ctest --test-dir build -R "lambo_sky_(projection|panorama)|lambo_camera_projection"
+ctest --test-dir build -R "lambo_sky_(projection|panorama)|lambo_camera_(projection|runtime)"
 ~~~
 
 The complete list is the add_test list in CMakeLists.txt; keep this page
 updated when a test is added or renamed. Some tests are only registered when
 Python, generated functions, Windows, or an RT64 build is available.
+
+`lambo_camera_runtime` links the production camera shims against fixed
+non-default settings and synthetic word-swapped guest RAM. It covers sequence
+transitions, race modes, all authored FOV layouts, pause framing, and restoration
+of sky, backdrop, and view-cone values. It does not prove visual framing: compare
+intro and attract shots with default and non-default settings in a game build,
+then enter a race and repeat the transitions. The measured tuples and current
+visual evidence are in [Camera sequences](camera-sequences.md). Companion tests
+also cover state changes without any intervening FOV hook.
 
 `lambo_input_driving_assists` checks tilt direction, landscape centering,
 held-angle steering, calibration retention after invalid samples, manual

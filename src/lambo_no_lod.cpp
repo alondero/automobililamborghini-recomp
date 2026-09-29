@@ -19,7 +19,7 @@
 #include "lambo_config.h"
 #include "lambo_no_lod_policy.h"
 
-extern "C" unsigned long long lambo_camera_view_cone_cos_bits();
+extern "C" unsigned long long lambo_camera_view_cone_cos_bits(uint8_t* rdram);
 
 extern "C" uint32_t lambo_no_lod_scenery_guard(uint8_t* rdram, uint32_t at) {
     (void)rdram;
@@ -88,7 +88,7 @@ extern "C" void lambo_no_lod_draw_distance(uint8_t* rdram) {
     // keep the ROM's authored radii and PVS rows. At camera_fov_add == 0 the
     // stored bits are the exact ROM double, so this is a byte-stable no-op then.
     {
-        const unsigned long long dbits = lambo_camera_view_cone_cos_bits();
+        const unsigned long long dbits = lambo_camera_view_cone_cos_bits(rdram);
         const int32_t hi = (int32_t)(uint32_t)(dbits >> 32);
         const int32_t lo = (int32_t)(uint32_t)dbits;
         MEM_W(0, (gpr)(int32_t)0x8008D8C0u) = hi;

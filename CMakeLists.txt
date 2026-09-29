@@ -155,6 +155,12 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_camera_projection_policy COMMAND lambo_camera_projection_tests)
 
+    add_executable(lambo_camera_runtime_tests
+        tests/test_camera_runtime.cpp src/lambo_camera.cpp)
+    target_include_directories(lambo_camera_runtime_tests PRIVATE src
+        ${N64MR}/N64Recomp/include ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
+    add_test(NAME lambo_camera_runtime COMMAND lambo_camera_runtime_tests)
+
     add_executable(lambo_sky_projection_tests tests/test_sky_projection.cpp)
     target_include_directories(lambo_sky_projection_tests PRIVATE
         src lib/rt64/src)
