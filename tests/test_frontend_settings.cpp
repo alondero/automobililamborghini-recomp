@@ -8,6 +8,7 @@
 #include "ui/lambo_ui.h"
 #include "ui/lambo_frontend_input.h"
 #include "ui/lambo_frontend_overlay.h"
+#include "librecomp/config.hpp"
 #include "librecomp/game.hpp"
 #include "recompui/config.h"
 #include "recompinput/profiles.h"
@@ -17,6 +18,23 @@ SDL_Window* window = nullptr;
 std::vector<recomp::GameEntry> supported_games;
 namespace lambo::ui { void create_frontend_settings(); void refresh_frontend_settings(); }
 static void require(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
+
+// The registered picker entries, so the test reads the port's preset table
+// instead of restating it.
+static const std::vector<recomp::config::ConfigOptionEnumOption>& window_size_choices(const recomp::config::Config& graphics) {
+    const auto& schema = graphics.get_config_schema();
+    const auto& option = schema.options.at(schema.options_by_id.at("window_size"));
+    return std::get<recomp::config::ConfigOptionEnum>(option.variant).options;
+}
+
+// Resolve a window-size picker entry by its display key (e.g. "1920x1080" or
+// "Custom") straight from the registered schema.
+static uint32_t window_size_choice(const recomp::config::Config& graphics, const std::string& key) {
+    for (const auto& choice : window_size_choices(graphics)) {
+        if (choice.key == key) return choice.value;
+    }
+    throw std::runtime_error("missing window size choice: " + key);
+}
 
 // Defined in recompui's base/ui_state.cpp. Declared here so the menu-action
 // resolver's controller bindings can be checked without a render context.
@@ -35,6 +53,11 @@ int main(int argc, char** argv) {
         { std::ofstream file(path / "controls-framework.json");
           file << R"({"version":3,"profiles":[],"controllers":[]})"; }
         std::filesystem::remove(path / "driving-controls.json");
+        // Likewise for the General page: a saved rumble_strength would make the
+        // staged rumble edit below a no-op. The .bak goes too, because the
+        // config loader falls back to it when the main file is missing.
+        std::filesystem::remove(path / "general.json");
+        std::filesystem::remove(path / "general.json.bak");
         // Pedal settings used to live in pedals.json. A saved file must survive
         // the merge into the Driving page, so seed the legacy shape here.
         { std::ofstream file(path / "pedals.json");
@@ -127,8 +150,11 @@ int main(int argc, char** argv) {
         require(std::get<uint32_t>(graphics.get_option_value("res_option")) == uint32_t(Resolution::Original2x), "resolution import");
         require(std::get<uint32_t>(graphics.get_option_value("ds_option")) == 3, "3x supersampling import");
         require(std::get<uint32_t>(graphics.get_option_value("msaa_option")) == uint32_t(Antialiasing::MSAA8X), "8x MSAA import");
-        require(std::get<double>(graphics.get_option_value("window_width")) == 1920, "window width import");
-        require(std::get<double>(graphics.get_option_value("window_height")) == 1080, "window height import");
+        // The window size is imported from graphics.json into the port snapshot,
+        // and the picker seeds to the matching preset (the fixture is 1920x1080).
+        require(lambo::config::window_size().width == 1920 && lambo::config::window_size().height == 1080, "window size import");
+        require(std::get<uint32_t>(graphics.get_option_value("window_size")) == window_size_choice(graphics, "1920x1080"),
+                "window picker did not seed from the imported size");
         // Mods owns texture packs, so Graphics must not present a second
         // selector. The legacy graphics.json key is still read, which is what
         // keeps a pack configured before the Mods route from being lost.
@@ -191,8 +217,11 @@ int main(int argc, char** argv) {
         // Neither developer_mode nor texture_pack belongs here: the Debug tab is
         // the single visible owner of the former (issue #244), and the Mods tab
         // owns texture packs (issue #245), so Graphics drops it entirely.
-        for (const char* key : {"api_option", "hpfb_option", "window_width", "window_height", "texture_dump"})
+        for (const char* key : {"api_option", "hpfb_option", "window_size", "texture_dump"})
             require(graphics.has_option(key) && !graphics.is_config_option_hidden(graphics.get_config_schema().options_by_id.at(key)), "missing primary graphics option");
+        // The separate width/height sliders are replaced by the window-size picker.
+        require(!graphics.has_option("window_width") && !graphics.has_option("window_height"),
+                "the separate window width/height sliders still exist");
         // The framework still defines developer_mode on the Graphics page; the
         // Debug tab is its single visible owner (issue #244).
         require(graphics.has_option("developer_mode") && graphics.is_config_option_hidden(graphics.get_config_schema().options_by_id.at("developer_mode")),
@@ -208,14 +237,55 @@ int main(int argc, char** argv) {
         graphics.set_option_value("ds_option", uint32_t(4));
         graphics.save_config();
         require(lambo::config::current_graphics().ds_option == 4, "apply failed");
-        graphics.set_option_value("window_width", 2560.0);
-        graphics.set_option_value("window_height", 1440.0);
+        // Picking a preset stages the choice and resolves it at Apply.
+        graphics.set_option_value("window_size", window_size_choice(graphics, "2560x1440"));
         graphics.set_option_value("texture_dump", std::string("applied-dump"));
         graphics.save_config();
         lambo::config::flush_pending_graphics_updates();
         require(lambo::config::window_size().width == 2560 && lambo::config::window_size().height == 1440,
-                "restart window options did not apply");
+                "window size preset did not apply");
+        require(std::get<uint32_t>(graphics.get_option_value("window_size")) == window_size_choice(graphics, "2560x1440"),
+                "window picker did not reseed after Apply");
         require(lambo::config::texture_dump_dir() == "applied-dump", "texture dump option did not apply");
+        // Discarding a staged pick leaves the saved size untouched.
+        graphics.set_option_value("window_size", window_size_choice(graphics, "1280x720"));
+        require(graphics.is_dirty(), "window pick did not stage");
+        graphics.revert_temp_config();
+        require(lambo::config::window_size().width == 2560 && lambo::config::window_size().height == 1440,
+                "discarded window pick changed the saved size");
+        require(std::get<uint32_t>(graphics.get_option_value("window_size")) == window_size_choice(graphics, "2560x1440"),
+                "discarded window pick was not reverted in the UI");
+        // Every advertised preset must resolve to the size it names and stay a
+        // common desktop ratio. Walking the registered options keeps this from
+        // restating the port's table, so a mis-paired entry cannot ship.
+        size_t presets_checked = 0;
+        for (const auto& entry : window_size_choices(graphics)) {
+            if (entry.key == "Custom") continue;
+            ++presets_checked;
+            const size_t x = entry.key.find('x');
+            const long long width = std::stoll(entry.key.substr(0, x));
+            const long long height = std::stoll(entry.key.substr(x + 1));
+            require(width * 9 == height * 16 || width * 10 == height * 16 || width * 3 == height * 4,
+                    ("window size preset is not a common desktop ratio: " + entry.key).c_str());
+            graphics.set_option_value("window_size", entry.value);
+            graphics.save_config();
+            lambo::config::flush_pending_graphics_updates();
+            require(lambo::config::window_size().width == width && lambo::config::window_size().height == height,
+                    ("window size preset did not resolve to its advertised size: " + entry.key).c_str());
+        }
+        require(presets_checked >= 11, "the picker lost most of its presets");
+        // A size that is not a preset shows as Custom and survives saving an
+        // unrelated Graphics option: Custom keeps the live size.
+        lambo::config::set_window_size({1366, 768});
+        lambo::config::flush_pending_graphics_updates();
+        require(graphics.load_config(), "graphics reload failed");
+        require(std::get<uint32_t>(graphics.get_option_value("window_size")) == window_size_choice(graphics, "Custom"),
+                "a non-preset window size did not show as Custom");
+        graphics.set_option_value("ds_option", uint32_t(2));
+        graphics.save_config();
+        lambo::config::flush_pending_graphics_updates();
+        require(lambo::config::window_size().width == 1366 && lambo::config::window_size().height == 768,
+                "an unrelated Graphics save overwrote a custom window size");
         // Applying Graphics must leave the compatibility key exactly as it was, so
         // the pack a player set up earlier still loads. Clearing it is a separate,
         // explicit write -- that is the documented migration to Mods-only.
@@ -273,6 +343,11 @@ int main(int argc, char** argv) {
         require(saved.at("menu_stick_sensitivity") == 1.8, "menu stick sensitivity persistence");
         require(saved.at("ds_option") == 4, "graphics persistence");
         require(saved.at("developer_mode") == true, "developer mode persistence");
+        // The picker borrows the schema; the port keeps writing the existing
+        // window_width/window_height format and must not leak the option id.
+        require(saved.at("window_width") == 1366 && saved.at("window_height") == 768,
+                "the picker stopped persisting the existing window_width/window_height format");
+        require(!saved.contains("window_size"), "the picker leaked its own key into graphics.json");
         require(!std::filesystem::exists(path / "enhancements.json"), "duplicate enhancement owner");
         require(recompui::config::get_config("driving-controls").has_option("brake_saturation"), "brake calibration missing");
         using namespace recompinput;
