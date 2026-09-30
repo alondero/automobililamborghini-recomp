@@ -27,6 +27,18 @@ static const std::vector<recomp::config::ConfigOptionEnumOption>& window_size_ch
     return std::get<recomp::config::ConfigOptionEnum>(option.variant).options;
 }
 
+// The index of a picker entry, which is what get_enum_option_disabled takes.
+// Values and indices currently coincide, but the disabled state is recorded by
+// index, so resolve it instead of assuming they match.
+static uint32_t window_size_index(const recomp::config::Config& graphics, const std::string& key) {
+    uint32_t index = 0;
+    for (const auto& choice : window_size_choices(graphics)) {
+        if (choice.key == key) return index;
+        ++index;
+    }
+    throw std::runtime_error("missing window size choice: " + key);
+}
+
 // Resolve a window-size picker entry by its display key (e.g. "1920x1080" or
 // "Custom") straight from the registered schema.
 static uint32_t window_size_choice(const recomp::config::Config& graphics, const std::string& key) {
@@ -253,8 +265,16 @@ int main(int argc, char** argv) {
         graphics.revert_temp_config();
         require(lambo::config::window_size().width == 2560 && lambo::config::window_size().height == 1440,
                 "discarded window pick changed the saved size");
-        require(std::get<uint32_t>(graphics.get_option_value("window_size")) == window_size_choice(graphics, "2560x1440"),
+        // get_temp_option_value, not get_option_value: a staged pick lives in
+        // temp_storage and never touches the permanent value, so the latter
+        // would pass here whether or not the revert did anything. The UI radio
+        // reads the temp value too.
+        require(std::get<uint32_t>(graphics.get_temp_option_value("window_size")) == window_size_choice(graphics, "2560x1440"),
                 "discarded window pick was not reverted in the UI");
+        // Custom is a no-op over a preset, so it must not be selectable there.
+        require(graphics.get_enum_option_disabled(graphics.get_config_schema().options_by_id.at("window_size"),
+                    window_size_index(graphics, "Custom")),
+                "Custom must be disabled while a preset is the live size");
         // Every advertised preset must resolve to the size it names and stay a
         // common desktop ratio. Walking the registered options keeps this from
         // restating the port's table, so a mis-paired entry cannot ship.
@@ -281,6 +301,11 @@ int main(int argc, char** argv) {
         require(graphics.load_config(), "graphics reload failed");
         require(std::get<uint32_t>(graphics.get_option_value("window_size")) == window_size_choice(graphics, "Custom"),
                 "a non-preset window size did not show as Custom");
+        // A custom size is the only case where Custom is meaningful, so it has
+        // to be selectable again.
+        require(!graphics.get_enum_option_disabled(graphics.get_config_schema().options_by_id.at("window_size"),
+                    window_size_index(graphics, "Custom")),
+                "Custom must stay enabled when the live size is not a preset");
         graphics.set_option_value("ds_option", uint32_t(2));
         graphics.save_config();
         lambo::config::flush_pending_graphics_updates();

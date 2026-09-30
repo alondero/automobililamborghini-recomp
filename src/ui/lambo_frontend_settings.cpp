@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <iterator>
 #include <stdexcept>
 #include <vector>
 
@@ -23,7 +25,18 @@ constexpr WindowPreset kWindowPresets[] = {
     {4, 2560, 1440}, {5, 3840, 2160}, {6, 1280, 800}, {7, 1920, 1200},
     {8, 1280, 960}, {9, 1600, 1200}, {10, 1920, 1440},
 };
-constexpr uint32_t kWindowPresetCustom = 11;
+constexpr uint32_t kWindowPresetCustom = uint32_t(std::size(kWindowPresets));
+
+// The picker stores its disabled state by schema index but the save path and
+// the seed both match on value, so the two must stay aligned.
+constexpr bool window_preset_values_match_positions() {
+    for (size_t i = 0; i < std::size(kWindowPresets); ++i) {
+        if (kWindowPresets[i].value != i) return false;
+    }
+    return true;
+}
+static_assert(window_preset_values_match_positions(),
+    "a window preset value no longer matches its position in kWindowPresets");
 
 uint32_t window_preset_from_size(int width, int height) {
     for (const auto& preset : kWindowPresets) {
@@ -200,6 +213,13 @@ void create_frontend_settings() {
     // it into the saved window_width/window_height (see the save callback).
     // "(restart)" is in the label because the resolved size is only read at
     // SDL_CreateWindow in main.cpp, as the old width/height sliders stated.
+    //
+    // RecompFrontend renders an enum as a single non-wrapping flex row
+    // (ui_radio.cpp: FlexDirection::Row, gap 24, no set_flex_wrap), and this is
+    // the longest option list on the page. Whether twelve entries fit the tab
+    // width is unverified: it needs an interactive build. If it clips, the fix
+    // is fewer presets or a wrapping Radio in the RecompFrontend patch, not a
+    // different persistence format.
     std::vector<recomp::config::ConfigOptionEnumOption> window_preset_options;
     for (const auto& preset : kWindowPresets) {
         const std::string preset_key = std::to_string(preset.width) + "x" + std::to_string(preset.height);
