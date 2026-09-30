@@ -95,7 +95,7 @@ then Right to the last tab and one more to leave them onto Quit.
 | Tab | Options | Persistence |
 | --- | --- | --- |
 | General | Rumble strength, stick deadzone, background input, driver-one name, startup launcher preference | Framework `general.json`, Apply/Discard; the name and launcher preference are also saved to `player.json` and `graphics.json` |
-| Graphics | Resolution, 1/2/3/4x downsampling, aspect, HUD placement, window mode, original/display/manual presentation rate, MSAA through 8x, HPFB, graphics API, initial window dimensions, texture dump path | Existing `graphics.json`, Apply/Discard |
+| Graphics | Resolution, 1/2/3/4x downsampling, aspect, HUD placement, window mode, window size, original/display/manual presentation rate, MSAA through 8x, HPFB, graphics API, texture dump path | Existing `graphics.json`, Apply/Discard |
 | Enhancements | Automatic pit-stops (off by default), multiplayer fog/sky matching, full geometry and six circuit switches, draw distance, fog density, camera distance/height/FOV, menu stick sensitivity | Existing `graphics.json`, immediate |
 | Cheats | Session-only cheat toggles; see [Cheats](cheats.md) | Not saved; reset on each launch |
 | Debug | Developer overlay | Existing `graphics.json`, immediate save, restart for effect |
@@ -103,13 +103,19 @@ then Right to the last tab and one more to leave them onto Quit.
 | Driving | Analog/digital throttle and brake (source axis/direction, deadzone, saturation) plus default-off Android gyro steering, steering range/deadzone/inversion, and auto-accelerate | Framework `driving-controls.json`, Apply/Discard |
 | Mods | Package installation, enable/disable, ordering, per-mod settings, and texture packs | Runtime `mods.json` and `mod_config/` |
 
-API, the Debug tab's developer overlay, initial dimensions and the texture dump path require
+API, the Debug tab's developer overlay, window size and the texture dump path require
 restart. Texture packs are not a Graphics option: the Mods tab installs, enables, disables, and
 orders them. The legacy `texture_pack` key still loads ahead of Mods packs and survives a
 Graphics save; it is not editable from the UI. Unsupported
 MSAA options are disabled using the port renderer's actual device capabilities. Downsampling
 only affects Original/Original2x resolution, matching the renderer. Game simulation remains
 at its original rate independently of the presentation setting.
+
+The Graphics window size is picked from common desktop resolutions (16:9, 16:10 and 4:3
+presets) plus Custom. A pick only stages the choice behind Apply/Discard and resolves into the
+existing `window_width`/`window_height` keys, so the persisted format is unchanged. A size set
+by hand in `graphics.json` shows as Custom and is preserved unless a preset is picked; Custom
+is disabled while a preset is current, because choosing it would be a no-op.
 
 Graphics/enhancement persistence stays in the existing port implementation so unknown keys,
 per-circuit numeric overrides, portable paths and environment overrides are preserved. The
@@ -165,13 +171,16 @@ interpolated frames per workload instead of four. The fix retains display-rate i
 and both current library pins.
 
 `lambo_frontend_settings_tests` checks legacy graphics/unknown-key preservation, option
-coverage, the absence of a Graphics texture-pack control, `texture_pack` survival across a
+coverage, the window-size picker (every preset resolving to the size it names, discard, and
+Custom preservation), the absence of a Graphics texture-pack control, `texture_pack` survival across a
 graphics save and the explicit clear that migrates a pack to Mods, Apply/Discard,
 cross-surface fullscreen updates, legacy profile conversion,
 pre-attached SDL controllers without added events, preferred-device selection, imported
 device mappings, profile save/reload, duplicate added events, four SDL virtual controllers,
 reassignment, cross-player isolation and menu-action resolution for unassigned and
-unresolved controllers, including the default and a remapped Back binding. The
+unresolved controllers, including the default and a remapped Back binding. It seeds and
+clears its own config files, including the `.bak` copies the loader falls back to, so it
+stays repeatable in a reused CTest directory. The
 controller-Pak test also verifies all four players' buttons
 and signed stick bytes through the actual guest Joybus bridge. The normal
 `tools/run_game_scenario.py scenarios/harness-smoke.json` checks the game/replay path.

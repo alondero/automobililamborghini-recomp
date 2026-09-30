@@ -1,3 +1,8 @@
+#include <cstddef>
+#include <iterator>
+#include <stdexcept>
+#include <vector>
+
 #include "lambo_config.h"
 #include "lambo_cheats.h"
 #include "lambo_player_name.h"
@@ -10,6 +15,49 @@ using recomp::config::ConfigValueVariant;
 using recomp::config::OptionChangeContext;
 using namespace ultramodern::renderer;
 GraphicsConfig seeded_graphics;
+
+// Common desktop resolutions for the windowed-mode size picker (16:9 plus
+// legacy 16:10/4:3 favourites). The resolved size stays in graphics.json
+// (window_width/window_height) exactly as before; the picker only writes it.
+struct WindowPreset { uint32_t value; int width; int height; };
+constexpr WindowPreset kWindowPresets[] = {
+    {0, 640, 360}, {1, 1280, 720}, {2, 1600, 900}, {3, 1920, 1080},
+    {4, 2560, 1440}, {5, 3840, 2160}, {6, 1280, 800}, {7, 1920, 1200},
+    {8, 1280, 960}, {9, 1600, 1200}, {10, 1920, 1440},
+};
+constexpr uint32_t kWindowPresetCustom = uint32_t(std::size(kWindowPresets));
+
+// The picker stores its disabled state by schema index but the save path and
+// the seed both match on value, so the two must stay aligned.
+constexpr bool window_preset_values_match_positions() {
+    for (size_t i = 0; i < std::size(kWindowPresets); ++i) {
+        if (kWindowPresets[i].value != i) return false;
+    }
+    return true;
+}
+static_assert(window_preset_values_match_positions(),
+    "a window preset value no longer matches its position in kWindowPresets");
+
+uint32_t window_preset_from_size(int width, int height) {
+    for (const auto& preset : kWindowPresets) {
+        if (preset.width == width && preset.height == height) return preset.value;
+    }
+    return kWindowPresetCustom;
+}
+
+// Index of a picker's entry in the registered schema, resolved by value.
+// update_enum_option_disabled takes an index, so reordering kWindowPresets
+// would otherwise silently disable the wrong row. Throws if the schema and the
+// table disagree, which can only happen from a code change.
+size_t window_preset_option_index(const Config& page, uint32_t value) {
+    const auto& schema = page.get_config_schema();
+    const auto& options = std::get<recomp::config::ConfigOptionEnum>(
+        schema.options.at(schema.options_by_id.at("window_size")).variant).options;
+    for (size_t index = 0; index < options.size(); ++index) {
+        if (options[index].value == value) return index;
+    }
+    throw std::runtime_error("window size preset is missing from the picker schema");
+}
 
 void sync_value(Config& page, const std::string& id, ConfigValueVariant value) {
     if (page.get_option_value(id) == value) return;
@@ -27,8 +75,15 @@ void seed_graphics() {
     ENUM(ds_option);
 #undef ENUM
     sync_value(page, "rr_manual_value", double(cfg.rr_manual_value));
-    sync_value(page, "window_width", double(port::window_size().width));
-    sync_value(page, "window_height", double(port::window_size().height));
+    // Picker state for the (possibly hand-edited) live size. The picker applies
+    // with this page's Apply button; seeding only updates the displayed value.
+    const uint32_t live_preset = window_preset_from_size(port::window_size().width, port::window_size().height);
+    sync_value(page, "window_size", live_preset);
+    // Custom means "keep the current size", so grey it out unless Custom is
+    // already the live size. Selecting it over a preset would be a no-op.
+    page.update_enum_option_disabled("window_size",
+        uint32_t(window_preset_option_index(page, kWindowPresetCustom)),
+        live_preset != kWindowPresetCustom);
     // No texture_pack entry: the Mods tab owns pack installation, activation and
     // ordering. The legacy graphics.json key stays readable by lambo_config and
     // is preserved verbatim by the save path, so an existing pack keeps loading.
@@ -137,7 +192,6 @@ void create_frontend_settings() {
     // The port remains the single owner of graphics.json, including unknown keys,
     // environment overrides, enhancement values and restart-only API changes.
     graphics.external_storage = true;
-    graphics.set_load_callback(seed_graphics);
     graphics.update_option_description("api_option", "Graphics backend. Changes take effect after restarting the application.");
     // The framework's Graphics page carries its own developer_mode option. It is
     // a diagnostic overlay rather than a graphics setting, so the Debug tab owns
@@ -154,13 +208,47 @@ void create_frontend_settings() {
     // framework path would then publish this never-seeded default as the live
     // developer_mode.
     graphics.update_option_hidden("developer_mode", true);
-    graphics.add_number_option("window_width", "Window width (restart)", "Initial window dimensions after restart.", 320, 7680, 1, 0, false, port::window_size().width);
-    graphics.add_number_option("window_height", "Window height (restart)", "Initial window dimensions after restart.", 240, 4320, 1, 0, false, port::window_size().height);
+    // Window size picker: common desktop resolutions. The picker obeys this
+    // page's confirmation flow -- a pick only stages the value; Apply resolves
+    // it into the saved window_width/window_height (see the save callback).
+    // "(restart)" is in the label because the resolved size is only read at
+    // SDL_CreateWindow in main.cpp, as the old width/height sliders stated.
+    //
+    // RecompFrontend renders an enum as a single non-wrapping flex row
+    // (ui_radio.cpp: FlexDirection::Row, gap 24, no set_flex_wrap), and this is
+    // the longest option list on the page. Whether twelve entries fit the tab
+    // width is unverified: it needs an interactive build. If it clips, the fix
+    // is fewer presets or a wrapping Radio in the RecompFrontend patch, not a
+    // different persistence format.
+    std::vector<recomp::config::ConfigOptionEnumOption> window_preset_options;
+    for (const auto& preset : kWindowPresets) {
+        const std::string preset_key = std::to_string(preset.width) + "x" + std::to_string(preset.height);
+        window_preset_options.emplace_back(preset.value, preset_key, preset_key);
+    }
+    window_preset_options.emplace_back(kWindowPresetCustom, "Custom", "Custom");
+    graphics.add_enum_option("window_size", "Window size (restart)",
+        "Windowed size, applied with the Apply button. Pick a common resolution; a size typed directly into graphics.json shows as Custom and is kept unless you pick a preset.",
+        window_preset_options,
+        window_preset_from_size(port::window_size().width, port::window_size().height));
+    // Registered last: seed_graphics reads the window_size schema entry, so the
+    // load callback must not run before the option exists.
+    graphics.set_load_callback(seed_graphics);
     graphics.add_string_option("texture_dump", "Texture dump directory (restart)", "Destination for dumped textures. Leave blank to disable. Texture packs are installed and enabled in the Mods tab.", port::texture_dump_dir());
     graphics.set_save_callback([] {
         apply_graphics();
         auto& page = recompui::config::get_graphics_config();
-        lambo::config::set_window_size({int(std::get<double>(page.get_option_value("window_width"))), int(std::get<double>(page.get_option_value("window_height")))});
+        // The window-size picker resolves at Apply time. Custom (or an unknown
+        // value) keeps the live size, so a discarded pick or an unrelated save
+        // never clobbers a size the player set by hand.
+        const uint32_t picked_preset = std::get<uint32_t>(page.get_option_value("window_size"));
+        lambo::config::WindowSize size = lambo::config::window_size();
+        for (const auto& preset : kWindowPresets) {
+            if (preset.value == picked_preset) {
+                size = {preset.width, preset.height};
+                break;
+            }
+        }
+        lambo::config::set_window_size(size);
         lambo::config::set_texture_dump_dir(std::get<std::string>(page.get_option_value("texture_dump")));
         // Seed after every field has been published so Apply leaves the UI
         // and the port snapshot in agreement with the saved values.
