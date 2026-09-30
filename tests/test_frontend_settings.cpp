@@ -35,6 +35,10 @@ int main(int argc, char** argv) {
         { std::ofstream file(path / "controls-framework.json");
           file << R"({"version":3,"profiles":[],"controllers":[]})"; }
         std::filesystem::remove(path / "driving-controls.json");
+        // Pedal settings used to live in pedals.json. A saved file must survive
+        // the merge into the Driving page, so seed the legacy shape here.
+        { std::ofstream file(path / "pedals.json");
+          file << R"({"throttle_mode":"Analog","throttle_axis":"RT","throttle_negative":true,"throttle_deadzone":0.1,"throttle_saturation":0.9,"brake_mode":"Digital","brake_axis":"LT","brake_deadzone":0.2,"brake_saturation":0.85})"; }
         const nlohmann::json initial = {
             {"res_option", "Original2x"}, {"ds_option", 3}, {"msaa_option", "MSAA8X"},
             {"window_width", 1920}, {"window_height", 1080},
@@ -46,7 +50,6 @@ int main(int argc, char** argv) {
         require(lambo::player::set_saved_name("RACER"), "driver cache fixture");
         lambo::ui::create_frontend_settings();
         lambo::ui::create_frontend_driving_settings();
-        lambo::ui::create_frontend_pedal_settings();
         recompui::config::finalize();
         auto& cheats = recompui::config::get_config("cheats");
         require(!cheats.requires_confirmation && cheats.external_storage, "cheats must be live and session-only");
@@ -81,6 +84,25 @@ int main(int argc, char** argv) {
                 std::get<bool>(driving.get_option_value("auto_accelerate")) &&
                 std::get<double>(driving.get_option_value("gyro_range")) == 45.0,
                 "driving options did not persist");
+        // The legacy pedals.json fixture above must have seeded the pedal options
+        // now living on the merged Driving page.
+        require(std::get<uint32_t>(driving.get_option_value("throttle_mode")) == 1 &&
+                std::get<uint32_t>(driving.get_option_value("throttle_axis")) == 6 &&
+                std::get<bool>(driving.get_option_value("throttle_negative")) &&
+                std::get<double>(driving.get_option_value("throttle_deadzone")) == 0.1 &&
+                std::get<double>(driving.get_option_value("throttle_saturation")) == 0.9 &&
+                std::get<uint32_t>(driving.get_option_value("brake_mode")) == 0 &&
+                std::get<uint32_t>(driving.get_option_value("brake_axis")) == 5 &&
+                std::get<double>(driving.get_option_value("brake_deadzone")) == 0.2 &&
+                std::get<double>(driving.get_option_value("brake_saturation")) == 0.85,
+                "legacy pedals.json did not seed the merged Driving page");
+        // Precedence: a pedal value the merged page has stored must win over a
+        // stale pedals.json when the page reloads.
+        { std::ofstream file(path / "driving-controls.json"); file << R"({"throttle_deadzone":0.33})"; }
+        { std::ofstream file(path / "pedals.json"); file << R"({"throttle_deadzone":0.99})"; }
+        require(driving.load_config(), "driving precedence reload failed");
+        require(std::get<double>(driving.get_option_value("throttle_deadzone")) == 0.33,
+                "a stale pedals.json overrode a saved driving-controls.json value");
 
         // The SDL pump posts the toggle and the presentation callback
         // publishes the applied context state. Verify both edges of that
@@ -127,6 +149,11 @@ int main(int argc, char** argv) {
         catch (const std::exception& e) { missing_page = e.what(); }
         require(missing_page.find("driver") != std::string::npos,
                 "the standalone Driver page still exists");
+        std::string missing_pedals;
+        try { recompui::config::get_config("pedals"); }
+        catch (const std::exception& e) { missing_pedals = e.what(); }
+        require(missing_pedals.find("pedals") != std::string::npos,
+                "the standalone Pedals page still exists");
         general.set_option_value("name", std::string{});
         lambo::ui::refresh_frontend_settings();
         require(std::get<std::string>(general.get_temp_option_value("name")).empty(),
@@ -247,7 +274,7 @@ int main(int argc, char** argv) {
         require(saved.at("ds_option") == 4, "graphics persistence");
         require(saved.at("developer_mode") == true, "developer mode persistence");
         require(!std::filesystem::exists(path / "enhancements.json"), "duplicate enhancement owner");
-        require(recompui::config::get_config("pedals").has_option("brake_saturation"), "brake calibration missing");
+        require(recompui::config::get_config("driving-controls").has_option("brake_saturation"), "brake calibration missing");
         using namespace recompinput;
         const int p1 = profiles::get_or_create_mp_keyboard_profile_index(0);
         const int p2 = profiles::get_or_create_mp_keyboard_profile_index(1);

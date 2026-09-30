@@ -88,7 +88,7 @@ it for the default and a remapped binding, and
 Reaching the confirmation needs the keyboard. The header's Quit and Close buttons
 are laid out past the right edge of the modal, so they cannot be clicked; the
 route is F1 to open the overlay, then the Back action to focus the active tab,
-then Right through the eight tabs and one more to leave them onto Quit.
+then Right to the last tab and one more to leave them onto Quit.
 
 ## Options and storage
 
@@ -97,11 +97,11 @@ then Right through the eight tabs and one more to leave them onto Quit.
 | General | Rumble strength, stick deadzone, background input, driver-one name, startup launcher preference | Framework `general.json`, Apply/Discard; the name and launcher preference are also saved to `player.json` and `graphics.json` |
 | Graphics | Resolution, 1/2/3/4x downsampling, aspect, HUD placement, window mode, original/display/manual presentation rate, MSAA through 8x, HPFB, graphics API, initial window dimensions, texture dump path | Existing `graphics.json`, Apply/Discard |
 | Enhancements | Automatic pit-stops (off by default), multiplayer fog/sky matching, full geometry and six circuit switches, draw distance, fog density, camera distance/height/FOV, menu stick sensitivity | Existing `graphics.json`, immediate |
+| Cheats | Session-only cheat toggles; see [Cheats](cheats.md) | Not saved; reset on each launch |
 | Debug | Developer overlay | Existing `graphics.json`, immediate save, restart for effect |
 | Button bindings | N64 button/stick remapping, keyboard/controller profiles, 1-4 player assignment | Framework `controls-framework.json` |
-| Controls | Default-off Android gyro steering, steering range/deadzone/inversion, auto-accelerate | Framework driving-controls.json, Apply/Discard |
+| Driving | Analog/digital throttle and brake (source axis/direction, deadzone, saturation) plus default-off Android gyro steering, steering range/deadzone/inversion, and auto-accelerate | Framework `driving-controls.json`, Apply/Discard |
 | Mods | Package installation, enable/disable, ordering, per-mod settings, and texture packs | Runtime `mods.json` and `mod_config/` |
-| Pedals | Analog/digital throttle and brake, source axis/direction, deadzone and saturation | Framework `pedals.json`, Apply/Discard |
 
 API, the Debug tab's developer overlay, initial dimensions and the texture dump path require
 restart. Texture packs are not a Graphics option: the Mods tab installs, enables, disables, and
@@ -138,10 +138,13 @@ and uses its shared stick deadzone/digital-axis threshold; extra legacy bindings
 threshold/deadzone calibration remain recoverable in the original file, but are not imported.
 Review calibration in General after selecting an imported profile.
 
-Pedal defaults are imported from the legacy preferred controller profile. Pedal calibration
-then lives separately and applies to the controller assigned to player one, consistent with
-the existing player-one analog race hooks. N64 digital bindings remain available in menus.
-This does not add new analog gameplay mechanics to players 2-4.
+The Driving tab holds pedal calibration alongside the gyro/auto-accelerate assists; the
+former separate Pedals tab and its `pedals.json` are gone. Pedal defaults are imported from
+the legacy preferred controller profile, or from an existing `pedals.json` that fills any
+pedal value the merged page has not stored yet. Pedal calibration applies to the controller
+assigned to player one, consistent with the existing player-one analog race hooks. N64 digital
+bindings remain available in menus. This does not add new analog gameplay mechanics to
+players 2-4.
 
 The subsequent [mod integration](modding.md) enables the shared mod loader and Mods tab.
 The existing launcher/ROM selection policy and audio sink are retained.

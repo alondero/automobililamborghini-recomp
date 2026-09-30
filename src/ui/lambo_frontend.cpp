@@ -93,8 +93,10 @@ void render(plume::RenderCommandList* commands, plume::RenderFramebuffer* frameb
             switch (page) {
             case Page::Graphics: id = "graphics"; break;
             case Page::Enhancements: id = "enhancements"; break;
+            // Pedals merged into the Driving tab, so the historical Haptics
+            // route is now an alias onto it rather than a separate destination.
             case Page::Controls: id = "driving-controls"; break;
-            case Page::Haptics: id = "pedals"; break;
+            case Page::Haptics: id = "driving-controls"; break;
             case Page::Mods: id = "mods"; break;
             default: break;
             }
@@ -127,7 +129,6 @@ void install_render_hooks() {
     recompui::update_game_mod_id(lambo::mods::game_id);
     create_frontend_settings();
     create_frontend_driving_settings();
-    create_frontend_pedal_settings();
     const bool new_profiles = !std::filesystem::exists(lambo::config::app_config_dir() / "controls-framework.json");
     recompui::config::finalize();
     if (new_profiles) import_frontend_profiles();

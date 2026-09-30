@@ -7,7 +7,6 @@ namespace lambo::ui {
 // main-thread SDL/event/input pump takes this lock before touching them. Guest
 // callbacks consume published snapshots and do not enter UI state.
 std::recursive_mutex& frontend_mutex();
-void create_frontend_pedal_settings();
 void create_frontend_driving_settings();
 void sample_frontend_driving_assists();
 void driving_sensor_event(const SDL_Event& event);
