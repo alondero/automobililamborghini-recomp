@@ -199,6 +199,8 @@ void create_frontend_settings() {
     boolean(debug, "developer_mode", "Developer mode", port::developer_mode(), port::set_developer_mode);
     debug.update_option_description("developer_mode", "RT64 developer overlay. Changes take effect after restarting the application.");
 
+    // Button bindings stays its own tab for now. Grouping it with Driving under
+    // one Controls destination is tracked in issue #248 and is not done here.
     settings::create_controls_tab("Button bindings");
     settings::create_mods_tab();
 }

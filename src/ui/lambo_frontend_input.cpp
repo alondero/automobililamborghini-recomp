@@ -131,29 +131,37 @@ PedalOptionDefaults pedal_option_defaults(const Pedal& pedal) {
     return defaults;
 }
 
+// Short axis keys for the pedal "source" enum. Index 0 is the "None" sentinel,
+// so a hardware axis option value is its index here (LX = 1 .. RT = 6).
+constexpr const char* kPedalAxisNames[] = {"None", "LX", "LY", "RX", "RY", "LT", "RT"};
+
 uint32_t pedal_mode_from_key(const std::string& key) { return key == "Analog" ? 1u : 0u; }
 
 uint32_t pedal_axis_from_key(const std::string& key) {
-    static const char* const names[] = {"None", "LX", "LY", "RX", "RY", "LT", "RT"};
     for (uint32_t value = 0; value < 7; ++value) {
-        if (key == names[value]) return value;
+        if (key == kPedalAxisNames[value]) return value;
     }
     return 0;
 }
 
 // Pedal calibration used to be stored in pedals.json. That file is no longer
-// written, but an existing one seeds the merged options so previously saved
-// pedal settings survive. A key already present in driving-controls.json wins,
-// because Config overrides these defaults when it loads the file.
-void merge_legacy_pedal_defaults(const std::string& prefix, PedalOptionDefaults& defaults) {
+// written. It is read at startup to fill the merged page's pedal option defaults
+// so previously saved pedal settings survive; a value already stored in
+// driving-controls.json wins, because Config overrides these defaults from the
+// file. Returned null when there is no usable legacy file.
+nlohmann::json read_legacy_pedals() {
     std::ifstream file(recomp::get_config_path() / "pedals.json");
-    if (!file.good()) return;
+    if (!file.good()) return nlohmann::json();
     nlohmann::json json;
     try {
         file >> json;
     } catch (const nlohmann::json::exception&) {
-        return;
+        return nlohmann::json();
     }
+    return json.is_object() ? json : nlohmann::json();
+}
+
+void apply_legacy_pedal_defaults(const std::string& prefix, const nlohmann::json& json, PedalOptionDefaults& defaults) {
     if (!json.is_object()) return;
     const auto take_string = [&json, &prefix](const char* suffix, auto&& set) {
         const auto it = json.find(prefix + suffix);
@@ -187,19 +195,19 @@ void create_frontend_driving_settings() {
     auto add_pedal = [&page](const std::string& prefix, const std::string& label, const PedalOptionDefaults& pedal) {
         page.add_enum_option(prefix + "mode", label + " mode", "Analog pedals affect player one during races; digital N64 bindings remain available in menus.",
             {{0, "Digital"}, {1, "Analog"}}, pedal.mode);
-        std::vector<ConfigOptionEnumOption> axes{{0, "None"}};
-        const char* names[] = {"LX", "LY", "RX", "RY", "LT", "RT"};
-        for (int axis = 0; axis < 6; ++axis) axes.emplace_back(axis + 1, names[axis]);
+        std::vector<ConfigOptionEnumOption> axes{{0, kPedalAxisNames[0]}};
+        for (uint32_t axis = 1; axis < 7; ++axis) axes.emplace_back(axis, kPedalAxisNames[axis]);
         page.add_enum_option(prefix + "axis", label + " source", "Uses the controller assigned to player one in Button bindings.", axes, pedal.axis);
         page.add_bool_option(prefix + "negative", label + " negative half-axis", "Use the negative direction of a stick axis. Leave off for triggers.", pedal.negative);
         page.add_number_option(prefix + "deadzone", label + " deadzone", "Input below this level is ignored.", 0, .95, .01, 2, false, pedal.deadzone);
         page.add_number_option(prefix + "saturation", label + " saturation", "Input at this level reaches full demand.", .05, 1, .01, 2, false, pedal.saturation);
     };
 
+    const nlohmann::json legacy_pedals = read_legacy_pedals();
     PedalOptionDefaults throttle = pedal_option_defaults(pedal_profile.throttle);
     PedalOptionDefaults brake = pedal_option_defaults(pedal_profile.brake);
-    merge_legacy_pedal_defaults("throttle_", throttle);
-    merge_legacy_pedal_defaults("brake_", brake);
+    apply_legacy_pedal_defaults("throttle_", legacy_pedals, throttle);
+    apply_legacy_pedal_defaults("brake_", legacy_pedals, brake);
     add_pedal("throttle_", "Throttle", throttle);
     add_pedal("brake_", "Brake", brake);
 

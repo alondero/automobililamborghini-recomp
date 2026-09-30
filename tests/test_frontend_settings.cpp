@@ -96,6 +96,13 @@ int main(int argc, char** argv) {
                 std::get<double>(driving.get_option_value("brake_deadzone")) == 0.2 &&
                 std::get<double>(driving.get_option_value("brake_saturation")) == 0.85,
                 "legacy pedals.json did not seed the merged Driving page");
+        // Precedence: a pedal value the merged page has stored must win over a
+        // stale pedals.json when the page reloads.
+        { std::ofstream file(path / "driving-controls.json"); file << R"({"throttle_deadzone":0.33})"; }
+        { std::ofstream file(path / "pedals.json"); file << R"({"throttle_deadzone":0.99})"; }
+        require(driving.load_config(), "driving precedence reload failed");
+        require(std::get<double>(driving.get_option_value("throttle_deadzone")) == 0.33,
+                "a stale pedals.json overrode a saved driving-controls.json value");
 
         // The SDL pump posts the toggle and the presentation callback
         // publishes the applied context state. Verify both edges of that

@@ -88,7 +88,7 @@ it for the default and a remapped binding, and
 Reaching the confirmation needs the keyboard. The header's Quit and Close buttons
 are laid out past the right edge of the modal, so they cannot be clicked; the
 route is F1 to open the overlay, then the Back action to focus the active tab,
-then Right through the seven tabs and one more to leave them onto Quit.
+then Right to the last tab and one more to leave them onto Quit.
 
 ## Options and storage
 
@@ -140,10 +140,11 @@ Review calibration in General after selecting an imported profile.
 
 The Driving tab holds pedal calibration alongside the gyro/auto-accelerate assists; the
 former separate Pedals tab and its `pedals.json` are gone. Pedal defaults are imported from
-the legacy preferred controller profile, or from an existing `pedals.json`, which is read
-once to seed the merged page. Pedal calibration applies to the controller assigned to player
-one, consistent with the existing player-one analog race hooks. N64 digital bindings remain
-available in menus. This does not add new analog gameplay mechanics to players 2-4.
+the legacy preferred controller profile, or from an existing `pedals.json` that fills any
+pedal value the merged page has not stored yet. Pedal calibration applies to the controller
+assigned to player one, consistent with the existing player-one analog race hooks. N64 digital
+bindings remain available in menus. This does not add new analog gameplay mechanics to
+players 2-4.
 
 The subsequent [mod integration](modding.md) enables the shared mod loader and Mods tab.
 The existing launcher/ROM selection policy and audio sink are retained.
