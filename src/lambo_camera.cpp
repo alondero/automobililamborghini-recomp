@@ -12,7 +12,7 @@
 //             -- height adder add.s at 0x80032780 (height site 1)
 // The demo/attract camera is produced by boot_pad_apply_calibration with an
 // absolute eye = car - dir*900, carY+1000. Shared hooks preserve authored
-// values outside active player races, including this demo/attract camera.
+// values outside player countdowns and driving, including this demo/attract camera.
 //
 // With all knobs at their defaults (1.0 / 1.0 / +0) every shim returns exactly
 // what the ROM computed, so stock presentation is untouched.
@@ -29,15 +29,17 @@ namespace {
 // USA ROM unitless s16 codes: state at 0x800CE6AC, phase at 0x800CE6B0,
 // mode at 0x800CE6B4. MEM_H reads word-swapped RDRAM on the guest thread at
 // each hook/consumer, so transitions and savestate loads cannot cache the gate.
-// State 8 dispatches racing; phase 3 is driving; mode 4 is attract playback.
+// State 8 dispatches racing; phase 2 is countdown, 3 is driving; mode 4 is
+// attract playback. Countdown uses the race settings to avoid a framing jump at GO.
 // Evidence: docs/gyro-steering-research.md#local-guest-gate-evidence and
 // docs/camera-sequences.md. Unlike input assists, this visual gate ignores
 // pause/input suppression: pausing must not change the race's framing.
 // Missing RAM fails closed. Replace fixed addresses with symbols when available.
 bool overrides_allowed(uint8_t* rdram) {
     if (rdram == nullptr) return false;
+    const int phase = MEM_H(0, (gpr)(int32_t)0x800CE6B0u);
     return MEM_H(0, (gpr)(int32_t)0x800CE6ACu) == 8 &&
-           MEM_H(0, (gpr)(int32_t)0x800CE6B0u) == 3 &&
+           (phase == 2 || phase == 3) &&
            MEM_H(0, (gpr)(int32_t)0x800CE6B4u) != 4;
 }
 

@@ -58,6 +58,28 @@ int main() {
                    "view cone resets bit-for-bit on leaving gameplay");
         }
     };
+    // Player countdowns use the configured camera before GO, in every race
+    // mode. The phase transition must also retain the projection companions
+    // before another FOV hook runs, including a return to countdown on reload.
+    for (int mode = 0; mode < 4; ++mode) {
+        half(0x800CE6AC, 8);
+        half(0x800CE6B0, 2);
+        half(0x800CE6B4, mode);
+        check(true);
+        const auto backdrop = lambo_camera_backdrop_projection_scale_bits(ram.data());
+        const auto cone = lambo_camera_view_cone_cos_bits(ram.data());
+        const auto sky_fov = lambo_camera_sky_vertical_fov(ram.data());
+        for (int phase : {3, 2}) {
+            half(0x800CE6B0, phase);
+            expect(lambo_camera_backdrop_projection_scale_bits(ram.data()) == backdrop,
+                   "countdown/GO transition retains backdrop correction");
+            expect(lambo_camera_view_cone_cos_bits(ram.data()) == cone,
+                   "countdown/GO transition retains view cone");
+            expect(lambo_camera_sky_vertical_fov(ram.data()) == sky_fov,
+                   "countdown/GO transition retains sky FOV");
+            check(true);
+        }
+    }
     // Repeat without resetting host state or touching settings: title/demo,
     // countdown, racing, pause, results, and back to intro.
     for (int repeat = 0; repeat < 3; ++repeat) {
@@ -67,7 +89,7 @@ int main() {
                 half(0x800CE6B0, phase);
                 for (int mode = 0; mode <= 4; ++mode) {
                     half(0x800CE6B4, mode);
-                    check(state == 8 && phase == 3 && mode != 4);
+                    check(state == 8 && (phase == 2 || phase == 3) && mode != 4);
                 }
             }
         }
@@ -80,12 +102,12 @@ int main() {
         half(0x800CE6AC, 0);
         check(false);
     }
-    // Measured boot/title, attract, and countdown tuples (camera-sequences.md),
+    // Measured boot/title, attract, and race-exit tuples (camera-sequences.md),
     // plus results: read companions after an adjusted race with NO intervening
     // FOV hook. The initial test only exercised transitions that called FOV.
     constexpr int scripted[][3] = {
-        {4, -1, 0}, {6, -1, 0}, {6, -1, 4}, {8, 2, 0},
-        {8, 2, 1}, {8, 2, 4}, {8, 3, 4}, {8, 4, 0}, {8, 5, 0}
+        {4, -1, 0}, {6, -1, 0}, {6, -1, 4}, {8, 1, 0},
+        {8, 2, 4}, {8, 3, 4}, {8, 4, 0}, {8, 5, 0}
     };
     for (const auto& scene : scripted) {
         half(0x800CE6AC, 8);

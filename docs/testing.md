@@ -80,8 +80,9 @@ Python, generated functions, Windows, or an RT64 build is available.
 
 `lambo_camera_runtime` links the production camera shims against fixed
 non-default settings and synthetic word-swapped guest RAM. It covers sequence
-transitions, race modes, all authored FOV layouts, pause framing, and restoration
-of sky, backdrop, and view-cone values. It does not prove visual framing: compare
+transitions (including countdown to GO and back), race modes, all authored FOV
+layouts, pause framing, and restoration of sky, backdrop, and view-cone values.
+It does not prove visual framing: compare
 intro and attract shots with default and non-default settings in a game build,
 then enter a race and repeat the transitions. The measured tuples and current
 visual evidence are in [Camera sequences](camera-sequences.md). Companion tests
