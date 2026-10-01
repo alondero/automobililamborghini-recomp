@@ -6,6 +6,7 @@
 #include "lambo_config.h"
 #include "lambo_cheats.h"
 #include "lambo_player_name.h"
+#include "lambo_frontend_input.h"
 #include "recompui/config.h"
 
 namespace lambo::ui {
@@ -124,7 +125,7 @@ void number(Config& page, const std::string& id, const std::string& label,
 }
 
 // description is defaulted so this stays drop-in with the helpers above; the
-// driver name is the only string option here and its validation rule is only
+// player name is the only string option here and its validation rule is only
 // discoverable from the description.
 void text(Config& page, const std::string& id, const std::string& label,
            std::string initial, std::function<void(std::string)> setter,
@@ -176,14 +177,14 @@ void refresh_frontend_settings() {
 void create_frontend_settings() {
     namespace settings = recompui::config;
     namespace port = lambo::config;
-    // The driver name is a staged text edit: player.json is written once when
+    // The player name is a staged text edit: player.json is written once when
     // Apply publishes the field, not on every keystroke. General is the only page
     // the framework offers for it now, so it takes the confirmation footer the
     // Driver tab had, and rumble/deadzone/background input share that footer.
     // This reference dies at the next create_*_tab call, so finish here.
     auto& general = settings::create_general_tab({.has_rumble_strength = true, .has_gyro_sensitivity = false, .has_mouse_sensitivity = false});
     general.requires_confirmation = true;
-    text(general, "name", "Driver name", lambo::player::saved_name(), [](std::string name) {
+    text(general, "name", "Player Name", lambo::player::saved_name(), [](std::string name) {
         // save_config() re-applies every option, so publish only a real change.
         if (name != lambo::player::saved_name()) lambo::player::set_saved_name(name);
     }, "Player one: 1-12 letters or spaces. Also saved by the Championship name editor.");
@@ -213,13 +214,7 @@ void create_frontend_settings() {
     // it into the saved window_width/window_height (see the save callback).
     // "(restart)" is in the label because the resolved size is only read at
     // SDL_CreateWindow in main.cpp, as the old width/height sliders stated.
-    //
-    // RecompFrontend renders an enum as a single non-wrapping flex row
-    // (ui_radio.cpp: FlexDirection::Row, gap 24, no set_flex_wrap), and this is
-    // the longest option list on the page. Whether twelve entries fit the tab
-    // width is unverified: it needs an interactive build. If it clips, the fix
-    // is fewer presets or a wrapping Radio in the RecompFrontend patch, not a
-    // different persistence format.
+    // Patch 0020 lets long enum lists wrap within the options column.
     std::vector<recomp::config::ConfigOptionEnumOption> window_preset_options;
     for (const auto& preset : kWindowPresets) {
         const std::string preset_key = std::to_string(preset.width) + "x" + std::to_string(preset.height);
@@ -272,6 +267,11 @@ void create_frontend_settings() {
     number(enhancements, "camera_fov", "Additional field of view (degrees)", port::camera_fov_add(), -20, 60, 1, port::set_camera_fov_add);
     number(enhancements, "menu_stick_sensitivity", "Menu stick sensitivity", port::menu_stick_sensitivity(), 1.0, 2.5, 0.1, port::set_menu_stick_sensitivity);
 
+    // Tabs appear in registration order. Keep Driving beside Controls and
+    // complete each config before registering the next (references invalidate).
+    settings::create_controls_tab();
+    create_frontend_driving_settings();
+
     auto& cheats = settings::create_config_tab("Cheats", "cheats", false);
     cheats.external_storage = true; // Session-only: never restore cheats on launch.
     for (const auto& entry : lambo::cheats::catalog) {
@@ -280,16 +280,13 @@ void create_frontend_settings() {
         cheats.update_option_description(entry.id, entry.description);
     }
 
+    settings::create_mods_tab();
+
     // Diagnostic options, kept out of the player-facing Graphics page. The port
     // still owns the graphics.json key, so the tab borrows the schema only.
     auto& debug = settings::create_config_tab("Debug", "debug", false);
     debug.external_storage = true;
     boolean(debug, "developer_mode", "Developer mode", port::developer_mode(), port::set_developer_mode);
     debug.update_option_description("developer_mode", "RT64 developer overlay. Changes take effect after restarting the application.");
-
-    // Button bindings stays its own tab for now. Grouping it with Driving under
-    // one Controls destination is tracked in issue #248 and is not done here.
-    settings::create_controls_tab("Button bindings");
-    settings::create_mods_tab();
 }
 }

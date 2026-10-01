@@ -84,7 +84,6 @@ int main(int argc, char** argv) {
         lambo::config::load_and_apply_graphics();
         require(lambo::player::set_saved_name("RACER"), "driver cache fixture");
         lambo::ui::create_frontend_settings();
-        lambo::ui::create_frontend_driving_settings();
         recompui::config::finalize();
         auto& cheats = recompui::config::get_config("cheats");
         require(!cheats.requires_confirmation && cheats.external_storage, "cheats must be live and session-only");
