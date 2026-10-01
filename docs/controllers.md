@@ -6,13 +6,13 @@ evidence. It is for input changes and bug reports, not a timeline of research.
 ## Player-facing behavior
 
 Player one uses the preferred connected controller and falls back to the
-keyboard. Players two through four must be assigned in Button bindings.
+keyboard. Players two through four must be assigned in Controls.
 Bindings are stored in the RecompFrontend controller profile.
 
 **Driving** holds the throttle and brake configuration and offers **Gyro
 steering** and **Auto-accelerate** for player one. The assists default to off and
 everything is saved when you select Apply. Button bindings remain in the
-adjacent **Button bindings** tab.
+adjacent **Controls** tab.
 
 Gyro steering uses the Android phone's gyroscope and accelerometer. Hold the
 screen upright in either landscape orientation and tilt it like a steering
@@ -49,7 +49,7 @@ binding answers a confirmation prompt, including the quit confirmation, by
 running that prompt's own cancel action. The affirmative Quit stays on its own
 confirmation. One case is worth knowing: on the graphics "unapplied changes"
 confirmation, Back discards those changes, exactly like its Discard button. The
-bindings are changed in Button bindings, and the overlay uses the profile of the
+bindings are changed in Controls, and the overlay uses the profile of the
 pad that opened it.
 
 Status: **Confirmed** in a played build for the quit confirmation, which was

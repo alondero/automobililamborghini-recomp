@@ -34,11 +34,11 @@ as experimental. See the [Android guide](docs/ANDROID.md).
 ## Controls
 
 Use a controller if possible. The game opens its settings with Esc, F1, or the
-controller menu button. Open Button bindings to see or change the current keyboard and
+controller menu button. Open Controls to see or change the current keyboard and
 controller bindings.
 
 Player one uses the preferred connected controller, then falls back to the
-keyboard. Players two through four must be assigned in Button bindings. Bindings are
+keyboard. Players two through four must be assigned in Controls. Bindings are
 saved per controller profile.
 
 The settings screen uses its own controller bindings: A accepts and Back backs
@@ -59,10 +59,13 @@ The settings screen includes:
 
 - graphics and window options;
 - widescreen, frame presentation, fog, camera, and draw-distance options;
-- controller profiles and player assignment (Button bindings);
+- controller profiles and player assignment (Controls);
 - pedal bindings and driving assists (Driving);
-- driver name;
+- player name;
 - optional texture-pack paths.
+
+Tabs are ordered General, Graphics, Enhancements, Controls, Driving, Cheats,
+Mods, Debug.
 
 Some changes apply immediately. Graphics backend, window size, and texture
 packs need a restart. The screen shows when Apply or Discard is required.

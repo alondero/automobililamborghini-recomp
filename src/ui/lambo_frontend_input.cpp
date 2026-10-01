@@ -197,7 +197,7 @@ void create_frontend_driving_settings() {
             {{0, "Digital"}, {1, "Analog"}}, pedal.mode);
         std::vector<ConfigOptionEnumOption> axes{{0, kPedalAxisNames[0]}};
         for (uint32_t axis = 1; axis < 7; ++axis) axes.emplace_back(axis, kPedalAxisNames[axis]);
-        page.add_enum_option(prefix + "axis", label + " source", "Uses the controller assigned to player one in Button bindings.", axes, pedal.axis);
+        page.add_enum_option(prefix + "axis", label + " source", "Uses the controller assigned to player one in Controls.", axes, pedal.axis);
         page.add_bool_option(prefix + "negative", label + " negative half-axis", "Use the negative direction of a stick axis. Leave off for triggers.", pedal.negative);
         page.add_number_option(prefix + "deadzone", label + " deadzone", "Input below this level is ignored.", 0, .95, .01, 2, false, pedal.deadzone);
         page.add_number_option(prefix + "saturation", label + " saturation", "Input at this level reaches full demand.", .05, 1, .01, 2, false, pedal.saturation);
@@ -211,7 +211,7 @@ void create_frontend_driving_settings() {
     add_pedal("throttle_", "Throttle", throttle);
     add_pedal("brake_", "Brake", brake);
 
-    page.add_bool_option("gyro", "Gyro steering", "Player one only, during races. Tilt your Android phone like a steering wheel. Requires a phone gyroscope and accelerometer; keep the screen upright. Hold it comfortably when starting or resuming a race to center steering. Button mappings are in Button bindings.", false);
+    page.add_bool_option("gyro", "Gyro steering", "Player one only, during races. Tilt your Android phone like a steering wheel. Requires a phone gyroscope and accelerometer; keep the screen upright. Hold it comfortably when starting or resuming a race to center steering. Button mappings are in Controls.", false);
     page.add_bool_option("auto_accelerate", "Auto-accelerate", "Accelerate automatically during races. Hold the brake to stop automatic acceleration. Player one only; off in menus and while paused.", false);
     page.add_number_option("gyro_range", "Tilt for full steering (degrees)", "Smaller angles make steering more sensitive.", 15, 90, 5, 0, false, 35);
     page.add_number_option("gyro_deadzone", "Gyro deadzone (degrees)", "Ignore small movements around the center.", 0, 10, 1, 0, false, 2);
