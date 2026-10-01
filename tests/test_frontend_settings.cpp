@@ -172,13 +172,16 @@ int main(int argc, char** argv) {
         require(!graphics.has_option("texture_pack"), "graphics must not offer a texture-pack selector");
         require(lambo::config::texture_pack_path() == "seed-pack", "legacy texture pack import");
         require(std::get<std::string>(graphics.get_option_value("texture_dump")) == "seed-dump", "texture dump import");
-        // The driver name and the startup launcher preference live on General,
+        // The player name and the startup launcher preference live on General,
         // which is confirmation-backed so the name can be staged instead of
         // written to player.json on every keystroke.
         auto& general = recompui::config::get_general_config();
-        require(general.requires_confirmation, "General must stage the driver name edit");
+        require(general.requires_confirmation, "General must stage the Player Name edit");
         require(general.has_option("name") && general.has_option("show_launcher"),
-                "driver name and launcher preference must be on General");
+                "Player Name and launcher preference must be on General");
+        const auto& general_schema = general.get_config_schema();
+        const auto& name_option = general_schema.options.at(general_schema.options_by_id.at("name"));
+        require(name_option.name == "Player Name", "the General name option label must be Player Name");
         // Narrow the check: several unrelated config errors also throw
         // std::runtime_error, and one of those must not read as "page removed".
         std::string missing_page;
