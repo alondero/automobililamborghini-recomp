@@ -33,7 +33,9 @@ establish a celestial sun position, emitter size, or other circuits' policy.
 
 The stationary trace uses idle, C up/down/left/right, L and R without throttle.
 Across tasks 60, 300, 420 and 540, player one's heading is 69, 249, 69 and 69
-degrees. The entire first lit car-body model matrix stays identical, including
+degrees. The corresponding captured view rotation changes; a heading-only
+change with an unchanged view matrix is rejected. The entire first lit car-body
+model matrix stays identical, including
 translation `(-501.5499878, 18.1299896, 126)`. Key/fill vectors stay identical.
 The two-player single-race trace produces the same result in both views:
 player one turns 180 degrees while player two remains at 69 degrees. Each view
@@ -108,18 +110,28 @@ Emitter entry/common-epilogue hooks bracket these runtime PCs:
 | Particle/effect lead | `0x8000E468` | `0x8000F6C4` |
 
 Cursor `0x800A39CC` is a u32 guest pointer, advanced in 8-byte commands by the
-game producer. Spans must stay in their own task's root-to-arena-end range;
+game producer. Spans must stay between task +`0x1C0` and +`0x79C0`; the remaining
+arena bytes are scheduler fields, not display-list storage. Out-of-range,
 unaligned, reversed, unmatched, duplicate-pending and over-budget spans mark
 the record incomplete. At most 64 spans are retained. Task reuse, epoch and
 one-time alias consumption follow the [existing bridge](rt-shadows.md#guest-bridge-contract).
 
-`LAMBO_RT_CAPTURE_DIR` additionally writes four paired schema-1 JSON/8-MiB
-word-swapped snapshots at task sequences 60/300/420/540. HLE copies RAM after
-the effective fog rewrite and before `processDisplayLists`, under the existing
-native task reuse fence. Renderer workers never read guest RAM. Write failures
+`LAMBO_RT_CAPTURE_DIR` additionally writes four paired schema-2 JSON/8-MiB
+word-swapped snapshots at task sequences 60/300/420/540. The game producer
+copies native RAM at `0x80005728` in `func_80006018`, after the task descriptor
+is complete and before `osSendMesg` at `0x80005734` publishes it. Mutable
+object/segment globals can change with an older task outstanding; the arena
+reuse fence alone would not authenticate those records. The immutable copy
+travels with the matching task; HLE only writes owned bytes to disk. At most
+two slot-owned copies (16 MiB) can be pending. Publication cannot overwrite an
+existing copy. Epoch invalidation releases pending ownership; already consumed
+values retain their own bytes. Renderer workers never read guest RAM. Write failures
 are logged; a scenario expecting captures fails on missing, short, incomplete,
 malformed or unsupported command data. This read-only developer diagnostic
-does not change selection or allocate a shadow scene. Dumps contain game data
+does not change selection or allocate a shadow scene. These are native producer
+observations before the HLE fog rewrite, not effective presented material state.
+The inspector rejects the old consumer-live-RAM schema rather than accepting
+it as task-owned evidence. Dumps contain game data
 and must stay local under ignored `artifacts/`.
 
 Offline annotation reads the same snapshot, never live RAM:
@@ -154,11 +166,20 @@ python tools/inspect_rt_task.py artifacts/game-scenarios/<run>/rt-tasks/task-60.
 python -m unittest discover tests -p test_rt_task_capture.py
 ~~~
 
-Fresh final runs were `rt-stationary-camera-3kalvpgf`,
-`rt-stationary-two-views-2oilybll` and `rt-sun-provenance-6mhahw7k`.
+Fresh producer-owned runs were `rt-stationary-camera-1zy1qkey`,
+`rt-stationary-two-views-oywpvbbv` and `rt-sun-provenance-d60zgu4l`.
 Each passed 600/600 verified guest input frames, 601 native swaps and four
 complete task captures. Stationary-series comparisons passed for one and two
 players. These prove task consumption and native observations, not RT pixels.
 The USA ROM hash and dependency pins remain those in [rt-shadows.md](rt-shadows.md).
 The supported build regenerated ignored game/RSP output; none was hand-edited
 or committed. No dependency patch or player setting changed in this milestone.
+
+The final build, all 45 project CTests, 58 Python tests, scoped Ruff checks and
+documentation/whitespace checks passed. The default headless `harness-smoke`
+run (`harness-smoke-ckkcgn8l`) also passed 600/600 frames and 601 swaps. Finish
+review found and corrected producer ownership, scheduler-region bounds, full
+RDP other-mode replacement and the missing view-rotation assertion. The earlier
+schema-1 live-HLE snapshots are superseded and cannot pass the current inspector.
+No new production GPU/shader, swapchain visual differential, performance,
+Android or Vulkan shadow validation is claimed.

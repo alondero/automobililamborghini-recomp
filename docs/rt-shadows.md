@@ -129,8 +129,10 @@ Workload bridge still needs implementation.
 
 The additional camera/emitter hooks and `LAMBO_RT_CAPTURE_DIR` capture path are
 specified in the [extended diagnostic contract](rt-provenance.md#capture-and-offline-bridge-contract).
-HLE may copy the fenced task's low RAM for these four local snapshots; workers
-never read RAM. Offline observations do not publish runtime eligibility.
+The game producer copies low RAM before native queue publication for these
+four local snapshots; HLE writes immutable task-owned bytes and workers never
+read RAM. The task reuse fence alone does not own mutable object globals.
+Offline observations do not publish runtime eligibility.
 
 ## Reproduce validation
 

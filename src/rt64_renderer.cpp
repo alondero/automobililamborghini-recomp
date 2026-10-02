@@ -430,7 +430,7 @@ public:
         // would silently mis-resolve in RT64 if the root DL ever set segment 0.
         lambo_fog_match_1p(app->core.RDRAM, (uint32_t)task->t.data_ptr | 0x80000000u);
         app->interpreter->loadUCodeGBI(task->t.ucode & 0x3FFFFFF, task->t.ucode_data & 0x3FFFFFF, true);
-        lambo::rt::consume_sun_probe(task->t.data_ptr, app->core.RDRAM);
+        lambo::rt::consume_sun_probe(task->t.data_ptr);
         app->processDisplayLists(app->core.RDRAM, task->t.data_ptr & 0x3FFFFFF, 0, true);
         // Same sustained-pipeline heartbeat as the headless context, so RT64 runs are
         // comparable against headless logs. VI_ORIGIN/STATUS prove the present path is

@@ -17,6 +17,7 @@ def compare_stationary(reports):
     if players not in (1, 2):
         raise CaptureError("stationary fixture supports one or two players")
     reference_model = reference_lights = None
+    views = {slot: [] for slot in range(1, players + 1)}
     headings = {slot: set() for slot in range(1, players + 1)}
     for report in reports:
         task = report["task"]
@@ -38,6 +39,10 @@ def compare_stationary(reports):
                 reference_model = lit_car[0]["model"]
             if lit_car[0]["model"] != reference_model:
                 raise CaptureError("physical car body moved or rotated during stationary test")
+            view = lit_car[0]["view"]
+            if len(view) != 4 or any(len(row) != 4 or not all(math.isfinite(v) for v in row) for row in view):
+                raise CaptureError("invalid camera view matrix")
+            views[slot].append(view)
             for draw in car:
                 state = draw["state"]
                 if not state["vertex_lit"]:
@@ -53,6 +58,11 @@ def compare_stationary(reports):
     if len(headings[1]) < 2 or not any(abs((a - b + 180) % 360 - 180) >= 150
                                     for a in headings[1] for b in headings[1]):
         raise CaptureError("player one did not turn the camera far enough")
+    # Check rotation rather than translation: moving an otherwise unchanged
+    # camera would not falsify a camera-oriented directional key.
+    rotations = [[row[:3] for row in view[:3]] for view in views[1]]
+    if all(rotation == rotations[0] for rotation in rotations):
+        raise CaptureError("captured camera rotation did not change")
     key = reference_lights[0]
     length = math.sqrt(sum(v * v for v in key))
     return {"task_sequences": sorted(r["task"]["sequence"] for r in reports), "players": players,

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -35,11 +36,13 @@ struct TaskSunProbe {
     };
     std::vector<EmitterSpan> emitters;
     bool emitters_complete = true;
+    // Immutable, opt-in low-RAM copy made by the game producer before queueing.
+    std::shared_ptr<const std::vector<uint8_t>> native_ram;
 };
 
 // Game producer writes a slot after the native reuse fence. The HLE consumer
 // takes a value for that exact display list. Optional low-RAM snapshots happen
-// only on fenced HLE consumption; renderer workers never read guest globals.
+// before native queue publication; renderer workers never read guest globals.
 // This seam currently records provenance only and cannot enable shadows.
 class TaskSunProbes {
 public:
@@ -47,6 +50,7 @@ public:
     bool capture(const uint8_t* rdram, size_t size);
     bool emitter_begin(const uint8_t* rdram, size_t size, uint32_t emitter);
     bool emitter_end(const uint8_t* rdram, size_t size, uint32_t emitter);
+    bool snapshot(const uint8_t* rdram, size_t size);
     // Exact physical/KSEG0/KSEG1 roots share a single consumable task record.
     std::optional<TaskSunProbe> take(uint32_t dl_address);
     void invalidate();
@@ -61,7 +65,7 @@ private:
     int16_t circuit_ = -1;
 };
 
-void consume_sun_probe(uint32_t dl_address, const uint8_t* rdram);
+void consume_sun_probe(uint32_t dl_address);
 
 } // namespace lambo::rt
 
@@ -70,3 +74,4 @@ extern "C" void lambo_rt_probe_sun_art(uint8_t* rdram);
 extern "C" void lambo_rt_probe_invalidate();
 extern "C" void lambo_rt_probe_emitter_begin(uint8_t* rdram, uint32_t emitter);
 extern "C" void lambo_rt_probe_emitter_end(uint8_t* rdram, uint32_t emitter);
+extern "C" void lambo_rt_probe_task_publish(uint8_t* rdram);

@@ -34,7 +34,13 @@ int emitter_index(uint32_t emitter) {
 
 bool valid_cursor(int slot, uint32_t cursor) {
     const uint32_t task = first_task + uint32_t(slot) * task_stride;
-    return cursor >= task + 0x1C0u && cursor <= task + task_stride && (cursor & 7u) == 0;
+    // Scheduler fields begin at task + 0x79C0; the arena stride also includes
+    // those reserved fields (docs/sky-panorama.md).
+    return cursor >= task + 0x1C0u && cursor <= task + 0x79C0u && (cursor & 7u) == 0;
+}
+
+bool capture_sequence(uint64_t sequence) {
+    return sequence == 60 || sequence == 300 || sequence == 420 || sequence == 540;
 }
 
 // Runtime RAM is word-swapped: native u32/float words, halfwords at offset^2.
@@ -130,6 +136,19 @@ bool TaskSunProbes::capture(const uint8_t* rdram, size_t size) {
     return true;
 }
 
+bool TaskSunProbes::snapshot(const uint8_t* rdram, size_t size) {
+    if (!rdram || size < guest_ram_size) return false;
+    const int slot = slot_index(read<uint32_t>(rdram, 0x800A2BFCu));
+    if (slot < 0) return false;
+    std::lock_guard lock(mutex_);
+    if (!slots_[slot] || slots_[slot]->native_ram || !capture_sequence(slots_[slot]->sequence)) return false;
+    // Game-owned records/light banks may change while an older task is queued.
+    // Copy on the game producer at 0x80005728, before osSendMesg publishes the
+    // completed task. A task-arena reuse fence alone cannot protect globals.
+    slots_[slot]->native_ram = std::make_shared<const std::vector<uint8_t>>(rdram, rdram + guest_ram_size);
+    return true;
+}
+
 std::optional<TaskSunProbe> TaskSunProbes::take(uint32_t dl_address) {
     // Accept the exact task + 0x1C0 root in physical, KSEG0 or KSEG1 form.
     // Restrict segments before stripping alias bits so unrelated addresses
@@ -158,18 +177,18 @@ void TaskSunProbes::invalidate() {
     ++epoch_;
 }
 
-// Opt-in, bounded local evidence: four snapshots from the same fenced HLE task
-// used by the interpreter. The producer's emitter spans travel in the copied
-// record; renderer workers never read guest globals. RAM contains copyrighted
+// Opt-in, bounded local evidence: four immutable producer snapshots consumed
+// with the matching HLE task. Emitter spans travel in the same copied record;
+// HLE/workers never read guest globals for this diagnostic. RAM contains copyrighted
 // assets and must remain ignored. This is not a Workload light/eligibility API.
-void capture_task(const TaskSunProbe& task, const uint8_t* rdram) {
+void capture_task(const TaskSunProbe& task) {
     const char* directory = std::getenv("LAMBO_RT_CAPTURE_DIR");
-    if (!directory || !*directory || !rdram ||
-        (task.sequence != 60 && task.sequence != 300 && task.sequence != 420 && task.sequence != 540)) return;
+    if (!directory || !*directory || !task.native_ram) return;
     try {
         const auto base = std::filesystem::path(directory) / ("task-" + std::to_string(task.sequence));
         std::filesystem::create_directories(base.parent_path());
-        nlohmann::json metadata = {{"schema", 1}, {"epoch", task.epoch}, {"sequence", task.sequence},
+        nlohmann::json metadata = {{"schema", 2}, {"snapshot_point", "producer-before-submit"},
+            {"epoch", task.epoch}, {"sequence", task.sequence},
             {"task_address", task.task_address}, {"root", task.task_address + 0x1C0u},
             {"phase", task.phase}, {"circuit", task.circuit}, {"players", task.players},
             {"emitters_complete", task.emitters_complete}, {"ram_layout", "word-swapped"},
@@ -187,7 +206,7 @@ void capture_task(const TaskSunProbe& task, const uint8_t* rdram) {
         ram_path += ".bin";
         metadata_path += ".json";
         std::ofstream ram_file(ram_path, std::ios::binary);
-        ram_file.write(reinterpret_cast<const char*>(rdram), guest_ram_size);
+        ram_file.write(reinterpret_cast<const char*>(task.native_ram->data()), task.native_ram->size());
         std::ofstream manifest(metadata_path);
         manifest << metadata.dump(2) << '\n';
         ram_file.flush();
@@ -201,10 +220,10 @@ void capture_task(const TaskSunProbe& task, const uint8_t* rdram) {
     }
 }
 
-void consume_sun_probe(uint32_t dl_address, const uint8_t* rdram) {
+void consume_sun_probe(uint32_t dl_address) {
     if (!probe_enabled()) return;
     const auto task = probes.take(dl_address);
-    if (task) capture_task(*task, rdram);
+    if (task) capture_task(*task);
     // Evidence is sampled by task sequence, not frame/view. See rt-shadows.md.
     if (!task || (task->sequence > 12 && task->sequence % 60 != 0)) return;
     for (const auto& camera : task->cameras) {
@@ -232,4 +251,15 @@ extern "C" void lambo_rt_probe_emitter_begin(uint8_t* rdram, uint32_t emitter) {
 }
 extern "C" void lambo_rt_probe_emitter_end(uint8_t* rdram, uint32_t emitter) {
     if (lambo::rt::probe_enabled()) lambo::rt::probes.emitter_end(rdram, lambo::rt::guest_ram_size, emitter);
+}
+extern "C" void lambo_rt_probe_task_publish(uint8_t* rdram) {
+    if (!lambo::rt::probe_enabled()) return;
+    const char* directory = std::getenv("LAMBO_RT_CAPTURE_DIR");
+    if (!directory || !*directory) return;
+    try {
+        lambo::rt::probes.snapshot(rdram, lambo::rt::guest_ram_size);
+    }
+    catch (const std::exception& error) {
+        LAMBO_LOG_WARN("rt-capture", "producer snapshot failed: %s\n", error.what());
+    }
 }

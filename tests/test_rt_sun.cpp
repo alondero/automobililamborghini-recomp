@@ -116,7 +116,7 @@ int main() {
         require(!probes.emitter_begin(ram.data(), ram.size(), 0x800159FC), "unaligned cursor accepted");
         const auto invalid = probes.take(0x800BF400);
         require(invalid && !invalid->emitters_complete, "invalid cursor reported complete");
-        for (uint32_t outside : {0x800BF3F8u, 0x800C6C98u, 0x80100000u}) {
+        for (uint32_t outside : {0x800BF3F8u, 0x800C6C08u, 0x800C6C98u, 0x80100000u}) {
             require(begin(0x800BF240), "arena bounds setup failed");
             cursor(outside);
             require(!probes.emitter_begin(ram.data(), ram.size(), 0x800159FC), "foreign cursor admitted");
@@ -144,6 +144,28 @@ int main() {
         const auto overflow = probes.take(0x800BF400);
         require(overflow && !overflow->emitters_complete && overflow->emitters.size() == 64,
             "span overflow retained an unbounded/complete capture");
+        lambo::rt::TaskSunProbes snapshots;
+        require(!snapshots.snapshot(nullptr, ram.size()) && !snapshots.snapshot(ram.data(), 16),
+            "snapshot admitted absent/short RAM");
+        write(ram, 0x800A2BFCu, 0x800BF240u);
+        for (unsigned i = 1; i < 60; ++i) {
+            require(snapshots.begin(ram.data(), ram.size()), "snapshot sequence begin failed");
+            require(!snapshots.snapshot(ram.data(), ram.size()), "unsampled task allocated RAM");
+        }
+        require(snapshots.begin(ram.data(), ram.size()), "sampled snapshot begin failed");
+        ram[0xB69A8] = 0x11;
+        require(snapshots.snapshot(ram.data(), ram.size()), "producer snapshot rejected");
+        ram[0xB69A8] = 0x22;
+        require(!snapshots.snapshot(ram.data(), ram.size()), "snapshot overwritten after publication");
+        write(ram, 0x800A2BFCu, 0x800C6C90u);
+        require(snapshots.begin(ram.data(), ram.size()), "next producer task rejected");
+        const auto owned = snapshots.take(0x800BF400);
+        require(owned && owned->sequence == 60 && owned->native_ram &&
+            owned->native_ram->size() == ram.size() && (*owned->native_ram)[0xB69A8] == 0x11,
+            "consumer read next task's mutable globals");
+        snapshots.invalidate();
+        require((*owned->native_ram)[0xB69A8] == 0x11 && !snapshots.take(0x800BF400),
+            "immutable consumer snapshot or one-time ownership lost");
         RT64::SunShadowParams params;
         require(!RT64::validSunShadowParams(params), "default parameters enabled shadows");
         params.valid = 1;

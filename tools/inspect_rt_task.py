@@ -20,8 +20,10 @@ class CaptureError(ValueError):
 
 class TaskInspector:
     def __init__(self, ram: bytes, metadata: dict):
-        if not isinstance(metadata, dict) or len(ram) != 0x800000 or metadata.get("schema") != 1 or metadata.get("ram_layout") != "word-swapped":
-            raise CaptureError("expected schema 1 and exactly 8 MiB of word-swapped RAM")
+        if not isinstance(metadata, dict) or len(ram) != 0x800000 or metadata.get("schema") != 2 or metadata.get("ram_layout") != "word-swapped":
+            raise CaptureError("expected schema 2 and exactly 8 MiB of word-swapped RAM")
+        if metadata.get("snapshot_point") != "producer-before-submit":
+            raise CaptureError("snapshot must belong to the task producer before publication")
         if not metadata.get("emitters_complete"):
             raise CaptureError("emitter capture is incomplete")
         task = metadata.get("task_address")
@@ -35,7 +37,7 @@ class TaskInspector:
             if span["emitter"] not in (0x80009AC0, 0x8000F6D8, 0x800159FC, 0x8000E468):
                 raise CaptureError("unknown emitter")
             begin, end = span["begin"], span["end"]
-            if not (task + 0x1C0 <= begin <= end <= task + 0x7A50) or (begin | end) & 7:
+            if not (task + 0x1C0 <= begin <= end <= task + 0x79C0) or (begin | end) & 7:
                 raise CaptureError("emitter span outside its task arena or unaligned")
             if span["camera_slot"] not in range(4):
                 raise CaptureError("invalid emitter camera slot")
@@ -243,6 +245,8 @@ class TaskInspector:
                     self.other_lo = (self.other_lo & ~mask) | (w1 & mask)
                 else:
                     self.other_hi = (self.other_hi & ~mask) | (w1 & mask)
+            elif op == 0xEF:
+                self.other_hi, self.other_lo = w0 & 0xFFFFFF, w1
             elif op == 0xFC:
                 self.combine = (w0 & 0xFFFFFF) << 32 | w1
             elif op == 0xFA:
@@ -274,7 +278,7 @@ class TaskInspector:
                 # extended projection/clipping is intentionally not reproduced.
                 self.visibility_tests.append({"command": command, "start": w0 & 0xFFFF, "end": w1})
             elif op not in (0, 0xB3, 0xB4, 0xBB, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9,
-                            0xED, 0xEE, 0xEF, 0xF0, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF9,
+                            0xED, 0xEE, 0xF0, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF9,
                             0xFB, 0xFE, 0xFF):
                 raise CaptureError(f"unsupported command {op:#x} at {command:#x}")
             offset += 8

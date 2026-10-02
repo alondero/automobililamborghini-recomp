@@ -16,7 +16,8 @@ class TaskCaptureTests(unittest.TestCase):
     def setUp(self):
         self.ram = bytearray(0x800000)
         self.root = 0x800BF400
-        self.meta = {"schema": 1, "ram_layout": "word-swapped", "emitters_complete": True,
+        self.meta = {"schema": 2, "snapshot_point": "producer-before-submit",
+                     "ram_layout": "word-swapped", "emitters_complete": True,
                      "task_address": 0x800BF240, "root": self.root, "cameras": [],
                      "emitters": [{"emitter": 0x80009AC0, "begin": self.root,
                                    "end": self.root + 0x100, "camera_slot": 1}]}
@@ -82,11 +83,28 @@ class TaskCaptureTests(unittest.TestCase):
 
     def test_incomplete_foreign_overlapping_and_nonfinite_metadata_rejected(self):
         bad = []
-        doc = copy.deepcopy(self.meta); doc["emitters_complete"] = False; bad.append(doc)
-        doc = copy.deepcopy(self.meta); doc["root"] += 8; bad.append(doc)
-        doc = copy.deepcopy(self.meta); doc["emitters"][0]["end"] = 0x800C6CA0; bad.append(doc)
-        doc = copy.deepcopy(self.meta); doc["emitters"].append(copy.deepcopy(doc["emitters"][0])); bad.append(doc)
-        doc = copy.deepcopy(self.meta); doc["cameras"] = [{"slot": 1, "height_term": float("nan")}]; bad.append(doc)
+        doc = copy.deepcopy(self.meta)
+        doc["emitters_complete"] = False
+        bad.append(doc)
+        doc = copy.deepcopy(self.meta)
+        doc["root"] += 8
+        bad.append(doc)
+        for end in (0x800C6CA0, 0x800C6C08):
+            doc = copy.deepcopy(self.meta)
+            doc["emitters"][0]["end"] = end
+            bad.append(doc)
+        doc = copy.deepcopy(self.meta)
+        doc["schema"] = 1
+        bad.append(doc)
+        doc = copy.deepcopy(self.meta)
+        doc["snapshot_point"] = "HLE-live-RAM"
+        bad.append(doc)
+        doc = copy.deepcopy(self.meta)
+        doc["emitters"].append(copy.deepcopy(doc["emitters"][0]))
+        bad.append(doc)
+        doc = copy.deepcopy(self.meta)
+        doc["cameras"] = [{"slot": 1, "height_term": float("nan")}]
+        bad.append(doc)
         for metadata in bad:
             with self.subTest(metadata=metadata), self.assertRaises(CaptureError):
                 TaskInspector(bytes(self.ram), metadata)
@@ -111,11 +129,14 @@ class TaskCaptureTests(unittest.TestCase):
         for sequence, heading in ((60, 20), (300, 200), (420, 20), (540, 20)):
             reports.append({"task": {"sequence": sequence, "phase": 8, "circuit": 0, "players": 1,
                                      "cameras": [{"slot": 1, "heading": heading}]},
-                            "draws": [{"model": TaskInspector.identity(), "native_object": {"flags": 8},
+                            "draws": [{"model": TaskInspector.identity(), "view": TaskInspector.identity(),
+                                       "native_object": {"flags": 8},
                                        "state": {"transform_group": 0x10010001, "vertex_lit": True,
                                                  "light_count": 1, "lights": [{"direction": [0, 1, 0]}]}}]})
+        reports[1]["draws"][0]["view"][0][0] = -1
+        reports[1]["draws"][0]["view"][2][2] = -1
         self.assertEqual(compare_stationary(reports)["unit_key_direction"], [0, 1, 0])
-        for mutation in ("motion", "light", "view", "turn"):
+        for mutation in ("motion", "light", "view", "turn", "unchanged_view"):
             bad = copy.deepcopy(reports)
             if mutation == "motion":
                 bad[1]["draws"][0]["model"][3][0] = 1
@@ -123,10 +144,21 @@ class TaskCaptureTests(unittest.TestCase):
                 bad[1]["draws"][0]["state"]["lights"][0]["direction"] = [1, 0, 0]
             elif mutation == "view":
                 bad[1]["task"]["cameras"] = []
-            else:
+            elif mutation == "turn":
                 bad[1]["task"]["cameras"][0]["heading"] = 20
+            else:
+                bad[1]["draws"][0]["view"] = TaskInspector.identity()
             with self.subTest(mutation=mutation), self.assertRaises(CaptureError):
                 compare_stationary(bad)
+
+    def test_full_other_mode_replaces_previous_material_bits(self):
+        self.triangle_list()
+        self.commands(self.root, [(0xBA000020, 0xFFFFFFFF), (0xB9000020, 0xFFFFFFFF),
+                                 (0xEF123456, 0x12340000), (0xB9000010, 0x5678),
+                                 (0x06000000, 0x80100000), (0xB8000000, 0)])
+        state = self.inspect()["draws"][0]["state"]
+        self.assertEqual(state["other_hi"], 0x123456)
+        self.assertEqual(state["other_lo"], 0x12345678)
 
 
 if __name__ == "__main__":
