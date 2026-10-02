@@ -18,8 +18,8 @@
 namespace lambo {
 namespace config {
 
-// RecompFrontend encodes DownsamplingOption::Off as 1; the RT64 adapter also
-// clamps ds_option to at least 1. Keep this shared 1x value aligned at both ends.
+// Pinned RecompFrontend encodes Off=0, X2=2 and X4=4; the port uses 1 for 1x.
+// RT64 clamps ds_option to at least 1, so this port value behaves like Off.
 inline constexpr uint32_t kDsMultiplier1x = 1;
 
 // Per-user persistent config directory (created on demand):
