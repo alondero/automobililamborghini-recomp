@@ -230,14 +230,16 @@ void create_frontend_settings() {
         window_preset_options,
         window_preset_from_size(port::window_size().width, port::window_size().height));
     graphics.add_enum_option("performance_preset", "Graphics preset",
-        "Low hardware stages 2x original resolution, no anti-aliasing, original frame rate and standard colour precision. Apply also restores stock track geometry, draw distance and multiplayer fog/sky. Discard cancels the preset. Other options can still be adjusted before Apply.",
+        "Low hardware stages 2x original resolution, supersampling Off (1x), no anti-aliasing, original frame rate and standard colour precision. This extra low-hardware choice replaces saved X2/X3/X4 supersampling; Auto resolution ignores supersampling. Apply also restores stock track geometry, draw distance and multiplayer fog/sky, replacing those saved choices. Discard cancels the preset. Other options can still be adjusted before Apply.",
         {{kKeepGraphicsChoices, "Keep", "Keep current choices"},
          {kLowHardwarePreset, "LowHardware", "Low hardware"}}, kKeepGraphicsChoices);
+    // Stage the extra 1x supersampling choice with the renderer fields. The
+    // save callback reads the committed preset; Discard restores Keep first.
     graphics.add_option_change_callback("performance_preset", [](ConfigValueVariant value, ConfigValueVariant, OptionChangeContext context) {
         if (context != OptionChangeContext::Temporary || std::get<uint32_t>(value) != kLowHardwarePreset) return;
         auto& page = recompui::config::get_graphics_config();
         page.update_option_value("res_option", uint32_t(Resolution::Original2x));
-        page.update_option_value("ds_option", uint32_t(1));
+        page.update_option_value("ds_option", port::kDsMultiplier1x);
         page.update_option_value("msaa_option", uint32_t(Antialiasing::None));
         page.update_option_value("rr_option", uint32_t(RefreshRate::Original));
         page.update_option_value("hpfb_option", uint32_t(HighPrecisionFramebuffer::Off));

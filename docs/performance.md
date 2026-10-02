@@ -17,7 +17,7 @@ for less work.
 | --- | --- | --- | --- |
 | 1 | Optional low-hardware preset | Defaults select window-scaled rendering, MSAA2X, display-rate presentation, expanded geometry and 1.5x draw distance. Reduce pixels, samples, presentations and scenery together. | Implemented in Graphics, with Apply/Discard. |
 | 2 | Capture drawing/camera environment overrides at startup | `lambo_config.cpp` previously searched the environment at every `no_lod`, draw-distance, fog and camera read, and parsed numeric overrides repeatedly. Drawing invokes several of these getters inside loops. | Implemented; live JSON-backed settings retain their atomics. |
-| 3 | Skip hidden settings synchronisation | `lambo_frontend.cpp::render` refreshed the whole settings schema on every presentation, including ordinary gameplay. This includes string construction/lookups, variants, and the player-name mutex. | Implemented; refresh before opening and while a context captures input. |
+| 3 | Skip hidden settings synchronisation | `lambo_frontend.cpp::render` refreshed the whole settings schema on every presentation, including ordinary gameplay. This includes string construction/lookups, variants, and the player-name mutex. | Implemented; hidden idle/motion frames skip refresh, but any key/controller-button press still triggers it. |
 | 4 | Cache synthesized visibility rows | `lambo_no_lod.cpp` builds a row on each viewport walk; the policy scans the track records again even when the camera segment has not changed. | [Issue 266](https://github.com/alondero/automobililamborghini-recomp/issues/266). Track reload, savestate, Track Lab and viewport invalidation are essential. |
 | 5 | Remove the separate active-fog display-list walk | `lambo_fog_widescreen.cpp::rewrite` walks commands and nested lists before RT64 walks them again. The normal 1P/2P identity path already skips this. | [Issue 267](https://github.com/alondero/automobililamborghini-recomp/issues/267). Target custom fog and 3P/4P; preserve segmented addressing and avoid cumulative scaling. |
 | 6 | Control rendering against a frame budget | Auto resolution and Display interpolation follow output demands, including high-resolution/high-refresh displays. Original resolutions and Manual refresh already exist. | [Issue 268](https://github.com/alondero/automobililamborghini-recomp/issues/268). Measure CPU/GPU separately before adaptive resolution or a presentation ceiling. |
@@ -34,13 +34,18 @@ with upstream, as required by [Contributing](../CONTRIBUTING.md).
 
 ## Implemented behavior
 
-Low hardware stages 2x original resolution, one supersampling step, no MSAA,
-original presentation rate, and standard framebuffer precision. Apply disables
-expanded geometry and multiplayer fog/sky matching, and sets draw distance to
-1.0. Discard cancels both renderer and scenery changes. Later renderer edits
-are retained at Apply. The selector then resets to Keep current choices; only
-normal configuration fields are persisted. Existing defaults, per-circuit
-preferences, camera, window, backend, controls and texture packs are preserved.
+Low hardware stages 2x original resolution, supersampling Off (1x), no MSAA,
+original presentation rate, and standard framebuffer precision. Resetting
+supersampling is an extra low-hardware choice beyond the original preset
+specification; it replaces saved X2/X3/X4 choices, and Auto resolution ignores
+the setting. Apply disables expanded geometry and multiplayer fog/sky matching,
+and sets draw distance to 1.0. These four Enhancements values replace saved
+choices and can be restored manually in that tab. Discard cancels both renderer
+and scenery changes, including on a later unrelated Graphics save. Later
+renderer edits are retained at Apply. The selector then resets to Keep current
+choices; the normal configuration fields are persisted. Other Enhancement
+settings, per-circuit preferences, camera, window, backend, controls and texture
+packs are preserved.
 
 The nine hot rendering/camera environment overrides are captured when
 `load_and_apply_graphics` runs, before game/render threads start. That snapshot
@@ -51,9 +56,12 @@ stored settings, and an active environment override retains precedence.
 
 Only port settings synchronisation is skipped while hidden. The frontend's
 draw/event processing still runs so queued context opens and prompts work.
-Refresh happens before a requested open, before queued key/controller presses
-that can open settings through a remapped binding, and while a context captures input;
-existing protection for pending text/graphics edits is retained.
+Refresh happens before a requested open, on every non-repeat keydown or
+controller-button press (any may open settings through a remapped binding),
+and while a context captures input; existing protection for pending text/graphics
+edits is retained. Ordinary gameplay button presses still pay for a schema
+refresh. Narrowing this trigger to actual menu bindings remains follow-up work
+([issue 274](https://github.com/alondero/automobililamborghini-recomp/issues/274)).
 
 ## Measurement and verification
 

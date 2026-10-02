@@ -9,6 +9,7 @@
 #ifndef LAMBO_CONFIG_H
 #define LAMBO_CONFIG_H
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 
@@ -16,6 +17,10 @@
 
 namespace lambo {
 namespace config {
+
+// RecompFrontend encodes DownsamplingOption::Off as 1; the RT64 adapter also
+// clamps ds_option to at least 1. Keep this shared 1x value aligned at both ends.
+inline constexpr uint32_t kDsMultiplier1x = 1;
 
 // Per-user persistent config directory (created on demand):
 //   Windows: %LOCALAPPDATA%\LamborghiniRecomp

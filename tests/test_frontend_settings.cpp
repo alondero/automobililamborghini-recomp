@@ -580,6 +580,8 @@ int main(int argc, char** argv) {
         const auto before_preset = lambo::config::current_graphics();
         const bool before_lod = lambo::config::no_lod();
         const double before_distance = lambo::config::global_draw_distance();
+        const bool before_fog_match = lambo::config::widescreen_fog_match();
+        const bool before_sky_match = lambo::config::widescreen_sky_match();
         graphics.clear_config_option_updates();
         graphics.set_option_value("performance_preset", uint32_t(1));
         const auto preset_updates = graphics.get_config_option_updates();
@@ -600,14 +602,24 @@ int main(int argc, char** argv) {
                 "preset changed the running game before Apply");
         graphics.revert_temp_config();
         require(!graphics.is_dirty() && lambo::config::current_graphics() == before_preset &&
-                lambo::config::no_lod() == before_lod, "Discard leaked preset changes");
+                lambo::config::no_lod() == before_lod &&
+                lambo::config::global_draw_distance() == before_distance &&
+                lambo::config::widescreen_fog_match() == before_fog_match &&
+                lambo::config::widescreen_sky_match() == before_sky_match,
+                "Discard leaked preset changes");
+        require(graphics.save_config(), "unrelated Graphics save after Discard failed");
+        require(lambo::config::no_lod() == before_lod &&
+                lambo::config::global_draw_distance() == before_distance &&
+                lambo::config::widescreen_fog_match() == before_fog_match &&
+                lambo::config::widescreen_sky_match() == before_sky_match,
+                "later Graphics save reapplied discarded preset changes");
         lambo::config::flush_pending_graphics_updates();
         nlohmann::json before_preset_json;
         { std::ifstream file(path / "graphics.json"); file >> before_preset_json; }
         graphics.set_option_value("performance_preset", uint32_t(1));
         require(graphics.save_config(), "preset Apply failed");
         const auto low = lambo::config::current_graphics();
-        require(low.res_option == Resolution::Original2x && low.ds_option == 1 &&
+        require(low.res_option == Resolution::Original2x && low.ds_option == lambo::config::kDsMultiplier1x &&
                 low.msaa_option == Antialiasing::None && low.rr_option == RefreshRate::Original &&
                 low.hpfb_option == HighPrecisionFramebuffer::Off, "low hardware renderer choices");
         require(!lambo::config::no_lod() && lambo::config::global_draw_distance() == 1.0 &&

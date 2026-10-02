@@ -83,9 +83,9 @@ std::atomic<double> g_camera_fov_add{0.0};
 // authored behaviour (byte-for-byte no-op); only func_800427D4 consults it.
 std::atomic<double> g_menu_stick_sensitivity{1.0};
 
-// Captured before the game/render threads start. Environment overrides are
-// launch options; the JSON-backed atomics below them remain live. Re-reading
-// the CRT environment (and parsing floats) at each drawing hook is unnecessary.
+// This plain snapshot is written before game/render threads start and read by
+// hot hooks; any later write would race those readers. Environment overrides are
+// launch options while the JSON-backed atomics below them remain live.
 struct EnvironmentOverrides {
     std::optional<bool> fog_match, sky_match, no_lod;
     std::optional<double> fog_scale, draw_distance, camera_distance,
@@ -103,16 +103,16 @@ std::optional<double> environment_number(const char* name) {
 }
 
 void capture_environment_overrides() {
-    g_environment = {
-        environment_bool("LAMBO_FOG_MATCH_1P"),
-        environment_bool("LAMBO_SKY_MATCH_1P"),
-        environment_bool("LAMBO_NO_LOD"),
-        environment_number("LAMBO_FOG_SCALE"),
-        environment_number("LAMBO_DRAW_DISTANCE"),
-        environment_number("LAMBO_CAMERA_DISTANCE_SCALE"),
-        environment_number("LAMBO_CAMERA_HEIGHT_SCALE"),
-        environment_number("LAMBO_CAMERA_FOV_ADD"),
-        environment_number("LAMBO_MENU_STICK_SENSITIVITY")
+    g_environment = EnvironmentOverrides{
+        .fog_match = environment_bool("LAMBO_FOG_MATCH_1P"),
+        .sky_match = environment_bool("LAMBO_SKY_MATCH_1P"),
+        .no_lod = environment_bool("LAMBO_NO_LOD"),
+        .fog_scale = environment_number("LAMBO_FOG_SCALE"),
+        .draw_distance = environment_number("LAMBO_DRAW_DISTANCE"),
+        .camera_distance = environment_number("LAMBO_CAMERA_DISTANCE_SCALE"),
+        .camera_height = environment_number("LAMBO_CAMERA_HEIGHT_SCALE"),
+        .camera_fov = environment_number("LAMBO_CAMERA_FOV_ADD"),
+        .menu_stick = environment_number("LAMBO_MENU_STICK_SENSITIVITY")
     };
 }
 
@@ -438,7 +438,7 @@ ultramodern::renderer::GraphicsConfig default_graphics_config() {
     cfg.rr_option = ultramodern::renderer::RefreshRate::Display;
     cfg.hpfb_option = ultramodern::renderer::HighPrecisionFramebuffer::Auto;
     cfg.rr_manual_value = 60;
-    cfg.ds_option = 1;
+    cfg.ds_option = kDsMultiplier1x;
     cfg.developer_mode = false;
     return cfg;
 }

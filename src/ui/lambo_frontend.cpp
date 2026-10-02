@@ -74,8 +74,9 @@ void render(plume::RenderCommandList* commands, plume::RenderFramebuffer* frameb
     }
     const OverlayRequest action = overlay.take_request();
     const bool input_refresh = settings_refresh_requested.exchange(false, std::memory_order_acq_rel);
-    // Synchronise before opening, including queued/remapped menu input, and
-    // while a context is visible (including Apply/Discard prompts).
+    // The Graphics load callback runs only in config::finalize(), not on open.
+    // Shown frontend contexts currently capture input, so refresh before queued
+    // opens and while visible; this is the page's only freshness mechanism.
     if (input_refresh || action.kind == OverlayRequestKind::Page || recompui::is_context_capturing_input())
         refresh_frontend_settings();
     if (action.kind == OverlayRequestKind::Close) {
