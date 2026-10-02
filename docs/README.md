@@ -34,6 +34,8 @@ Developers need evidence, ownership, and exact boundaries.
   threads, guest memory, patches, and the intended direction.
 - [Testing](testing.md) lists host, ROM-backed, and end-to-end checks with
   exact commands.
+- [Performance audit](performance.md) ranks lower-hardware opportunities,
+  records the implemented changes, and links the remaining work.
 - [Debugging](debugging.md) explains logs, captures, the optional ares
   comparison workflow, and reproducible investigations.
 - [Configuration reference](configuration.md) lists persistent files and

@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 #include "lambo_log.h"
@@ -92,6 +93,39 @@ std::atomic<double> g_camera_fov_add{0.0};
 // Opt-in menu-navigation stick sensitivity (see lambo_config.h). 1.0 = the ROM's
 // authored behaviour (byte-for-byte no-op); only func_800427D4 consults it.
 std::atomic<double> g_menu_stick_sensitivity{1.0};
+
+// This plain snapshot is written before game/render threads start and read by
+// hot hooks; any later write would race those readers. Environment overrides are
+// launch options while the JSON-backed atomics below them remain live.
+struct EnvironmentOverrides {
+    std::optional<bool> fog_match, sky_match, no_lod;
+    std::optional<double> fog_scale, draw_distance, camera_distance,
+                          camera_height, camera_fov, menu_stick;
+} g_environment;
+
+std::optional<bool> environment_bool(const char* name) {
+    if (const char* value = std::getenv(name)) return value[0] == '1';
+    return std::nullopt;
+}
+
+std::optional<double> environment_number(const char* name) {
+    if (const char* value = std::getenv(name)) return std::atof(value);
+    return std::nullopt;
+}
+
+void capture_environment_overrides() {
+    g_environment = EnvironmentOverrides{
+        .fog_match = environment_bool("LAMBO_FOG_MATCH_1P"),
+        .sky_match = environment_bool("LAMBO_SKY_MATCH_1P"),
+        .no_lod = environment_bool("LAMBO_NO_LOD"),
+        .fog_scale = environment_number("LAMBO_FOG_SCALE"),
+        .draw_distance = environment_number("LAMBO_DRAW_DISTANCE"),
+        .camera_distance = environment_number("LAMBO_CAMERA_DISTANCE_SCALE"),
+        .camera_height = environment_number("LAMBO_CAMERA_HEIGHT_SCALE"),
+        .camera_fov = environment_number("LAMBO_CAMERA_FOV_ADD"),
+        .menu_stick = environment_number("LAMBO_MENU_STICK_SENSITIVITY")
+    };
+}
 
 // Main-thread-owned snapshot read by the settings overlay and the window-mode
 // reconciliation in the event pump. It avoids reading the runtime's
@@ -423,7 +457,7 @@ ultramodern::renderer::GraphicsConfig default_graphics_config() {
     cfg.rr_option = ultramodern::renderer::RefreshRate::Display;
     cfg.hpfb_option = ultramodern::renderer::HighPrecisionFramebuffer::Auto;
     cfg.rr_manual_value = 60;
-    cfg.ds_option = 1;
+    cfg.ds_option = kDsMultiplier1x;
     cfg.developer_mode = false;
     return cfg;
 }
@@ -436,6 +470,7 @@ ultramodern::renderer::GraphicsConfig default_graphics_config() {
 // (Expand + Clamp16x9) has been removed.
 
 ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
+    capture_environment_overrides();
     ultramodern::renderer::GraphicsConfig cfg = default_graphics_config();
     const std::filesystem::path path = graphics_json_path();
     const ReadResult r = read_graphics_file(path, cfg);
@@ -541,9 +576,7 @@ std::string texture_dump_dir() {
 
 // LAMBO_FOG_MATCH_1P=1/0 overrides the JSON key for headless capture/testing.
 bool widescreen_fog_match() {
-    if (const char* v = std::getenv("LAMBO_FOG_MATCH_1P")) {
-        return v[0] == '1';
-    }
+    if (g_environment.fog_match) return *g_environment.fog_match;
     return g_widescreen_fog_match.load();
 }
 
@@ -554,9 +587,7 @@ void set_widescreen_fog_match(bool enabled) {
 
 // LAMBO_SKY_MATCH_1P=1/0 overrides the JSON key for headless capture/testing.
 bool widescreen_sky_match() {
-    if (const char* v = std::getenv("LAMBO_SKY_MATCH_1P")) {
-        return v[0] == '1';
-    }
+    if (g_environment.sky_match) return *g_environment.sky_match;
     return g_widescreen_sky_match.load();
 }
 
@@ -576,9 +607,7 @@ void set_automatic_pit_stops(bool enabled) {
 
 // LAMBO_NO_LOD=1/0 overrides the JSON key for headless capture/testing.
 bool no_lod() {
-    if (const char* v = std::getenv("LAMBO_NO_LOD")) {
-        return v[0] == '1';
-    }
+    if (g_environment.no_lod) return *g_environment.no_lod;
     return g_no_lod.load();
 }
 
@@ -609,8 +638,8 @@ void set_no_lod_circuit(int circuit, bool enabled) {
 // LAMBO_FOG_SCALE=<float> overrides both JSON keys for headless capture/testing.
 double fog_scale(int circuit) {
     double s;
-    if (const char* v = std::getenv("LAMBO_FOG_SCALE")) {
-        s = std::atof(v);
+    if (g_environment.fog_scale) {
+        s = *g_environment.fog_scale;
     } else {
         s = g_fog_scale.load();
         if (circuit >= 0 && circuit < (int)g_fog_scale_circuit.size()) {
@@ -638,8 +667,8 @@ void set_global_fog_scale(double scale) {
 // shortest authored radius already exceeds any cross-track distance).
 double draw_distance(int circuit) {
     double s;
-    if (const char* v = std::getenv("LAMBO_DRAW_DISTANCE")) {
-        s = std::atof(v);
+    if (g_environment.draw_distance) {
+        s = *g_environment.draw_distance;
     } else {
         s = g_draw_distance.load();
         if (circuit >= 0 && circuit < (int)g_draw_distance_circuit.size()) {
@@ -667,8 +696,8 @@ void set_global_draw_distance(double scale) {
 // Multiplier on the authored camera distance; 1.0 = stock, 0.5 = half as far.
 double camera_distance_scale() {
     double v;
-    if (const char* s = std::getenv("LAMBO_CAMERA_DISTANCE_SCALE")) {
-        v = std::atof(s);
+    if (g_environment.camera_distance) {
+        v = *g_environment.camera_distance;
     } else {
         v = g_camera_distance_scale.load();
     }
@@ -688,8 +717,8 @@ void set_camera_distance_scale(double v) {
 // Multiplier on the authored eye-height offset; 1.0 = stock.
 double camera_height_scale() {
     double v;
-    if (const char* s = std::getenv("LAMBO_CAMERA_HEIGHT_SCALE")) {
-        v = std::atof(s);
+    if (g_environment.camera_height) {
+        v = *g_environment.camera_height;
     } else {
         v = g_camera_height_scale.load();
     }
@@ -710,8 +739,8 @@ void set_camera_height_scale(double v) {
 // produce a degenerate projection (guPerspective cot(fovy/2) blows up near 0).
 double camera_fov_add() {
     double v;
-    if (const char* s = std::getenv("LAMBO_CAMERA_FOV_ADD")) {
-        v = std::atof(s);
+    if (g_environment.camera_fov) {
+        v = *g_environment.camera_fov;
     } else {
         v = g_camera_fov_add.load();
     }
@@ -733,8 +762,8 @@ void set_camera_fov_add(double v) {
 // signed-byte pad domain (the native clamps to +/-127 anyway).
 double menu_stick_sensitivity() {
     double v;
-    if (const char* s = std::getenv("LAMBO_MENU_STICK_SENSITIVITY")) {
-        v = std::atof(s);
+    if (g_environment.menu_stick) {
+        v = *g_environment.menu_stick;
     } else {
         v = g_menu_stick_sensitivity.load();
     }

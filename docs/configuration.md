@@ -47,6 +47,24 @@ specific files for testing. LAMBO_LOG_DIR changes the log directory.
 
 ## Graphics file
 
+For a weaker PC, open Graphics, select Low hardware under Graphics preset,
+then press Apply. It uses 2x original resolution, turns supersampling Off (1x),
+disables anti-aliasing, and selects the original presentation rate and standard
+colour precision. Resetting supersampling is an extra low-hardware choice: it
+replaces a saved X2/X3/X4 choice, and supersampling is ignored while resolution
+is Auto. The preset also restores stock track geometry, draw distance, and
+multiplayer fog and sky policies. The image will be less detailed and less
+smooth. Game speed stays the same.
+
+The preset stages its choices. Discard cancels them all. You can adjust the
+renderer options before Apply. Apply saves and replaces four Enhancements
+settings: Full track geometry is turned off, Draw distance is set to 1.0,
+Match multiplayer fog to single player is turned off, and Show sky in 3-4 player
+races is turned off. Restore earlier choices manually in Enhancements. After
+Apply, the selector returns to Keep current choices. Window size, controller
+settings, camera settings and texture packs are kept. Launch-time environment
+overrides still take priority.
+
 The standard renderer fields are written by the shared runtime schema:
 
 | Key | Default or role |
@@ -60,7 +78,7 @@ The standard renderer fields are written by the shared runtime schema:
 | rr_option | Display; presentation can be smoother while game logic stays at its native rate. |
 | rr_manual_value | Used when rr_option is Manual. |
 | hpfb_option | Auto; high-precision framebuffer policy. |
-| ds_option | Runtime supersampling option. |
+| ds_option | X2/X3/X4 supersampling; Off (1x) disables it. Auto resolution ignores this setting. |
 | developer_mode | RT64 developer overlay; toggled on the Debug tab. Requires restart. |
 
 The port adds these keys:
@@ -110,6 +128,12 @@ and shared-runtime fields should be changed through the frontend unless a
 developer is testing a specific JSON value.
 
 ## Environment overrides
+
+Set drawing and camera overrides before starting the game. Fog/sky match,
+no-LOD, fog scale, draw distance, camera distance/height/FOV, and menu stick
+sensitivity overrides are captured at configuration load. They keep priority
+over saved settings until the next launch. The in-game settings still update
+live when their environment override is absent.
 
 These are the stable player-facing variables supported by the current source:
 

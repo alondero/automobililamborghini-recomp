@@ -9,6 +9,7 @@
 #ifndef LAMBO_CONFIG_H
 #define LAMBO_CONFIG_H
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 
@@ -16,6 +17,10 @@
 
 namespace lambo {
 namespace config {
+
+// Pinned RecompFrontend encodes Off=0, X2=2 and X4=4; the port uses 1 for 1x.
+// RT64 clamps ds_option to at least 1, so this port value behaves like Off.
+inline constexpr uint32_t kDsMultiplier1x = 1;
 
 // Per-user persistent config directory (created on demand):
 //   Windows: %LOCALAPPDATA%\LamborghiniRecomp
@@ -36,6 +41,8 @@ ultramodern::renderer::GraphicsConfig default_graphics_config();
 // Load graphics.json (falling back to defaults for missing/invalid keys), apply it
 // via ultramodern::renderer::set_graphics_config, and write the merged file back so
 // users always have a complete, editable file on disk. Returns the applied config.
+// Call before starting game/render threads: this also captures their launch-time
+// environment overrides. Reloading while those threads run is unsupported.
 ultramodern::renderer::GraphicsConfig load_and_apply_graphics();
 
 // Snapshot/apply helpers for the settings overlay. apply_graphics() persists the

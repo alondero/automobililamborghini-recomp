@@ -582,7 +582,74 @@ int main(int argc, char** argv) {
         SDL_GameControllerClose(menu_controller);
         SDL_JoystickDetachVirtual(menu_device);
         SDL_Quit();
-        std::cout << "PASS frontend settings, Apply/Discard, legacy graphics preservation and independent profiles\n";
+        // The preset stages renderer fields and defers live enhancement changes
+        // until Apply, so the existing Graphics Discard covers the whole action.
+        const auto before_preset = lambo::config::current_graphics();
+        const bool before_lod = lambo::config::no_lod();
+        const double before_distance = lambo::config::global_draw_distance();
+        const bool before_fog_match = lambo::config::widescreen_fog_match();
+        const bool before_sky_match = lambo::config::widescreen_sky_match();
+        graphics.clear_config_option_updates();
+        graphics.set_option_value("performance_preset", uint32_t(1));
+        const auto preset_updates = graphics.get_config_option_updates();
+        for (const char* key : {"res_option", "ds_option", "msaa_option", "rr_option", "hpfb_option"}) {
+            const auto index = graphics.get_config_schema().options_by_id.at(key);
+            bool value_updated = false;
+            for (const auto& update : preset_updates) {
+                if (update.option_index != index) continue;
+                for (auto type : update.updates)
+                    value_updated |= type == recomp::config::ConfigOptionUpdateType::Value;
+            }
+            require(value_updated, "preset did not refresh a renderer widget's staged value");
+        }
+        require(graphics.is_dirty(), "preset did not stage an edit");
+        require(lambo::config::current_graphics() == before_preset &&
+                lambo::config::no_lod() == before_lod &&
+                lambo::config::global_draw_distance() == before_distance,
+                "preset changed the running game before Apply");
+        graphics.revert_temp_config();
+        require(!graphics.is_dirty() && lambo::config::current_graphics() == before_preset &&
+                lambo::config::no_lod() == before_lod &&
+                lambo::config::global_draw_distance() == before_distance &&
+                lambo::config::widescreen_fog_match() == before_fog_match &&
+                lambo::config::widescreen_sky_match() == before_sky_match,
+                "Discard leaked preset changes");
+        const double unrelated_manual_rate =
+            std::get<double>(graphics.get_temp_option_value("rr_manual_value")) + 1.0;
+        graphics.set_option_value("rr_manual_value", unrelated_manual_rate);
+        require(graphics.save_config(), "unrelated Graphics Apply after Discard failed");
+        require(lambo::config::current_graphics().rr_manual_value == int(unrelated_manual_rate),
+                "unrelated Graphics edit was not applied after Discard");
+        require(lambo::config::no_lod() == before_lod &&
+                lambo::config::global_draw_distance() == before_distance &&
+                lambo::config::widescreen_fog_match() == before_fog_match &&
+                lambo::config::widescreen_sky_match() == before_sky_match,
+                "later Graphics save reapplied discarded preset changes");
+        lambo::config::flush_pending_graphics_updates();
+        nlohmann::json before_preset_json;
+        { std::ifstream file(path / "graphics.json"); file >> before_preset_json; }
+        graphics.set_option_value("performance_preset", uint32_t(1));
+        require(graphics.save_config(), "preset Apply failed");
+        const auto low = lambo::config::current_graphics();
+        require(low.res_option == Resolution::Original2x && low.ds_option == lambo::config::kDsMultiplier1x &&
+                low.msaa_option == Antialiasing::None && low.rr_option == RefreshRate::Original &&
+                low.hpfb_option == HighPrecisionFramebuffer::Off, "low hardware renderer choices");
+        require(!lambo::config::no_lod() && lambo::config::global_draw_distance() == 1.0 &&
+                !lambo::config::widescreen_fog_match() && !lambo::config::widescreen_sky_match(),
+                "preset did not restore stock geometry/distance/multiplayer policy");
+        require(!graphics.is_dirty() && std::get<uint32_t>(graphics.get_option_value("performance_preset")) == 0,
+                "preset action was not reset after Apply");
+        lambo::config::flush_pending_graphics_updates();
+        { std::ifstream file(path / "graphics.json"); nlohmann::json saved; file >> saved;
+          for (const char* key : {"future_option", "texture_pack", "camera_distance_scale", "no_lod_circuit", "api_option", "ar_option", "wm_option", "window_width", "window_height"})
+              require(saved.at(key) == before_preset_json.at(key), "preset changed an unrelated setting");
+          require(saved.at("res_option") == "Original2x" && saved.at("no_lod") == false &&
+                  !saved.contains("performance_preset"), "preset must persist normal fields only"); }
+        graphics.set_option_value("performance_preset", uint32_t(1));
+        graphics.set_option_value("res_option", uint32_t(Resolution::Original));
+        require(graphics.save_config() && lambo::config::current_graphics().res_option == Resolution::Original,
+                "preset overwrote a later manual adjustment");
+        std::cout << "PASS frontend settings, Apply/Discard, low hardware preset, legacy graphics preservation and independent profiles\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

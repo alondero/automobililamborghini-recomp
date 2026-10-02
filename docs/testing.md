@@ -78,6 +78,23 @@ The complete list is the add_test list in CMakeLists.txt; keep this page
 updated when a test is added or renamed. Some tests are only registered when
 Python, generated functions, Windows, or an RT64 build is available.
 
+The config test covers captured launch overrides, their precedence and bounds,
+reload, and live settings. The frontend settings test covers the Low hardware
+preset's staging, Apply/Discard, later manual adjustments and preservation of
+unrelated settings. Neither test measures game frame times.
+
+The optional getter benchmark runs separately from CTest:
+
+~~~powershell
+cmake --build build --target lambo_config_benchmark -j 4
+./build/lambo_config_benchmark.exe ./build/benchmark-graphics.json
+~~~
+
+On Linux, omit `.exe`. Use an isolated graphics file, the same compiler and
+optimisation flags, and an idle machine for comparisons. This times 3.8 million
+configuration getter calls; it does not predict an FPS increase. See the
+[performance audit](performance.md) for the workload and limitations.
+
 `lambo_camera_runtime` links the production camera shims against fixed
 non-default settings and synthetic word-swapped guest RAM. It covers sequence
 transitions (including countdown to GO and back), race modes, all authored FOV
