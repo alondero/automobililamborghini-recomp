@@ -145,6 +145,12 @@ Scenario replay defaults to requiring EOF even when `exit_on_end` is false. Set
 `expect.replay_complete` to false explicitly for a deliberately partial run; the
 runner still requires that at least one trace frame reached a game update.
 
+The windowed `scenarios/rt-sun-provenance.json` enables
+`diagnostics.rt_sun_probe: true` and requires `expect.sun_probe: true`. This is
+an explicit managed diagnostic: inherited LAMBO variables are still cleared.
+The runner verifies a provenance log was emitted; it does not infer a physical
+sun or validate hardware shadow pixels. See [sunlight findings](rt-shadows.md).
+
 Playback replaces physical, held, and pulsed port-0 sources after it starts.
 Before it starts, normal inputs still work so menus can be navigated. The UI
 capture/release barrier pauses consumption and feeds neutral input while open.

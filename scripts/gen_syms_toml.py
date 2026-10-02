@@ -1067,6 +1067,24 @@ func = "func_80019D20"
 before_vram = 0x8001A9A0
 text = "{ extern void lambo_analog_brake_apply(uint8_t*); lambo_analog_brake_apply(rdram); }"
 
+# Task-owned sunlight provenance probe. Capture art inputs before flare visibility
+# culling. New task slots clear them even when a track does not call the flare.
+# These hooks do not supply a physical light or change rendering; docs/rt-shadows.md.
+[[patches.hook]]
+func = "BootLoadInitialAssets"
+before_vram = 0x8000102C
+text = "{ extern void lambo_rt_probe_task_begin(uint8_t*); lambo_rt_probe_task_begin(rdram); }"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x80002560
+text = "{ extern void lambo_rt_probe_task_begin(uint8_t*); lambo_rt_probe_task_begin(rdram); }"
+
+[[patches.hook]]
+func = "func_80036854"
+before_vram = 0x80035C54
+text = "{ extern void lambo_rt_probe_sun_art(uint8_t*); lambo_rt_probe_sun_art(rdram); }"
+
 # Issue #40 — widescreen lens flare. The sun flare emitter func_80036854 draws a chain of
 # 10 translucent "ghost" texrects. Under ar_option Expand RT64 squishes each small untagged
 # texrect into the central 4:3 band (invRatioScale = 1/aspectRatioScale) and collapses its

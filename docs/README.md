@@ -79,8 +79,10 @@ status line before relying on a historical measurement.
 ## Reference pages
 
 - [Ray-tracing plan](ray-tracing-plan.md) compares RaceWave46's custom renderer
-  with this port and proposes optional sunlight shadows. Implementation and GPU
-  validation remain separate work.
+  with this port and proposes optional sunlight shadows.
+- [Sunlight groundwork](rt-shadows.md) records native art provenance, the
+  implemented AS/angular-shadow kernel and GPU probes. In-game shadows remain
+  gated on world-light and material/overlay identity.
 
 - [Mod support comparison](mod-support-research.md) records the Banjo and
   Donkey Kong runtime, frontend, and authoring patterns used by this integration.

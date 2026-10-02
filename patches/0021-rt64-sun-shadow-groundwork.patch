@@ -1,0 +1,377 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 2fb01e5..2551db2 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -377,6 +377,7 @@ set (SOURCES
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_render_target.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_render_target_manager.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_render_worker.cpp"
++    "${PROJECT_SOURCE_DIR}/src/render/rt64_sun_shadow_scene.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_rsp_processor.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_shader_common.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_shader_compiler.cpp"
+@@ -553,4 +554,3 @@ build_pixel_shader(  rt64 "src/shaders/Im3DPS.hlsl")
+ build_pixel_shader(  rt64 "src/shaders/PostProcessPS.hlsl")
+ 
+ target_include_directories(rt64 PRIVATE ${CMAKE_BINARY_DIR}/src)
+-
+diff --git a/src/render/rt64_sun_shadow_scene.cpp b/src/render/rt64_sun_shadow_scene.cpp
+new file mode 100644
+index 0000000..0802616
+--- /dev/null
++++ b/src/render/rt64_sun_shadow_scene.cpp
+@@ -0,0 +1,122 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++// AS barrier/lifetime pattern informed by RaceWave46's MIT Wr64RTScene helper.
++#include "rt64_sun_shadow_scene.h"
++#include <algorithm>
++#include <cstring>
++#include <limits>
++
++namespace RT64 {
++namespace {
++bool upload(RenderBuffer *buffer, const void *data, size_t size) {
++    const RenderRange noRead(0, 0);
++    void *mapped = buffer->map(0, &noRead);
++    if (!mapped) return false;
++    std::memcpy(mapped, data, size);
++    const RenderRange written(0, size);
++    buffer->unmap(0, &written);
++    return true;
++}
++}
++void SunShadowScene::invalidate() {
++    prepared_ = built_ = false;
++    presentation_ = 0;
++    positions_ = indices_ = nullptr;
++    stats_ = {};
++    error_.clear();
++}
++bool SunShadowScene::prepare(RenderDevice *device, SunShadowBuffer positions,
++    SunShadowBuffer indices, uint32_t vertexCount, const std::vector<uint32_t> &cpuIndices,
++    const std::vector<SunShadowRange> &ranges, uint64_t presentation)
++{
++    invalidate();
++    auto fail = [&](const char *why) { error_ = why; return false; };
++    if (!device || !device->getCapabilities().raytracing) return fail("Hardware AS unavailable");
++    if (device_ && device_ != device) return fail("Scene belongs to a different device");
++    if (!positions.buffer || !indices.buffer || !vertexCount || !presentation || ranges.empty() ||
++        cpuIndices.empty() || cpuIndices.size() > UINT32_MAX || ranges.size() > 4096)
++        return fail("Missing input or geometry budget exceeded");
++    if (uint64_t(vertexCount) * 16 > positions.bytes || uint64_t(cpuIndices.size()) * 4 > indices.bytes)
++        return fail("GPU input buffer capacity exceeded");
++    std::vector<RenderBottomLevelASMesh> meshes;
++    std::vector<std::array<uint32_t, 4>> metadata;
++    for (const auto &range : ranges) {
++        bool valid = range.opaqueSolid && range.indexCount && range.indexCount % 3 == 0 &&
++            range.faceStart <= cpuIndices.size() && range.indexCount <= cpuIndices.size() - range.faceStart;
++        if (valid) {
++            for (uint64_t i = range.faceStart; i < uint64_t(range.faceStart) + range.indexCount; ++i) {
++                if (cpuIndices[i] >= vertexCount) { valid = false; break; }
++            }
++        }
++        if (!valid) { ++stats_.rejected; continue; }
++        if (stats_.triangles + range.indexCount / 3 > 262144)
++            return fail("Shadow triangle budget exceeded");
++        // Non-opaque is an AS traversal contract, not material translucency.
++        // Every triangle reaches the shared shader for exact originating-face exclusion.
++        meshes.emplace_back(indices.buffer->at(uint64_t(range.faceStart) * 4), positions.buffer->at(0),
++            RenderFormat::R32_UINT, RenderFormat::R32G32B32_FLOAT,
++            range.indexCount, vertexCount, 16, false);
++        metadata.push_back({range.faceStart, range.draw, range.indexCount, 0});
++        stats_.triangles += range.indexCount / 3;
++    }
++    if (meshes.empty()) return fail("No proven opaque solid casters");
++    device->setBottomLevelASBuildInfo(bottom_, meshes.data(), uint32_t(meshes.size()), true, false);
++    if (!bottom_.accelerationStructureSize || !bottom_.scratchSize ||
++        bottom_.accelerationStructureSize > 128u * 1024u * 1024u)
++        return fail("Invalid BLAS size or memory budget exceeded");
++    // This bounded first version recreates allocations only after the owner's
++    // fence. Reuse/static partitioning needs measurements from actual game scenes.
++    blas_.reset();
++    tlas_.reset();
++    blasBuffer_ = device->createBuffer(RenderBufferDesc::AccelerationStructureBuffer(bottom_.accelerationStructureSize));
++    if (!blasBuffer_) return fail("BLAS allocation failed");
++    blas_ = device->createAccelerationStructure(RenderAccelerationStructureDesc(
++        RenderAccelerationStructureType::BOTTOM_LEVEL, blasBuffer_->at(0), bottom_.accelerationStructureSize));
++    if (!blas_) return fail("BLAS view failed");
++    const RenderTopLevelASInstance instance(blasBuffer_->at(0), 0, 0xFF, 0, true, RenderAffineTransform());
++    device->setTopLevelASBuildInfo(top_, &instance, 1, true, false);
++    stats_.asBytes = bottom_.accelerationStructureSize + top_.accelerationStructureSize;
++    stats_.scratchBytes = std::max(bottom_.scratchSize, top_.scratchSize);
++    if (!top_.accelerationStructureSize || !top_.scratchSize || top_.instancesBufferData.empty() ||
++        stats_.asBytes > 128u * 1024u * 1024u || stats_.scratchBytes > 128u * 1024u * 1024u)
++        return fail("Invalid TLAS size or memory budget exceeded");
++    tlasBuffer_ = device->createBuffer(RenderBufferDesc::AccelerationStructureBuffer(top_.accelerationStructureSize));
++    if (!tlasBuffer_) return fail("TLAS allocation failed");
++    tlas_ = device->createAccelerationStructure(RenderAccelerationStructureDesc(
++        RenderAccelerationStructureType::TOP_LEVEL, tlasBuffer_->at(0), top_.accelerationStructureSize));
++    scratch_ = device->createBuffer(RenderBufferDesc::DefaultBuffer(stats_.scratchBytes,
++        RenderBufferFlag::ACCELERATION_STRUCTURE_SCRATCH | RenderBufferFlag::UNORDERED_ACCESS));
++    instances_ = device->createBuffer(RenderBufferDesc::UploadBuffer(top_.instancesBufferData.size(),
++        RenderBufferFlag::ACCELERATION_STRUCTURE_INPUT));
++    metadata_ = device->createBuffer(RenderBufferDesc::UploadBuffer(metadata.size() * 16, RenderBufferFlag::STORAGE));
++    if (!tlas_ || !scratch_ || !instances_ || !metadata_) return fail("Shadow resources allocation failed");
++    if (!upload(instances_.get(), top_.instancesBufferData.data(), top_.instancesBufferData.size()) ||
++        !upload(metadata_.get(), metadata.data(), metadata.size() * 16)) return fail("Shadow upload failed");
++    device_ = device;
++    positions_ = positions.buffer;
++    indices_ = indices.buffer;
++    stats_.admitted = uint32_t(metadata.size());
++    presentation_ = presentation;
++    prepared_ = true;
++    return true;
++}
++bool SunShadowScene::recordBuild(RenderCommandList *commands) {
++    if (!prepared_ || !commands || built_) return false;
++    const RenderBufferBarrier before[] = {
++        {positions_, RenderBufferAccess::READ}, {indices_, RenderBufferAccess::READ},
++        {scratch_.get(), RenderBufferAccess::WRITE}, {blasBuffer_.get(), RenderBufferAccess::WRITE},
++        {tlasBuffer_.get(), RenderBufferAccess::WRITE}
++    };
++    commands->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, before, 5);
++    commands->buildBottomLevelAS(blas_.get(), scratch_->at(0), bottom_);
++    const RenderBufferBarrier between[] = {
++        {blasBuffer_.get(), RenderBufferAccess::READ}, {scratch_.get(), RenderBufferAccess::WRITE}
++    };
++    commands->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, between, 2);
++    commands->buildTopLevelAS(tlas_.get(), scratch_->at(0), instances_->at(0), top_);
++    commands->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE,
++        RenderBufferBarrier(tlasBuffer_.get(), RenderBufferAccess::READ));
++    built_ = true;
++    return true;
++}
++}
+diff --git a/src/render/rt64_sun_shadow_scene.h b/src/render/rt64_sun_shadow_scene.h
+new file mode 100644
+index 0000000..d6c24f5
+--- /dev/null
++++ b/src/render/rt64_sun_shadow_scene.h
+@@ -0,0 +1,74 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#pragma once
++#include <array>
++#include <memory>
++#include <string>
++#include <vector>
++#include "common/rt64_plume.h"
++
++namespace RT64 {
++struct SunShadowBuffer {
++    RenderBuffer *buffer = nullptr;
++    uint64_t bytes = 0; // Actual allocation capacity, supplied by its owner.
++};
++struct SunShadowRange {
++    uint32_t faceStart = 0;
++    uint32_t indexCount = 0;
++    uint32_t draw = 0;
++    bool opaqueSolid = false; // Caller-owned material classification.
++};
++struct SunShadowSceneStats {
++    uint32_t admitted = 0;
++    uint32_t rejected = 0;
++    uint64_t triangles = 0;
++    uint64_t asBytes = 0;
++    uint64_t scratchBytes = 0;
++};
++
++// Shadow-only resources; constructed disabled instances allocate nothing.
++// World input is presented float4 positions, with the original uint32 indices.
++// cpuIndices must describe the very same GPU index upload, not rewritten draws.
++// Buffers start at offset zero. Their actual capacities must cover vertexCount
++// float4 positions and every cpuIndices element; insufficient storage fails
++// preparation before an AS allocation or build and clears presentation readiness.
++//
++// Owner MUST fence all prior builds/queries before prepare/invalidate/destruction.
++// Input buffers stay alive and unchanged through build AND all receiver draws.
++// One instance per in-flight presentation/view with a unique nonzero identity.
++// No submission, wait, RAM read, game classifier or water dependency is hidden.
++class SunShadowScene {
++public:
++    bool prepare(RenderDevice *device, SunShadowBuffer positions, SunShadowBuffer indices,
++        uint32_t vertexCount, const std::vector<uint32_t> &cpuIndices,
++        const std::vector<SunShadowRange> &ranges, uint64_t presentation);
++    bool recordBuild(RenderCommandList *commands);
++    void invalidate();
++    bool ready(uint64_t presentation) const { return built_ && presentation == presentation_; }
++    const RenderAccelerationStructure *accelerationStructure(uint64_t presentation) const {
++        return ready(presentation) ? tlas_.get() : nullptr;
++    }
++    const RenderBuffer *metadata(uint64_t presentation) const {
++        return ready(presentation) ? metadata_.get() : nullptr;
++    }
++    uint64_t metadataBytes() const { return uint64_t(stats_.admitted) * 16; }
++    const SunShadowSceneStats &stats() const { return stats_; }
++    const std::string &error() const { return error_; }
++
++private:
++    RenderDevice *device_ = nullptr;
++    RenderBuffer *positions_ = nullptr;
++    RenderBuffer *indices_ = nullptr;
++    // Views die before their backing allocations, also when prepare replaces them.
++    std::unique_ptr<RenderBuffer> blasBuffer_, tlasBuffer_;
++    std::unique_ptr<RenderAccelerationStructure> blas_, tlas_;
++    std::unique_ptr<RenderBuffer> scratch_, instances_, metadata_;
++    RenderBottomLevelASBuildInfo bottom_;
++    RenderTopLevelASBuildInfo top_;
++    SunShadowSceneStats stats_;
++    std::string error_;
++    uint64_t presentation_ = 0;
++    bool prepared_ = false;
++    bool built_ = false;
++};
++}
+diff --git a/src/shaders/SunShadow.hlsli b/src/shaders/SunShadow.hlsli
+new file mode 100644
+index 0000000..9ebc63f
+--- /dev/null
++++ b/src/shaders/SunShadow.hlsli
+@@ -0,0 +1,83 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#ifndef RT64_SUN_SHADOW_HLSLI
++#define RT64_SUN_SHADOW_HLSLI
++#include "shared/rt64_sun_shadow.h"
++
++bool SunShadowValid(SunShadowParams p) {
++    return p.valid == 1 && all(isfinite(p.direction)) &&
++        abs(dot(p.direction, p.direction) - 1) < 1e-4 &&
++        isfinite(p.strength) && p.strength >= 0 && p.strength <= 1 &&
++        isfinite(p.angularRadius) && p.angularRadius >= 0 && p.angularRadius <= 0.087266463 &&
++        isfinite(p.rayMin) && isfinite(p.rayMax) && p.rayMin >= 0 && p.rayMax > p.rayMin &&
++        isfinite(p.originBias) && p.originBias >= 0 && p.originBias < p.rayMax &&
++        (p.sampleCount == 4 || p.sampleCount == 8 || p.sampleCount == 16) &&
++        p.debugMode <= 1 && p.reserved == 0;
++}
++
++// Equal-area strata in solid angle. Every quality covers the whole emitter.
++// The basis uses only the world light, never a camera or receiver normal.
++float3 SunShadowDirection(SunShadowParams p, uint sampleIndex) {
++    if (p.angularRadius == 0) return p.direction;
++    float3 axis = abs(p.direction.z) < 0.9 ? float3(0, 0, 1) : float3(1, 0, 0);
++    float3 tangent = normalize(cross(axis, p.direction));
++    float3 bitangent = cross(p.direction, tangent);
++    float u = (float(sampleIndex) + 0.5) / float(p.sampleCount);
++    float cosTheta = 1 - u * (1 - cos(p.angularRadius));
++    float sinTheta = sqrt(max(0.0, 1 - cosTheta*cosTheta));
++    float phi = float(sampleIndex) * 2.399963229728653;
++    return p.direction*cosTheta + (tangent*cos(phi) + bitangent*sin(phi))*sinTheta;
++}
++
++// All admitted solids are marked non-opaque in the AS, allowing exact receiver
++// triangle exclusion. Geometry metadata is {faceStart, draw, indexCount, 0}.
++// Cutouts are not admitted: texture coverage needs a separate material contract.
++float SunShadowVisibility(RaytracingAccelerationStructure scene,
++    StructuredBuffer<uint4> geometry, float3 position, float3 geometricNormal,
++    uint receiverDraw, uint receiverFaceStart, SunShadowParams p)
++{
++    if (!SunShadowValid(p) || !all(isfinite(position)) || !all(isfinite(geometricNormal)) ||
++        dot(geometricNormal, geometricNormal) < 1e-12) return 1;
++    uint count = p.angularRadius == 0 ? 1 : p.sampleCount;
++    float3 normal = normalize(geometricNormal);
++    float alignment = dot(normal, p.direction);
++    // At tangency choose a canonical world-space normal, so reversing winding
++    // cannot move the biased origin across a caster edge.
++    float anchor = abs(normal.x) > 1e-6 ? normal.x :
++        (abs(normal.y) > 1e-6 ? normal.y : normal.z);
++    float side = abs(alignment) <= 1e-6 ? (anchor < 0 ? -1 : 1) :
++        (alignment < 0 ? -1 : 1);
++    float3 origin = position + normal * (side * p.originBias);
++    float visibility = 0;
++    for (uint i = 0; i < count; ++i) {
++        RayDesc ray;
++        ray.Origin = origin;
++        ray.Direction = SunShadowDirection(p, i);
++        ray.TMin = p.rayMin;
++        ray.TMax = p.rayMax;
++        RayQuery<RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> query;
++        query.TraceRayInline(scene, RAY_FLAG_NONE, 0xFF, ray);
++        while (query.Proceed()) {
++            if (query.CandidateType() != CANDIDATE_NON_OPAQUE_TRIANGLE) continue;
++            uint4 range = geometry[query.CandidateGeometryIndex()];
++            uint face = range.x + 3 * query.CandidatePrimitiveIndex();
++            if (range.y == receiverDraw && face == receiverFaceStart) continue;
++            query.CommitNonOpaqueTriangleHit();
++        }
++        visibility += query.CommittedStatus() == COMMITTED_NOTHING ? 1 : 0;
++    }
++    return visibility / float(count);
++}
++
++// Caller must run native alpha/depth/combiner logic first and admit only a
++// supported standard-fog receiver. fogContribution already includes its factor.
++// No Lambert term or albedo reconstruction is introduced here.
++float4 SunShadowCompose(float4 nativeColor, float3 fogContribution,
++    float visibility, SunShadowParams p)
++{
++    if (!SunShadowValid(p)) return nativeColor;
++    float transmission = 1 - saturate(p.strength) * (1 - saturate(visibility));
++    return float4(transmission*nativeColor.rgb + (1 - transmission)*fogContribution,
++        nativeColor.a);
++}
++#endif
+diff --git a/src/shared/rt64_sun_shadow.h b/src/shared/rt64_sun_shadow.h
+new file mode 100644
+index 0000000..4c1a514
+--- /dev/null
++++ b/src/shared/rt64_sun_shadow.h
+@@ -0,0 +1,57 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#ifndef RT64_SUN_SHADOW_H
++#define RT64_SUN_SHADOW_H
++
++#ifdef __cplusplus
++#include <cmath>
++#include <cstddef>
++#include <cstdint>
++namespace RT64 {
++struct alignas(16) SunShadowParams {
++    float direction[3] = {0, 0, 1}; // Unit receiver-to-light, world space.
++    float strength = 0;
++    float angularRadius = 0; // Radians; explicitly authored, not sprite size.
++    float rayMin = 0;
++    float rayMax = 0;
++    float originBias = 0;
++    uint32_t sampleCount = 4;
++    uint32_t valid = 0;
++    uint32_t debugMode = 0;
++    uint32_t reserved = 0;
++};
++static_assert(sizeof(SunShadowParams) == 48 && alignof(SunShadowParams) == 16);
++static_assert(offsetof(SunShadowParams, strength) == 12);
++static_assert(offsetof(SunShadowParams, angularRadius) == 16);
++static_assert(offsetof(SunShadowParams, sampleCount) == 32);
++static_assert(offsetof(SunShadowParams, reserved) == 44);
++
++inline bool validSunShadowParams(const SunShadowParams &p) {
++    const float length2 = p.direction[0]*p.direction[0] +
++        p.direction[1]*p.direction[1] + p.direction[2]*p.direction[2];
++    return p.valid == 1 && std::isfinite(length2) && std::abs(length2 - 1.0f) < 1e-4f &&
++        std::isfinite(p.strength) && p.strength >= 0 && p.strength <= 1 &&
++        std::isfinite(p.angularRadius) && p.angularRadius >= 0 &&
++        p.angularRadius <= 0.087266463f && // 5 degrees.
++        std::isfinite(p.rayMin) && std::isfinite(p.rayMax) &&
++        p.rayMin >= 0 && p.rayMax > p.rayMin &&
++        std::isfinite(p.originBias) && p.originBias >= 0 && p.originBias < p.rayMax &&
++        (p.sampleCount == 4 || p.sampleCount == 8 || p.sampleCount == 16) &&
++        p.debugMode <= 1 && p.reserved == 0;
++}
++}
++#else
++struct SunShadowParams {
++    float3 direction;
++    float strength;
++    float angularRadius;
++    float rayMin;
++    float rayMax;
++    float originBias;
++    uint sampleCount;
++    uint valid;
++    uint debugMode;
++    uint reserved;
++};
++#endif
++#endif

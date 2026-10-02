@@ -33,6 +33,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(N64MR ${CMAKE_CURRENT_SOURCE_DIR}/lib/N64ModernRuntime)
 include(cmake/Frontend.cmake)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0021-rt64-sun-shadow-groundwork.patch)
 
 # --- RT64 renderer boundary; see patches/README.md ---
 # recomp/lib/rt64 is a pinned git submodule; RT64 is always compiled in and is the
@@ -53,6 +54,12 @@ if(BUILD_TESTING)
     add_executable(lambo_vi_context_tests tests/test_vi_context.cpp src/lambo_vi.cpp)
     target_include_directories(lambo_vi_context_tests PRIVATE src)
     add_test(NAME lambo_vi_context COMMAND lambo_vi_context_tests)
+
+    add_executable(lambo_rt_sun_tests tests/test_rt_sun.cpp
+        src/lambo_rt_shadows.cpp src/lambo_log.cpp)
+    target_include_directories(lambo_rt_sun_tests PRIVATE src lib/rt64/src)
+    target_link_libraries(lambo_rt_sun_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_rt_sun_tasks COMMAND lambo_rt_sun_tests)
 
     # Links the production lambo_mods.cpp against test fakes for the runtime
     # mod API (tests/fakes); production builds use the submodule headers.
@@ -496,6 +503,7 @@ else()
     set(NFD_PORTAL ON CACHE BOOL "" FORCE)
 endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64 ${CMAKE_BINARY_DIR}/rt64)
+include(cmake/RayTracing.cmake)
 
 if(BUILD_TESTING)
     add_executable(lambo_rt64_scene_matching_tests
@@ -662,6 +670,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_flare_widescreen.c  # extended-GBI aspect policy for lens flares
         src/lambo_fog_widescreen.cpp  # wider fog policy for three/four-player views
         src/lambo_sky_widescreen.cpp  # sky panorama policy for three/four-player views
+        src/lambo_rt_shadows.cpp  # task-owned sunlight provenance diagnostics
         src/lambo_interpolation.cpp
         src/lambo_no_lod.cpp   # per-segment scenery policy; see docs/no_lod_audit.md
         src/lambo_no_lod_policy.cpp # measured exceptions for synthesized PVS extras

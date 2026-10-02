@@ -33,14 +33,31 @@ significant single-space lines from `git diff --check`;
 | 0018 | N64ModernRuntime | Game presentation behavior used by the launcher and normal game path. Applied by CMake; project integration. |
 | 0019 | RecompFrontend | The shared prompt dismisses on the mapped Back action, so a controller's cancel button backs out of the quit confirmation. Applied by CMake after 0017. Compared with upstream `main`, which builds the prompt with no element that listens for menu actions, so no controller action can dismiss it. Generic frontend behavior, kept local. |
 | 0020 | RecompFrontend | Enum selections wrap within the options column so the window-size presets remain readable. Applied by CMake after 0019. Compared on 2026-10-01 with [upstream enum rendering](https://github.com/N64Recomp/RecompFrontend/blob/main/recompui/src/config/ui_config_option.cpp), which creates the radio group without wrapping. Keeps the existing values, callbacks, and navigation. Checked on native Windows at 1600x900: all twelve choices fit two rows, and selecting 1920x1200 then Apply saves that size. The frontend settings test and idempotent CMake application pass; other platforms remain unverified. |
+| 0021 | RT64 | Shadow-only AS resources, shared parameter ABI and angular-query/fog kernel. Applied by CMake. Developer groundwork only; game receivers remain gated. Upstream comparison and hardware probe evidence are below. |
 
 ## Application matrix
 
+Patch **0021** adds a shadow-only AS helper, shared aligned sunlight parameters
+and an angular-query/fog kernel. CMake applies it after the existing RT64 series
+on every build path, idempotently. The game does not instantiate the helper or
+select shadow receivers yet; Windows SM6.5 compilation/GPU tests are opt-in.
+See [groundwork evidence](../docs/rt-shadows.md) for the hardware checks and open
+integration gates. The AS barrier pattern was informed by RaceWave46's MIT
+Wr64RTScene; game addresses, presets, materials and water coupling were not copied.
+
+Compared on 2026-10-02 with RT64 upstream
+`43373749dac9bbc1b653e6a02aed40a9e1783bed`: its
+[framebuffer renderer](https://github.com/rt64/rt64/blob/43373749dac9bbc1b653e6a02aed40a9e1783bed/src/render/rt64_framebuffer_renderer.cpp)
+still references the conditional full RT path; its
+[native pixel shader](https://github.com/rt64/rt64/blob/43373749dac9bbc1b653e6a02aed40a9e1783bed/src/shaders/RasterPS.hlsl)
+does not implement this angular-query kernel. This local groundwork is not an
+upstream-supported feature or dependency upgrade. No upstream issue was opened.
+
 | Build path | Applies |
 | --- | --- |
-| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0020 in CMake. |
-| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0020 in CMake. |
-| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0020 in CMake. |
+| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0021 in CMake. |
+| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0021 in CMake. |
+| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0021 in CMake. |
 
 If a patch no longer applies to its pinned submodule, stop and update the
 patch or pin as a deliberate change. Do not reset a developer's unrelated

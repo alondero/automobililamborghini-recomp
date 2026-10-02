@@ -105,6 +105,16 @@ def load_scenario(path: Path) -> dict[str, Any]:
         scenario["capture"] = capture
 
     scenario["expect"] = _dict(scenario.get("expect", {}), "scenario.expect")
+    diagnostics = _dict(scenario.get("diagnostics", {}), "scenario.diagnostics")
+    if set(diagnostics) - {"rt_sun_probe"}:
+        raise ScenarioError("scenario.diagnostics supports only rt_sun_probe")
+    if "rt_sun_probe" in diagnostics and not isinstance(diagnostics["rt_sun_probe"], bool):
+        raise ScenarioError("scenario.diagnostics.rt_sun_probe must be boolean")
+    if diagnostics.get("rt_sun_probe") and scenario.get("headless", True):
+        raise ScenarioError("rt_sun_probe needs a windowed RT64 consumer")
+    if "sun_probe" in scenario["expect"] and not isinstance(scenario["expect"]["sun_probe"], bool):
+        raise ScenarioError("scenario.expect.sun_probe must be boolean")
+    scenario["diagnostics"] = diagnostics
     return scenario
 
 
@@ -184,6 +194,8 @@ def build_environment(scenario: dict[str, Any], runtime: dict[str, Any], artifac
         environment["LAMBO_WARP_MODE"] = str(runtime["warp_mode"])
     if "state_load" in runtime:
         environment["LAMBO_STATE_LOAD"] = runtime["state_load"]
+    if runtime.get("diagnostics", {}).get("rt_sun_probe"):
+        environment["LAMBO_RT_SUN_PROBE"] = "1"
 
     inputs = runtime["input"]
     if "replay" in inputs:
@@ -297,6 +309,11 @@ def evaluate(scenario: dict[str, Any], result: dict[str, Any], returncode: int |
             failures.append("native state load was not applied cleanly")
 
     expected = scenario["expect"]
+    if "sun_probe" in expected:
+        observed = any("[rt-sun]" in line and "physical_sun=unproved" in line
+                       for line in stderr.splitlines())
+        if observed != expected["sun_probe"]:
+            failures.append(f"sunlight provenance probe was {observed}, expected {expected['sun_probe']}")
     if "presentation_mode" in expected:
         marker = "presentation=" + expected["presentation_mode"]
         if not any("first send_dl:" in line and marker in line for line in stderr.splitlines()):
