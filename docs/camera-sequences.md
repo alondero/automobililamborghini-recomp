@@ -9,14 +9,15 @@ N64 comparison were not run.
 The camera hooks and companion consumers read unitless signed 16-bit codes at
 `0x800CE6AC` (dispatcher state), `0x800CE6B0` (race phase), and `0x800CE6B4`
 (game mode). `MEM_H` accesses the runtime's word-swapped RDRAM on the guest
-thread. Settings apply only for state 8, phase 3, and mode other than 4.
+thread. Settings apply only for state 8, phase 2 or 3, and mode other than 4.
 Missing RDRAM preserves authored values. Each call reads current state, avoiding
 cached flags across transitions or save-state loads.
 
 The [existing dispatcher evidence](gyro-steering-research.md#local-guest-gate-evidence)
 establishes the addresses. The measurements below establish the previously
-unverified intro/title cases. Countdown/results use authored values by explicit
-maintainer decision during review of PR #258. Pause retains configured framing:
+unverified intro/title cases. Player countdowns use configured values so the
+camera framing does not jump when driving begins at GO. Results retain authored
+values. Pause retains configured framing:
 this is a visual policy, unlike the input-assist gate that must stop writing input.
 
 ## Measured sequence values
@@ -33,11 +34,11 @@ logs the same boundary without the temporary screenshot synchronization.
 | Attract setup/countdown | 8 | 2 | 4 | Off |
 | Attract driving | 8 | 3 | 4 | Off |
 | Title after attract | 6 | -1 | 4 | Off |
-| Time-trial pre-start camera/countdown | 8 | 2 | 0 | Off |
+| Time-trial pre-start camera/countdown | 8 | 2 | 0 | On |
 | Time-trial driving | 8 | 3 | 0 | On |
 | Quitting a time trial | 8 | 1 | 0 | Off |
 | Title after quitting a time trial | 6 | -1 | 0 | Off |
-| Arcade pre-start camera after menu re-entry | 8 | 2 | 1 | Off |
+| Arcade pre-start camera after menu re-entry | 8 | 2 | 1 | On |
 | Arcade driving after menu re-entry | 8 | 3 | 1 | On |
 
 Boot observation included the licence card, animated title and two attract
@@ -59,9 +60,9 @@ consumer gate, it failed with:
 FAIL: state exit must neutralize backdrop without another FOV hook
 ```
 
-All three consumers now pass RDRAM to the shared gate. Outside active racing,
-the backdrop returns float bits `0x3F800000`, the view cone returns the exact
-authored double bits `0x3FEC5A1CAC083127`, and the sky returns the most recently
+All three consumers now pass RDRAM to the shared gate. Outside player countdowns
+and driving, the backdrop returns float bits `0x3F800000`, the view cone returns
+the exact authored double bits `0x3FEC5A1CAC083127`, and the sky returns the most recently
 supplied **authored** FOV. Keeping that authored value removes only the configured
 contribution; it does not guess a new projection for scenes without FOV hooks.
 The renderer receives the correction in its display-list tag, so its worker
@@ -71,7 +72,31 @@ In the RT64 run, active modified racing reported sky FOV 60, backdrop bits
 `0x3FCB0A77`, and cone bits `0x3FE89F1653F35E3D`. A later title sample in the same
 process, after quitting, reported 40, `0x3F800000`, and `0x3FEC5A1CAC083127`.
 
-## Verification record
+## Countdown regression check (2026-10-01)
+
+The prior phase-3-only gate excluded the measured player countdown tuples.
+The production-shim test with distance/height/FOV settings `(2, 0.5, 20)` failed
+on countdown distance before the fix. It now covers configured distance, height
+and all four authored FOV layouts in phase 2 for player modes 0 through 3, then
+transitions to phase 3 and back without changing settings. Projection companions
+must survive those transitions even before another FOV hook. Attract countdowns
+and driving (mode 4) still preserve authored values, as do intro, title, race-exit
+and results scenes.
+
+The host tests were compiled with MinGW G++ 15.2.0 against synthetic word-swapped
+guest RAM. An isolated Windows executable linked the newly compiled camera
+source with existing local build objects and generated output. Dependencies
+were not rebuilt; this was not a full supported-script build. The USA ROM hash
+was the same as in the prior verification record below.
+
+The headless `harness-smoke` scenario passed with settings `(2, 0.5, 20)`:
+600/600 replay frames, 601 swaps, and 1247 VIs. The existing camera trace logged
+`state=8 phase=2 mode=0 overrides=1` before GO and
+`state=8 phase=3 mode=0 overrides=1` during driving. This confirms the live gate
+and hook path; RT64 visual framing has not been rechecked. The captures below
+predate the correction; their pre-start comparison records the old policy.
+
+## Prior verification record (2026-09-29)
 
 - ROM: USA, SHA-256
   `cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c`.

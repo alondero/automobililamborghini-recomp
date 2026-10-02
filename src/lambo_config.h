@@ -147,7 +147,7 @@ void set_global_fog_scale(double scale);
 //       the standard chase cam, written by the game's own camera logic) and
 //       multiplies it by a unit view vector every frame (consumers are the mul.s
 //       at 0x80033E5C / 0x80033ED8 in func_80032450, verified live). 0.6 = 40%
-//       closer. Overrides apply only during active player racing; intro and
+//       closer. Overrides apply during player countdowns and driving; intro and
 //       demo/attract sequences retain their authored camera values.
 //   camera_height_scale   -- multiplier on the authored eye-height offset. The ROM
 //       adds a per-camera-mode table value (s16) to the car's Y every frame
