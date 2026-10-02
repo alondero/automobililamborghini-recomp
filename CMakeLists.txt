@@ -288,6 +288,15 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_input_capture_gate COMMAND lambo_input_gate_tests)
 
+    add_executable(lambo_window_resize_tests
+        tests/test_window_resize.cpp
+        src/lambo_window_resize.cpp
+    )
+    target_include_directories(lambo_window_resize_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    add_test(NAME lambo_window_resize COMMAND lambo_window_resize_tests)
+
     add_executable(lambo_driving_assists_tests tests/test_driving_assists.cpp src/lambo_driving_assists.cpp)
     target_include_directories(lambo_driving_assists_tests PRIVATE src)
     add_test(NAME lambo_input_driving_assists COMMAND lambo_driving_assists_tests)
@@ -617,6 +626,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_mods.cpp
         src/lambo_mod_api.cpp
         src/lambo_input_gate.cpp # controller capture/neutral-release barrier
+        src/lambo_window_resize.cpp # live window-size applies from the settings menu
         src/lambo_replay.cpp
         src/lambo_replay_runtime.cpp
         src/lambo_driving_assists_runtime.cpp

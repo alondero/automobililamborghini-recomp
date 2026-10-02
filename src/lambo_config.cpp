@@ -28,7 +28,18 @@ constexpr const char* kGraphicsFile = "graphics.json";
 constexpr int kDefaultWindowWidth = 1600;
 constexpr int kDefaultWindowHeight = 900;
 
+// The windowed size is read cross-thread: the settings Apply publishes it from the
+// render thread (the frontend drains its input queue there) while the window
+// owner in main.cpp reads it on the main-thread pump. One lock around the pair
+// rather than two atomics, which a reader could catch half-updated.
+std::mutex g_window_size_mutex;
 lambo::config::WindowSize g_window_size{kDefaultWindowWidth, kDefaultWindowHeight};
+
+// Below the N64 framebuffer is useless, above 8K is a typo -- either way the
+// window could not be created, so such a size is refused rather than obeyed.
+bool window_size_in_bounds(const lambo::config::WindowSize& size) {
+    return size.width >= 320 && size.width <= 7680 && size.height >= 240 && size.height <= 4320;
+}
 
 // RT64 texture-replacement paths, persisted as extra graphics.json string
 // keys alongside the GraphicsConfig fields (like the window size). Empty = feature off.
@@ -133,10 +144,11 @@ nlohmann::json graphics_config_json(const ultramodern::renderer::GraphicsConfig&
 
 nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
     std::lock_guard<std::mutex> lock(g_texture_mutex);
+    const lambo::config::WindowSize size = lambo::config::window_size();
     nlohmann::json result = graphics_config_json(c);
     result.update({
-        {"window_width", g_window_size.width},
-        {"window_height", g_window_size.height},
+        {"window_width", size.width},
+        {"window_height", size.height},
         {"texture_pack", g_texture_pack},
         {"texture_dump", g_texture_dump},
         {"widescreen_fog_match", g_widescreen_fog_match.load()},
@@ -173,8 +185,12 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "rr_manual_value", c.rr_manual_value);
     from_or_default(j, "ds_option", c.ds_option);
     from_or_default(j, "developer_mode", c.developer_mode);
-    from_or_default(j, "window_width", g_window_size.width);
-    from_or_default(j, "window_height", g_window_size.height);
+    // Fetched through the accessor so the pair is read under its lock, and
+    // published in one go at the end of this function once the bounds check below
+    // has had its say.
+    lambo::config::WindowSize size = lambo::config::window_size();
+    from_or_default(j, "window_width", size.width);
+    from_or_default(j, "window_height", size.height);
     from_or_default(j, "texture_pack", g_texture_pack);
     from_or_default(j, "texture_dump", g_texture_dump);
     bool widescreen_fog_match = g_widescreen_fog_match.load();
@@ -220,15 +236,18 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     g_camera_fov_add.store(camera_fov_add);
     g_menu_stick_sensitivity.store(menu_stick_sensitivity);
     g_show_launcher.store(show_launcher);
-    // Sanity-bound the window size: below the N64 framebuffer is useless, above 8K
-    // is a typo -- either way SDL_CreateWindow would fail and the port would run
-    // permanently headless, so reset to defaults instead.
-    if (g_window_size.width < 320 || g_window_size.width > 7680 ||
-        g_window_size.height < 240 || g_window_size.height > 4320) {
+    // Sanity-bound the size read from the file: below the N64 framebuffer is
+    // useless, above 8K is a typo -- either way the window could not be created
+    // and the port would run permanently headless, so reset to defaults instead.
+    if (!window_size_in_bounds(size)) {
         LAMBO_LOG_WARN("config", "window %dx%d out of range -- using %dx%d\n",
-                     g_window_size.width, g_window_size.height,
+                     size.width, size.height,
                      kDefaultWindowWidth, kDefaultWindowHeight);
-        g_window_size = {kDefaultWindowWidth, kDefaultWindowHeight};
+        size = {kDefaultWindowWidth, kDefaultWindowHeight};
+    }
+    {
+        std::lock_guard<std::mutex> size_lock(g_window_size_mutex);
+        g_window_size = size;
     }
 }
 
@@ -497,6 +516,7 @@ void flush_pending_graphics_updates() {
 }
 
 WindowSize window_size() {
+    std::lock_guard<std::mutex> lock(g_window_size_mutex);
     return g_window_size;
 }
 
@@ -750,8 +770,13 @@ void set_texture_dump_dir(const std::string& path) {
 }
 
 void set_window_size(WindowSize size) {
-    if (size.width < 320 || size.width > 7680 || size.height < 240 || size.height > 4320) return;
-    g_window_size = size;
+    if (!window_size_in_bounds(size)) return;
+    {
+        std::lock_guard<std::mutex> lock(g_window_size_mutex);
+        g_window_size = size;
+    }
+    // Persist outside the lock: the writer thread takes g_texture_mutex (and this
+    // lock again) while serialising, so holding it here would risk a deadlock.
     save_graphics_updates({{"window_width", size.width}, {"window_height", size.height}});
 }
 

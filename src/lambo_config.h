@@ -54,7 +54,10 @@ void flush_pending_graphics_updates();
 void update_saved_window_mode(ultramodern::renderer::WindowMode wm);
 
 // Requested window size for windowed mode (from graphics.json; defaults 1600x900,
-// chosen 16:9 so AspectRatio::Expand actually widens on first launch).
+// chosen 16:9 so AspectRatio::Expand actually widens on first launch). Read once
+// by SDL_CreateWindow at startup and again by the main-thread pump on every
+// frame, so a size picked in the menu resizes the window without a restart (see
+// src/lambo_window_resize.h for the rule and the states that defer a request).
 struct WindowSize { int width; int height; };
 WindowSize window_size();
 
@@ -92,6 +95,9 @@ std::string texture_pack_path();
 std::string texture_dump_dir();
 void set_texture_pack_path(const std::string& path);
 void set_texture_dump_dir(const std::string& path);
+// Persist the requested window size. Applied live: the window owner in main.cpp
+// reads window_size() on its own thread and resizes the window, so this returns
+// before SDL is touched.
 void set_window_size(WindowSize size);
 
 // Widen the dense 3P/4P split-screen fog to the 1P window/colour.
