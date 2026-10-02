@@ -2,15 +2,18 @@
 
 Status: experimental developer groundwork, measured on Windows on 2026-10-02.
 The GPU builder and angular-shadow kernel run on hardware. **In-game ray-traced
-shadows are not enabled.** The world-light, road receiver and native overlay
-replacement gates in the [implementation plan](ray-tracing-plan.md) remain open.
+shadows are not enabled.** The later [Circuit 1 evidence](rt-provenance.md)
+establishes native world-key direction, stationary camera independence and
+car-overlay provenance. Road/caster eligibility and native overlay replacement
+coverage in the [implementation plan](ray-tracing-plan.md) remain open.
 There is no player shadow setting or new backend selection behavior.
 
 ## Delivered boundary
 
 [lambo_rt_shadows.cpp](../src/lambo_rt_shadows.cpp) records native sun-art inputs
 on the game producer, keyed by the exact graphics-task arena. The HLE consumer
-takes a copy before interpreting that task. It logs provenance and never supplies
+takes a copy before interpreting that task. Opt-in bounded task snapshots and
+emitter spans now support offline provenance checks. It logs provenance and never supplies
 a physical light, admits a game material or changes draw selection.
 
 [Patch 0021](../patches/0021-rt64-sun-shadow-groundwork.patch) adds:
@@ -59,8 +62,9 @@ three-component world sun or angular radius.
 `trackData + 0x1E4 + selection * 28`. Heading is the truncated planar angle from
 `func_80037F5C`, whose quadrant constants are 90, 180 and 270 degrees. The vertical
 term at `0x80035BEC` is 256 times a normalized camera-vector component. These
-facts establish native art provenance; physical world axes and elevation remain
-unproved. Do not turn the vertical screen term into a physical sun elevation.
+facts establish native art provenance. The subsequent [native key measurement](rt-provenance.md#world-light-and-camera-independence)
+establishes world axes and a directional key independently of this art term.
+Do not turn the vertical screen term into a physical sun elevation.
 Any future artistic elevation must be labeled as authored.
 
 The initial `rt-sun-provenance` measurement at `517953a` turned through Circuit 1.
@@ -76,14 +80,18 @@ Native camera scratch slot 1 appeared in the one-player run; that index is not
 a zero-based viewport ID.
 
 The caller at `0x800053C4..0x800053F0` invokes the flare only with fewer than two
-players and skips city circuit index 4. This hook cannot prove a shared light for
-two-player views or city scenery. Missing records stay missing on task reuse.
+players and skips city circuit index 4. The flare hook alone cannot prove a
+shared light for two-player views or city scenery. The camera epilogue hook now
+captures camera inputs even when the flare is skipped; only Circuit 1 one/two-player
+light captures have been measured. Missing records stay missing on task reuse.
 
 Material lead `C8104A50` is emitted by `func_800165FC` at `0x80015B38`. That
 function has an iterative draw path and two frame-rendering call sites. Its
 signature and the software renderer's shadow comment do not establish which
-RT64 draws are native car shadows. No draw was suppressed. Receiver/caster/overlay
-classification must be falsified with task/draw captures before using the kernel.
+RT64 draws are native car shadows. [Task captures](rt-provenance.md#exact-overlay-provenance-and-material-counterexample)
+now distinguish that trail emitter from the car-parented overlay and falsify
+render-mode-only identity. No draw was suppressed. Receiver/caster eligibility
+and overlay replacement coverage still need proof before using the kernel.
 
 ## Guest bridge contract
 
@@ -118,6 +126,11 @@ physical, KSEG0 and KSEG1 roots to the same arena; other segments and interior
 list addresses are rejected without consuming a pending record. Log sampling
 happens after consumption and does not change task ownership. The later GPU
 Workload bridge still needs implementation.
+
+The additional camera/emitter hooks and `LAMBO_RT_CAPTURE_DIR` capture path are
+specified in the [extended diagnostic contract](rt-provenance.md#capture-and-offline-bridge-contract).
+HLE may copy the fenced task's low RAM for these four local snapshots; workers
+never read RAM. Offline observations do not publish runtime eligibility.
 
 ## Reproduce validation
 
@@ -178,12 +191,13 @@ remaining third-party compression stress tests are not validation of this featur
 
 ## Remaining gates
 
-1. Trace world light records/axes alongside the authored bearing and select a
-   validated world sun or explicitly artistic Circuit 1 direction. Run fixed-car
-   camera/view tests. No peer course parameters enter this policy.
-2. Prove physical car meshes, road/fog receivers, opaque scenery and the exact
-   native overlay by emitter/transform/material identity. Prove replacement
-   coverage before suppressing any native shadow.
+1. Turn the measured Circuit 1 native key into a reviewed world-light policy;
+   verify remaining FOV/mode/circuit behavior. Fixed-car camera and two-view
+   diagnostics passed. No peer course parameters enter this policy.
+2. Prove road/fog receiver coverage and opaque car/scenery admission in actual
+   RT64 presented draws. Native car/overlay record provenance is established;
+   a swapchain differential and replacement coverage remain open before any
+   shadow suppression.
 3. Copy physical-light/settings and admitted draws into the matching Workload;
    add receiver vertex/pixel pipelines, descriptors, presented-geometry barriers,
    readiness/resource failure handling and budgets.

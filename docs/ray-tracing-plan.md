@@ -3,7 +3,10 @@
 Status: source-backed proposal, reviewed on 2026-10-02. The subsequent
 [groundwork milestone](rt-shadows.md) implements task-owned art diagnostics and
 a hardware-tested AS/angular-shadow kernel. In-game shadows remain gated;
-the planning review itself performed no GPU validation. The target is
+the planning review itself performed no GPU validation. The subsequent
+[Circuit 1 provenance work](rt-provenance.md) measured stationary one/two-view
+native world light and car-overlay records; coverage/admission gates remain open.
+The target is
 Automobili Lamborghini: Recompiled. RaceWave46 is a peer implementation to
 learn from; its courses, RAM addresses and lighting policy are not Lamborghini
 inputs.

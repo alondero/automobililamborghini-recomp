@@ -84,6 +84,66 @@ int main() {
         probes.invalidate();
         require(!probes.take(0x800BF400), "save-state invalidation retained a task");
         require(!begin(0x80100000), "unknown task arena admitted");
+        // Emitter observations belong to the exact task, including empty
+        // spans and incomplete captures. Material words never admit a draw.
+        auto cursor = [&](uint32_t address) { write(ram, 0x800A39CCu, address); };
+        require(begin(0x800BF240), "emitter setup failed");
+        write(ram, 0x800CE6AAu, int16_t(1));
+        cursor(0x800BF500);
+        require(probes.emitter_begin(ram.data(), ram.size(), 0x800159FC), "emitter begin rejected");
+        require(begin(0x800C6C90), "alternate emitter setup failed");
+        cursor(0x800C7000);
+        require(probes.emitter_begin(ram.data(), ram.size(), 0x8000F6D8), "panorama begin rejected");
+        cursor(0x800C7040);
+        require(probes.emitter_end(ram.data(), ram.size(), 0x8000F6D8), "panorama end rejected");
+        write(ram, 0x800A2BFCu, 0x800BF240u);
+        cursor(0x800BF510);
+        require(probes.emitter_end(ram.data(), ram.size(), 0x800159FC), "first emitter end rejected");
+        const auto spans = probes.take(0x800BF400);
+        require(spans && spans->emitters_complete && spans->emitters.size() == 1 &&
+            spans->emitters[0].begin == 0x800BF500 && spans->emitters[0].end == 0x800BF510 &&
+            spans->emitters[0].camera_slot == 1, "emitter spans mixed between tasks");
+        const auto panorama = probes.take(0xA00C6E50);
+        require(panorama && panorama->emitters.size() == 1 && panorama->emitters[0].emitter == 0x8000F6D8,
+            "panorama lost its task identity");
+        require(begin(0x800BF240), "incomplete emitter setup failed");
+        cursor(0x800BF500);
+        require(probes.emitter_begin(ram.data(), ram.size(), 0x800159FC), "pending begin rejected");
+        const auto incomplete = probes.take(0x800BF400);
+        require(incomplete && !incomplete->emitters_complete, "open emitter reported complete");
+        require(begin(0x800BF240), "invalid cursor setup failed");
+        cursor(0x800BF501);
+        require(!probes.emitter_begin(ram.data(), ram.size(), 0x800159FC), "unaligned cursor accepted");
+        const auto invalid = probes.take(0x800BF400);
+        require(invalid && !invalid->emitters_complete, "invalid cursor reported complete");
+        for (uint32_t outside : {0x800BF3F8u, 0x800C6C98u, 0x80100000u}) {
+            require(begin(0x800BF240), "arena bounds setup failed");
+            cursor(outside);
+            require(!probes.emitter_begin(ram.data(), ram.size(), 0x800159FC), "foreign cursor admitted");
+            require(!probes.take(0x800BF400)->emitters_complete, "foreign cursor reported complete");
+        }
+        require(begin(0x800BF240), "reversed span setup failed");
+        cursor(0x800BF510);
+        require(probes.emitter_begin(ram.data(), ram.size(), 0x800159FC), "reversed span begin failed");
+        cursor(0x800BF500);
+        require(!probes.emitter_end(ram.data(), ram.size(), 0x800159FC), "reversed span admitted");
+        require(!probes.take(0x800BF400)->emitters_complete, "reversed span reported complete");
+        require(begin(0x800BF240), "pending invalidation setup failed");
+        require(probes.emitter_begin(ram.data(), ram.size(), 0x800159FC), "invalidation begin failed");
+        probes.invalidate();
+        require(begin(0x800BF240), "post-invalidation begin failed");
+        require(!probes.emitter_end(ram.data(), ram.size(), 0x800159FC), "stale emitter survived invalidation");
+        require(begin(0x800BF240), "bounded emitter setup failed");
+        cursor(0x800BF500);
+        for (unsigned i = 0; i < 64; ++i) {
+            require(probes.emitter_begin(ram.data(), ram.size(), 0x800159FC) &&
+                probes.emitter_end(ram.data(), ram.size(), 0x800159FC), "bounded empty span rejected");
+        }
+        require(probes.emitter_begin(ram.data(), ram.size(), 0x800159FC), "overflow setup failed");
+        require(!probes.emitter_end(ram.data(), ram.size(), 0x800159FC), "span budget exceeded");
+        const auto overflow = probes.take(0x800BF400);
+        require(overflow && !overflow->emitters_complete && overflow->emitters.size() == 64,
+            "span overflow retained an unbounded/complete capture");
         RT64::SunShadowParams params;
         require(!RT64::validSunShadowParams(params), "default parameters enabled shadows");
         params.valid = 1;

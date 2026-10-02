@@ -3,6 +3,10 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+
+#include "contrib/json/json.hpp"
 
 #include "lambo_log.h"
 
@@ -16,6 +20,21 @@ int slot_index(uint32_t task) {
     if (task == first_task) return 0;
     if (task == first_task + task_stride) return 1;
     return -1;
+}
+
+int emitter_index(uint32_t emitter) {
+    switch (emitter) {
+        case 0x80009AC0u: return 0; // Native track builder.
+        case 0x8000F6D8u: return 1; // Native panorama emitter.
+        case 0x800159FCu: return 2; // C8104A50 lead.
+        case 0x8000E468u: return 3; // C8104B50 lead.
+        default: return -1;
+    }
+}
+
+bool valid_cursor(int slot, uint32_t cursor) {
+    const uint32_t task = first_task + uint32_t(slot) * task_stride;
+    return cursor >= task + 0x1C0u && cursor <= task + task_stride && (cursor & 7u) == 0;
 }
 
 // Runtime RAM is word-swapped: native u32/float words, halfwords at offset^2.
@@ -47,12 +66,51 @@ bool TaskSunProbes::begin(const uint8_t* rdram, size_t size) {
     std::lock_guard lock(mutex_);
     if (phase != phase_ || circuit != circuit_) {
         slots_ = {};
+        open_emitters_ = {};
         ++epoch_;
         phase_ = phase;
         circuit_ = circuit;
     }
     if (slot < 0) return false;
+    open_emitters_[slot] = {};
     slots_[slot] = TaskSunProbe{epoch_, ++sequence_, task, phase, circuit, players, {}};
+    return true;
+}
+
+bool TaskSunProbes::emitter_begin(const uint8_t* rdram, size_t size, uint32_t emitter) {
+    if (!rdram || size < guest_ram_size) return false;
+    const int slot = slot_index(read<uint32_t>(rdram, 0x800A2BFCu));
+    const int index = emitter_index(emitter);
+    if (slot < 0 || index < 0) return false;
+    const uint32_t cursor = read<uint32_t>(rdram, 0x800A39CCu);
+    const int16_t camera = read<int16_t>(rdram, 0x800CE6AAu);
+    std::lock_guard lock(mutex_);
+    if (!slots_[slot]) return false;
+    if (!valid_cursor(slot, cursor) || camera < 0 || camera >= 4 || open_emitters_[slot][index]) {
+        slots_[slot]->emitters_complete = false;
+        return false;
+    }
+    open_emitters_[slot][index] = TaskSunProbe::EmitterSpan{emitter, cursor, cursor, camera};
+    return true;
+}
+
+bool TaskSunProbes::emitter_end(const uint8_t* rdram, size_t size, uint32_t emitter) {
+    if (!rdram || size < guest_ram_size) return false;
+    const int slot = slot_index(read<uint32_t>(rdram, 0x800A2BFCu));
+    const int index = emitter_index(emitter);
+    if (slot < 0 || index < 0) return false;
+    const uint32_t cursor = read<uint32_t>(rdram, 0x800A39CCu);
+    std::lock_guard lock(mutex_);
+    if (!slots_[slot]) return false;
+    auto& pending = open_emitters_[slot][index];
+    if (!pending || !valid_cursor(slot, cursor) || cursor < pending->begin || slots_[slot]->emitters.size() >= 64) {
+        pending.reset();
+        slots_[slot]->emitters_complete = false;
+        return false;
+    }
+    pending->end = cursor;
+    slots_[slot]->emitters.push_back(*pending);
+    pending.reset();
     return true;
 }
 
@@ -82,20 +140,71 @@ std::optional<TaskSunProbe> TaskSunProbes::take(uint32_t dl_address) {
     const int slot = slot_index(task);
     if (slot < 0) return {};
     std::lock_guard lock(mutex_);
+    if (slots_[slot]) {
+        for (const auto& pending : open_emitters_[slot]) {
+            if (pending) slots_[slot]->emitters_complete = false;
+        }
+    }
     auto result = slots_[slot];
     slots_[slot].reset();
+    open_emitters_[slot] = {};
     return result;
 }
 
 void TaskSunProbes::invalidate() {
     std::lock_guard lock(mutex_);
     slots_ = {};
+    open_emitters_ = {};
     ++epoch_;
 }
 
-void consume_sun_probe(uint32_t dl_address) {
+// Opt-in, bounded local evidence: four snapshots from the same fenced HLE task
+// used by the interpreter. The producer's emitter spans travel in the copied
+// record; renderer workers never read guest globals. RAM contains copyrighted
+// assets and must remain ignored. This is not a Workload light/eligibility API.
+void capture_task(const TaskSunProbe& task, const uint8_t* rdram) {
+    const char* directory = std::getenv("LAMBO_RT_CAPTURE_DIR");
+    if (!directory || !*directory || !rdram ||
+        (task.sequence != 60 && task.sequence != 300 && task.sequence != 420 && task.sequence != 540)) return;
+    try {
+        const auto base = std::filesystem::path(directory) / ("task-" + std::to_string(task.sequence));
+        std::filesystem::create_directories(base.parent_path());
+        nlohmann::json metadata = {{"schema", 1}, {"epoch", task.epoch}, {"sequence", task.sequence},
+            {"task_address", task.task_address}, {"root", task.task_address + 0x1C0u},
+            {"phase", task.phase}, {"circuit", task.circuit}, {"players", task.players},
+            {"emitters_complete", task.emitters_complete}, {"ram_layout", "word-swapped"},
+            {"cameras", nlohmann::json::array()}, {"emitters", nlohmann::json::array()}};
+        for (const auto& camera : task.cameras) {
+            if (camera) metadata["cameras"].push_back({{"slot", camera->camera_slot}, {"art_bearing", camera->bearing},
+                {"heading", camera->camera_heading}, {"height_term", camera->camera_height_term}});
+        }
+        for (const auto& span : task.emitters) {
+            metadata["emitters"].push_back({{"emitter", span.emitter}, {"begin", span.begin}, {"end", span.end},
+                {"camera_slot", span.camera_slot}});
+        }
+        auto ram_path = base;
+        auto metadata_path = base;
+        ram_path += ".bin";
+        metadata_path += ".json";
+        std::ofstream ram_file(ram_path, std::ios::binary);
+        ram_file.write(reinterpret_cast<const char*>(rdram), guest_ram_size);
+        std::ofstream manifest(metadata_path);
+        manifest << metadata.dump(2) << '\n';
+        ram_file.flush();
+        manifest.flush();
+        if (!ram_file || !manifest) throw std::runtime_error("snapshot write failed");
+        LAMBO_LOG("rt-capture", "task=%llu spans=%zu complete=%d local snapshot written\n",
+            static_cast<unsigned long long>(task.sequence), task.emitters.size(), task.emitters_complete);
+    }
+    catch (const std::exception& error) {
+        LAMBO_LOG_WARN("rt-capture", "snapshot failed: %s\n", error.what());
+    }
+}
+
+void consume_sun_probe(uint32_t dl_address, const uint8_t* rdram) {
     if (!probe_enabled()) return;
     const auto task = probes.take(dl_address);
+    if (task) capture_task(*task, rdram);
     // Evidence is sampled by task sequence, not frame/view. See rt-shadows.md.
     if (!task || (task->sequence > 12 && task->sequence % 60 != 0)) return;
     for (const auto& camera : task->cameras) {
@@ -117,4 +226,10 @@ extern "C" void lambo_rt_probe_sun_art(uint8_t* rdram) {
 }
 extern "C" void lambo_rt_probe_invalidate() {
     if (lambo::rt::probe_enabled()) lambo::rt::probes.invalidate();
+}
+extern "C" void lambo_rt_probe_emitter_begin(uint8_t* rdram, uint32_t emitter) {
+    if (lambo::rt::probe_enabled()) lambo::rt::probes.emitter_begin(rdram, lambo::rt::guest_ram_size, emitter);
+}
+extern "C" void lambo_rt_probe_emitter_end(uint8_t* rdram, uint32_t emitter) {
+    if (lambo::rt::probe_enabled()) lambo::rt::probes.emitter_end(rdram, lambo::rt::guest_ram_size, emitter);
 }

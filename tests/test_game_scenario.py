@@ -160,6 +160,8 @@ class ScenarioRunnerTests(unittest.TestCase):
     def test_sun_probe_schema_rejects_unsupported_diagnostics(self) -> None:
         for diagnostics, headless in (({"rt_sun_probe": "1"}, False),
                                       ({"rt_sun_probe": True}, True),
+                                      ({"rt_sun_probe": True, "rt_task_capture": "1"}, False),
+                                      ({"rt_task_capture": True}, False),
                                       ({"arbitrary_environment": True}, False)):
             with self.subTest(diagnostics=diagnostics, headless=headless):
                 path = self.scenario_dir / "bad.json"
@@ -169,6 +171,16 @@ class ScenarioRunnerTests(unittest.TestCase):
                                             "--exe", str(self.fake)], cwd=self.root,
                                            capture_output=True, text=True, timeout=10)
                 self.assertEqual(completed.returncode, 2)
+
+    def test_missing_task_capture_fails_even_with_probe_and_complete_replay(self) -> None:
+        scenario = {"schema": 1, "name": "task-capture", "headless": False,
+                    "diagnostics": {"rt_sun_probe": True, "rt_task_capture": True},
+                    "expect": {"sun_probe": True, "rt_task_captures": [60]}}
+        completed, artifact = self.run_scenario(scenario)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("RT task 60 capture rejected", completed.stdout)
+        environment = json.loads((artifact / "harness-environment.json").read_text())
+        self.assertEqual(environment["LAMBO_RT_CAPTURE_DIR"], str(artifact / "rt-tasks"))
 
 
 if __name__ == "__main__":

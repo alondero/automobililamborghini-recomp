@@ -424,6 +424,10 @@ if(BUILD_TESTING)
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_game_scenario.py
         )
+        add_test(NAME lambo_rt_task_capture
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rt_task_capture.py
+        )
         add_test(NAME lambo_prompt_back_action
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 -m tests.test_prompt_back_action

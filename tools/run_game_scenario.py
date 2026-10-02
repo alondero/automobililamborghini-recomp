@@ -15,6 +15,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from inspect_rt_task import CaptureError, TaskInspector
+
 
 SCHEMA_VERSION = 1
 DEFAULT_TIMEOUT_SECONDS = 90.0
@@ -106,14 +108,24 @@ def load_scenario(path: Path) -> dict[str, Any]:
 
     scenario["expect"] = _dict(scenario.get("expect", {}), "scenario.expect")
     diagnostics = _dict(scenario.get("diagnostics", {}), "scenario.diagnostics")
-    if set(diagnostics) - {"rt_sun_probe"}:
-        raise ScenarioError("scenario.diagnostics supports only rt_sun_probe")
+    if set(diagnostics) - {"rt_sun_probe", "rt_task_capture"}:
+        raise ScenarioError("scenario.diagnostics supports only rt_sun_probe and rt_task_capture")
     if "rt_sun_probe" in diagnostics and not isinstance(diagnostics["rt_sun_probe"], bool):
         raise ScenarioError("scenario.diagnostics.rt_sun_probe must be boolean")
     if diagnostics.get("rt_sun_probe") and scenario.get("headless", True):
         raise ScenarioError("rt_sun_probe needs a windowed RT64 consumer")
+    if "rt_task_capture" in diagnostics and not isinstance(diagnostics["rt_task_capture"], bool):
+        raise ScenarioError("scenario.diagnostics.rt_task_capture must be boolean")
+    if diagnostics.get("rt_task_capture") and not diagnostics.get("rt_sun_probe"):
+        raise ScenarioError("rt_task_capture requires rt_sun_probe")
     if "sun_probe" in scenario["expect"] and not isinstance(scenario["expect"]["sun_probe"], bool):
         raise ScenarioError("scenario.expect.sun_probe must be boolean")
+    if "rt_task_captures" in scenario["expect"]:
+        captures = scenario["expect"]["rt_task_captures"]
+        if not isinstance(captures, list) or not captures or any(type(n) is not int or n <= 0 for n in captures):
+            raise ScenarioError("scenario.expect.rt_task_captures must be a nonempty list of positive task sequences")
+        if not diagnostics.get("rt_task_capture"):
+            raise ScenarioError("rt_task_captures requires rt_task_capture")
     scenario["diagnostics"] = diagnostics
     return scenario
 
@@ -196,6 +208,9 @@ def build_environment(scenario: dict[str, Any], runtime: dict[str, Any], artifac
         environment["LAMBO_STATE_LOAD"] = runtime["state_load"]
     if runtime.get("diagnostics", {}).get("rt_sun_probe"):
         environment["LAMBO_RT_SUN_PROBE"] = "1"
+    if runtime.get("diagnostics", {}).get("rt_task_capture"):
+        runtime["diagnostics"]["task_capture_path"] = str(artifact / "rt-tasks")
+        environment["LAMBO_RT_CAPTURE_DIR"] = runtime["diagnostics"]["task_capture_path"]
 
     inputs = runtime["input"]
     if "replay" in inputs:
@@ -331,6 +346,15 @@ def evaluate(scenario: dict[str, Any], result: dict[str, Any], returncode: int |
         path = Path(capture.get("run_path", ""))
         if not path.is_file() or path.stat().st_size == 0:
             failures.append(f"capture was not written: {path}")
+    for sequence in expected.get("rt_task_captures", []):
+        capture = Path(scenario["diagnostics"]["task_capture_path"]) / f"task-{sequence}.json"
+        try:
+            metadata = json.loads(capture.read_text(encoding="utf-8"))
+            if metadata["sequence"] != sequence:
+                raise CaptureError("task sequence differs from filename")
+            TaskInspector(capture.with_suffix(".bin").read_bytes(), metadata).inspect()
+        except (CaptureError, OSError, ValueError, KeyError, TypeError) as error:
+            failures.append(f"RT task {sequence} capture rejected: {error}")
     return failures
 
 
