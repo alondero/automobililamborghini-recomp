@@ -117,10 +117,17 @@ at its original rate independently of the presentation setting.
 The Graphics window size is picked from common desktop resolutions (16:9, 16:10 and 4:3
 presets) plus Custom. A pick only stages the choice behind Apply/Discard and resolves into the
 existing `window_width`/`window_height` keys, so the persisted format is unchanged. Applying
-resizes the window without a restart; `src/lambo_window_resize.h` holds the rule the
-main-thread pump uses, which applies a size only when the request changed, so a window you
-dragged by hand keeps the size you dragged. Fullscreen, minimized and maximized windows defer
-the request instead of dropping it. A size set
+resizes the window without a restart; `src/lambo_window_resize.h` owns the rule the main-thread
+pump uses.
+
+The size is compared with the last size applied, never with the live window, so a window you
+dragged by hand keeps the size you dragged and no frame resizes pointlessly. Window mode and
+size are planned together from one read of the window and applied mode-first, because one
+Apply can change both: a size planned against the window as it is now, rather than as it will
+be, would be consumed by a window that had just gone fullscreen, where SDL ignores it, and
+would never be applied at all. A request that meets a fullscreen, minimized or maximized window
+waits instead of being dropped, so a size picked in fullscreen is used when you leave
+fullscreen. A size set
 by hand in `graphics.json` shows as Custom and is preserved unless a preset is picked; Custom
 is disabled while a preset is current, because choosing it would be a no-op.
 Long enum selections wrap within the options column through patch 0020; the

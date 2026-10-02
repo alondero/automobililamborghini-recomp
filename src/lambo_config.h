@@ -58,6 +58,10 @@ void update_saved_window_mode(ultramodern::renderer::WindowMode wm);
 // by SDL_CreateWindow at startup and again by the main-thread pump on every
 // frame, so a size picked in the menu resizes the window without a restart (see
 // src/lambo_window_resize.h for the rule and the states that defer a request).
+// This pair is published under its own lock because the settings Apply writes it
+// on the render thread while the pump reads it on the main thread. That says
+// nothing about the GraphicsConfig snapshot returned by current_graphics(), which
+// is still written unlocked from the render thread.
 struct WindowSize { int width; int height; };
 WindowSize window_size();
 

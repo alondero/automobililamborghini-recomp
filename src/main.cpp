@@ -349,7 +349,7 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
         // The live window now sits at the configured size. Recording that keeps
         // the pump from treating startup as a pending resize, and is what a
         // later pick is compared against.
-        lambo::window_resize::resizer().seed(win_size.width, win_size.height);
+        lambo::window_resize::reconciler().seed(win_size.width, win_size.height);
         set_application_icon(window);
         lambo::ui::set_window(window);
         lambo::ui::initialize_frontend_controllers();
@@ -465,18 +465,24 @@ static void update_gfx_stub(void* /*gfx_data*/) {
         }
         // The shared settings schema owns the requested mode and size, but SDL
         // (not RT64) must apply both on this thread. F11 / Alt+Enter already match.
+        // One Apply can change both, so they are planned together from a single
+        // read of the window and applied mode-first: a size planned against the
+        // window as it is now, rather than as it will be, would be consumed by a
+        // window that had just gone fullscreen and never applied at all.
         if (g_sdl_window != nullptr) {
             const uint32_t window_flags = SDL_GetWindowFlags(g_sdl_window);
-            const bool actual_fullscreen = (window_flags & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
+            const lambo::window_resize::WindowState window_state{
+                /*fullscreen=*/(window_flags & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0,
+                /*minimized=*/(window_flags & SDL_WINDOW_MINIMIZED) != 0,
+                /*maximized=*/(window_flags & SDL_WINDOW_MAXIMIZED) != 0,
+            };
+            const lambo::config::WindowSize wanted = lambo::config::window_size();
+            const bool want_fullscreen = lambo::config::current_graphics().wm_option ==
+                ultramodern::renderer::WindowMode::Fullscreen;
+            const lambo::window_resize::Plan plan = lambo::window_resize::reconciler().plan(
+                want_fullscreen, wanted.width, wanted.height, window_state);
 
-            static std::optional<ultramodern::renderer::WindowMode> last_window_request;
-            const auto desired_mode = lambo::config::current_graphics().wm_option;
-            if (last_window_request != desired_mode) {
-                last_window_request = desired_mode;
-                const bool desired_fullscreen =
-                    desired_mode == ultramodern::renderer::WindowMode::Fullscreen;
-                if (desired_fullscreen != actual_fullscreen) toggle_fullscreen();
-            }
+            if (plan.mode != lambo::window_resize::ModeAction::None) toggle_fullscreen();
 
             // A new size picked in the Graphics tab resizes the window straight
             // away, no restart: the request lives in graphics.json (the port owns
@@ -484,11 +490,7 @@ static void update_gfx_stub(void* /*gfx_data*/) {
             // already follows a resize -- RT64 takes the new swapchain size, and
             // the window-scaled internal resolution, aspect and widescreen HUD
             // geometry read it per frame.
-            const lambo::config::WindowSize wanted = lambo::config::window_size();
-            if (lambo::window_resize::resizer().should_resize(
-                    wanted.width, wanted.height, actual_fullscreen,
-                    (window_flags & SDL_WINDOW_MINIMIZED) != 0,
-                    (window_flags & SDL_WINDOW_MAXIMIZED) != 0)) {
+            if (plan.resize) {
                 // SDL2's SDL_SetWindowSize returns void, so a refusal shows up as
                 // the error string it set rather than a return code.
                 SDL_ClearError();
