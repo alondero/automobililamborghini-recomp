@@ -73,8 +73,12 @@ bool TaskSunProbes::capture(const uint8_t* rdram, size_t size) {
 }
 
 std::optional<TaskSunProbe> TaskSunProbes::take(uint32_t dl_address) {
-    // Only task + 0x1C0 is accepted, including the physical OSTask alias.
-    const uint32_t task = (dl_address | 0x80000000u) - 0x1C0u;
+    // Accept the exact task + 0x1C0 root in physical, KSEG0 or KSEG1 form.
+    // Restrict segments before stripping alias bits so unrelated addresses
+    // cannot consume a pending task that happens to share the same low bits.
+    const uint32_t segment = dl_address & 0xE0000000u;
+    if (segment != 0 && segment != 0x80000000u && segment != 0xA0000000u) return {};
+    const uint32_t task = ((dl_address & 0x1FFFFFFFu) | 0x80000000u) - 0x1C0u;
     const int slot = slot_index(task);
     if (slot < 0) return {};
     std::lock_guard lock(mutex_);
@@ -92,6 +96,7 @@ void TaskSunProbes::invalidate() {
 void consume_sun_probe(uint32_t dl_address) {
     if (!probe_enabled()) return;
     const auto task = probes.take(dl_address);
+    // Evidence is sampled by task sequence, not frame/view. See rt-shadows.md.
     if (!task || (task->sequence > 12 && task->sequence % 60 != 0)) return;
     for (const auto& camera : task->cameras) {
         if (!camera) continue;

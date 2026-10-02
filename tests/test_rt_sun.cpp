@@ -50,7 +50,25 @@ int main() {
             second->cameras[0]->bearing == first->cameras[0]->bearing &&
             second->cameras[0]->camera_height_term == -12, "task values changed");
         require(!probes.take(0x800C6E50), "task consumed twice");
-        require(!probes.take(0xA00BF400), "unknown alias admitted");
+        for (uint32_t arena : {0x800BF240u, 0x800C6C90u}) {
+            const uint32_t physical_root = (arena & 0x1FFFFFFFu) + 0x1C0u;
+            for (uint32_t segment : {0u, 0x80000000u, 0xA0000000u}) {
+                require(begin(arena) && capture(1, 123, 42), "alias task capture rejected");
+                const auto aliased = probes.take(physical_root | segment);
+                require(aliased && aliased->task_address == arena && aliased->cameras[1] &&
+                    aliased->cameras[1]->camera_heading == 123 &&
+                    aliased->cameras[1]->camera_height_term == 42, "root alias lost the matching task");
+                for (uint32_t other : {0u, 0x80000000u, 0xA0000000u})
+                    require(!probes.take(physical_root | other), "task consumed twice through another alias");
+            }
+        }
+        require(begin(0x800BF240) && capture(0, 50, 25), "alias rejection setup failed");
+        for (uint32_t address : {0x200BF400u, 0x400BF400u, 0x600BF400u,
+            0xC00BF400u, 0xE00BF400u, 0xA00BF408u, 0xA0100000u})
+            require(!probes.take(address), "unsupported segment or non-root address admitted");
+        const auto retained = probes.take(0xA00BF400);
+        require(retained && retained->cameras[0] && retained->cameras[0]->camera_heading == 50,
+            "invalid alias consumed the pending task");
         require(begin(0x800BF240), "reuse rejected");
         require(!capture(0, 0, std::numeric_limits<float>::quiet_NaN()), "NaN admitted");
         require(!capture(4, 0, 0), "unknown view admitted");

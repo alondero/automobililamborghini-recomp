@@ -12,8 +12,9 @@ namespace lambo::rt {
 // These are diagnostic inputs, not a validated physical sun direction.
 struct SunArt {
     int16_t camera_slot = -1; // Native scratch index; not a viewport identifier.
-    int16_t bearing = 0;
-    int16_t camera_heading = 0;
+    int16_t bearing = 0; // Authored planar bearing in degrees.
+    int16_t camera_heading = 0; // Native planar camera heading in degrees.
+    // Art scale: 256 * normalized camera-vector component; no world units.
     float camera_height_term = 0;
 };
 
@@ -34,6 +35,7 @@ class TaskSunProbes {
 public:
     bool begin(const uint8_t* rdram, size_t size);
     bool capture(const uint8_t* rdram, size_t size);
+    // Exact physical/KSEG0/KSEG1 roots share a single consumable task record.
     std::optional<TaskSunProbe> take(uint32_t dl_address);
     void invalidate();
 

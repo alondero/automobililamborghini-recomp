@@ -63,10 +63,15 @@ facts establish native art provenance; physical world axes and elevation remain
 unproved. Do not turn the vertical screen term into a physical sun elevation.
 Any future artistic elevation must be labeled as authored.
 
-The `rt-sun-provenance` replay turns through Circuit 1. Sampled bearing stayed
-186 degrees while camera heading ranged from 69 to 316 degrees; the vertical
-term varied from about 28.264 to 28.354. These are moving-car observations, not
-a fixed-position camera experiment. Both task arenas supplied copied records.
+The initial `rt-sun-provenance` measurement at `517953a` turned through Circuit 1.
+In the logged samples,
+bearing was 186 degrees, camera heading ranged from 69 to 316 degrees, and the
+vertical term ranged from about 28.264 to 28.354. Logging includes camera records
+only for task sequences 1 through 12 and then multiples of 60; tasks with no
+captured camera produce no log. This samples task sequences, not every frame or
+every camera. These numbers do not establish extrema or constant bearing for
+unlogged tasks. They are moving-car observations, not a fixed-position camera
+experiment. Both task arenas supplied copied records.
 Native camera scratch slot 1 appeared in the one-player run; that index is not
 a zero-based viewport ID.
 
@@ -92,7 +97,7 @@ nonfinite height are rejected. This narrow diagnostic is not a world-light API.
 | --- | --- | --- |
 | Current task | `0x800A2BFC` | u32 guest pointer |
 | Task arenas | `0x800BF240`, `0x800C6C90` | task pointers, stride `0x7A50` |
-| Root list | task + `0x1C0` | exact guest/physical root address |
+| Root list | task + `0x1C0` | exact physical, KSEG0 or KSEG1 root address |
 | Phase | `0x800CE6AC` | s16 game state |
 | Circuit | `0x800CE794` | s16 circuit index |
 | Players | `0x800CE6A4` | s16 player count |
@@ -108,7 +113,11 @@ producer storage until HLE consumption; see [sky ownership](sky-panorama.md).
 A mutex publishes copies between game and graphics threads. Workers never read
 guest RAM. Phase/circuit transitions advance the epoch and clear pending records;
 save-state restore and renderer shutdown explicitly invalidate them. Records can
-be consumed once. The later GPU Workload bridge still needs implementation.
+be consumed once across all accepted address aliases. The consumer normalizes
+physical, KSEG0 and KSEG1 roots to the same arena; other segments and interior
+list addresses are rejected without consuming a pending record. Log sampling
+happens after consumption and does not change task ownership. The later GPU
+Workload bridge still needs implementation.
 
 ## Reproduce validation
 
