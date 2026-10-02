@@ -18,6 +18,8 @@ FAKE_GAME = textwrap.dedent(
     import json, os, sys, time
     from pathlib import Path
     mode = os.environ.get("FAKE_GAME_MODE", "success")
+    if os.environ.get("LAMBO_RT_SUN_PROBE") == "1" and mode != "missing_probe":
+        print("[rt-sun] physical_sun=unproved", file=sys.stderr)
     if mode == "timeout":
         time.sleep(30)
         raise SystemExit(0)
@@ -142,6 +144,31 @@ class ScenarioRunnerTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 2)
         self.assertIn("alternative bootstraps", completed.stderr)
+
+    def test_sun_probe_is_explicit_and_missing_output_fails(self) -> None:
+        scenario = {"schema": 1, "name": "sun-probe", "headless": False,
+                    "diagnostics": {"rt_sun_probe": True}, "expect": {"sun_probe": True}}
+        completed, artifact = self.run_scenario(scenario)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        environment = json.loads((artifact / "harness-environment.json").read_text())
+        self.assertEqual(environment["LAMBO_RT_SUN_PROBE"], "1")
+        self.artifacts = self.root / "artifacts-missing-probe"
+        completed, _ = self.run_scenario(scenario, mode="missing_probe")
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("sunlight provenance probe was False", completed.stdout)
+
+    def test_sun_probe_schema_rejects_unsupported_diagnostics(self) -> None:
+        for diagnostics, headless in (({"rt_sun_probe": "1"}, False),
+                                      ({"rt_sun_probe": True}, True),
+                                      ({"arbitrary_environment": True}, False)):
+            with self.subTest(diagnostics=diagnostics, headless=headless):
+                path = self.scenario_dir / "bad.json"
+                path.write_text(json.dumps({"schema": 1, "headless": headless,
+                                           "diagnostics": diagnostics}), encoding="utf-8")
+                completed = subprocess.run([sys.executable, str(RUNNER), str(path),
+                                            "--exe", str(self.fake)], cwd=self.root,
+                                           capture_output=True, text=True, timeout=10)
+                self.assertEqual(completed.returncode, 2)
 
 
 if __name__ == "__main__":

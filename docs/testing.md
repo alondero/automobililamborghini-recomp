@@ -70,6 +70,7 @@ ctest --test-dir build -R "lambo_menu_stick_scale"
 ctest --test-dir build -R "lambo_(controller_pak|startup_state_machine)"
 ctest --test-dir build -R "lambo_(no_lod|track_patch|interpolation)"
 ctest --test-dir build -R "lambo_rt64|lambo_audio"
+ctest --test-dir build -R "lambo_rt_sun_tasks"
 ctest --test-dir build -R "lambo_mods_rtz_container"
 ctest --test-dir build -R "lambo_sky_(projection|panorama)|lambo_camera_(projection|runtime)"
 ~~~
@@ -77,6 +78,13 @@ ctest --test-dir build -R "lambo_sky_(projection|panorama)|lambo_camera_(project
 The complete list is the add_test list in CMakeLists.txt; keep this page
 updated when a test is added or renamed. Some tests are only registered when
 Python, generated functions, Windows, or an RT64 build is available.
+
+The optional Windows D3D12 sunlight probe executes the shared kernel over
+synthetic geometry, including real BLAS/TLAS and GPU readback. Configure with
+`-DLAMBO_RT_GPU_TESTS=ON`, build `lambo_rt_shadow_gpu`, then run
+`ctest --test-dir build -R lambo_rt_shadow_gpu --output-on-failure`. Exit 77
+means skipped hardware. See [groundwork evidence](rt-shadows.md) for toolchain
+and limits; this does not test native game receivers or swapchain pixels.
 
 The config test covers captured launch overrides, their precedence and bounds,
 reload, and live settings. The frontend settings test covers the Low hardware
@@ -142,6 +150,7 @@ The interactive smoke scenario uses the RT64 presenter:
 ~~~bash
 python tools/run_game_scenario.py scenarios/frontend-rt64-smoke.json
 python tools/run_game_scenario.py scenarios/sky-turning-smoke.json
+python tools/run_game_scenario.py scenarios/rt-sun-provenance.json
 python tools/run_game_scenario.py scenarios/menu-to-race-smoke.json
 ~~~
 

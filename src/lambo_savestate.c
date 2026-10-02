@@ -74,6 +74,7 @@ extern void lambo_replay_state_loaded(void);
 // active correction after restoring guest RAM, but keep this general-purpose
 // save-state header independent of optional runtime packages.
 extern void lambo_track_patch_on_savestate_loaded(uint8_t* rdram);
+extern void lambo_rt_probe_invalidate(void);
 
 #define STATE_VAR   0x800CE6ACu       // game-state halfword (see lambo_warp.c cluster map)
 #define RDRAM_SNAP_SIZE 0x800000u     // low 8 MiB = guest-addressable N64 RAM (osMemSize)
@@ -201,6 +202,7 @@ static int do_load(uint8_t* rdram, const char* path) {
     // process's addresses; without this the scheduler dereferences garbage on the next tick.
     ultramodern_relink_thread_contexts(rdram);
     lambo_replay_state_loaded();
+    lambo_rt_probe_invalidate();
     // An active package is reapplied idempotently after the wholesale copy;
     // the patch hook decides whether the restored table is a known base or is
     // already corrected, without making the general save-state format package-aware.
