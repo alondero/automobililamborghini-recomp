@@ -607,7 +607,12 @@ int main(int argc, char** argv) {
                 lambo::config::widescreen_fog_match() == before_fog_match &&
                 lambo::config::widescreen_sky_match() == before_sky_match,
                 "Discard leaked preset changes");
-        require(graphics.save_config(), "unrelated Graphics save after Discard failed");
+        const double unrelated_manual_rate =
+            std::get<double>(graphics.get_temp_option_value("rr_manual_value")) + 1.0;
+        graphics.set_option_value("rr_manual_value", unrelated_manual_rate);
+        require(graphics.save_config(), "unrelated Graphics Apply after Discard failed");
+        require(lambo::config::current_graphics().rr_manual_value == int(unrelated_manual_rate),
+                "unrelated Graphics edit was not applied after Discard");
         require(lambo::config::no_lod() == before_lod &&
                 lambo::config::global_draw_distance() == before_distance &&
                 lambo::config::widescreen_fog_match() == before_fog_match &&
