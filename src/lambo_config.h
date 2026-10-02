@@ -36,6 +36,8 @@ ultramodern::renderer::GraphicsConfig default_graphics_config();
 // Load graphics.json (falling back to defaults for missing/invalid keys), apply it
 // via ultramodern::renderer::set_graphics_config, and write the merged file back so
 // users always have a complete, editable file on disk. Returns the applied config.
+// Call before starting game/render threads: this also captures their launch-time
+// environment overrides. Reloading while those threads run is unsupported.
 ultramodern::renderer::GraphicsConfig load_and_apply_graphics();
 
 // Snapshot/apply helpers for the settings overlay. apply_graphics() persists the

@@ -47,6 +47,18 @@ specific files for testing. LAMBO_LOG_DIR changes the log directory.
 
 ## Graphics file
 
+For a weaker PC, open Graphics, select Low hardware under Graphics preset,
+then press Apply. It uses 2x original resolution, no anti-aliasing, the original
+presentation rate, and standard colour precision. It also restores the stock
+track geometry, draw distance, and multiplayer fog and sky policies. The image
+will be less detailed and less smooth. Game speed stays the same.
+
+The preset stages its choices. Discard cancels them all. You can adjust the
+renderer options before Apply. After Apply, the selector returns to Keep
+current choices; the individual settings are saved. Window size, controller
+settings, camera settings and texture packs are kept. Launch-time environment
+overrides still take priority.
+
 The standard renderer fields are written by the shared runtime schema:
 
 | Key | Default or role |
@@ -110,6 +122,12 @@ and shared-runtime fields should be changed through the frontend unless a
 developer is testing a specific JSON value.
 
 ## Environment overrides
+
+Set drawing and camera overrides before starting the game. Fog/sky match,
+no-LOD, fog scale, draw distance, camera distance/height/FOV, and menu stick
+sensitivity overrides are captured at configuration load. They keep priority
+over saved settings until the next launch. The in-game settings still update
+live when their environment override is absent.
 
 These are the stable player-facing variables supported by the current source:
 

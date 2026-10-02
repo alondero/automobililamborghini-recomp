@@ -125,6 +125,14 @@ if(BUILD_TESTING)
     target_link_libraries(lambo_config_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_config_live_updates COMMAND lambo_config_tests)
 
+    # Opt-in measurement; deliberately excluded from CTest and the normal build.
+    add_executable(lambo_config_benchmark EXCLUDE_FROM_ALL
+        tests/benchmark_config.cpp src/lambo_config.cpp
+        src/lambo_player_name.cpp src/lambo_log.cpp)
+    target_include_directories(lambo_config_benchmark PRIVATE src
+        ${N64MR}/ultramodern/include ${N64MR}/N64Recomp/include ${N64MR}/thirdparty)
+    target_link_libraries(lambo_config_benchmark PRIVATE Threads::Threads)
+
     add_executable(lambo_log_tests
         tests/test_lambo_log.cpp
         src/lambo_log.cpp

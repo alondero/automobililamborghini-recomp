@@ -26,6 +26,7 @@ void create_frontend_settings();
 void refresh_frontend_settings();
 namespace {
 std::atomic<bool> ready{false};
+std::atomic<bool> settings_refresh_requested{false};
 std::mutex mod_error_mutex;
 std::string mod_error;
 OverlayCaptureGate overlay;
@@ -72,7 +73,11 @@ void render(plume::RenderCommandList* commands, plume::RenderFramebuffer* frameb
         }
     }
     const OverlayRequest action = overlay.take_request();
-    refresh_frontend_settings();
+    const bool input_refresh = settings_refresh_requested.exchange(false, std::memory_order_acq_rel);
+    // Synchronise before opening, including queued/remapped menu input, and
+    // while a context is visible (including Apply/Discard prompts).
+    if (input_refresh || action.kind == OverlayRequestKind::Page || recompui::is_context_capturing_input())
+        refresh_frontend_settings();
     if (action.kind == OverlayRequestKind::Close) {
         // The render callback does not own a ContextId opened through the
         // thread-local ContextId API, so try_close_current_context() cannot
@@ -181,6 +186,12 @@ void install_render_hooks() {
 bool handle_event(const SDL_Event& event) {
     // SDL owns dropped text; the shared installer owns file-drop payloads.
     if (event.type == SDL_DROPTEXT) { SDL_free(event.drop.file); return true; }
+    // RecompFrontend can open settings from a remapped menu binding inside
+    // draw_hook, after the host request check. Refresh ahead of those queued
+    // presses so the opening frame uses current values. Coalesce presses and
+    // leave held input, motion and idle gameplay on the cheap path.
+    if ((event.type == SDL_KEYDOWN && !event.key.repeat) || event.type == SDL_CONTROLLERBUTTONDOWN)
+        settings_refresh_requested.store(true, std::memory_order_release);
     SDL_Event copy = event;
     recompinput::handle_event(copy);
     return captures_input();

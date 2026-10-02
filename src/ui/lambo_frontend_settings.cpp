@@ -16,6 +16,8 @@ using recomp::config::ConfigValueVariant;
 using recomp::config::OptionChangeContext;
 using namespace ultramodern::renderer;
 GraphicsConfig seeded_graphics;
+constexpr uint32_t kKeepGraphicsChoices = 0;
+constexpr uint32_t kLowHardwarePreset = 1;
 
 // Common desktop resolutions for the windowed-mode size picker (16:9 plus
 // legacy 16:10/4:3 favourites). The resolved size stays in graphics.json
@@ -76,6 +78,8 @@ void seed_graphics() {
     ENUM(ds_option);
 #undef ENUM
     sync_value(page, "rr_manual_value", double(cfg.rr_manual_value));
+    // This is an action on existing fields, not another persisted graphics mode.
+    sync_value(page, "performance_preset", kKeepGraphicsChoices);
     // Picker state for the (possibly hand-edited) live size. The picker applies
     // with this page's Apply button; seeding only updates the displayed value.
     const uint32_t live_preset = window_preset_from_size(port::window_size().width, port::window_size().height);
@@ -225,6 +229,19 @@ void create_frontend_settings() {
         "Windowed size, applied with the Apply button. Pick a common resolution; a size typed directly into graphics.json shows as Custom and is kept unless you pick a preset.",
         window_preset_options,
         window_preset_from_size(port::window_size().width, port::window_size().height));
+    graphics.add_enum_option("performance_preset", "Graphics preset",
+        "Low hardware stages 2x original resolution, no anti-aliasing, original frame rate and standard colour precision. Apply also restores stock track geometry, draw distance and multiplayer fog/sky. Discard cancels the preset. Other options can still be adjusted before Apply.",
+        {{kKeepGraphicsChoices, "Keep", "Keep current choices"},
+         {kLowHardwarePreset, "LowHardware", "Low hardware"}}, kKeepGraphicsChoices);
+    graphics.add_option_change_callback("performance_preset", [](ConfigValueVariant value, ConfigValueVariant, OptionChangeContext context) {
+        if (context != OptionChangeContext::Temporary || std::get<uint32_t>(value) != kLowHardwarePreset) return;
+        auto& page = recompui::config::get_graphics_config();
+        page.update_option_value("res_option", uint32_t(Resolution::Original2x));
+        page.update_option_value("ds_option", uint32_t(1));
+        page.update_option_value("msaa_option", uint32_t(Antialiasing::None));
+        page.update_option_value("rr_option", uint32_t(RefreshRate::Original));
+        page.update_option_value("hpfb_option", uint32_t(HighPrecisionFramebuffer::Off));
+    });
     // Registered last: seed_graphics reads the window_size schema entry, so the
     // load callback must not run before the option exists.
     graphics.set_load_callback(seed_graphics);
@@ -232,6 +249,14 @@ void create_frontend_settings() {
     graphics.set_save_callback([] {
         apply_graphics();
         auto& page = recompui::config::get_graphics_config();
+        if (std::get<uint32_t>(page.get_option_value("performance_preset")) == kLowHardwarePreset) {
+            // Enhancement tabs are live. Publish these only when Graphics is
+            // applied so Discard also cancels this part of the preset.
+            lambo::config::set_no_lod(false);
+            lambo::config::set_global_draw_distance(1.0);
+            lambo::config::set_widescreen_fog_match(false);
+            lambo::config::set_widescreen_sky_match(false);
+        }
         // The window-size picker resolves at Apply time. Custom (or an unknown
         // value) keeps the live size, so a discarded pick or an unrelated save
         // never clobbers a size the player set by hand.

@@ -28,6 +28,15 @@ nlohmann::json read_json(const std::filesystem::path& path) {
     return result;
 }
 
+void environment(const char* name, const char* value) {
+#if defined(_WIN32)
+    _putenv_s(name, value ? value : "");
+#else
+    if (value) setenv(name, value, 1);
+    else unsetenv(name);
+#endif
+}
+
 } // namespace
 
 // lambo_config.cpp normally calls into the runtime. This focused test only needs
@@ -81,6 +90,7 @@ int main() {
 #else
     setenv("LAMBO_MENU_STICK_SENSITIVITY", "2.0", 1);
 #endif
+    lambo::config::load_and_apply_graphics();
     expect(lambo::config::menu_stick_sensitivity() == 2.0, "menu stick sensitivity env override");
     lambo::config::set_menu_stick_sensitivity(1.0);
     lambo::config::flush_pending_graphics_updates();
@@ -89,6 +99,7 @@ int main() {
 #else
     unsetenv("LAMBO_MENU_STICK_SENSITIVITY");
 #endif
+    lambo::config::load_and_apply_graphics();
     lambo::config::flush_pending_graphics_updates();
     expect(std::filesystem::exists(path), "first load creates graphics.json");
     expect(cfg.ar_option == ultramodern::renderer::AspectRatio::Expand,
@@ -254,6 +265,44 @@ int main() {
     lambo::player::reload_saved_name();
     expect(lambo::player::saved_name() == "FAST",
            "hand-edited padded name normalises on load");
+
+    // Launch overrides beat live edits without consulting the environment on
+    // each read. Clearing them takes effect at the next startup/config load.
+    for (const char* name : {"LAMBO_FOG_MATCH_1P", "LAMBO_SKY_MATCH_1P", "LAMBO_NO_LOD"})
+        environment(name, "1");
+    environment("LAMBO_FOG_SCALE", "0.25");
+    environment("LAMBO_DRAW_DISTANCE", "0");
+    environment("LAMBO_CAMERA_DISTANCE_SCALE", "9");
+    environment("LAMBO_CAMERA_HEIGHT_SCALE", "0");
+    environment("LAMBO_CAMERA_FOV_ADD", "100");
+    environment("LAMBO_MENU_STICK_SENSITIVITY", "0");
+    lambo::config::flush_pending_graphics_updates();
+    lambo::config::load_and_apply_graphics();
+    lambo::config::set_no_lod(false);
+    expect(lambo::config::widescreen_fog_match() && lambo::config::widescreen_sky_match() &&
+           lambo::config::no_lod(), "boolean launch overrides beat stored/live settings");
+    expect(lambo::config::fog_scale(4) == 0.25 && lambo::config::draw_distance(4) == 0.0,
+           "numeric overrides bypass circuit factors and retain unlimited distance");
+    expect(lambo::config::camera_distance_scale() == 3.0 &&
+           lambo::config::camera_height_scale() == 0.2 &&
+           lambo::config::camera_fov_add() == 60.0 &&
+           lambo::config::menu_stick_sensitivity() == 1.0,
+           "captured camera/menu overrides retain their bounds");
+    for (const char* name : {"LAMBO_FOG_MATCH_1P", "LAMBO_SKY_MATCH_1P", "LAMBO_NO_LOD",
+                            "LAMBO_FOG_SCALE", "LAMBO_DRAW_DISTANCE",
+                            "LAMBO_CAMERA_DISTANCE_SCALE", "LAMBO_CAMERA_HEIGHT_SCALE",
+                            "LAMBO_CAMERA_FOV_ADD", "LAMBO_MENU_STICK_SENSITIVITY"})
+        environment(name, nullptr);
+    expect(lambo::config::no_lod() && lambo::config::fog_scale(4) == 0.25,
+           "environment mutations do not change a running configuration");
+    lambo::config::flush_pending_graphics_updates();
+    expect(read_json(path).at("no_lod") == false && read_json(path).at("fog_scale") == 1.5,
+           "launch overrides are not written to the saved settings");
+    lambo::config::load_and_apply_graphics();
+    expect(!lambo::config::no_lod() && lambo::config::fog_scale(4) == 1.5 &&
+           lambo::config::draw_distance(4) == 2.0 &&
+           lambo::config::camera_distance_scale() == 3.0,
+           "config reload recaptures cleared overrides and restores stored settings");
 
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
