@@ -212,8 +212,8 @@ void create_frontend_settings() {
     // Window size picker: common desktop resolutions. The picker obeys this
     // page's confirmation flow -- a pick only stages the value; Apply resolves
     // it into the saved window_width/window_height (see the save callback).
-    // "(restart)" is in the label because the resolved size is only read at
-    // SDL_CreateWindow in main.cpp, as the old width/height sliders stated.
+    // A picked size resizes the window straight away: main.cpp's main-thread
+    // pump pushes the saved size onto SDL, so no "(restart)" here.
     // Patch 0020 lets long enum lists wrap within the options column.
     std::vector<recomp::config::ConfigOptionEnumOption> window_preset_options;
     for (const auto& preset : kWindowPresets) {
@@ -221,8 +221,8 @@ void create_frontend_settings() {
         window_preset_options.emplace_back(preset.value, preset_key, preset_key);
     }
     window_preset_options.emplace_back(kWindowPresetCustom, "Custom", "Custom");
-    graphics.add_enum_option("window_size", "Window size (restart)",
-        "Windowed size, applied with the Apply button. Pick a common resolution; a size typed directly into graphics.json shows as Custom and is kept unless you pick a preset.",
+    graphics.add_enum_option("window_size", "Window size",
+        "Windowed size, applied with the Apply button. The window resizes straight away; in fullscreen the new size is used when you leave fullscreen. Pick a common resolution; a size typed directly into graphics.json shows as Custom and is kept unless you pick a preset.",
         window_preset_options,
         window_preset_from_size(port::window_size().width, port::window_size().height));
     // Registered last: seed_graphics reads the window_size schema entry, so the

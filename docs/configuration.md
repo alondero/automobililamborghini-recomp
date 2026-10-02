@@ -67,7 +67,7 @@ The port adds these keys:
 
 | Key | Default | Effect |
 | --- | --- | --- |
-| window_width, window_height | 1600, 900 | Initial window size. The Graphics tab picks it from common desktop resolutions; a size edited here directly shows as Custom in the picker and is kept until a preset is chosen. |
+| window_width, window_height | 1600, 900 | Windowed size. The Graphics tab picks it from common desktop resolutions and the window resizes as soon as you apply; a size edited here directly shows as Custom in the picker and is kept until a preset is chosen. Picked while fullscreen? The new size is used when you leave fullscreen. |
 | texture_pack | empty | Compatibility override: one RT64 loose pack or .rtz pack loaded at startup, ahead of Mods packs. Not shown in Settings; manage packs in the Mods tab and clear this key to migrate. |
 | texture_dump | empty | Directory for runtime texture dumps. |
 | widescreen_fog_match | true | Use the open one-player fog policy for three- and four-player views. |
@@ -170,10 +170,10 @@ player-facing options are:
 Developer options include --track-patch, --console, --verbose, and
 --log-level. Use the same command and configuration in a bug report.
 
-The graphics API takes effect on the next launch. Window size and texture-pack
-path also need a restart. Enhancement values that the frontend marks as live
-can be applied while the game is running. Use Apply/Discard where the frontend
-shows those buttons.
+The graphics API takes effect on the next launch. The texture-pack path also
+needs a restart. Window size, window mode and enhancement values that the
+frontend marks as live can be applied while the game is running. Use
+Apply/Discard where the frontend shows those buttons.
 
 ## Save formats
 

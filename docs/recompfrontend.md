@@ -103,8 +103,11 @@ more to leave them onto Quit.
 | Mods | Package installation, enable/disable, ordering, per-mod settings, and texture packs | Runtime `mods.json` and `mod_config/` |
 | Debug | Developer overlay | Existing `graphics.json`, immediate save, restart for effect |
 
-API, the Debug tab's developer overlay, window size and the texture dump path require
-restart. Texture packs are not a Graphics option: the Mods tab installs, enables, disables, and
+API, the Debug tab's developer overlay and the texture dump path require
+restart. Window size is not one of them: applying a size resizes the window
+straight away, and a size picked in fullscreen is used when you leave
+fullscreen.
+Texture packs are not a Graphics option: the Mods tab installs, enables, disables, and
 orders them. The legacy `texture_pack` key still loads ahead of Mods packs and survives a
 Graphics save; it is not editable from the UI. Unsupported
 MSAA options are disabled using the port renderer's actual device capabilities. Downsampling
@@ -113,7 +116,18 @@ at its original rate independently of the presentation setting.
 
 The Graphics window size is picked from common desktop resolutions (16:9, 16:10 and 4:3
 presets) plus Custom. A pick only stages the choice behind Apply/Discard and resolves into the
-existing `window_width`/`window_height` keys, so the persisted format is unchanged. A size set
+existing `window_width`/`window_height` keys, so the persisted format is unchanged. Applying
+resizes the window without a restart; `src/lambo_window_resize.h` owns the rule the main-thread
+pump uses.
+
+The size is compared with the last size applied, never with the live window, so a window you
+dragged by hand keeps the size you dragged and no frame resizes pointlessly. Window mode and
+size are planned together from one read of the window and applied mode-first, because one
+Apply can change both: a size planned against the window as it is now, rather than as it will
+be, would be consumed by a window that had just gone fullscreen, where SDL ignores it, and
+would never be applied at all. A request that meets a fullscreen, minimized or maximized window
+waits instead of being dropped, so a size picked in fullscreen is used when you leave
+fullscreen. A size set
 by hand in `graphics.json` shows as Custom and is preserved unless a preset is picked; Custom
 is disabled while a preset is current, because choosing it would be a no-op.
 Long enum selections wrap within the options column through patch 0020; the

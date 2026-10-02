@@ -236,6 +236,13 @@ int main(int argc, char** argv) {
         // The separate width/height sliders are replaced by the window-size picker.
         require(!graphics.has_option("window_width") && !graphics.has_option("window_height"),
                 "the separate window width/height sliders still exist");
+        // A picked size resizes the window without a restart (the main-thread pump
+        // pushes it onto SDL), so the label must not claim otherwise. Guarded by
+        // name because the claim is what the player reads.
+        const auto& window_size_option = graphics.get_config_schema().options.at(
+            graphics.get_config_schema().options_by_id.at("window_size"));
+        require(window_size_option.name == "Window size",
+                "the window-size label still claims a restart is needed");
         // The framework still defines developer_mode on the Graphics page; the
         // Debug tab is its single visible owner (issue #244).
         require(graphics.has_option("developer_mode") && graphics.is_config_option_hidden(graphics.get_config_schema().options_by_id.at("developer_mode")),
