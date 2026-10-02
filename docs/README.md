@@ -86,6 +86,9 @@ status line before relying on a historical measurement.
 - [Circuit 1 RT provenance](rt-provenance.md) records stationary one/two-view
   light checks, exact native overlay records, material counterexamples and the
   remaining receiver/caster gate.
+- [Presented RT material evidence](rt-material-evidence.md) records fenced GPU
+  geometry/material admission candidates, exact overlay pixel differences and
+  the remaining visible-receiver/replacement gate.
 
 - [Mod support comparison](mod-support-research.md) records the Banjo and
   Donkey Kong runtime, frontend, and authoring patterns used by this integration.

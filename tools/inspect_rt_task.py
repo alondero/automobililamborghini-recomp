@@ -131,9 +131,13 @@ class TaskInspector:
             self.draws.append({"state": state, "first_command": command, "triangles": 0,
                                "model": vertices[0]["model"], "view": vertices[0]["view"],
                                "min": [float("inf")] * 3, "max": [float("-inf")] * 3,
-                               "vertex_addresses": set()})
+                               "vertex_addresses": set(), "faces": [], "local_faces": []})
         draw = self.draws[-1]
         draw["triangles"] += 1
+        # Local, ignored evidence only. Needed to authenticate a presented GPU
+        # triangle against native emitter/segment identity; never an asset bank.
+        draw["faces"].append([v["pos"] for v in vertices])
+        draw["local_faces"].append([v["local"] for v in vertices])
         for vertex in vertices:
             draw["vertex_addresses"].add(vertex["address"])
             for i in range(3):
@@ -225,7 +229,7 @@ class TaskInspector:
                     pos = [sum(p[k] * self.model[-1][k][j] for k in range(4)) for j in range(3)]
                     lit = bool(self.geometry & 0x20000)
                     self.vertices[start + i] = {
-                        "address": source, "pos": pos, "model": self.model[-1], "view": self.view,
+                        "address": source, "pos": pos, "local": p[:3], "model": self.model[-1], "view": self.view,
                         "state": {"model_address": self.model_address[-1], "view_address": self.view_address,
                                   "transform_group": self.groups[-1], "vertex_lit": lit,
                                   "light_count": self.light_count if lit else 0,

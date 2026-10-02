@@ -151,6 +151,14 @@ an explicit managed diagnostic: inherited LAMBO variables are still cleared.
 The runner verifies a provenance log was emitted; it does not infer a physical
 sun or validate hardware shadow pixels. See [sunlight findings](rt-shadows.md).
 
+`scenarios/rt-presented-materials.json` and `rt-overlay-differential.json` add
+`diagnostics.rt_task_capture` and `rt_render_capture`, requiring both native
+`expect.rt_task_captures` and fenced `expect.rt_render_captures`. Missing or
+rejected rendered evidence fails even if replay and swaps succeed. The latter
+scenario enables diagnostic `rt_drop_overlay`; it is not production suppression.
+See [presented evidence](rt-material-evidence.md) for the settings, ownership,
+pixel comparison and open replacement gate.
+
 Playback replaces physical, held, and pulsed port-0 sources after it starts.
 Before it starts, normal inputs still work so menus can be navigated. The UI
 capture/release barrier pauses consumption and feeds neutral input while open.

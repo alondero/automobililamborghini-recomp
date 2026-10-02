@@ -5,7 +5,9 @@ Status: source-backed proposal, reviewed on 2026-10-02. The subsequent
 a hardware-tested AS/angular-shadow kernel. In-game shadows remain gated;
 the planning review itself performed no GPU validation. The subsequent
 [Circuit 1 provenance work](rt-provenance.md) measured stationary one/two-view
-native world light and car-overlay records; coverage/admission gates remain open.
+native world light and car-overlay records. [Presented material evidence](rt-material-evidence.md)
+authenticates opaque surface candidates and the overlay differential; visible
+receiver ownership and ready replacement coverage remain open before integration.
 The target is
 Automobili Lamborghini: Recompiled. RaceWave46 is a peer implementation to
 learn from; its courses, RAM addresses and lighting policy are not Lamborghini

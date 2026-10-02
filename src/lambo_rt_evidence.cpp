@@ -1,0 +1,352 @@
+#define HLSL_CPU
+#include "lambo_rt_evidence.h"
+
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <map>
+#include <mutex>
+#include <set>
+#include <stdexcept>
+
+#include "contrib/json/json.hpp"
+#include "hle/rt64_workload.h"
+#include "render/rt64_render_worker.h"
+#include "shared/rt64_blender.h"
+#include "lambo_log.h"
+
+namespace lambo::rt {
+namespace {
+using Json = nlohmann::json;
+constexpr size_t capture_budget = 128 * 1024 * 1024;
+
+bool flag(const char* name) {
+    const char* value = std::getenv(name);
+    return value && std::strcmp(value, "1") == 0;
+}
+
+void require(bool condition, const char* message) {
+    if (!condition) throw std::runtime_error(message);
+}
+
+void write_bytes(const std::filesystem::path& path, const void* bytes, size_t size) {
+    require(size <= capture_budget, "capture byte budget exceeded");
+    std::ofstream file(path, std::ios::binary);
+    require(bool(file), "cannot open capture");
+    file.write(static_cast<const char*>(bytes), static_cast<std::streamsize>(size));
+    file.flush();
+    require(bool(file), "cannot write capture");
+}
+
+void write_json(const std::filesystem::path& path, const Json& value) {
+    const std::string bytes = value.dump(2) + '\n';
+    write_bytes(path, bytes.data(), bytes.size());
+}
+
+std::vector<uint8_t> read_buffer(RT64::RenderWorker* worker, const RenderBuffer* source, size_t size,
+        RenderBarrierStages restored_stages) {
+    require(source && size && size <= capture_budget, "invalid GPU buffer extent");
+    auto target = worker->device->createBuffer(RenderBufferDesc::ReadbackBuffer(size));
+    require(bool(target), "readback allocation failed");
+    auto* list = worker->commandList.get();
+    list->begin();
+    list->barriers(RenderBarrierStage::COPY, RenderBufferBarrier(const_cast<RenderBuffer*>(source), RenderBufferAccess::READ));
+    list->copyBufferRegion(target->at(0), source->at(0), size);
+    list->barriers(restored_stages, RenderBufferBarrier(const_cast<RenderBuffer*>(source), RenderBufferAccess::READ));
+    list->end();
+    worker->execute();
+    worker->wait();
+    RenderRange range(0, size);
+    const void* bytes = target->map(0, &range);
+    require(bytes != nullptr, "readback map failed");
+    std::vector<uint8_t> result(size);
+    std::memcpy(result.data(), bytes, size);
+    RenderRange no_write(0, 0);
+    target->unmap(0, &no_write);
+    return result;
+}
+
+Json material(const RT64::DrawCall& call) {
+    const auto& om = call.otherMode;
+    const auto& cc = call.colorCombiner;
+    Json alpha = Json::array();
+    for (uint32_t c = 0; c < cc.cycleCount(om); ++c) {
+        alpha.push_back(cc.cycleAlphaText(c));
+    }
+    // RT64's cc.L is native command word 0; cc.H is word 1.
+    return {{"other_hi", om.H}, {"other_lo", om.L}, {"combine_w0", cc.L}, {"combine_w1", cc.H},
+        {"geometry", call.geometryMode}, {"alpha_cycles", alpha},
+        {"alpha_compare", om.alphaCompare()}, {"coverage_times_alpha", om.cvgXAlpha()},
+        {"alpha_coverage_select", om.alphaCvgSel()}, {"force_blend", om.forceBlend()},
+        {"alpha_blend", interop::Blender::usesAlphaBlend(om)},
+        {"standard_fog", interop::Blender::usesStandardFogCycle(om)},
+        {"z_compare", om.zCmp()}, {"z_update", om.zUpd()}, {"z_mode", om.zMode()},
+        {"z_source", om.zSource()}, {"texture_on", call.textureOn},
+        {"tile_start", call.tileIndex}, {"tile_count", call.tileCount},
+        {"prim_alpha", call.rdpParams.primColor.w}, {"env_alpha", call.rdpParams.envColor.w},
+        {"blend_alpha", call.rdpParams.blendColor.w},
+        {"fog_rgba", {call.rdpParams.fogColor.x, call.rdpParams.fogColor.y,
+            call.rdpParams.fogColor.z, call.rdpParams.fogColor.w}}};
+}
+}
+
+struct RenderEvidence::Impl {
+    std::filesystem::path directory;
+    bool drop_overlay = false;
+    std::mutex mutex;
+    // HLE installs only four producer-owned observations before fullSync publishes
+    // their workload. Workers receive values; they never dereference guest RAM.
+    std::map<uint64_t, Json> tasks;
+    std::map<uint64_t, uint64_t> completed_tasks;
+    std::set<uint64_t> rendered_tasks;
+    const RT64::Workload* current = nullptr; // borrowed on the workload thread only
+    Json report;
+    bool capturing = false;
+
+    std::filesystem::path path(uint64_t sequence, const char* suffix) const {
+        return directory / ("task-" + std::to_string(sequence) + suffix);
+    }
+
+    uint32_t group(uint32_t vertex) const {
+        const auto& d = current->drawData;
+        require(vertex < d.worldIndices.size(), "index outside vertices");
+        const uint32_t world = d.worldIndices[vertex];
+        require(world < d.worldTransformGroups.size(), "invalid world transform");
+        const uint32_t g = d.worldTransformGroups[world];
+        require(g < d.transformGroups.size(), "invalid transform group");
+        return d.transformGroups[g].matrixId;
+    }
+
+    bool overlay(uint32_t first, uint32_t count, const RT64::DrawCall& call) const {
+        // Circuit 1 USA identity from func_80013328 and native task evidence.
+        // This is a differential experiment, never production suppression.
+        if (report["native"]["circuit"] != 0 || report["native"]["players"] != 1 ||
+            count != 48 || call.otherMode.L != 0xC8104A50u ||
+            (call.colorCombiner.L & 0xFFFFFFu) != 0x11FFFFu || call.colorCombiner.H != 0xFFFFF238u ||
+            (call.geometryMode & ~0x800000u) != 0x12005u) return false;
+        const auto& indices = current->drawData.faceIndices;
+        if (first > indices.size() || count > indices.size() - first) return false;
+        uint32_t id = group(indices[first]);
+        if ((id & 0xFFFF0000u) != 0x10010000u) return false;
+        const uint32_t object = id & 0xFFFFu;
+        const auto& objects = report["native"]["objects"];
+        if (object >= objects.size()) return false;
+        const auto& obj = objects[object];
+        const int parent = obj["parent"];
+        if (obj["flags"] != 0x42 || obj["list"] != 0x8013D3C8u || parent < 0 ||
+            static_cast<size_t>(parent) >= objects.size() || !(objects[parent]["flags"].get<uint32_t>() & 8)) return false;
+        for (uint32_t i = first; i < first + count; ++i) {
+            if (group(indices[i]) != id) return false;
+        }
+        return true;
+    }
+};
+
+RenderEvidence::RenderEvidence() : impl_(std::make_unique<Impl>()) {
+    const char* directory = std::getenv("LAMBO_RT_RENDER_CAPTURE_DIR");
+    // Snapshots are required: no unowned/live-RAM identity path is allowed.
+    if (directory && *directory && flag("LAMBO_RT_SUN_PROBE") && std::getenv("LAMBO_RT_CAPTURE_DIR")) {
+        impl_->directory = directory;
+        impl_->drop_overlay = flag("LAMBO_RT_EVIDENCE_DROP_OVERLAY");
+        std::filesystem::create_directories(impl_->directory);
+    }
+}
+RenderEvidence::~RenderEvidence() = default;
+bool RenderEvidence::enabled() const { return !impl_->directory.empty(); }
+
+void RenderEvidence::remember(uint64_t id, const std::optional<TaskSunProbe>& task) {
+    if (!enabled() || !task || !task->native_ram || !task->emitters_complete) return;
+    try {
+        const auto& ram = *task->native_ram;
+        require(ram.size() == 0x800000, "invalid producer snapshot");
+        // USA object layout, producer-before-submit, word-swapped. All reads are
+        // on HLE from an immutable copy, never from mutable global RDRAM.
+        auto u16 = [&](size_t at) { uint16_t v; std::memcpy(&v, ram.data() + (at ^ 2), 2); return v; };
+        auto u32 = [&](size_t at) { uint32_t v; std::memcpy(&v, ram.data() + at, 4); return v; };
+        Json objects = Json::array();
+        for (size_t object = 0; object < 128; ++object) {
+            size_t at = 0xB69A8 + object * 0x10C;
+            objects.push_back({{"flags", u16(at)}, {"list", u32(at + 8)},
+                {"parent", static_cast<int16_t>(u16(at + 0x58))}});
+        }
+        std::lock_guard lock(impl_->mutex);
+        require(impl_->tasks.size() < 4 && !impl_->tasks.count(id), "ambiguous workload mapping");
+        impl_->tasks.emplace(id, Json{{"epoch", task->epoch}, {"sequence", task->sequence},
+            {"root", task->task_address + 0x1C0u}, {"phase", task->phase}, {"circuit", task->circuit},
+            {"players", task->players}, {"objects", objects}});
+    } catch (const std::exception& e) { LAMBO_LOG_INFO("rt-evidence", "task rejected: %s\n", e.what()); }
+}
+
+void RenderEvidence::begin(const RT64::Workload& w, float weight) noexcept {
+    impl_->capturing = false;
+    impl_->current = nullptr;
+    try {
+        Json native;
+        {
+            std::lock_guard lock(impl_->mutex);
+            auto found = impl_->tasks.find(w.workloadId);
+            if (found == impl_->tasks.end() || impl_->rendered_tasks.count(w.workloadId)) return;
+            native = found->second;
+        }
+        const auto& d = w.drawData;
+        require(d.vertexCount() <= 262144 && d.faceIndices.size() <= 262144 * 3, "geometry budget exceeded");
+        require(weight == 1.0f, "diagnostic requires native presentation weight 1");
+        Json calls = Json::array();
+        for (uint32_t f = 0; f < w.fbPairCount; ++f) {
+            const auto& fb = w.fbPairs[f];
+            for (uint32_t p = 0; p < fb.projectionCount; ++p) {
+                const auto& proj = fb.projections[p];
+                for (uint32_t c = 0; c < proj.gameCallCount; ++c) {
+                    const auto& call = proj.gameCalls[c];
+                    const bool indexed = proj.type == RT64::Projection::Type::Perspective || proj.type == RT64::Projection::Type::Orthographic;
+                    calls.push_back({{"call", call.callDesc.callIndex}, {"first", indexed ? call.meshDesc.faceIndicesStart : 0},
+                        {"count", call.callDesc.triangleCount * 3}, {"projection_type", int(proj.type)},
+                        {"color_address", fb.colorImage.address}, {"shader_flags", call.shaderDesc.flags.value},
+                        {"shader_other_lo", call.shaderDesc.otherMode.L}, {"shader_other_hi", call.shaderDesc.otherMode.H},
+                        {"material", material(call.callDesc)}});
+                }
+            }
+        }
+        Json groups = Json::array();
+        for (uint32_t g : d.worldTransformGroups) {
+            require(g < d.transformGroups.size(), "invalid world transform group");
+            groups.push_back(d.transformGroups[g].matrixId);
+        }
+        Json fog = Json::array();
+        for (const auto& f : d.rspFog) fog.push_back({f.mul, f.offset});
+        impl_->report = {{"schema", 1}, {"native", native}, {"workload", w.workloadId}, {"weight", weight},
+            {"drop_overlay", impl_->drop_overlay}, {"calls", calls}, {"raster", Json::array()},
+            {"indices", d.faceIndices}, {"world_indices", d.worldIndices}, {"world_groups", groups},
+            {"world_addresses", d.worldTransformPhysicalAddresses}, {"local_positions", d.posFloats},
+            {"normal_color_bytes", d.normColBytes}, {"fog_indices", d.fogIndices}, {"fog_params", fog}, {"light_counts", d.lightCounts}};
+        impl_->current = &w;
+        impl_->capturing = true;
+    } catch (const std::exception& e) { LAMBO_LOG_INFO("rt-evidence", "begin rejected: %s\n", e.what()); }
+}
+
+bool RenderEvidence::raster(const RT64::RasterEvidenceRange& range) noexcept {
+    if (!impl_->capturing) return true;
+    try {
+        const auto [call, first, count, indexed, test_z, scale, offset, scissor, resolution, viewport] = range;
+        const RT64::DrawCall* desc = nullptr;
+        for (uint32_t f = 0; f < impl_->current->fbPairCount; ++f) {
+            const auto& fb = impl_->current->fbPairs[f];
+            for (uint32_t p = 0; p < fb.projectionCount; ++p) {
+                const auto& proj = fb.projections[p];
+                for (uint32_t c = 0; c < proj.gameCallCount; ++c) {
+                    if (proj.gameCalls[c].callDesc.callIndex == call) desc = &proj.gameCalls[c].callDesc;
+                }
+            }
+        }
+        require(desc != nullptr, "raster call has no workload identity");
+        const bool overlay = indexed && !test_z && impl_->overlay(first, count, *desc);
+        const bool omit = impl_->drop_overlay && overlay;
+        impl_->report["raster"].push_back({{"call", call}, {"first", first}, {"count", count},
+            {"indexed", indexed}, {"test_z", test_z}, {"overlay", overlay}, {"omitted", omit},
+            {"screen_scale", {scale[0], scale[1]}}, {"screen_offset", {offset[0], offset[1]}},
+            {"scissor", {scissor.left, scissor.top, scissor.right, scissor.bottom}},
+            {"resolution", {resolution[0], resolution[1]}},
+            {"viewport", {viewport.x, viewport.y, viewport.width, viewport.height}}});
+        return !omit;
+    } catch (const std::exception& e) {
+        impl_->capturing = false;
+        impl_->current = nullptr;
+        LAMBO_LOG_INFO("rt-evidence", "raster rejected: %s\n", e.what());
+        return true;
+    }
+}
+
+void RenderEvidence::completed(const RT64::Workload& w, RT64::RenderWorker* worker) noexcept {
+    if (!impl_->capturing || impl_->current != &w) return;
+    impl_->capturing = false;
+    impl_->current = nullptr;
+    try {
+        const auto& pos = w.outputBuffers.worldPosBuffer;
+        const size_t bytes = size_t(w.drawData.vertexCount()) * 16;
+        require(bytes <= pos.computedSize && bytes <= pos.allocatedSize, "presented world positions unavailable");
+        const auto world = read_buffer(worker, pos.buffer.get(), bytes, RenderBarrierStage::GRAPHICS | RenderBarrierStage::COMPUTE);
+        const auto& screen = w.outputBuffers.screenPosBuffer;
+        require(bytes <= screen.computedSize && bytes <= screen.allocatedSize, "GPU screen positions unavailable");
+        const auto screen_bytes = read_buffer(worker, screen.buffer.get(), bytes, RenderBarrierStage::GRAPHICS);
+        const auto& shaded = w.outputBuffers.shadedColBuffer;
+        require(bytes <= shaded.computedSize && bytes <= shaded.allocatedSize, "GPU shaded colors unavailable");
+        const auto shade_bytes = read_buffer(worker, shaded.buffer.get(), bytes, RenderBarrierStage::GRAPHICS);
+        const size_t index_bytes = w.drawData.faceIndices.size() * sizeof(uint32_t);
+        require(index_bytes <= w.drawBuffers.faceIndicesBuffer.allocatedSize, "GPU index capacity mismatch");
+        const auto faces = read_buffer(worker, w.drawBuffers.faceIndicesBuffer.get(), index_bytes, RenderBarrierStage::GRAPHICS);
+        require(std::memcmp(faces.data(), w.drawData.faceIndices.data(), index_bytes) == 0, "GPU/CPU indices differ");
+        const uint64_t sequence = impl_->report["native"]["sequence"];
+        write_bytes(impl_->path(sequence, "-world.bin"), world.data(), world.size());
+        write_bytes(impl_->path(sequence, "-screen.bin"), screen_bytes.data(), screen_bytes.size());
+        write_bytes(impl_->path(sequence, "-shade.bin"), shade_bytes.data(), shade_bytes.size());
+        impl_->report["world_bytes"] = bytes;
+        impl_->report["gpu_indices_equal"] = true;
+        write_json(impl_->path(sequence, "-render.json"), impl_->report);
+        std::lock_guard lock(impl_->mutex);
+        impl_->completed_tasks.emplace(w.workloadId, sequence);
+        impl_->rendered_tasks.insert(w.workloadId);
+    } catch (const std::exception& e) { LAMBO_LOG_INFO("rt-evidence", "completion rejected: %s\n", e.what()); }
+}
+
+void RenderEvidence::presented(const RT64::PresentationEvidence& presentation, RT64::RenderWorker* worker) noexcept {
+    try {
+        const auto workload = presentation.workloadId, present = presentation.presentId;
+        const auto frame = presentation.frameIndex, frames = presentation.frameCount;
+        const auto width = presentation.width, height = presentation.height;
+        const auto* image = presentation.image;
+        uint64_t sequence;
+        {
+            std::lock_guard lock(impl_->mutex);
+            auto found = impl_->completed_tasks.find(workload);
+            if (found == impl_->completed_tasks.end()) return;
+            sequence = found->second;
+            impl_->completed_tasks.erase(found);
+        }
+        require(frames == 1 && frame == 0, "swapchain evidence requires one native presentation");
+        require(presentation.nativeColorImage, "presented image is not a native color target");
+        require(width && height && width <= 4096 && height <= 4096, "swapchain extent exceeds budget");
+        // RT64 Application fixes its swapchain format to B8G8R8A8_UNORM. This
+        // diagnostic is registered only on the port's D3D12 backend. Copy after
+        // its successful present/fence and before the present thread can reuse it.
+        const uint32_t row = (width * 4 + 255) & ~255u;
+        const size_t size = size_t(row) * height;
+        auto target = worker->device->createBuffer(RenderBufferDesc::ReadbackBuffer(size));
+        require(bool(target), "swapchain readback allocation failed");
+        auto* list = worker->commandList.get();
+        list->begin();
+        list->barriers(RenderBarrierStage::COPY, RenderTextureBarrier(const_cast<RenderTexture*>(image), RenderTextureLayout::COPY_SOURCE));
+        list->copyTextureRegion(RenderTextureCopyLocation::PlacedFootprint(target.get(), RenderFormat::B8G8R8A8_UNORM,
+            width, height, 1, row / 4), RenderTextureCopyLocation::Subresource(image));
+        list->barriers(RenderBarrierStage::NONE, RenderTextureBarrier(const_cast<RenderTexture*>(image), RenderTextureLayout::PRESENT));
+        list->end();
+        worker->execute();
+        worker->wait();
+        RenderRange range(0, size);
+        const void* bytes = target->map(0, &range);
+        require(bytes != nullptr, "swapchain map failed");
+        write_bytes(impl_->path(sequence, "-swap.bgra"), bytes, size);
+        RenderRange no_write(0, 0);
+        target->unmap(0, &no_write);
+        write_json(impl_->path(sequence, "-present.json"), {{"schema", 1}, {"workload", workload}, {"present", present},
+            {"sequence", sequence}, {"frame", frame}, {"frames", frames}, {"width", width}, {"height", height},
+            {"row_bytes", row}, {"format", "BGRA8"}, {"successful_present", true}, {"color_address", presentation.colorAddress},
+            {"native_color_image", presentation.nativeColorImage}, {"filtering", presentation.filtering},
+            {"video_resolution", {presentation.videoResolution[0], presentation.videoResolution[1]}},
+            {"texture_extent", {presentation.textureWidth, presentation.textureHeight}},
+            {"vi_viewport", {presentation.viViewport.x, presentation.viViewport.y, presentation.viViewport.width, presentation.viViewport.height}},
+            {"vi_scissor", {presentation.viScissor.left, presentation.viScissor.top, presentation.viScissor.right, presentation.viScissor.bottom}}});
+    } catch (const std::exception& e) { LAMBO_LOG_INFO("rt-evidence", "presentation rejected: %s\n", e.what()); }
+}
+
+void RenderEvidence::processed(uint64_t first, uint64_t last) {
+    if (!enabled()) return;
+    try {
+        std::lock_guard lock(impl_->mutex);
+        auto found = impl_->tasks.find(first);
+        if (found == impl_->tasks.end()) return;
+        write_json(impl_->path(found->second["sequence"], "-hle.json"), {{"first", first}, {"last", last},
+            {"root", found->second["root"]}, {"epoch", found->second["epoch"]}, {"sequence", found->second["sequence"]}});
+    } catch (const std::exception& e) { LAMBO_LOG_INFO("rt-evidence", "HLE mapping rejected: %s\n", e.what()); }
+}
+}

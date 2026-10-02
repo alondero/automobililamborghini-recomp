@@ -34,6 +34,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(N64MR ${CMAKE_CURRENT_SOURCE_DIR}/lib/N64ModernRuntime)
 include(cmake/Frontend.cmake)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0021-rt64-sun-shadow-groundwork.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0022-rt64-render-evidence-hooks.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0023-plume-texture-readback.patch)
 
 # --- RT64 renderer boundary; see patches/README.md ---
 # recomp/lib/rt64 is a pinned git submodule; RT64 is always compiled in and is the
@@ -60,6 +62,13 @@ if(BUILD_TESTING)
     target_include_directories(lambo_rt_sun_tests PRIVATE src lib/rt64/src)
     target_link_libraries(lambo_rt_sun_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_rt_sun_tasks COMMAND lambo_rt_sun_tests)
+
+    add_executable(lambo_rt_evidence_scope_tests tests/test_rt_evidence_scope.cpp
+        lib/rt64/src/rhi/rt64_render_hooks.cpp)
+    target_include_directories(lambo_rt_evidence_scope_tests PRIVATE
+        lib/rt64/src lib/rt64/src/contrib/plume)
+    target_link_libraries(lambo_rt_evidence_scope_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_rt_evidence_scope COMMAND lambo_rt_evidence_scope_tests)
 
     # Links the production lambo_mods.cpp against test fakes for the runtime
     # mod API (tests/fakes); production builds use the submodule headers.
@@ -772,7 +781,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     endif()
 
     # RT64 renderer: default presenter; see the RT64 block above.
-    target_sources(lamborghini_modern PRIVATE src/rt64_renderer.cpp)
+    target_sources(lamborghini_modern PRIVATE src/rt64_renderer.cpp src/lambo_rt_evidence.cpp)
     # rt64's build_pixel_shader/build_vertex_shader read ${DXC} and the DXC_*_OPTS
     # variables from the CALLER's scope (CMake evaluates unreferenced variables at call
     # time). Those variables are set inside rt64/CMakeLists.txt's own project() scope, so

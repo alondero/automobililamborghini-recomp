@@ -2,9 +2,11 @@
 
 Status: experimental diagnostics, measured on Windows on 2026-10-02 after
 PR #277 (baseline `e2a44ab`). Native light and car-overlay provenance are
-established for the sampled Circuit 1 tasks. **Receiver/caster eligibility and
-replacement coverage remain unproved. Workload and raster receiver integration
-are not implemented.** Relighting and offscreen submission remain follow-on
+established for the sampled Circuit 1 tasks. The subsequent
+[presented-material milestone](rt-material-evidence.md) authenticates opaque
+surface candidates and the overlay differential. **Visible receiver ownership
+and ready replacement coverage remain unproved. Workload and raster receiver
+integration are not implemented.** Relighting and offscreen submission remain follow-on
 phases in the [plan](ray-tracing-plan.md).
 
 ## World light and camera independence
@@ -62,7 +64,7 @@ The existing interpolation producer authenticates object/view groups:
 The child submits 16 triangles under group `0x10010003` in view one and
 `0x10020003` in view two. Its vertices lie on one Y plane just above the car's
 base; its model translation follows the car. The captured child uses
-render mode `C8104A50`, combiner `FC127FFF/FFFFF238`, geometry mode `0x12005`
+render mode `C8104A50`, combiner `FC11FFFF/FFFFF238`, geometry mode `0x12005`
 (unlit), and texture pointer `0x8013CED8`. These identify the native
 car-parented flat overlay in these tasks. They are observations, not stable
 asset addresses or a renderer suppression rule.
@@ -89,10 +91,12 @@ The offline inspector enumerates candidate triangles conservatively. It
 discloses unevaluated native culling, excludes the port's allocated panorama
 extension, and does not implement texture/tile/alpha/depth/coverage, texture
 replacement, effective fog composition, RT64 interpolation or final draw
-selection. It **cannot admit geometry**. Material coverage and the matching
-presented RT64 ranges are the next prerequisite, followed by a real D3D12
-swapchain differential of the overlay. No receiver/caster list is published;
-no native draw is removed. These remaining gates prevent phase 1 integration.
+selection. It **cannot admit geometry**. This native-only milestone left material
+coverage, matching presented ranges and an overlay differential as prerequisites.
+It publishes no receiver/caster list and removes no draw. The subsequent
+[presented evidence](rt-material-evidence.md)
+supersedes that native-only gate status; visible receiver ownership and ready
+replacement coverage still prevent phase 1 integration.
 
 ## Capture and offline bridge contract
 

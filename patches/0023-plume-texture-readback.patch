@@ -1,0 +1,12 @@
+--- a/plume_d3d12.cpp
++++ b/plume_d3d12.cpp
+@@ -2330,6 +2330,8 @@
+         const D3D12_TEXTURE_COPY_LOCATION copyDstLocation = toD3D12(dstLocation);
+         const D3D12_TEXTURE_COPY_LOCATION copySrcLocation = toD3D12(srcLocation);
+-        setSamplePositions(dstLocation.texture);
++        // A placed-footprint readback destination is a buffer, so its texture
++        // pointer is null. Sample positions belong to the source in that case.
++        setSamplePositions(dstLocation.texture != nullptr ? dstLocation.texture : srcLocation.texture);
+         d3d->CopyTextureRegion(&copyDstLocation, dstX, dstY, dstZ, &copySrcLocation, (srcBox != nullptr) ? &copyBox : nullptr);
+         resetSamplePositions();
+     }

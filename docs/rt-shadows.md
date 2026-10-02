@@ -197,9 +197,10 @@ remaining third-party compression stress tests are not validation of this featur
    verify remaining FOV/mode/circuit behavior. Fixed-car camera and two-view
    diagnostics passed. No peer course parameters enter this policy.
 2. Prove road/fog receiver coverage and opaque car/scenery admission in actual
-   RT64 presented draws. Native car/overlay record provenance is established;
-   a swapchain differential and replacement coverage remain open before any
-   shadow suppression.
+   RT64 presented draws. [Presented material evidence](rt-material-evidence.md)
+   now authenticates opaque surface candidates and the exact overlay swapchain
+   differential. Visible receiver ownership and ready replacement coverage
+   remain open before integration or production suppression.
 3. Copy physical-light/settings and admitted draws into the matching Workload;
    add receiver vertex/pixel pipelines, descriptors, presented-geometry barriers,
    readiness/resource failure handling and budgets.

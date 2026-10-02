@@ -65,7 +65,7 @@ private:
     int16_t circuit_ = -1;
 };
 
-void consume_sun_probe(uint32_t dl_address);
+std::optional<TaskSunProbe> consume_sun_probe(uint32_t dl_address);
 
 } // namespace lambo::rt
 

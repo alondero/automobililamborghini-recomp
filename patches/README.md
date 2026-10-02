@@ -34,6 +34,8 @@ significant single-space lines from `git diff --check`;
 | 0019 | RecompFrontend | The shared prompt dismisses on the mapped Back action, so a controller's cancel button backs out of the quit confirmation. Applied by CMake after 0017. Compared with upstream `main`, which builds the prompt with no element that listens for menu actions, so no controller action can dismiss it. Generic frontend behavior, kept local. |
 | 0020 | RecompFrontend | Enum selections wrap within the options column so the window-size presets remain readable. Applied by CMake after 0019. Compared on 2026-10-01 with [upstream enum rendering](https://github.com/N64Recomp/RecompFrontend/blob/main/recompui/src/config/ui_config_option.cpp), which creates the radio group without wrapping. Keeps the existing values, callbacks, and navigation. Checked on native Windows at 1600x900: all twelve choices fit two rows, and selecting 1920x1200 then Apply saves that size. The frontend settings test and idempotent CMake application pass; other platforms remain unverified. |
 | 0021 | RT64 | Shadow-only AS resources, shared parameter ABI and angular-query/fog kernel. Applied by CMake. Developer groundwork only; game receivers remain gated. Upstream comparison and hardware probe evidence are below. |
+| 0022 | RT64 | Opt-in queue-owned material/raster evidence and fenced GPU/present observation. Thread-local raster scope excludes HLE's framebuffer renderer. Port-owned capture policy; no sunlight Workload fields or production receiver integration. |
+| 0023 | Plume inside RT64 | D3D12 texture-to-buffer readback selects source sample positions when destination is a placed-footprint buffer, avoiding a null texture dereference. ROM-free 7x3 padded-row GPU regression. |
 
 ## Application matrix
 
@@ -53,11 +55,29 @@ still references the conditional full RT path; its
 does not implement this angular-query kernel. This local groundwork is not an
 upstream-supported feature or dependency upgrade. No upstream issue was opened.
 
+Patches **0022/0023** are applied idempotently by CMake on all supported build
+paths. Readback is an explicit D3D12 developer diagnostic; normal rendering has
+no observer or capture GPU allocations. The observer registers before queues
+start and is cleared after they join. Its scoped raster activation prevents
+HLE calls from entering queue-owned mutable capture state. Ownership, current
+measurements and remaining gates are in [presented evidence](../docs/rt-material-evidence.md).
+
+Compared on 2026-10-02 with RT64
+`43373749dac9bbc1b653e6a02aed40a9e1783bed`: its
+[render hooks](https://github.com/rt64/rt64/blob/43373749dac9bbc1b653e6a02aed40a9e1783bed/src/rhi/rt64_render_hooks.h)
+provide init/draw/deinit callbacks but no queue/fence/present evidence observer.
+Compared with Plume `d72379344dacd3dbf9f810f92ddc87e6de1845b1`: its
+[D3D12 copy implementation](https://github.com/renderbag/plume/blob/d72379344dacd3dbf9f810f92ddc87e6de1845b1/plume_d3d12.cpp)
+still calls `setSamplePositions(dstLocation.texture)` unconditionally, although
+a placed-footprint destination has a buffer and no texture. Patch 0023 selects
+the source texture in that case. These are local generic changes, not upstream
+support claims; no upstream issue was opened.
+
 | Build path | Applies |
 | --- | --- |
-| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0021 in CMake. |
-| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0021 in CMake. |
-| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0021 in CMake. |
+| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0023 in CMake. |
+| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0023 in CMake. |
+| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0023 in CMake. |
 
 If a patch no longer applies to its pinned submodule, stop and update the
 patch or pin as a deliberate change. Do not reset a developer's unrelated

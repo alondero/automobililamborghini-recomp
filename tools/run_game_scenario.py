@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from inspect_rt_task import CaptureError, TaskInspector
+from check_rt_render_capture import inspect as inspect_render_capture
 
 
 SCHEMA_VERSION = 1
@@ -108,8 +109,15 @@ def load_scenario(path: Path) -> dict[str, Any]:
 
     scenario["expect"] = _dict(scenario.get("expect", {}), "scenario.expect")
     diagnostics = _dict(scenario.get("diagnostics", {}), "scenario.diagnostics")
-    if set(diagnostics) - {"rt_sun_probe", "rt_task_capture"}:
-        raise ScenarioError("scenario.diagnostics supports only rt_sun_probe and rt_task_capture")
+    if set(diagnostics) - {"rt_sun_probe", "rt_task_capture", "rt_render_capture", "rt_drop_overlay"}:
+        raise ScenarioError("unsupported scenario diagnostic")
+    for key in ("rt_render_capture", "rt_drop_overlay"):
+        if key in diagnostics and type(diagnostics[key]) is not bool:
+            raise ScenarioError(f"scenario.diagnostics.{key} must be boolean")
+    if diagnostics.get("rt_render_capture") and not diagnostics.get("rt_task_capture"):
+        raise ScenarioError("rt_render_capture requires rt_task_capture")
+    if diagnostics.get("rt_drop_overlay") and not diagnostics.get("rt_render_capture"):
+        raise ScenarioError("rt_drop_overlay requires rt_render_capture")
     if "rt_sun_probe" in diagnostics and not isinstance(diagnostics["rt_sun_probe"], bool):
         raise ScenarioError("scenario.diagnostics.rt_sun_probe must be boolean")
     if diagnostics.get("rt_sun_probe") and scenario.get("headless", True):
@@ -120,12 +128,13 @@ def load_scenario(path: Path) -> dict[str, Any]:
         raise ScenarioError("rt_task_capture requires rt_sun_probe")
     if "sun_probe" in scenario["expect"] and not isinstance(scenario["expect"]["sun_probe"], bool):
         raise ScenarioError("scenario.expect.sun_probe must be boolean")
-    if "rt_task_captures" in scenario["expect"]:
-        captures = scenario["expect"]["rt_task_captures"]
-        if not isinstance(captures, list) or not captures or any(type(n) is not int or n <= 0 for n in captures):
-            raise ScenarioError("scenario.expect.rt_task_captures must be a nonempty list of positive task sequences")
-        if not diagnostics.get("rt_task_capture"):
-            raise ScenarioError("rt_task_captures requires rt_task_capture")
+    for key, diagnostic in (("rt_task_captures", "rt_task_capture"), ("rt_render_captures", "rt_render_capture")):
+        if key in scenario["expect"]:
+            captures = scenario["expect"][key]
+            if not isinstance(captures, list) or not captures or any(type(n) is not int or n <= 0 for n in captures):
+                raise ScenarioError(f"scenario.expect.{key} must be a nonempty list of positive task sequences")
+            if not diagnostics.get(diagnostic):
+                raise ScenarioError(f"{key} requires {diagnostic}")
     scenario["diagnostics"] = diagnostics
     return scenario
 
@@ -211,6 +220,11 @@ def build_environment(scenario: dict[str, Any], runtime: dict[str, Any], artifac
     if runtime.get("diagnostics", {}).get("rt_task_capture"):
         runtime["diagnostics"]["task_capture_path"] = str(artifact / "rt-tasks")
         environment["LAMBO_RT_CAPTURE_DIR"] = runtime["diagnostics"]["task_capture_path"]
+    if runtime.get("diagnostics", {}).get("rt_render_capture"):
+        runtime["diagnostics"]["render_capture_path"] = str(artifact / "rt-render")
+        environment["LAMBO_RT_RENDER_CAPTURE_DIR"] = str(artifact / "rt-render")
+        if runtime["diagnostics"].get("rt_drop_overlay"):
+            environment["LAMBO_RT_EVIDENCE_DROP_OVERLAY"] = "1"
 
     inputs = runtime["input"]
     if "replay" in inputs:
@@ -355,6 +369,12 @@ def evaluate(scenario: dict[str, Any], result: dict[str, Any], returncode: int |
             TaskInspector(capture.with_suffix(".bin").read_bytes(), metadata).inspect()
         except (CaptureError, OSError, ValueError, KeyError, TypeError) as error:
             failures.append(f"RT task {sequence} capture rejected: {error}")
+    for sequence in expected.get("rt_render_captures", []):
+        try:
+            directory = Path(scenario["diagnostics"]["render_capture_path"]).parent
+            inspect_render_capture(directory, sequence)
+        except (CaptureError, OSError, ValueError, KeyError, TypeError, IndexError) as error:
+            failures.append(f"RT rendered task {sequence} capture rejected: {error}")
     return failures
 
 

@@ -220,12 +220,12 @@ void capture_task(const TaskSunProbe& task) {
     }
 }
 
-void consume_sun_probe(uint32_t dl_address) {
-    if (!probe_enabled()) return;
+std::optional<TaskSunProbe> consume_sun_probe(uint32_t dl_address) {
+    if (!probe_enabled()) return std::nullopt;
     const auto task = probes.take(dl_address);
     if (task) capture_task(*task);
     // Evidence is sampled by task sequence, not frame/view. See rt-shadows.md.
-    if (!task || (task->sequence > 12 && task->sequence % 60 != 0)) return;
+    if (!task || (task->sequence > 12 && task->sequence % 60 != 0)) return task;
     for (const auto& camera : task->cameras) {
         if (!camera) continue;
         LAMBO_LOG("rt-sun", "epoch=%llu task=%llu arena=0x%08X phase=%d circuit=%d players=%d camera_slot=%d art_bearing=%d camera_heading=%d camera_height_term=%.6f physical_sun=unproved\n",
@@ -234,6 +234,7 @@ void consume_sun_probe(uint32_t dl_address) {
             task->phase, task->circuit, task->players, camera->camera_slot,
             camera->bearing, camera->camera_heading, camera->camera_height_term);
     }
+    return task;
 }
 } // namespace lambo::rt
 

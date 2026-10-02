@@ -182,6 +182,29 @@ class ScenarioRunnerTests(unittest.TestCase):
         environment = json.loads((artifact / "harness-environment.json").read_text())
         self.assertEqual(environment["LAMBO_RT_CAPTURE_DIR"], str(artifact / "rt-tasks"))
 
+    def test_missing_render_capture_fails_even_with_native_success(self) -> None:
+        scenario = {"schema": 1, "name": "render-capture", "headless": False,
+                    "diagnostics": {"rt_sun_probe": True, "rt_task_capture": True, "rt_render_capture": True},
+                    "expect": {"sun_probe": True, "rt_render_captures": [60]}}
+        completed, artifact = self.run_scenario(scenario)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("RT rendered task 60 capture rejected", completed.stdout)
+        environment = json.loads((artifact / "harness-environment.json").read_text())
+        self.assertEqual(environment["LAMBO_RT_RENDER_CAPTURE_DIR"], str(artifact / "rt-render"))
+
+    def test_render_diagnostic_dependencies_fail_before_launch(self) -> None:
+        for diagnostics, expect in (({"rt_render_capture": True}, {}),
+                                    ({"rt_drop_overlay": True}, {}),
+                                    ({"rt_sun_probe": True}, {"rt_render_captures": [60]}),
+                                    ({}, {"rt_render_captures": [True]})):
+            with self.subTest(diagnostics=diagnostics, expect=expect):
+                path = self.scenario_dir / "bad.json"
+                path.write_text(json.dumps({"schema": 1, "headless": False,
+                                           "diagnostics": diagnostics, "expect": expect}), encoding="utf-8")
+                completed = subprocess.run([sys.executable, str(RUNNER), str(path), "--exe", str(self.fake)],
+                                           cwd=self.root, capture_output=True, text=True, timeout=10)
+                self.assertEqual(completed.returncode, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

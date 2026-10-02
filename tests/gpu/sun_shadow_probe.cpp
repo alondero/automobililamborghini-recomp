@@ -52,6 +52,40 @@ struct Result {
 static_assert(sizeof(Probe) == 64 && sizeof(Result) == 80);
 using Vertex = std::array<float, 4>;
 
+// Exercise the placed-footprint destination that a real swapchain capture uses.
+// A buffer destination has no RenderTexture: pinned Plume dereferenced null here.
+void textureReadback(RenderWorker& worker) {
+    constexpr uint32_t width = 7, height = 3, rowBytes = 256;
+    auto texture = worker.device->createTexture(RenderTextureDesc::ColorTarget(width, height, RenderFormat::B8G8R8A8_UNORM));
+    const RenderTexture* source = texture.get();
+    auto framebuffer = worker.device->createFramebuffer(RenderFramebufferDesc(&source, 1));
+    auto buffer = worker.device->createBuffer(RenderBufferDesc::ReadbackBuffer(rowBytes * height));
+    require(texture && framebuffer && buffer, "texture readback allocation failed");
+    auto* list = worker.commandList.get();
+    list->begin();
+    list->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(texture.get(), RenderTextureLayout::COLOR_WRITE));
+    list->setFramebuffer(framebuffer.get());
+    list->clearColor(0, RenderColor(0.6f, 0.4f, 0.2f, 1.0f));
+    list->barriers(RenderBarrierStage::COPY, RenderTextureBarrier(texture.get(), RenderTextureLayout::COPY_SOURCE));
+    list->copyTextureRegion(RenderTextureCopyLocation::PlacedFootprint(buffer.get(), RenderFormat::B8G8R8A8_UNORM,
+        width, height, 1, rowBytes / 4), RenderTextureCopyLocation::Subresource(texture.get()));
+    list->end();
+    worker.execute();
+    worker.wait();
+    const RenderRange read(0, rowBytes * height);
+    const auto* bytes = static_cast<const uint8_t*>(buffer->map(0, &read));
+    require(bytes, "texture readback map failed");
+    const std::array<uint8_t, 4> expected{51, 102, 153, 255};
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+            require(std::memcmp(bytes + rowBytes*y + 4*x, expected.data(), 4) == 0,
+                "BGRA pixel or aligned row pitch mismatch");
+        }
+    }
+    const RenderRange noWrite(0, 0);
+    buffer->unmap(0, &noWrite);
+}
+
 // Independent dense polar-area integration over a disc emitter for a planar
 // rectangular caster. This does not reimplement the production ray sampler.
 float referenceVisibility(float x, float height, float radius, float bias) {
@@ -149,6 +183,7 @@ int main(int argc, char **argv) {
         set->setBuffer(probesBinding, probeUpload.get(), probes.size() * sizeof(Probe), &probesView);
         set->setBuffer(resultsBinding, output.get(), probes.size() * sizeof(Result), &resultsView);
         RenderWorker worker(device.get(), "Sunlight shadow GPU probe", RenderCommandListType::DIRECT);
+        textureReadback(worker);
         auto timestamps = device->createQueryPool(3);
         require(timestamps != nullptr, "GPU timestamp support unavailable");
         std::vector<double> buildTimes, kernelTimes;
