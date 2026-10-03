@@ -1,0 +1,323 @@
+from __future__ import annotations
+
+import copy
+import math
+from pathlib import Path
+import struct
+import sys
+import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+from check_rt_overlay_capture import filter_taps, inside
+from check_rt_render_capture import (area, belongs_to_physical_car, non_caster_reason, opaque_coverage, procedural_world_object, receiver_material, validate_overlay_count,
+                                     screen_face, topology, uncovered_area, validate_draw_metadata, validate_pair,
+                                     validate_shadow_admission, validate_generated_material_inputs)
+from inspect_rt_task import CaptureError
+
+
+def material() -> dict:
+    return {"alpha_compare": 0, "coverage_times_alpha": False, "alpha_blend": False,
+            "force_blend": False, "z_compare": True, "z_update": True, "z_mode": 0, "z_source": 0,
+            "other_lo": 0xC8112230, "other_hi": 0x18ACFF, "combine_w0": 0xFC26A004,
+            "combine_w1": 0x1FFC93F8, "standard_fog": True, "fog_rgba": [.2, .3, .4, 1]}
+
+
+class GeneratedMaterialInputsTests(unittest.TestCase):
+    def setUp(self):
+        m = dict(material(), tile_start=1, tile_count=1)
+        self.render = {"native": {"sequence": 60}, "world_indices": [0],
+                       "generated_uv_bytes": 8,
+                       "generated_uv_layout": "float2,RSPProcessCS,presented",
+                       "calls": [{"call": 7, "first": 12, "material": m,
+                                  "shader_other_lo": m["other_lo"], "shader_other_hi": m["other_hi"],
+                                  "shader_flags": 0}],
+                       "raster": [{"call": 7, "draw_index": 2, "indexed": True,
+                                   "native_indices": {"instance_index": 7, "face_start": 12,
+                                                      "tile_start": 1, "tile_count": 1,
+                                                      "highlight_color": 0}}]}
+        self.uv = struct.pack("<2f", .25, .5)
+        self.buffers = {"render-params": bytes(7 * 20) + struct.pack("<5I", m["combine_w0"] & 0xFFFFFF,
+                        m["combine_w1"], m["other_lo"], m["other_hi"], 0),
+                        "rdp-tiles": bytes(2 * 64), "gpu-tiles": bytes(2 * 52)}
+        self.render["native_material_buffers"] = [
+            {"name": name, "count": len(data) // stride, "stride": stride,
+             "bytes": len(data), "file": f"task-60-{name}.bin"}
+            for (name, data), stride in zip(self.buffers.items(), (20, 64, 52))]
+
+    def test_selected_render_index_and_instance_index_stay_distinct(self):
+        proof = validate_generated_material_inputs(self.render, self.uv, self.buffers)
+        self.assertEqual(proof["raster_bindings"], 1)
+        self.assertFalse(proof["alpha_admitted"])
+        self.render["raster"][0]["native_indices"]["instance_index"] = 2
+        with self.assertRaises(CaptureError):
+            validate_generated_material_inputs(self.render, self.uv, self.buffers)
+
+    def test_wrong_uploaded_shader_and_tile_ranges_are_rejected(self):
+        for change in ("params", "tile_range", "face_start", "instance", "missing_identity"):
+            with self.subTest(change=change):
+                render, buffers = copy.deepcopy(self.render), dict(self.buffers)
+                identity = render["raster"][0]["native_indices"]
+                if change == "params": buffers["render-params"] = bytes(8 * 20)
+                elif change == "tile_range":
+                    identity["tile_count"] = 2
+                    render["calls"][0]["material"]["tile_count"] = 2
+                elif change == "face_start": identity["face_start"] = 13
+                elif change == "instance": identity["instance_index"] = -1
+                else: render["raster"][0].pop("native_indices")
+                with self.assertRaises(CaptureError):
+                    validate_generated_material_inputs(render, self.uv, buffers)
+
+    def test_raw_vertex_draw_has_no_native_face_extent(self):
+        draw = self.render["raster"][0]
+        draw["indexed"] = False
+        draw["native_indices"]["face_start"] = 0
+        validate_generated_material_inputs(self.render, self.uv, self.buffers)
+        draw["native_indices"]["face_start"] = 12
+        with self.assertRaises(CaptureError):
+            validate_generated_material_inputs(self.render, self.uv, self.buffers)
+
+    def test_incomplete_extents_and_nonfinite_generated_uv_are_rejected(self):
+        for change in ("short", "missing", "duplicate", "filename", "count", "layout", "nan"):
+            with self.subTest(change=change):
+                render, buffers, uv = copy.deepcopy(self.render), dict(self.buffers), self.uv
+                records = render["native_material_buffers"]
+                if change == "short": buffers["gpu-tiles"] = buffers["gpu-tiles"][:-1]
+                elif change == "missing": records.pop()
+                elif change == "duplicate": records[2] = records[1]
+                elif change == "filename": records[0]["file"] = "../task-60-render-params.bin"
+                elif change == "count": records[0]["count"] = -1
+                elif change == "layout": render["generated_uv_layout"] = "guest"
+                else: uv = struct.pack("<2f", math.nan, 0)
+                with self.assertRaises(CaptureError):
+                    validate_generated_material_inputs(render, uv, buffers)
+
+
+class MaterialTests(unittest.TestCase):
+    def test_screen_draw_exclusion_needs_projection_and_native_depth_identity(self):
+        m = dict(material(), z_compare=False, z_update=False, geometry=0)
+        call = {"material": m, "shader_other_lo": m["other_lo"], "shader_other_hi": m["other_hi"],
+                "shader_flags": 1, "projection_type": 3, "extended_type": 0}
+        self.assertEqual(non_caster_reason(call), 1)
+        sky = dict(call, projection_type=1, shader_flags=0, projection_aspect=3)
+        self.assertEqual(non_caster_reason(sky), 2)
+        self.assertEqual(non_caster_reason(dict(sky, projection_aspect=0)), 0)
+        hud = dict(call, projection_type=2, shader_flags=0, projection_address=0xA2C40)
+        self.assertEqual(non_caster_reason(hud), 3)
+        self.assertEqual(non_caster_reason(dict(hud, projection_address=0xA2C80)), 0)
+        for unsafe in (dict(call, extended_type=1), dict(call, shader_other_lo=0),
+                       dict(call, material=dict(m, z_compare=True)),
+                       dict(call, material=dict(m, z_update=True))):
+            self.assertEqual(non_caster_reason(unsafe), 0)
+
+    def test_procedural_world_role_requires_the_complete_native_identity(self):
+        obj = {"flags": 0xC01, "list": 0, "parent": -1, "kind": 13}
+        self.assertTrue(procedural_world_object(obj))
+        for field, value in (("flags", 0x801), ("list", 0x80100000), ("parent", 0), ("kind", 12)):
+            with self.subTest(field=field):
+                self.assertFalse(procedural_world_object(dict(obj, **{field: value})))
+                incomplete = dict(obj)
+                incomplete.pop(field)
+                self.assertFalse(procedural_world_object(incomplete))
+
+    def test_physical_car_components_follow_authenticated_parent_chain(self):
+        objects = [{"flags": 0x9, "parent": -1}, {"flags": 0x26, "parent": 0}]
+        self.assertTrue(belongs_to_physical_car({"index": 0}, objects))
+        self.assertTrue(belongs_to_physical_car({"index": 1}, objects))
+        self.assertFalse(belongs_to_physical_car({"index": 2}, objects))
+        objects.extend([{"flags": 0, "parent": 3}, {"flags": 0, "parent": 2}])
+        self.assertFalse(belongs_to_physical_car({"index": 2}, objects))
+
+    def test_generic_material_capture_does_not_claim_a_c1_overlay(self):
+        validate_overlay_count(0, require_overlay=False)
+        with self.assertRaises(CaptureError):
+            validate_overlay_count(0)
+        validate_overlay_count(16)
+        validate_overlay_count(32)
+        validate_overlay_count(96)
+        with self.assertRaises(CaptureError):
+            validate_overlay_count(17)
+
+    def test_cutout_blend_and_depth_paths_are_excluded(self):
+        self.assertTrue(opaque_coverage(material()))
+        for field, value in (("alpha_compare", 1), ("coverage_times_alpha", True),
+                             ("alpha_blend", True), ("force_blend", True), ("z_compare", False),
+                             ("z_update", False), ("z_mode", 2), ("z_source", 1)):
+            with self.subTest(field=field):
+                self.assertFalse(opaque_coverage(dict(material(), **{field: value})))
+
+    def test_receiver_requires_measured_shader_and_finite_fog(self):
+        call = {"material": material(), "shader_other_lo": 0xC8112230,
+                "shader_other_hi": 0x18ACFF, "shader_flags": 0}
+        self.assertTrue(receiver_material(call))
+        for field, value in (("combine_w0", 0), ("standard_fog", False),
+                             ("fog_rgba", [0, 0, math.nan, 1]), ("fog_rgba", [0, 0, 2, 1])):
+            with self.subTest(field=field):
+                changed = copy.deepcopy(call)
+                changed["material"][field] = value
+                self.assertFalse(receiver_material(changed))
+        for field, value in (("shader_other_lo", 0), ("shader_flags", 1 << 29), ("shader_flags", 1 << 30)):
+            self.assertFalse(receiver_material(dict(call, **{field: value})))
+
+    def test_edge_incidence_is_diagnostic_not_caster_policy(self):
+        report = topology([[[0, 0, 0], [1, 0, 0], [0, 1, 0]]])
+        self.assertEqual(report["boundary_edges"], 3)
+        self.assertNotIn("closed_solid", report)
+
+
+class CoverageTests(unittest.TestCase):
+    def test_union_overlaps_holes_and_empty_clips(self):
+        square = [[0, 0], [2, 0], [2, 2], [0, 2]]
+        left = [[0, 0], [1.5, 0], [1.5, 2], [0, 2]]
+        right = [[.5, 0], [2, 0], [2, 2], [.5, 2]]
+        self.assertAlmostEqual(uncovered_area(square, [left, right]), 0)
+        self.assertAlmostEqual(uncovered_area(square, [left, left]), 1)
+        self.assertAlmostEqual(uncovered_area(square, [[], [[0, 0], [1, 0]]]), 4)
+        self.assertAlmostEqual(uncovered_area(square, [list(reversed(left))]), 1)
+        self.assertFalse(inside(.5, .5, []))
+        self.assertFalse(inside(.5, .5, [[0, 0], [1, 1]]))
+
+    def test_crossing_triangle_keeps_its_visible_receiver_footprint(self):
+        draw = {"resolution": [100, 100], "viewport": [0, 0, 100, 100],
+                "screen_scale": [1, 1], "screen_offset": [0, 0]}
+        face = [[20, 20, -.5, 1], [80, 20, .5, 1], [50, 80, .5, 1]]
+        clipped = screen_face(draw, [0, 1, 2], face)
+        self.assertAlmostEqual(area(clipped), 1350)
+        self.assertAlmostEqual(area(screen_face(draw, [0, 1, 2], face, flags=2)), 1800)
+        self.assertEqual(screen_face(draw, [0, 1, 2], [[20, 20, 1, 1]] * 3), [])
+        self.assertEqual(screen_face(draw, [0, 1, 2], [[20, 20, .5, -1]] * 3), [])
+        far = screen_face(draw, [0, 1, 2], [[20, 20, 1.5, 1], [80, 20, .5, 1], [50, 80, .5, 1]])
+        self.assertGreater(area(far), 0)
+        self.assertLess(area(far), 1800)
+
+    def test_vi_filter_warp_clamp_and_nonzero_taps(self):
+        info = {"vi_viewport": [0, 0, 8, 8], "video_resolution": [4, 4], "filtering": 0}
+        self.assertEqual(filter_taps(3, 3, info), [(1.5, 1.5)])
+        info["filtering"] = 1
+        self.assertEqual(set(filter_taps(3, 3, info)), {(1.5, 1.5), (1.5, 2.5), (2.5, 1.5), (2.5, 2.5)})
+        info["filtering"] = 2
+        self.assertEqual(filter_taps(3, 3, info), [(1.5, 1.5)])
+        self.assertEqual(filter_taps(0, 0, info), [(.5, .5)])
+        info["filtering"] = 3
+        with self.assertRaises(CaptureError):
+            filter_taps(3, 3, info)
+
+
+class PresentationTests(unittest.TestCase):
+    def setUp(self):
+        self.render = {"schema": 2, "workload": 10, "native": {"sequence": 60}, "weight": 1,
+                       "gpu_indices_equal": True, "world_bytes": 48, "world_indices": [0, 0, 0],
+                       "local_positions": [0, 0, 0, 1, 0, 0, 0, 1, 0], "indices": [0, 1, 2],
+                       "world_groups": [0x10010001], "calls": [{"call": 1, "first": 0, "count": 3,
+                           "indexed": True, "triangle_count": 1, "projection_type": 1,
+                           "raw_vertex_start": None, "raw_vertex_count": 0}], "raster": []}
+        self.present = {"schema": 1, "workload": 10, "sequence": 60, "successful_present": True,
+                        "native_color_image": True, "frames": 1, "frame": 0, "format": "BGRA8",
+                        "width": 4, "height": 2, "row_bytes": 256, "video_resolution": [4, 2],
+                        "vi_viewport": [0, 0, 4, 2]}
+        self.world = struct.pack("<12f", 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1)
+        self.swap = bytes(512)
+
+    def test_valid_native_tuple_and_exact_extents(self):
+        self.assertEqual(len(validate_pair(self.render, self.present, self.world, self.swap)), 3)
+
+    def test_wrong_task_interpolation_or_failed_present_rejected(self):
+        with self.assertRaises(CaptureError):
+            validate_pair(dict(self.render, schema=1), self.present, self.world, self.swap)
+        for field, value in (("workload", 11), ("frames", 2), ("frame", 1),
+                             ("successful_present", False), ("native_color_image", False), ("row_bytes", 16)):
+            with self.subTest(field=field), self.assertRaises(CaptureError):
+                validate_pair(self.render, dict(self.present, **{field: value}), self.world, self.swap)
+        with self.assertRaises(CaptureError):
+            validate_pair(dict(self.render, weight=.5), self.present, self.world, self.swap)
+
+    def test_corrupt_gpu_or_range_data_rejected(self):
+        for field, value in (("indices", [0, 1, 3]), ("indices", [0, 1]),
+                             ("world_indices", [1, 0, 0]), ("local_positions", [math.inf]*9),
+                             ("calls", [self.render["calls"][0], dict(self.render["calls"][0])])):
+            with self.subTest(field=field), self.assertRaises(CaptureError):
+                validate_pair(dict(self.render, **{field: value}), self.present, self.world, self.swap)
+        for world in (self.world[:-4], struct.pack("<12f", *([math.nan]*12))):
+            with self.assertRaises(CaptureError):
+                validate_pair(self.render, self.present, world, self.swap)
+        with self.assertRaises(CaptureError):
+            validate_pair(self.render, self.present, self.world, self.swap[:-1])
+
+    def test_duplicate_raster_submission_rejects_cross_thread_capture(self):
+        r = {"call": 1, "first": 0, "count": 3, "indexed": True, "test_z": False}
+        with self.assertRaises(CaptureError):
+            validate_pair(dict(self.render, raster=[r, r]), self.present, self.world, self.swap)
+
+    def test_nonindexed_projection_metadata_does_not_claim_face_indices(self):
+        rectangle = {"call": 1, "first": 0, "count": 0, "indexed": False,
+                     "triangle_count": 2, "projection_type": 3, "raw_vertex_start": None,
+                     "raw_vertex_count": 0}
+        validate_draw_metadata([rectangle])
+        for field, value in (("first", 7), ("count", 6), ("projection_type", 1)):
+            with self.subTest(field=field), self.assertRaises(CaptureError):
+                validate_draw_metadata([dict(rectangle, **{field: value})])
+        raw_triangles = dict(rectangle, projection_type=4, raw_vertex_start=12,
+                             raw_vertex_count=6)
+        validate_draw_metadata([raw_triangles])
+
+    def test_unknown_shadow_workload_ranges_block_complete_claim(self):
+        workload = {"authenticated": True, "complete": False, "params_abi_valid": True,
+                    "geometry": 2, "overlays": 1, "rejected": 0, "unclassified": 1}
+        render = dict(self.render, sun_shadow=workload, sun_shadow_rejected_ranges=[],
+                      sun_shadow_unclassified_ranges=[{"reason": 3, "first": 0, "count": 12,
+                                                       "projection_type": 1}])
+        validate_shadow_admission(render)
+        workload["complete"] = True
+        with self.assertRaises(CaptureError):
+            validate_shadow_admission(render)
+
+    def test_nonindexed_shadow_rejection_keeps_projection_identity_without_face_range(self):
+        workload = {"authenticated": True, "complete": False, "params_abi_valid": True,
+                    "geometry": 1, "overlays": 1, "rejected": 0, "unclassified": 1}
+        render = dict(self.render, sun_shadow=workload, sun_shadow_rejected_ranges=[],
+                      sun_shadow_unclassified_ranges=[{"reason": 1, "first": 0, "count": 0,
+                                                       "projection_type": 3}])
+        validate_shadow_admission(render)
+        render["sun_shadow_unclassified_ranges"][0]["count"] = 6
+        with self.assertRaises(CaptureError):
+            validate_shadow_admission(render)
+
+    def test_complete_shadow_workload_requires_empty_rejections_and_valid_params(self):
+        workload = {"authenticated": True, "complete": True, "params_abi_valid": True,
+                    "geometry": 2, "overlays": 1, "rejected": 0, "unclassified": 0}
+        render = dict(self.render, sun_shadow=workload, sun_shadow_rejected_ranges=[],
+                      sun_shadow_unclassified_ranges=[])
+        validate_shadow_admission(render)
+        render["sun_shadow_unclassified_ranges"].append({"reason": 4, "first": 0, "count": 3,
+                                                          "projection_type": 1})
+        workload["unclassified"] = 1
+        with self.assertRaises(CaptureError):
+            validate_shadow_admission(render)
+
+    def test_non_caster_list_cannot_hide_unknown_draws_or_fabricate_faces(self):
+        m = dict(material(), z_compare=False, z_update=False, geometry=0)
+        call = {"call": 5, "first": 0, "count": 0, "projection_type": 3,
+                "material": m, "shader_other_lo": m["other_lo"], "shader_other_hi": m["other_hi"],
+                "shader_flags": 1, "extended_type": 0}
+        shadow = {"authenticated": True, "complete": False, "params_abi_valid": True,
+                  "geometry": 0, "overlays": 1, "rejected": 0, "unclassified": 0,
+                  "policy_schema": 2, "non_casters": 1, "receivers": 0, "receiver_rejected": 0}
+        render = {"calls": [call], "sun_shadow": shadow, "sun_shadow_rejected_ranges": [],
+                  "sun_shadow_unclassified_ranges": [], "sun_shadow_receiver_ranges": [],
+                  "sun_shadow_receiver_rejected_ranges": [],
+                  "sun_shadow_non_caster_ranges": [{"draw": 5, "first": 0, "count": 0,
+                                                     "projection_type": 3, "reason": 1}]}
+        validate_shadow_admission(render)
+        for field, value in (("draw", 6), ("first", 1), ("count", 6), ("reason", 2), ("projection_type", 1)):
+            changed = copy.deepcopy(render)
+            changed["sun_shadow_non_caster_ranges"][0][field] = value
+            with self.subTest(field=field), self.assertRaises(CaptureError):
+                validate_shadow_admission(changed)
+        for field in ("sun_shadow_receiver_ranges", "sun_shadow_non_caster_ranges"):
+            changed = copy.deepcopy(render)
+            changed.pop(field)
+            with self.subTest(missing=field), self.assertRaises(CaptureError):
+                validate_shadow_admission(changed)
+
+
+if __name__ == "__main__":
+    unittest.main()

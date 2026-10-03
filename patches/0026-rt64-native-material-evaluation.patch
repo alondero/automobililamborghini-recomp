@@ -1,0 +1,364 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index f29a772..c2e3357 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -17,21 +17,34 @@ if (NOT ${RT64_STATIC})
+     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+ endif()
+ 
++function(native_material_dependencies INFILE OUTVAR)
++    cmake_path(GET INFILE FILENAME shader_filename)
++    if(shader_filename MATCHES "^RasterPS.*\\.hlsl$")
++        # All native raster variants include this evaluator, including owner
++        # diagnostics and dynamically compiled library text. Keep incremental
++        # builds from retaining an earlier material/coverage implementation.
++        set(${OUTVAR} "${PROJECT_SOURCE_DIR}/src/shaders/NativeMaterial.hlsli" PARENT_SCOPE)
++    else()
++        set(${OUTVAR} "" PARENT_SCOPE)
++    endif()
++endfunction()
++
+ function(preprocess INFILE OUTFILE OPTIONS)
++    native_material_dependencies("${INFILE}" material_dependencies)
+     if (CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+         if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+             add_custom_command(OUTPUT ${OUTFILE}
+                 COMMAND clang -x c -E -P ${INFILE} -o ${OUTFILE} ${OPTIONS}
+-                DEPENDS ${INFILE})
++                DEPENDS ${INFILE} ${material_dependencies})
+         else()
+             add_custom_command(OUTPUT ${OUTFILE}
+                 COMMAND ${CMAKE_CXX_COMPILER} /Zs /EP ${INFILE} ${OPTIONS} > ${OUTFILE}
+-                DEPENDS ${INFILE})
++                DEPENDS ${INFILE} ${material_dependencies})
+         endif()
+     else()
+         add_custom_command(OUTPUT ${OUTFILE}
+             COMMAND ${CMAKE_CXX_COMPILER} -x c -E -P ${INFILE} -o ${OUTFILE} ${OPTIONS}
+-            DEPENDS ${INFILE})
++            DEPENDS ${INFILE} ${material_dependencies})
+     endif()
+ endfunction()
+ 
+@@ -111,9 +124,10 @@ set (DXC_GS_OPTS "${DXC_COMMON_OPTS}" "-E" "GSMain" "-T gs_6_3")
+ set (DXC_RT_OPTS "${DXC_COMMON_OPTS}" "-D" "RT_SHADER" "-T" "lib_6_3" "-fspv-target-env=vulkan1.1spirv1.4" "-fspv-extension=SPV_KHR_ray_tracing" "-fspv-extension=SPV_EXT_descriptor_indexing")
+ 
+ function(build_shader_spirv_impl TARGETOBJ FILENAME TARGET_NAME OUTNAME)
++    native_material_dependencies("${FILENAME}" material_dependencies)
+     add_custom_command(OUTPUT ${OUTNAME}.spv
+         COMMAND ${DXC} ${DXC_SPV_OPTS} ${ARGN} ${FILENAME} /Fo ${OUTNAME}.spv
+-        DEPENDS ${FILENAME})
++        DEPENDS ${FILENAME} ${material_dependencies})
+     add_custom_command(OUTPUT ${OUTNAME}.spirv.c
+         COMMAND file_to_c ${OUTNAME}.spv ${TARGET_NAME}BlobSPIRV ${OUTNAME}.spirv.c ${OUTNAME}.spirv.h
+         DEPENDS ${OUTNAME}.spv file_to_c
+@@ -122,9 +136,10 @@ function(build_shader_spirv_impl TARGETOBJ FILENAME TARGET_NAME OUTNAME)
+ endfunction()
+ 
+ function(build_shader_dxil_impl TARGETOBJ FILENAME TARGET_NAME OUTNAME)
++    native_material_dependencies("${FILENAME}" material_dependencies)
+     add_custom_command(OUTPUT ${OUTNAME}.dxil
+         COMMAND ${DXC} ${DXC_DXIL_OPTS} ${ARGN} ${FILENAME} /Fo ${OUTNAME}.dxil
+-        DEPENDS ${FILENAME})
++        DEPENDS ${FILENAME} ${material_dependencies})
+     add_custom_command(OUTPUT ${OUTNAME}.dxil.c
+         COMMAND file_to_c ${OUTNAME}.dxil ${TARGET_NAME}BlobDXIL ${OUTNAME}.dxil.c ${OUTNAME}.dxil.h
+         DEPENDS ${OUTNAME}.dxil file_to_c
+@@ -133,9 +148,10 @@ function(build_shader_dxil_impl TARGETOBJ FILENAME TARGET_NAME OUTNAME)
+ endfunction()
+ 
+ function(build_shader_msl_impl TARGETOBJ FILENAME TARGET_NAME OUTNAME)
++    native_material_dependencies("${FILENAME}" material_dependencies)
+     add_custom_command(OUTPUT ${OUTNAME}.spv
+             COMMAND ${DXC} ${DXC_SPV_OPTS} ${ARGN} ${FILENAME} /Fo ${OUTNAME}.spv
+-            DEPENDS ${FILENAME})
++            DEPENDS ${FILENAME} ${material_dependencies})
+     add_custom_command(OUTPUT ${OUTNAME}.metal
+             COMMAND spirv_cross_msl ${OUTNAME}.spv ${OUTNAME}.metal
+             DEPENDS ${OUTNAME}.spv spirv_cross_msl)
+diff --git a/src/shaders/NativeMaterial.hlsli b/src/shaders/NativeMaterial.hlsli
+new file mode 100644
+index 0000000..a80088c
+--- /dev/null
++++ b/src/shaders/NativeMaterial.hlsli
+@@ -0,0 +1,133 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#pragma once
++
++#include "shared/rt64_color_combiner.h"
++#include "Random.hlsli"
++#include "TextureSampler.hlsli"
++
++// Native texture/combiner/alpha/coverage evaluation for raster and future ray-hit
++// callers. The caller supplies the actual texture/tile resources, generated
++// UV/shade attributes, displayed-pixel position and explicit UV derivatives.
++// This function performs no clipping, depth comparison, blending or ray query.
++// Random seed advancement and coverage arithmetic match the native raster path.
++bool EvaluateNativeMaterial(RenderParams rp, RenderIndices indices,
++    float4 vertexColor, float4 vertexPosition, float2 vertexUV,
++    float2 ddxVertexUV, float2 ddyVertexUV, inout uint randomSeed,
++    out float4 shadeColor, out float4 combinerColor, out float alphaCompareValue,
++    out float resultCvg)
++{
++    const OtherMode otherMode = {rp.omL, rp.omH};
++    const ColorCombiner colorCombiner = {rp.ccL, rp.ccH};
++    const uint instanceIndex = indices.instanceIndex;
++    resultCvg = 0.0f;
++    float2 lowResUV = vertexUV;
++    if (!renderFlagUpscale2D(rp.flags)) {
++        float2 screenPos = floor(vertexPosition.xy);
++        screenPos.x += FbParams.horizontalMisalignment;
++        lowResUV -= fmod(screenPos.xy, FbParams.resolutionScale.yy) * float2(ddxVertexUV.x, ddyVertexUV.y);
++    }
++    
++    int tileIndex0 = 0;
++    int tileIndex1 = 1;
++    float lodFraction;
++    float lodScale = 1.0f;
++    if (!renderFlagUpscaleLOD(rp.flags)) {
++        lodScale = FbParams.resolutionScale.y;
++    }
++    
++    computeLOD(otherMode, indices.rdpTileCount, instanceRDPParams[instanceIndex].primLOD, lodScale, ddxVertexUV, ddyVertexUV, tileIndex0, tileIndex1, lodFraction);
++
++    float4 texVal0 = float4(0.0f, 0.0f, 0.0f, 1.0f);
++    float4 texVal1 = float4(0.0f, 0.0f, 0.0f, 1.0f);
++    if (renderFlagUsesTexture0(rp.flags)) {
++        const uint globalTileIndex = indices.rdpTileIndex + tileIndex0;
++        RDPTile rdpTile = RDPTiles[globalTileIndex];
++        if (!renderFlagDynamicTiles(rp.flags)) {
++            rdpTile.cms = renderCMS0(rp.flags);
++            rdpTile.cmt = renderCMT0(rp.flags);
++            rdpTile.nativeSampler = renderFlagNativeSampler0(rp.flags);
++        }
++        
++        const GPUTile gpuTile = GPUTiles[globalTileIndex];
++        const float2 textureUV = gpuTileFlagHighRes(gpuTile.flags) ? vertexUV : lowResUV;
++        texVal0 = sampleTexture(otherMode, rp.flags, textureUV, ddxVertexUV, ddyVertexUV, rdpTile, gpuTile, false);
++    }
++    
++    if (renderFlagUsesTexture1(rp.flags)) {
++        const bool oneCycleHardwareBug = (otherMode.cycleType() == G_CYC_1CYCLE);
++        const uint globalTileIndex = indices.rdpTileIndex + (oneCycleHardwareBug ? tileIndex0 : tileIndex1);
++        RDPTile rdpTile = RDPTiles[globalTileIndex];
++        if (!renderFlagDynamicTiles(rp.flags)) {
++            rdpTile.cms = oneCycleHardwareBug ? renderCMS0(rp.flags) : renderCMS1(rp.flags);
++            rdpTile.cmt = oneCycleHardwareBug ? renderCMT0(rp.flags) : renderCMT1(rp.flags);
++            rdpTile.nativeSampler = oneCycleHardwareBug ? renderFlagNativeSampler0(rp.flags) : renderFlagNativeSampler1(rp.flags);
++        }
++        
++        const GPUTile gpuTile = GPUTiles[globalTileIndex];
++        const float2 textureUV = gpuTileFlagHighRes(gpuTile.flags) ? vertexUV : lowResUV;
++        const uint nativeSampler = renderFlagNativeSampler1(rp.flags);
++        texVal1 = sampleTexture(otherMode, rp.flags, textureUV, ddxVertexUV, ddyVertexUV, rdpTile, gpuTile, oneCycleHardwareBug);
++    }
++    
++    // Color combiner.
++    shadeColor = vertexColor;
++    ColorCombiner::Inputs ccInputs;
++    ccInputs.otherMode = otherMode;
++    ccInputs.alphaOnly = false;
++    ccInputs.texVal0 = texVal0;
++    ccInputs.texVal1 = texVal1;
++    ccInputs.primColor = instanceRDPParams[instanceIndex].primColor;
++    ccInputs.shadeColor = shadeColor;
++    ccInputs.envColor = instanceRDPParams[instanceIndex].envColor;
++    ccInputs.keyCenter = instanceRDPParams[instanceIndex].keyCenter;
++    ccInputs.keyScale = instanceRDPParams[instanceIndex].keyScale;
++    ccInputs.lodFraction = lodFraction;
++    ccInputs.primLodFrac = instanceRDPParams[instanceIndex].primLOD.x;
++    ccInputs.noise = nextRand(randomSeed);
++    ccInputs.K4 = (instanceRDPParams[instanceIndex].convertK[4] / 255.0f);
++    ccInputs.K5 = (instanceRDPParams[instanceIndex].convertK[5] / 255.0f);
++    colorCombiner.run(ccInputs, combinerColor, alphaCompareValue);
++    
++#if 0
++    // Alpha dither.
++    // TODO: To avoid increasing the alpha values here, the only viable choice would be to drop the precision down to 5-bit.
++    // Since we'd rather keep the full precision of the alpha channel from the texture, this step is ignored for now.
++    if (otherMode.alphaDither() != G_AD_DISABLE) {
++        uint rgbDither = (otherMode.rgbDither() >> G_MDSFT_RGBDITHER) & 0x3;
++        uint alphaDither = (otherMode.alphaDither() >> G_MDSFT_ALPHADITHER) & 0x3;
++        float alphaDitherFloat = (AlphaDitherValue(rgbDither, alphaDither, floor(vertexPosition.xy), randomSeed) / 255.0f);
++        if (!otherMode.alphaCvgSel()) {
++            combinerColor.a += alphaDitherFloat;
++        }
++        
++        shadeColor.a += alphaDitherFloat;
++        alphaCompareValue += alphaDitherFloat;
++    }
++#endif
++    
++    // Alpha compare.
++    if (otherMode.alphaCompare() == G_AC_DITHER) {
++        if (alphaCompareValue < nextRand(randomSeed)) {
++            return false;
++        }
++    }
++    else if (otherMode.alphaCompare() == G_AC_THRESHOLD) {
++        if (alphaCompareValue < instanceRDPParams[instanceIndex].blendColor.a) {
++            return false;
++        }
++    }
++    
++    // Compute coverage estimation.
++    const bool usesHDR = renderFlagUsesHDR(rp.flags);
++    const float cvgRange = usesHDR ? 65535.0f : 255.0f;
++    resultCvg = (8.0f / cvgRange) * (otherMode.cvgXAlpha() ? combinerColor.a : 1.0f);
++    
++    // Discard all pixels without coverage.
++    const float CoverageThreshold = 1.0f / cvgRange;
++    if (resultCvg < CoverageThreshold) {
++        return false;
++    }
++    
++    return true;
++}
+diff --git a/src/shaders/RasterPS.hlsl b/src/shaders/RasterPS.hlsl
+index 7887627..2318291 100644
+--- a/src/shaders/RasterPS.hlsl
++++ b/src/shaders/RasterPS.hlsl
+@@ -10,7 +10,7 @@
+ #include "FbRendererCommon.hlsli"
+ #include "Library.hlsli"
+ #include "Random.hlsli"
+-#include "TextureSampler.hlsli"
++#include "NativeMaterial.hlsli"
+ 
+ [[vk::push_constant]] ConstantBuffer<RasterParams> gConstants : register(b0, space0);
+ 
+@@ -57,7 +57,6 @@ LIBRARY_EXPORT bool RasterPS(const RenderParams rp, float4 vertexPosition, float
+     
+     const uint instanceIndex = instanceRenderIndices[gConstants.renderIndex].instanceIndex;
+     const float4 vertexColor = renderFlagSmoothShade(rp.flags) ? vertexSmoothColor : float4(vertexFlatColor.rgb, vertexSmoothColor.a);
+-    const ColorCombiner colorCombiner = { rp.ccL, rp.ccH };
+     const bool depthClampNear = renderFlagNoN(rp.flags);
+     const bool depthDecal = (otherMode.zMode() == ZMODE_DEC);
+     const bool zSourcePrim = (otherMode.zSource() == G_ZS_PRIM);
+@@ -111,118 +110,15 @@ LIBRARY_EXPORT bool RasterPS(const RenderParams rp, float4 vertexPosition, float
+         }
+     }
+     
+-    float2 ddxVertexUV = ddx(vertexUV);
+-    float2 ddyVertexUV = ddy(vertexUV);
+-    float2 lowResUV = vertexUV;
+-    if (!renderFlagUpscale2D(rp.flags)) {
+-        float2 screenPos = floor(vertexPosition.xy);
+-        screenPos.x += FbParams.horizontalMisalignment;
+-        lowResUV -= fmod(screenPos.xy, FbParams.resolutionScale.yy) * float2(ddxVertexUV.x, ddyVertexUV.y);
+-    }
+-    
+-    int tileIndex0 = 0;
+-    int tileIndex1 = 1;
+-    float lodFraction;
+-    float lodScale = 1.0f;
+-    if (!renderFlagUpscaleLOD(rp.flags)) {
+-        lodScale = FbParams.resolutionScale.y;
+-    }
+-    
+-    computeLOD(otherMode, instanceRenderIndices[gConstants.renderIndex].rdpTileCount, instanceRDPParams[instanceIndex].primLOD, lodScale, ddxVertexUV, ddyVertexUV, tileIndex0, tileIndex1, lodFraction);
+-
+-    float4 texVal0 = float4(0.0f, 0.0f, 0.0f, 1.0f);
+-    float4 texVal1 = float4(0.0f, 0.0f, 0.0f, 1.0f);
+-    if (renderFlagUsesTexture0(rp.flags)) {
+-        const uint globalTileIndex = instanceRenderIndices[gConstants.renderIndex].rdpTileIndex + tileIndex0;
+-        RDPTile rdpTile = RDPTiles[globalTileIndex];
+-        if (!renderFlagDynamicTiles(rp.flags)) {
+-            rdpTile.cms = renderCMS0(rp.flags);
+-            rdpTile.cmt = renderCMT0(rp.flags);
+-            rdpTile.nativeSampler = renderFlagNativeSampler0(rp.flags);
+-        }
+-        
+-        const GPUTile gpuTile = GPUTiles[globalTileIndex];
+-        const float2 textureUV = gpuTileFlagHighRes(gpuTile.flags) ? vertexUV : lowResUV;
+-        texVal0 = sampleTexture(otherMode, rp.flags, textureUV, ddxVertexUV, ddyVertexUV, rdpTile, gpuTile, false);
+-    }
+-    
+-    if (renderFlagUsesTexture1(rp.flags)) {
+-        const bool oneCycleHardwareBug = (otherMode.cycleType() == G_CYC_1CYCLE);
+-        const uint globalTileIndex = instanceRenderIndices[gConstants.renderIndex].rdpTileIndex + (oneCycleHardwareBug ? tileIndex0 : tileIndex1);
+-        RDPTile rdpTile = RDPTiles[globalTileIndex];
+-        if (!renderFlagDynamicTiles(rp.flags)) {
+-            rdpTile.cms = oneCycleHardwareBug ? renderCMS0(rp.flags) : renderCMS1(rp.flags);
+-            rdpTile.cmt = oneCycleHardwareBug ? renderCMT0(rp.flags) : renderCMT1(rp.flags);
+-            rdpTile.nativeSampler = oneCycleHardwareBug ? renderFlagNativeSampler0(rp.flags) : renderFlagNativeSampler1(rp.flags);
+-        }
+-        
+-        const GPUTile gpuTile = GPUTiles[globalTileIndex];
+-        const float2 textureUV = gpuTileFlagHighRes(gpuTile.flags) ? vertexUV : lowResUV;
+-        const uint nativeSampler = renderFlagNativeSampler1(rp.flags);
+-        texVal1 = sampleTexture(otherMode, rp.flags, textureUV, ddxVertexUV, ddyVertexUV, rdpTile, gpuTile, oneCycleHardwareBug);
+-    }
+-    
+-    // Color combiner.
+-    float4 shadeColor = vertexColor;
+-    float4 combinerColor;
+-    float alphaCompareValue;
+-    ColorCombiner::Inputs ccInputs;
+-    ccInputs.otherMode = otherMode;
+-    ccInputs.alphaOnly = false;
+-    ccInputs.texVal0 = texVal0;
+-    ccInputs.texVal1 = texVal1;
+-    ccInputs.primColor = instanceRDPParams[instanceIndex].primColor;
+-    ccInputs.shadeColor = shadeColor;
+-    ccInputs.envColor = instanceRDPParams[instanceIndex].envColor;
+-    ccInputs.keyCenter = instanceRDPParams[instanceIndex].keyCenter;
+-    ccInputs.keyScale = instanceRDPParams[instanceIndex].keyScale;
+-    ccInputs.lodFraction = lodFraction;
+-    ccInputs.primLodFrac = instanceRDPParams[instanceIndex].primLOD.x;
+-    ccInputs.noise = nextRand(randomSeed);
+-    ccInputs.K4 = (instanceRDPParams[instanceIndex].convertK[4] / 255.0f);
+-    ccInputs.K5 = (instanceRDPParams[instanceIndex].convertK[5] / 255.0f);
+-    colorCombiner.run(ccInputs, combinerColor, alphaCompareValue);
+-    
+-#if 0
+-    // Alpha dither.
+-    // TODO: To avoid increasing the alpha values here, the only viable choice would be to drop the precision down to 5-bit.
+-    // Since we'd rather keep the full precision of the alpha channel from the texture, this step is ignored for now.
+-    if (otherMode.alphaDither() != G_AD_DISABLE) {
+-        uint rgbDither = (otherMode.rgbDither() >> G_MDSFT_RGBDITHER) & 0x3;
+-        uint alphaDither = (otherMode.alphaDither() >> G_MDSFT_ALPHADITHER) & 0x3;
+-        float alphaDitherFloat = (AlphaDitherValue(rgbDither, alphaDither, floor(vertexPosition.xy), randomSeed) / 255.0f);
+-        if (!otherMode.alphaCvgSel()) {
+-            combinerColor.a += alphaDitherFloat;
+-        }
+-        
+-        shadeColor.a += alphaDitherFloat;
+-        alphaCompareValue += alphaDitherFloat;
+-    }
+-#endif
+-    
+-    // Alpha compare.
+-    if (otherMode.alphaCompare() == G_AC_DITHER) {
+-        if (alphaCompareValue < nextRand(randomSeed)) {
+-            return false;
+-        }
+-    }
+-    else if (otherMode.alphaCompare() == G_AC_THRESHOLD) {
+-        if (alphaCompareValue < instanceRDPParams[instanceIndex].blendColor.a) {
+-            return false;
+-        }
+-    }
+-    
+-    // Compute coverage estimation.
+-    const bool usesHDR = renderFlagUsesHDR(rp.flags);
+-    const float cvgRange = usesHDR ? 65535.0f : 255.0f;
+-    float resultCvg = (8.0f / cvgRange) * (otherMode.cvgXAlpha() ? combinerColor.a : 1.0f);
+-    
+-    // Discard all pixels without coverage.
+-    const float CoverageThreshold = 1.0f / cvgRange;
+-    if (resultCvg < CoverageThreshold) {
++    float4 shadeColor, combinerColor;
++    float alphaCompareValue, resultCvg;
++    if (!EvaluateNativeMaterial(rp, instanceRenderIndices[gConstants.renderIndex],
++        vertexColor, vertexPosition, vertexUV, ddx(vertexUV), ddy(vertexUV), randomSeed,
++        shadeColor, combinerColor, alphaCompareValue, resultCvg)) {
+         return false;
+     }
+-    
++    const float cvgRange = renderFlagUsesHDR(rp.flags) ? 65535.0f : 255.0f;
++
+     // Add the blender if it can be replicated with simple emulation.
+     Blender::Inputs blInputs;
+     blInputs.blendColor = instanceRDPParams[instanceIndex].blendColor;

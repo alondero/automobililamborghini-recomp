@@ -34,6 +34,14 @@ significant single-space lines from `git diff --check`;
 | 0019 | RecompFrontend | The shared prompt dismisses on the mapped Back action, so a controller's cancel button backs out of the quit confirmation. Applied by CMake after 0017. Compared with upstream `main`, which builds the prompt with no element that listens for menu actions, so no controller action can dismiss it. Generic frontend behavior, kept local. |
 | 0020 | RecompFrontend | Enum selections wrap within the options column so the window-size presets remain readable. Applied by CMake after 0019. Compared on 2026-10-01 with [upstream enum rendering](https://github.com/N64Recomp/RecompFrontend/blob/main/recompui/src/config/ui_config_option.cpp), which creates the radio group without wrapping. Keeps the existing values, callbacks, and navigation. Checked on native Windows at 1600x900: all twelve choices fit two rows, and selecting 1920x1200 then Apply saves that size. The frontend settings test and idempotent CMake application pass; other platforms remain unverified. |
 | 0021 | RT64 | Shadow-only AS resources, shared parameter ABI and angular-query/fog kernel. Applied by CMake. Developer groundwork only; game receivers remain gated. Upstream comparison and hardware probe evidence are below. |
+| 0022 | RT64 | Opt-in queue-owned material/raster evidence and fenced GPU/present observation. Thread-local raster scope excludes HLE's framebuffer renderer. Port-owned capture policy; no sunlight Workload fields or production receiver integration. |
+| 0023 | Plume inside RT64 | D3D12 texture-to-buffer readback selects source sample positions when destination is a placed-footprint buffer, avoiding a null texture dereference. ROM-free 7x3 padded-row GPU regression. |
+| 0024 | RT64 | Optional D3D12 owner-output pipelines mirror native raster clipping, material/discard and depth behavior, including the generic ubershader fallback, into an R32G32_UINT diagnostic target with cloned depth. On RTX 3080 captures, enabling the diagnostic leaves the actual swapchain byte-identical. It is evidence instrumentation only; it does not implement shadow replacement. |
+| 0025 | RT64 | Adds immutable sunlight and separate caster/receiver admission metadata to the matching Workload through the developer evidence observer. HLE copies projection address identity alongside transform groups. Typed screen/backdrop exclusions retain zero face-index extent for non-indexed draws. The latest 48 model-0/one-player task captures have no unclassified draws, but all fail closed on native texture-alpha coverage and blended car geometry. No production receiver consumes these values and no native overlay is suppressed. |
+| 0026 | RT64 | Extracts native texture/combiner/alpha/coverage evaluation into a shared shader helper, with explicit UV derivatives and unchanged native raster arithmetic. Adds the helper to raster shader build dependencies. All 48 fresh game images match the preceding native build byte-for-byte; 30 synthetic hardware material cases pass. Ray-hit resource/attribute integration is still required and alpha admission remains closed. |
+| 0027 | RT64 | Adds generated-attribute reconstruction and explicit native-alpha candidate coverage to the shadow helper. Unsupported input invalidates coverage instead of becoming a solid caster. Thirty synthetic candidate cases agree with native RasterVS/RasterPS ownership; three uncertain shade-alpha/subpixel-LOD paths remain unsupported. Game alpha ranges are still rejected. |
+| 0028 | Plume inside RT64 | D3D12 graphics/compute pipeline factories return null when native PSO creation fails. A wrapper with no native handle cannot count as ready. Real failure injection returns null for both factories, then native raster/query submissions still pass. |
+| 0029 | RT64 | Opt-in D3D12 game alpha evidence borrows matching native descriptors and selected vertex shaders after the Workload fence. Isolated native owner passes and actual pre-clipping vertex outputs expose coverage disagreements; all game alpha admission remains closed. Raw draws retain zero face start and native rendering remains available. |
 
 ## Application matrix
 
@@ -53,11 +61,118 @@ still references the conditional full RT path; its
 does not implement this angular-query kernel. This local groundwork is not an
 upstream-supported feature or dependency upgrade. No upstream issue was opened.
 
+Patches **0022/0023/0024/0025/0026/0027/0028/0029** are applied idempotently by CMake on all supported build
+paths. Readback is an explicit D3D12 developer diagnostic; normal rendering has
+no observer or capture GPU allocations. The observer registers before queues
+start and is cleared after they join. Its scoped raster activation prevents
+HLE calls from entering queue-owned mutable capture state. Ownership, current
+measurements and remaining gates are in [presented evidence](../docs/rt-material-evidence.md).
+The owner map authenticates the exact draw that won native depth and the
+post-omission visible receiver at each VI filtering tap in the measured
+one-player matrix. Patch 0025 carries diagnostic metadata into its exact Workload,
+but sampled caster coverage is incomplete and no production receiver consumes it.
+
+The continuation separates receiver RGB/fog constraints from opaque caster
+coverage and records explicit screen/backdrop/HUD exclusions. The copied
+projection address is generic CPU provenance, with no game RAM reader in RT64;
+the port owns the USA HUD address and material policy. A preserving Windows
+build and all 48 project CTests pass. Twelve fresh circuit/mode replays have
+zero unclassified draws in all 48 tasks, with byte-identical native swapchain
+output. Texture-alpha and blended car ranges still keep every Workload incomplete.
+The current patch series matches all 31 modified/new RT64 source files in a
+separate pinned replay. Detailed policy evidence is in
+[material admission](../docs/rt-material-evidence.md#separate-caster-and-receiver-policies).
+
+Compared on 2026-10-02 with RT64
+`43373749dac9bbc1b653e6a02aed40a9e1783bed`: its
+[render hooks](https://github.com/rt64/rt64/blob/43373749dac9bbc1b653e6a02aed40a9e1783bed/src/rhi/rt64_render_hooks.h)
+provide init/draw/deinit callbacks but no queue/fence/present evidence observer.
+Compared with Plume `d72379344dacd3dbf9f810f92ddc87e6de1845b1`: its
+[D3D12 copy implementation](https://github.com/renderbag/plume/blob/d72379344dacd3dbf9f810f92ddc87e6de1845b1/plume_d3d12.cpp)
+still calls `setSamplePositions(dstLocation.texture)` unconditionally, although
+a placed-footprint destination has a buffer and no texture. Patch 0023 selects
+the source texture in that case. These are local generic changes, not upstream
+support claims; no upstream issue was opened.
+
+Compared on 2026-10-03 with current RT64 upstream `main` at
+`43373749dac9bbc1b653e6a02aed40a9e1783bed` (verified as the branch head) and
+the pinned source at `f0728a2520d5aa735886240de3fee75cc805f6d6`: the current
+[framebuffer renderer](https://github.com/rt64/rt64/blob/43373749dac9bbc1b653e6a02aed40a9e1783bed/src/render/rt64_framebuffer_renderer.cpp)
+and [raster shader](https://github.com/rt64/rt64/blob/43373749dac9bbc1b653e6a02aed40a9e1783bed/src/render/rt64_raster_shader.cpp)
+have no owner target allocation/depth clone, mirrored raster pass, or integer
+owner-output pipeline. Patch 0024 adds opt-in D3D12 diagnostic instrumentation
+for those behaviors; it does not add shadow replacement or upstream support.
+The full patch was replayed after 0005/0006/0009/0010/0011/0021/0022 on a
+separate worktree from the pin, then matched all 29 changed/new RT64 source
+paths byte-for-byte against the live patched checkout (excluding the nested
+Plume submodule). No upstream issue was opened.
+
+Compared on 2026-10-03 with RT64 upstream `main`, its [Workload](https://github.com/rt64/rt64/blob/main/src/hle/rt64_workload.h)
+has no sunlight metadata field and its [render hooks](https://github.com/rt64/rt64/blob/main/src/rhi/rt64_render_hooks.h)
+have no matching Workload callback. Patch 0025 adds that immutable diagnostic
+seam only; it does not add a game receiver or suppression path. No upstream
+issue was opened. The patch applies cleanly to the pinned RT64 tree after
+0005/0006/0009/0010/0011/0021/0022/0024, and the supported CMake build recognizes
+0025 as the latest idempotence guard before skipping or replaying the RT64 patch
+series.
+
+Compared on 2026-10-03 with RT64 upstream `main` at
+`43373749dac9bbc1b653e6a02aed40a9e1783bed`, its
+[RasterPS](https://github.com/rt64/rt64/blob/43373749dac9bbc1b653e6a02aed40a9e1783bed/src/shaders/RasterPS.hlsl)
+still evaluates native texture, combiner, alpha compare and coverage inline.
+Patch 0026 shares that existing arithmetic with explicit derivatives; it adds
+no ray-query calls to the native shader and changes no ordinary shader profile.
+Windows builds compile the native DXIL and SPIR-V variants. A separate pinned
+patch replay matches all 32 modified/new source files byte-for-byte. The hardware
+probe covers cached textures, scaled replacements, IA16 TMEM, dynamic tiles,
+native samplers and derivative-selected LOD. This is fixture evidence, not
+complete game ray-hit parity. No upstream issue was opened.
+
+Patch 0027 reconstructs UV, shade, displayed position and coarse derivatives
+from generated indexed attributes and the matching viewport/scale/offset.
+The shadow AS metadata distinguishes opaque solids from caller-authenticated
+alpha ranges. Candidate evaluation uses the shared native material code; absent
+evaluators and unsupported input invalidate coverage. RT64 upstream at the
+same verified revision has no `NativeRayHit.hlsli` or sunlight scene/kernel.
+This remains local generic groundwork, with no game admission or RAM reader.
+The Windows builder and CMake recognize 0027 before replaying older patches
+whose contexts it changes. No upstream issue was opened.
+
+Compared on 2026-10-03 with Plume upstream `main` at
+`d72379344dacd3dbf9f810f92ddc87e6de1845b1`, its
+[D3D12 factories](https://github.com/renderbag/plume/blob/d72379344dacd3dbf9f810f92ddc87e6de1845b1/plume_d3d12.cpp)
+still return wrappers after failed graphics/compute PSO creation. Patch 0028
+checks the native handle and returns null. The GPU probe intentionally supplies
+a graphics root signature without vertex-input support and a compute root
+signature missing required resources. Both failures return null; subsequent
+valid raster and ray submissions pass. Only the two expected validation IDs are
+filtered during injection; the outer probe still rejects other errors. This
+does not validate game fallback on resource failure. No upstream issue was opened.
+
+Patch 0029 captures actual generated UVs, uploaded material bindings, selected
+native vertex bytecode and vertex outputs for the opt-in D3D12 alpha comparison.
+The six-circuit/mode probe still finds eight interior disagreements and grants
+no alpha or overlay-replacement admission. This local diagnostic is absent from
+the upstream revision verified above. Its geometry shader only records outputs
+in private targets; the coverage reference uses the original native pipeline.
+The normal raster path releases temporary vertex shaders as before. The clean
+pinned replay matches all 39 modified/new files from twelve RT64 patches.
+See [measured game evidence](../docs/rt-material-evidence.md#native-game-alpha-diagnostic).
+No upstream issue was opened.
+
+For an initialized Windows checkout with local dependency edits, use
+`./build.ps1 -PreserveSubmodules`. It verifies recursive dependency pins and
+skips checkout/clean operations. Like CMake, it recognizes 0029, 0027 or 0025 before
+revisiting earlier RT64 patches whose contexts have changed. The continuation
+replayed the nine Windows RT64 patches in a separate clean pinned worktree:
+all 31 modified/new files matched the active patched dependency byte-for-byte.
+No patch content or dependency pin changed in that continuation.
+
 | Build path | Applies |
 | --- | --- |
-| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0021 in CMake. |
-| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0021 in CMake. |
-| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0021 in CMake. |
+| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0029 in CMake. |
+| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0029 in CMake. |
+| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0029 in CMake. |
 
 If a patch no longer applies to its pinned submodule, stop and update the
 patch or pin as a deliberate change. Do not reset a developer's unrelated

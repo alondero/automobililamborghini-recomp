@@ -1,16 +1,18 @@
 {
   "schema": 1,
-  "name": "rt-sun-provenance",
+  "name": "rt-overlay-owner-native",
   "headless": false,
   "warp": "1:1:0:1",
   "warp_mode": 0,
   "max_vis": 2400,
   "diagnostics": {
     "rt_sun_probe": true,
-    "rt_task_capture": true
+    "rt_task_capture": true,
+    "rt_render_capture": true,
+    "rt_owner_buffer": true
   },
   "input": {
-    "replay": "../recordings/sky-turning-smoke.jsonl",
+    "replay": "../recordings/rt-stationary-camera.jsonl",
     "start_state": 8,
     "start_delay": 0,
     "exit_on_end": true
@@ -19,14 +21,9 @@
     "max_state_at_least": 8,
     "replay_complete": true,
     "min_swaps": 60,
-    "min_abs_player_speed": 10,
     "presentation_mode": "PresentEarly",
     "sun_probe": true,
-    "rt_task_captures": [
-      60,
-      300,
-      420,
-      540
-    ]
+    "rt_task_captures": [60, 300, 420, 540],
+    "rt_render_captures": [60, 300, 420, 540]
   }
 }

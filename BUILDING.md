@@ -84,6 +84,12 @@ The script applies the Windows patch set, configures CMake twice, generates
 RecompiledFuncs/ and src/aspMain.cpp, builds the executable, and runs the
 Windows RDRAM allocation regression when that target is available.
 
+For an initialized checkout with local dependency changes, use
+`./build.ps1 -PreserveSubmodules`. This verifies every recursive dependency pin,
+then keeps tracked and untracked dependency files while applying patches
+idempotently. Conflicting patches stop the build. The ordinary invocation
+reconstructs dependency files and must not be used to preserve local edits.
+
 ## Linux
 
 Place the ROM at the repository root, then run:

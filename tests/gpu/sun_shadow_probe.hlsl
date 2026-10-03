@@ -29,8 +29,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     if (id.x >= count) return;
     Probe input = Probes[id.x];
     Result result;
+    bool coverageValid;
     float visibility = SunShadowVisibility(Scene, Geometry, input.position,
-        input.normal, input.receiverDraw, input.receiverFace, Params);
+        input.normal, input.receiverDraw, input.receiverFace, Params, coverageValid);
     result.color = SunShadowCompose(input.nativeColor, input.fogContribution, visibility, Params);
     float minDot = 1, lengthError = 0;
     for (uint i = 0; i < Params.sampleCount; ++i) {
@@ -38,7 +39,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         minDot = min(minDot, dot(direction, Params.direction));
         lengthError = max(lengthError, abs(length(direction) - 1));
     }
-    result.info = float4(visibility, minDot, lengthError, 0);
+    result.info = float4(visibility, minDot, lengthError, coverageValid ? 1 : 0);
     result.directionStrength = float4(Params.direction, Params.strength);
     result.radiusIntervalBias = float4(Params.angularRadius, Params.rayMin, Params.rayMax, Params.originBias);
     result.flags = uint4(Params.sampleCount, Params.valid, Params.debugMode, Params.reserved);

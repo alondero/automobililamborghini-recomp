@@ -1,0 +1,899 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index c2e3357..468120a 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -24,6 +24,13 @@ function(native_material_dependencies INFILE OUTVAR)
+         # diagnostics and dynamically compiled library text. Keep incremental
+         # builds from retaining an earlier material/coverage implementation.
+         set(${OUTVAR} "${PROJECT_SOURCE_DIR}/src/shaders/NativeMaterial.hlsli" PARENT_SCOPE)
++    elseif(shader_filename MATCHES "^NativeAlpha(EvidenceCS|EvidenceDoubleCS|InputPS|VerticesGS)\\.hlsl$")
++        set(${OUTVAR} "${PROJECT_SOURCE_DIR}/src/shaders/NativeMaterial.hlsli"
++            "${PROJECT_SOURCE_DIR}/src/shaders/NativeRayHit.hlsli"
++            "${PROJECT_SOURCE_DIR}/src/shaders/NativeAlphaEvidenceCS.hlsl"
++            "${PROJECT_SOURCE_DIR}/src/shaders/TextureSampler.hlsli"
++            "${PROJECT_SOURCE_DIR}/src/shaders/TextureDecoder.hlsli"
++            "${PROJECT_SOURCE_DIR}/src/shared/rt64_native_alpha_evidence.h" PARENT_SCOPE)
+     else()
+         set(${OUTVAR} "" PARENT_SCOPE)
+     endif()
+@@ -394,6 +401,7 @@ set (SOURCES
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_render_target_manager.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_render_worker.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_sun_shadow_scene.cpp"
++    "${PROJECT_SOURCE_DIR}/src/render/rt64_native_alpha_evidence.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_rsp_processor.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_shader_common.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_shader_compiler.cpp"
+@@ -544,6 +552,12 @@ build_pixel_shader(  rt64 "src/shaders/PostBlendDitherNoisePS.hlsl" "src/shaders
+ build_pixel_shader(  rt64 "src/shaders/PostBlendDitherNoisePS.hlsl" "src/shaders/PostBlendDitherNoiseSubNegativePS.hlsl" "-D SUB_MODE" "-D NEGATIVE_MODE")
+ build_compute_shader(rt64 "src/shaders/RSPModifyCS.hlsl")
+ build_compute_shader(rt64 "src/shaders/RSPProcessCS.hlsl")
++if(WIN32)
++    build_shader_dxil(rt64 "src/shaders/NativeAlphaEvidenceCS.hlsl" "${DXC_CS_OPTS}")
++    build_shader_dxil(rt64 "src/shaders/NativeAlphaEvidenceDoubleCS.hlsl" "${DXC_CS_OPTS}")
++    build_shader_dxil(rt64 "src/shaders/NativeAlphaInputPS.hlsl" "${DXC_PS_OPTS}")
++    build_shader_dxil(rt64 "src/shaders/NativeAlphaVerticesGS.hlsl" "${DXC_GS_OPTS}")
++endif()
+ build_compute_shader(rt64 "src/shaders/RSPWorldCS.hlsl")
+ build_compute_shader(rt64 "src/shaders/RSPSmoothNormalCS.hlsl")
+ build_compute_shader(rt64 "src/shaders/RSPVertexTestZCS.hlsl")
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+index 58aa51b..bd2ca49 100644
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -606,7 +606,10 @@ namespace RT64 {
+                         triangles.faceCount * 3, i, drawCall.type == InstanceDrawCall::Type::IndexedTriangles,
+                         triangles.vertexTestZ, {triangles.screenScale.x, triangles.screenScale.y},
+                         {triangles.screenOffset.x, triangles.screenOffset.y}, triangles.scissor,
+-                        {framebuffer.evidenceParams.resolution.x, framebuffer.evidenceParams.resolution.y}, framebuffer.viewport};
++                        {framebuffer.evidenceParams.resolution.x, framebuffer.evidenceParams.resolution.y}, framebuffer.viewport,
++                        drawCall.type == InstanceDrawCall::Type::IndexedTriangles ? renderIndicesVector[i].faceIndicesStart : 0,
++                        renderIndicesVector[i].rdpTileIndex, renderIndicesVector[i].rdpTileCount,
++                        renderIndicesVector[i].highlightColor, triangles.nativeUber};
+                     if (!evidence->raster(range)) continue;
+                 }
+                 drawCallTriangles(drawCall);
+@@ -1397,6 +1400,10 @@ namespace RT64 {
+                 framebuffer.evidenceOwnerHeight, framebuffer.evidenceOwnerTexture.get(),
+                 framebuffer.evidenceOwnerComplete);
+         }
++        if (ownerObserver != nullptr && colorTarget != nullptr) {
++            ownerObserver->nativeMaterialBindings(colorTarget->addressForName,
++                colorTarget->width, colorTarget->height, this, framebufferIndex);
++        }
+     }
+ 
+     void FramebufferRenderer::waitForUploaders() {
+@@ -1782,9 +1789,11 @@ namespace RT64 {
+                         triangles.shaderDesc = call.shaderDesc;
+ 
+                         RasterShader *gpuShader = p.ubershadersOnly ? nullptr : p.rasterShaderCache->getGPUShader(call.shaderDesc);
++                        triangles.nativeUber = gpuShader == nullptr;
+                         if (gpuShader != nullptr) {
+                             triangles.pipeline = gpuShader->pipeline.get();
+                             triangles.ownerPipeline = gpuShader->ownerPipeline.get();
++                            triangles.evidenceVertexShader = gpuShader->evidenceVertexShader.get();
+                         }
+                         else {
+                             const bool copyMode = (call.shaderDesc.otherMode.cycleType() == G_CYC_COPY);
+@@ -1796,6 +1805,7 @@ namespace RT64 {
+                                 !copyMode && call.shaderDesc.otherMode.zCmp() && (call.shaderDesc.otherMode.zMode() != ZMODE_DEC),
+                                 !copyMode && call.shaderDesc.otherMode.zUpd(),
+                                 (call.shaderDesc.otherMode.cvgDst() == CVG_DST_WRAP) || (call.shaderDesc.otherMode.cvgDst() == CVG_DST_SAVE));
++                            triangles.evidenceVertexShader = rasterShaderUber->vertexShader.get();
+                         }
+                         
+                         triangles.faceCount = call.callDesc.triangleCount;
+diff --git a/src/render/rt64_framebuffer_renderer_call.h b/src/render/rt64_framebuffer_renderer_call.h
+index e2237c2..a6bbe7c 100644
+--- a/src/render/rt64_framebuffer_renderer_call.h
++++ b/src/render/rt64_framebuffer_renderer_call.h
+@@ -34,6 +34,7 @@ namespace RT64 {
+                 ShaderDescription shaderDesc;
+                 const RenderPipeline *pipeline;
+                 const RenderPipeline *ownerPipeline;
++                const RenderShader *evidenceVertexShader;
+                 interop::float2 screenScale;
+                 interop::float2 screenOffset;
+                 RenderRect scissor;
+@@ -42,6 +43,7 @@ namespace RT64 {
+                 bool vertexTestZ : 1;
+                 bool postBlendDitherNoise : 1;
+                 bool postBlendDitherNoiseNegative : 1;
++                bool nativeUber : 1; // Actual shader selected for this draw.
+             } triangles;
+ 
+             struct {
+diff --git a/src/render/rt64_native_alpha_evidence.cpp b/src/render/rt64_native_alpha_evidence.cpp
+new file mode 100644
+index 0000000..2239051
+--- /dev/null
++++ b/src/render/rt64_native_alpha_evidence.cpp
+@@ -0,0 +1,346 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#include "rt64_native_alpha_evidence.h"
++#include <algorithm>
++#include <cmath>
++#include <cstring>
++#include <stdexcept>
++#include "hle/rt64_workload.h"
++#include "rt64_framebuffer_renderer.h"
++#include "shared/rt64_raster_params.h"
++#ifdef _WIN32
++#include "contrib/plume/plume_d3d12.h"
++#include "shaders/NativeAlphaEvidenceCS.hlsl.dxil.h"
++#include "shaders/NativeAlphaEvidenceDoubleCS.hlsl.dxil.h"
++#include "shaders/NativeAlphaInputPS.hlsl.dxil.h"
++#include "shaders/NativeAlphaVerticesGS.hlsl.dxil.h"
++#endif
++
++namespace RT64 {
++bool CheckNativeAlphaEvidence(RenderWorker *worker, const FramebufferRenderer &renderer,
++        uint32_t framebufferIndex, const Workload &workload,
++        const std::vector<std::array<float, 4>> &screen, const std::vector<uint32_t> &renderIndices,
++        std::vector<interop::NativeAlphaEvidenceResult> &results,
++        std::vector<NativeAlphaVertexShaderEvidence> &vertexShaders,
++        std::vector<std::array<float, 4>> &nativeClip, std::string &error, NativeAlphaEvidenceDomain domain) {
++    results.clear();
++    vertexShaders.clear();
++    nativeClip.clear();
++    error.clear();
++#ifndef _WIN32
++    error = "Native alpha evidence requires the D3D12 diagnostic backend";
++    return false;
++#else
++    try {
++        const auto require = [](bool value, const char *message) {
++            if (!value) throw std::runtime_error(message);
++        };
++        require(domain == NativeAlphaEvidenceDomain::ReprojectedHit || domain == NativeAlphaEvidenceDomain::RasterPixelCenter ||
++            domain == NativeAlphaEvidenceDomain::RasterPixelCenterDoubleUV,
++            "Invalid native alpha evidence domain");
++        require(worker && worker->device && framebufferIndex < renderer.framebufferCount &&
++            framebufferIndex < renderer.framebufferVector.size(), "Invalid native alpha evidence binding");
++        const auto *nativeDevice = dynamic_cast<plume::D3D12Device *>(worker->device);
++        require(nativeDevice != nullptr,
++            "Native alpha evidence requires the D3D12 diagnostic backend");
++        const bool doubleUV = domain == NativeAlphaEvidenceDomain::RasterPixelCenterDoubleUV;
++        if (doubleUV) {
++            D3D12_FEATURE_DATA_D3D12_OPTIONS options{};
++            require(SUCCEEDED(nativeDevice->d3d->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options, sizeof(options))) &&
++                options.DoublePrecisionFloatShaderOps, "Native alpha double UV interpolation unsupported");
++        }
++        require(worker->device->getCapabilities().geometryShader, "Native alpha vertex tracing unsupported");
++        const auto &fb = renderer.framebufferVector[framebufferIndex];
++        const auto *storage = fb.renderTargetDrawCall.fbStorage;
++        require(storage && storage->colorTarget && storage->depthTarget, "Native alpha framebuffer unavailable");
++        require(storage->colorTarget->multisampling.sampleCount <= 1 &&
++            storage->depthTarget->multisampling.sampleCount <= 1, "MSAA alpha evidence unsupported");
++        const uint32_t width = storage->colorTarget->width, height = storage->colorTarget->height;
++        require(width && height && width <= 4096 && height <= 4096, "Native alpha target exceeds budget");
++        // Owner, depth and two float4 attribute targets, plus bounded buffers.
++        require(uint64_t(width) * height <= (120u * 1024u * 1024u) / 44,
++            "Native alpha target memory budget exceeded");
++        require(screen.size() == workload.drawData.vertexCount() &&
++            renderer.descCommonSet && renderer.descTextureSet && fb.descDummyFbSet &&
++            renderer.rendererPipelineLayout, "Native alpha material bindings unavailable");
++        std::vector<interop::NativeAlphaEvidenceParams> params;
++        size_t shaderBytes = 0;
++        for (uint32_t renderIndex : renderIndices) {
++            require(renderIndex < renderer.instanceDrawCallVector.size() &&
++                renderIndex < renderer.renderIndicesVector.size(), "Native alpha render index out of range");
++            const auto &call = renderer.instanceDrawCallVector[renderIndex];
++            require(call.type == InstanceDrawCall::Type::IndexedTriangles &&
++                !call.triangles.vertexTestZ && call.triangles.ownerPipeline && call.triangles.evidenceVertexShader &&
++                call.triangles.shaderDesc.flags.sampleCount == 0, "Unsupported native alpha raster draw");
++            const auto *nativeVS = dynamic_cast<const plume::D3D12Shader *>(call.triangles.evidenceVertexShader);
++            require(nativeVS && !nativeVS->d3d.empty() &&
++                nativeVS->d3d.size() <= 16u * 1024u * 1024u - shaderBytes,
++                "Native alpha vertex shader evidence exceeds budget");
++            shaderBytes += nativeVS->d3d.size();
++            vertexShaders.push_back({renderIndex, nativeVS->d3d});
++            require(call.triangles.faceCount <= 16384 - params.size(), "Native alpha face budget exceeded");
++            const auto &indices = workload.drawData.faceIndices;
++            const uint32_t start = call.triangles.indexStart, count = call.triangles.faceCount * 3;
++            require(start <= indices.size() && count <= indices.size() - start, "Native alpha face extent mismatch");
++            for (uint32_t face = start; face < start + count; face += 3) {
++                interop::NativeAlphaEvidenceParams p{};
++                p.renderIndex = renderIndex;
++                p.faceStart = face;
++                p.resultIndex = uint32_t(params.size());
++                p.inputDomain = uint32_t(domain);
++                p.screenScale = call.triangles.screenScale;
++                p.screenOffset = call.triangles.screenOffset;
++                p.viewport = {fb.viewport.x, fb.viewport.y, fb.viewport.width, fb.viewport.height};
++                p.targetSize = {width, height};
++                double left = width, top = height, right = 0, bottom = 0;
++                bool finite = true;
++                for (uint32_t i = 0; i < 3; ++i) {
++                    require(indices[face + i] < screen.size(), "Native alpha vertex out of range");
++                    const auto &s = screen[indices[face + i]];
++                    finite &= std::isfinite(s[0]) && std::isfinite(s[1]) &&
++                        std::isfinite(s[2]) && std::isfinite(s[3]) && s[3] > 1e-6f;
++                    const double ndcX = (s[0] - fb.evidenceParams.resolution.x / 2) /
++                        (fb.evidenceParams.resolution.x / 2);
++                    const double ndcY = (s[1] - fb.evidenceParams.resolution.y / 2) /
++                        (-fb.evidenceParams.resolution.y / 2);
++                    const double x = fb.viewport.x + fb.viewport.width / 2 +
++                        (ndcX * p.screenScale.x + p.screenOffset.x) * fb.viewport.width / 2;
++                    const double y = fb.viewport.y + fb.viewport.height / 2 -
++                        (ndcY * p.screenScale.y + p.screenOffset.y) * fb.viewport.height / 2;
++                    finite &= std::isfinite(x) && std::isfinite(y);
++                    left = std::min(left, x); right = std::max(right, x);
++                    top = std::min(top, y); bottom = std::max(bottom, y);
++                }
++                const auto &scissor = call.triangles.scissor;
++                const int32_t maxX = std::min<int32_t>(int32_t(width), scissor.right);
++                const int32_t maxY = std::min<int32_t>(int32_t(height), scissor.bottom);
++                const int32_t minX = std::max(0, scissor.left), minY = std::max(0, scissor.top);
++                require(maxX >= minX && maxY >= minY, "Invalid native alpha scissor");
++                // Expand the CPU bounds before dispatch: the GPU computes the
++                // final barycentrics from the exact generated attributes.
++                p.testRect = finite ? interop::int4(
++                    int32_t(std::clamp(std::floor(left) - 2, double(minX), double(maxX))),
++                    int32_t(std::clamp(std::floor(top) - 2, double(minY), double(maxY))),
++                    int32_t(std::clamp(std::ceil(right) + 2, double(minX), double(maxX))),
++                    int32_t(std::clamp(std::ceil(bottom) + 2, double(minY), double(maxY)))) :
++                    interop::int4(minX, minY, std::min(minX + 1, maxX), std::min(minY + 1, maxY));
++                params.push_back(p);
++                results.push_back({renderIndex, face, 0, 0, 0, 0, 0, 0xFFFFFFFF, {}, {}, {}, {}, {}});
++            }
++        }
++        require(!params.empty(), "No native alpha faces selected");
++        const size_t bytes = results.size() * sizeof(results[0]);
++        nativeClip.resize(results.size() * 3);
++        const size_t clipBytes = nativeClip.size() * sizeof(nativeClip[0]);
++        auto *device = worker->device;
++        auto initial = device->createBuffer(RenderBufferDesc::UploadBuffer(bytes));
++        auto output = device->createBuffer(RenderBufferDesc::DefaultBuffer(bytes,
++            RenderBufferFlag::STORAGE | RenderBufferFlag::UNORDERED_ACCESS));
++        auto readback = device->createBuffer(RenderBufferDesc::ReadbackBuffer(bytes));
++        auto initialClip = device->createBuffer(RenderBufferDesc::UploadBuffer(clipBytes));
++        auto clip = device->createBuffer(RenderBufferDesc::DefaultBuffer(clipBytes,
++            RenderBufferFlag::STORAGE | RenderBufferFlag::UNORDERED_ACCESS));
++        auto clipReadback = device->createBuffer(RenderBufferDesc::ReadbackBuffer(clipBytes));
++        auto reference = device->createTexture(RenderTextureDesc::ColorTarget(width, height, RenderFormat::R32G32_UINT));
++        auto depth = device->createTexture(RenderTextureDesc::DepthTarget(width, height, RenderFormat::D32_FLOAT));
++        auto nativeUV = device->createTexture(RenderTextureDesc::ColorTarget(width, height, RenderFormat::R32G32B32A32_FLOAT));
++        auto nativeDerivatives = device->createTexture(RenderTextureDesc::ColorTarget(width, height, RenderFormat::R32G32B32A32_FLOAT));
++        require(initial && output && readback && initialClip && clip && clipReadback && reference && depth && nativeUV && nativeDerivatives,
++            "Native alpha resources unavailable");
++        const RenderTexture *attachment = reference.get();
++        auto framebuffer = device->createFramebuffer(RenderFramebufferDesc(&attachment, 1, depth.get()));
++        const RenderTexture *inputAttachments[] = {nativeUV.get(), nativeDerivatives.get()};
++        auto inputFramebuffer = device->createFramebuffer(RenderFramebufferDesc(inputAttachments, 2, depth.get()));
++        auto inputShader = device->createShader(NativeAlphaInputPSBlobDXIL, sizeof(NativeAlphaInputPSBlobDXIL),
++            "PSMain", RenderShaderFormat::DXIL);
++        auto geometryShader = device->createShader(NativeAlphaVerticesGSBlobDXIL, sizeof(NativeAlphaVerticesGSBlobDXIL),
++            "GSMain", RenderShaderFormat::DXIL);
++        require(inputFramebuffer && inputShader && geometryShader, "Native alpha input pipeline bindings unavailable");
++        const RenderInputElement elements[] = {
++            RenderInputElement("POSITION", 0, 0, RenderFormat::R32G32B32A32_FLOAT, 0, 0),
++            RenderInputElement("TEXCOORD", 0, 1, RenderFormat::R32G32_FLOAT, 1, 0),
++            RenderInputElement("COLOR", 0, 2, RenderFormat::R32G32B32A32_FLOAT, 2, 0)
++        };
++        RenderDescriptorSetBuilder builder;
++        builder.begin();
++        const auto facesBinding = builder.addByteAddressBuffer(0), screenBinding = builder.addByteAddressBuffer(1);
++        const auto uvBinding = builder.addByteAddressBuffer(2), shadeBinding = builder.addByteAddressBuffer(3);
++        const auto referenceBinding = builder.addTexture(4), resultBinding = builder.addReadWriteStructuredBuffer(0);
++        const auto nativeUVBinding = builder.addTexture(5), nativeDerivativesBinding = builder.addTexture(6);
++        const auto clipBinding = builder.addReadWriteStructuredBuffer(1), clipReadBinding = builder.addStructuredBuffer(7);
++        builder.end();
++        auto set = builder.create(device);
++        RenderPipelineLayoutBuilder layoutBuilder;
++        layoutBuilder.begin(false, true);
++        layoutBuilder.addDescriptorSet(*renderer.descCommonSet);
++        layoutBuilder.addDescriptorSet(*renderer.descTextureSet);
++        layoutBuilder.addDescriptorSet(*renderer.descTextureSet);
++        layoutBuilder.addDescriptorSet(*fb.descDummyFbSet);
++        layoutBuilder.addDescriptorSet(builder.descriptorSetDesc);
++        layoutBuilder.addPushConstant(0, 0, sizeof(interop::RasterParams), RenderShaderStageFlag::VERTEX | RenderShaderStageFlag::PIXEL);
++        layoutBuilder.addPushConstant(0, 4, sizeof(interop::NativeAlphaEvidenceParams), RenderShaderStageFlag::GEOMETRY | RenderShaderStageFlag::COMPUTE);
++        layoutBuilder.end();
++        auto layout = layoutBuilder.create(device);
++        auto shader = device->createShader(doubleUV ? NativeAlphaEvidenceDoubleCSBlobDXIL : NativeAlphaEvidenceCSBlobDXIL,
++            doubleUV ? sizeof(NativeAlphaEvidenceDoubleCSBlobDXIL) : sizeof(NativeAlphaEvidenceCSBlobDXIL),
++            "CSMain", RenderShaderFormat::DXIL);
++        require(framebuffer && set && layout && shader, "Native alpha pipeline bindings unavailable");
++        auto pipeline = device->createComputePipeline(RenderComputePipelineDesc(layout.get(), shader.get(), 8, 8, 1));
++        require(bool(pipeline), "Native alpha pipeline creation failed");
++        std::vector<std::unique_ptr<RenderPipeline>> inputPipelines;
++        for (uint32_t renderIndex : renderIndices) {
++            const auto &call = renderer.instanceDrawCallVector[renderIndex];
++            RenderGraphicsPipelineDesc desc;
++            desc.pipelineLayout = layout.get();
++            desc.vertexShader = call.triangles.evidenceVertexShader;
++            desc.geometryShader = geometryShader.get();
++            desc.pixelShader = inputShader.get();
++            desc.renderTargetCount = 2;
++            for (uint32_t i = 0; i < 2; ++i) {
++                desc.renderTargetFormat[i] = RenderFormat::R32G32B32A32_FLOAT;
++                desc.renderTargetBlend[i] = RenderBlendDesc::Copy();
++            }
++            desc.depthTargetFormat = RenderFormat::D32_FLOAT;
++            desc.depthClipEnabled = !call.triangles.shaderDesc.flags.NoN;
++            desc.depthEnabled = desc.depthWriteEnabled = true;
++            desc.depthFunction = RenderComparisonFunction::LESS;
++            desc.inputSlots = renderer.vertexInputSlots.data();
++            desc.inputSlotsCount = uint32_t(renderer.vertexInputSlots.size());
++            desc.inputElements = elements;
++            desc.inputElementsCount = 3;
++            auto nativePipeline = device->createGraphicsPipeline(desc);
++            require(bool(nativePipeline), "Native alpha input pipeline creation failed");
++            inputPipelines.push_back(std::move(nativePipeline));
++        }
++        void *mapped = initial->map();
++        require(mapped != nullptr, "Native alpha initialization map failed");
++        std::memcpy(mapped, results.data(), bytes);
++        initial->unmap();
++        mapped = initialClip->map();
++        require(mapped != nullptr, "Native alpha clip initialization map failed");
++        std::memset(mapped, 0, clipBytes);
++        initialClip->unmap();
++        set->setBuffer(facesBinding, workload.drawBuffers.faceIndicesBuffer.get(), workload.drawBuffers.faceIndicesBuffer.allocatedSize);
++        set->setBuffer(screenBinding, workload.outputBuffers.screenPosBuffer.buffer.get(), workload.outputBuffers.screenPosBuffer.allocatedSize);
++        set->setBuffer(uvBinding, workload.outputBuffers.genTexCoordBuffer.buffer.get(), workload.outputBuffers.genTexCoordBuffer.allocatedSize);
++        set->setBuffer(shadeBinding, workload.outputBuffers.shadedColBuffer.buffer.get(), workload.outputBuffers.shadedColBuffer.allocatedSize);
++        set->setTexture(referenceBinding, reference.get(), RenderTextureLayout::SHADER_READ);
++        set->setTexture(nativeUVBinding, nativeUV.get(), RenderTextureLayout::SHADER_READ);
++        set->setTexture(nativeDerivativesBinding, nativeDerivatives.get(), RenderTextureLayout::SHADER_READ);
++        const RenderBufferStructuredView resultView(sizeof(interop::NativeAlphaEvidenceResult));
++        set->setBuffer(resultBinding, output.get(), bytes, &resultView);
++        const RenderBufferStructuredView clipView(sizeof(nativeClip[0]));
++        set->setBuffer(clipBinding, clip.get(), clipBytes, &clipView);
++        set->setBuffer(clipReadBinding, clip.get(), clipBytes, &clipView);
++        auto *commands = worker->commandList.get();
++        // Declared after the GPU resources so unwinding fences submitted work
++        // before destroying any allocation or borrowed-resource descriptor.
++        struct FenceScope {
++            RenderWorker *worker;
++            bool recording = false, submitted = false;
++            ~FenceScope() {
++                if (recording) worker->commandList->end();
++                if (submitted) worker->wait();
++            }
++        } fence{worker};
++        commands->begin(); fence.recording = true;
++        commands->barriers(RenderBarrierStage::COPY, RenderBufferBarrier(output.get(), RenderBufferAccess::WRITE));
++        commands->copyBufferRegion(output->at(0), initial->at(0), bytes);
++        commands->barriers(RenderBarrierStage::COPY, RenderBufferBarrier(clip.get(), RenderBufferAccess::WRITE));
++        commands->copyBufferRegion(clip->at(0), initialClip->at(0), clipBytes);
++        commands->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, {
++            RenderBufferBarrier(output.get(), RenderBufferAccess::WRITE),
++            RenderBufferBarrier(workload.drawBuffers.faceIndicesBuffer.defaultBuffer.get(), RenderBufferAccess::READ),
++            RenderBufferBarrier(workload.outputBuffers.screenPosBuffer.buffer.get(), RenderBufferAccess::READ),
++            RenderBufferBarrier(workload.outputBuffers.genTexCoordBuffer.buffer.get(), RenderBufferAccess::READ),
++            RenderBufferBarrier(workload.outputBuffers.shadedColBuffer.buffer.get(), RenderBufferAccess::READ)
++        });
++        for (const auto &p : params) {
++            if (p.testRect.z <= p.testRect.x || p.testRect.w <= p.testRect.y) continue;
++            const RenderRect rect(p.testRect.x, p.testRect.y, p.testRect.z, p.testRect.w);
++            const auto &call = renderer.instanceDrawCallVector[p.renderIndex];
++            commands->barriers(RenderBarrierStage::GRAPHICS, {
++                RenderTextureBarrier(reference.get(), RenderTextureLayout::COLOR_WRITE),
++                RenderTextureBarrier(depth.get(), RenderTextureLayout::DEPTH_WRITE)
++            });
++            commands->setFramebuffer(framebuffer.get());
++            commands->clearColor(0, RenderColor(0, 0, 0, 0), &rect, 1);
++            commands->clearDepth(true, 1, &rect, 1);
++            commands->setGraphicsPipelineLayout(renderer.rendererPipelineLayout);
++            commands->setGraphicsDescriptorSet(renderer.descCommonSet->get(), 0);
++            commands->setGraphicsDescriptorSet(renderer.descTextureSet->get(), 1);
++            commands->setGraphicsDescriptorSet(renderer.descTextureSet->get(), 2);
++            commands->setGraphicsDescriptorSet(fb.descDummyFbSet->get(), 3);
++            commands->setVertexBuffers(0, renderer.indexedVertexViews.data(), uint32_t(renderer.indexedVertexViews.size()), renderer.vertexInputSlots.data());
++            commands->setIndexBuffer(&renderer.indexBufferView);
++            commands->setViewports(fb.viewport);
++            commands->setScissors(rect);
++            commands->setPipeline(call.triangles.ownerPipeline);
++            interop::RasterParams raster{};
++            raster.renderIndex = p.renderIndex; raster.screenScale = p.screenScale; raster.screenOffset = p.screenOffset;
++            commands->setGraphicsPushConstants(0, &raster);
++            commands->drawIndexedInstanced(3, 1, p.faceStart, 0, 0);
++            commands->barriers(RenderBarrierStage::GRAPHICS, {
++                RenderTextureBarrier(nativeUV.get(), RenderTextureLayout::COLOR_WRITE),
++                RenderTextureBarrier(nativeDerivatives.get(), RenderTextureLayout::COLOR_WRITE)
++            });
++            commands->barriers(RenderBarrierStage::GRAPHICS, RenderBufferBarrier(clip.get(), RenderBufferAccess::WRITE));
++            commands->setFramebuffer(inputFramebuffer.get());
++            commands->clearColor(0, RenderColor(0, 0, 0, 0), &rect, 1);
++            commands->clearColor(1, RenderColor(0, 0, 0, 0), &rect, 1);
++            commands->clearDepth(true, 1, &rect, 1);
++            const auto draw = std::find(renderIndices.begin(), renderIndices.end(), p.renderIndex);
++            commands->setGraphicsPipelineLayout(layout.get());
++            commands->setGraphicsDescriptorSet(renderer.descCommonSet->get(), 0);
++            commands->setGraphicsDescriptorSet(renderer.descTextureSet->get(), 1);
++            commands->setGraphicsDescriptorSet(renderer.descTextureSet->get(), 2);
++            commands->setGraphicsDescriptorSet(fb.descDummyFbSet->get(), 3);
++            commands->setGraphicsDescriptorSet(set.get(), 4);
++            commands->setPipeline(inputPipelines[size_t(draw - renderIndices.begin())].get());
++            commands->setGraphicsPushConstants(0, &raster);
++            commands->setGraphicsPushConstants(1, &p);
++            commands->drawIndexedInstanced(3, 1, p.faceStart, 0, 0);
++            commands->barriers(RenderBarrierStage::COMPUTE, {
++                RenderTextureBarrier(reference.get(), RenderTextureLayout::SHADER_READ),
++                RenderTextureBarrier(nativeUV.get(), RenderTextureLayout::SHADER_READ),
++                RenderTextureBarrier(nativeDerivatives.get(), RenderTextureLayout::SHADER_READ)
++            });
++            commands->barriers(RenderBarrierStage::COMPUTE, RenderBufferBarrier(clip.get(), RenderBufferAccess::READ));
++            commands->setComputePipelineLayout(layout.get());
++            commands->setPipeline(pipeline.get());
++            commands->setComputeDescriptorSet(renderer.descCommonSet->get(), 0);
++            commands->setComputeDescriptorSet(renderer.descTextureSet->get(), 1);
++            commands->setComputeDescriptorSet(renderer.descTextureSet->get(), 2);
++            commands->setComputeDescriptorSet(fb.descDummyFbSet->get(), 3);
++            commands->setComputeDescriptorSet(set.get(), 4);
++            commands->setComputePushConstants(1, &p);
++            commands->dispatch((p.testRect.z - p.testRect.x + 7) / 8, (p.testRect.w - p.testRect.y + 7) / 8, 1);
++        }
++        commands->barriers(RenderBarrierStage::COPY, RenderBufferBarrier(output.get(), RenderBufferAccess::READ));
++        commands->copyBufferRegion(readback->at(0), output->at(0), bytes);
++        commands->barriers(RenderBarrierStage::COPY, RenderBufferBarrier(clip.get(), RenderBufferAccess::READ));
++        commands->copyBufferRegion(clipReadback->at(0), clip->at(0), clipBytes);
++        commands->end(); fence.recording = false;
++        worker->execute(); fence.submitted = true;
++        worker->wait(); fence.submitted = false;
++        RenderRange range(0, bytes);
++        const void *data = readback->map(0, &range);
++        require(data != nullptr, "Native alpha results map failed");
++        std::memcpy(results.data(), data, bytes);
++        readback->unmap(0, &range);
++        range = RenderRange(0, clipBytes);
++        data = clipReadback->map(0, &range);
++        require(data != nullptr, "Native alpha clip results map failed");
++        std::memcpy(nativeClip.data(), data, clipBytes);
++        clipReadback->unmap(0, &range);
++        return true;
++    } catch (const std::exception &e) {
++        error = e.what();
++        results.clear();
++        vertexShaders.clear();
++        nativeClip.clear();
++        return false;
++    }
++#endif
++}
++}
+diff --git a/src/render/rt64_native_alpha_evidence.h b/src/render/rt64_native_alpha_evidence.h
+new file mode 100644
+index 0000000..f38a959
+--- /dev/null
++++ b/src/render/rt64_native_alpha_evidence.h
+@@ -0,0 +1,33 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#pragma once
++#include <array>
++#include <string>
++#include <vector>
++#include "shared/rt64_native_alpha_evidence.h"
++
++namespace RT64 {
++struct RenderWorker;
++struct FramebufferRenderer;
++struct Workload;
++enum class NativeAlphaEvidenceDomain : uint32_t { ReprojectedHit = 0, RasterPixelCenter = 1, RasterPixelCenterDoubleUV = 2 };
++
++struct NativeAlphaVertexShaderEvidence {
++    uint32_t renderIndex = 0;
++    std::vector<uint8_t> dxil;
++};
++
++// Diagnostic only, called after the Workload fence while the worker and texture
++// cache remain exclusively owned. References never escape this call. It submits
++// isolated native triangles into its own color/depth targets, compares interior
++// material coverage, waits, and releases all GPU resources after that fence.
++// This does not prove raster edges, ray intersection precision, blended objects,
++// receiver composition, or view readiness and cannot suppress native output.
++bool CheckNativeAlphaEvidence(RenderWorker *worker, const FramebufferRenderer &renderer,
++    uint32_t framebufferIndex, const Workload &workload,
++    const std::vector<std::array<float, 4>> &screen, const std::vector<uint32_t> &renderIndices,
++    std::vector<interop::NativeAlphaEvidenceResult> &results,
++    std::vector<NativeAlphaVertexShaderEvidence> &vertexShaders,
++    std::vector<std::array<float, 4>> &nativeClip, std::string &error,
++    NativeAlphaEvidenceDomain domain = NativeAlphaEvidenceDomain::ReprojectedHit);
++}
+diff --git a/src/render/rt64_raster_shader.cpp b/src/render/rt64_raster_shader.cpp
+index 857a02a..39d3418 100644
+--- a/src/render/rt64_raster_shader.cpp
++++ b/src/render/rt64_raster_shader.cpp
+@@ -3,6 +3,7 @@
+ //
+ 
+ #include "rt64_raster_shader.h"
++#include "rhi/rt64_render_hooks.h"
+ 
+ #include "xxHash/xxh3.h"
+ 
+@@ -264,6 +265,9 @@ namespace RT64 {
+             ownerCreation.cvgAdd = false;
+             ownerCreation.ownerBuffer = true;
+             ownerPipeline = createPipeline(ownerCreation);
++            const auto *evidence = GetRenderEvidenceObserver();
++            if (evidence && evidence->nativeAlphaEvidenceEnabled())
++                evidenceVertexShader = std::move(vertexShader);
+         }
+ #   endif
+     }
+@@ -644,7 +648,12 @@ namespace RT64 {
+ 
+             pipelineThreads.clear();
+             pipelineThreadCreations.clear();
+-            vertexShader.reset();
++            // The opt-in native alpha diagnostic reuses the displayed draw's
++            // exact vertex shader. Normal rendering releases it as before.
++            const RenderEvidenceObserver *evidence = GetRenderEvidenceObserver();
++            if ((evidence == nullptr) || !evidence->nativeAlphaEvidenceEnabled()) {
++                vertexShader.reset();
++            }
+             pixelShader.reset();
+             ownerPixelShader.reset();
+             pipelinesCreated = true;
+diff --git a/src/render/rt64_raster_shader.h b/src/render/rt64_raster_shader.h
+index 987b987..5f1ad21 100644
+--- a/src/render/rt64_raster_shader.h
++++ b/src/render/rt64_raster_shader.h
+@@ -67,6 +67,9 @@ namespace RT64 {
+         std::unique_ptr<RenderPipeline> pipeline;
+         std::unique_ptr<RenderShader> ownerPixelShader;
+         std::unique_ptr<RenderPipeline> ownerPipeline;
++        // Kept only for the opt-in native-attribute diagnostic, through the
++        // shader-cache lifetime. Normal rendering releases its temporary VS.
++        std::unique_ptr<RenderShader> evidenceVertexShader;
+ 
+         RasterShader(RenderDevice *device, const ShaderDescription &desc, const RenderPipelineLayout *pipelineLayout, RenderShaderFormat shaderFormat, const RenderMultisampling &multisampling, 
+             const ShaderCompiler *shaderCompiler, const OptimizerCacheSPIRV *optimizerCacheSPIRV);
+diff --git a/src/rhi/rt64_render_hooks.h b/src/rhi/rt64_render_hooks.h
+index c585c9d..d6b7b27 100644
+--- a/src/rhi/rt64_render_hooks.h
++++ b/src/rhi/rt64_render_hooks.h
+@@ -16,6 +16,7 @@ namespace RT64 {
+     struct Workload;
+     struct RenderWorker;
+     struct SunShadowWorkload;
++    struct FramebufferRenderer;
+     struct RasterEvidenceRange {
+         uint32_t callIndex, firstIndex, indexCount;
+         uint32_t renderIndex;
+@@ -24,6 +25,10 @@ namespace RT64 {
+         RenderRect scissor;
+         float resolution[2];
+         RenderViewport viewport;
++        // Values of the actual RenderIndices entry selected by renderIndex.
++        // instanceIndex/callIndex is a different identity from renderIndex.
++        uint32_t nativeFaceStart, tileStart, tileCount, highlightColor;
++        bool nativeUber;
+     };
+     struct PresentationEvidence {
+         uint64_t workloadId = 0, presentId = 0;
+@@ -50,10 +55,15 @@ namespace RT64 {
+         virtual void begin(const Workload &workload, float weight) noexcept = 0;
+         virtual bool raster(const RasterEvidenceRange &range) noexcept = 0;
+         virtual bool ownerBufferEnabled() const noexcept { return false; }
++        virtual bool nativeAlphaEvidenceEnabled() const noexcept { return false; }
+         virtual void ownerBufferIncomplete(uint32_t colorAddress, const char *reason,
+                 uint32_t identity) noexcept { }
+         virtual void ownerBufferRendered(uint32_t colorAddress, uint32_t width,
+             uint32_t height, const RenderTexture *ownerTexture, bool complete) noexcept { }
++        // Native material descriptors and draw bindings remain borrowed through
++        // matching completed, under the same worker/texture-cache fences.
++        virtual void nativeMaterialBindings(uint32_t colorAddress, uint32_t width, uint32_t height,
++            const FramebufferRenderer *renderer, uint32_t framebufferIndex) noexcept { }
+         // The workload GPU fence has completed; the worker is still exclusive.
+         virtual void completed(const Workload &workload, RenderWorker *worker) noexcept = 0;
+         // Called after a successful swap and its GPU fence, before image reuse.
+diff --git a/src/shaders/NativeAlphaEvidenceCS.hlsl b/src/shaders/NativeAlphaEvidenceCS.hlsl
+new file mode 100644
+index 0000000..181f90e
+--- /dev/null
++++ b/src/shaders/NativeAlphaEvidenceCS.hlsl
+@@ -0,0 +1,92 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#define NATIVE_HIT_D3D12_SNAP_PROBE
++#include "NativeRayHit.hlsli"
++#include "shared/rt64_native_alpha_evidence.h"
++
++ConstantBuffer<NativeAlphaEvidenceParams> Params : register(b0, space4);
++ByteAddressBuffer Faces : register(t0, space4);
++ByteAddressBuffer Screen : register(t1, space4);
++ByteAddressBuffer UV : register(t2, space4);
++ByteAddressBuffer Shade : register(t3, space4);
++Texture2D<uint2> NativeOwner : register(t4, space4);
++Texture2D<float4> NativeUV : register(t5, space4);
++Texture2D<float4> NativeDerivatives : register(t6, space4);
++StructuredBuffer<float4> NativeClip : register(t7, space4);
++RWStructuredBuffer<NativeAlphaEvidenceResult> Results : register(u0, space4);
++
++// Compare native RasterVS/RasterPS against reconstructed hit attributes using
++// the displayed draw's actual descriptor sets. Triangle isolation removes
++// inter-draw depth occlusion; clipping, culling and material discard remain.
++// Edge pixels are excluded from this diagnostic, never authenticated by it.
++[numthreads(8, 8, 1)]
++void CSMain(uint3 id : SV_DispatchThreadID) {
++    int2 pixel = Params.testRect.xy + int2(id.xy);
++    if (any(pixel >= Params.testRect.zw)) return;
++    RenderIndices indices = instanceRenderIndices[Params.renderIndex];
++    RenderParams rp = DynamicRenderParams[indices.instanceIndex];
++    float4 screen[3], shade[3], clip[3];
++    float2 uv[3], projected[3];
++    for (uint i = 0; i < 3; ++i) {
++        uint vertex = Faces.Load(4 * (Params.faceStart + i));
++        screen[i] = asfloat(Screen.Load4(vertex * 16));
++        clip[i] = NativeClip[Params.resultIndex * 3 + i];
++        uv[i] = asfloat(UV.Load2(vertex * 8));
++        shade[i] = asfloat(Shade.Load4(vertex * 16));
++        screen[i].z = clip[i].z / clip[i].w;
++        projected[i] = NativeHitD3D12ProjectedPixel(clip[i], Params.viewport);
++    }
++    NativeHitAttributes centerAttributes;
++    if (!NativeRayCoverageInputsSupported(rp, shade) ||
++        !NativeRayHitAttributes(rp, float3(1.0f/3, 1.0f/3, 1.0f/3), screen, uv, shade,
++            Params.viewport, Params.screenScale, Params.screenOffset, clip, 0, false, centerAttributes)) {
++        if (all(id.xy == 0)) InterlockedAdd(Results[Params.resultIndex].unsupported, 1);
++        return;
++    }
++    float determinant = NativeCross2(projected[1] - projected[0], projected[2] - projected[0]);
++    float3 bary = NativeScreenBarycentric(float2(pixel) + 0.5f,
++        projected[0], projected[1], projected[2], determinant);
++    float3 edgeLength = float3(length(projected[2] - projected[1]),
++        length(projected[0] - projected[2]), length(projected[1] - projected[0]));
++    if (any(bary * abs(determinant) / edgeLength <= 1)) return;
++    float3 w = float3(screen[0].w, screen[1].w, screen[2].w);
++    float3 worldBary = bary / w;
++    worldBary /= dot(worldBary, 1.0f);
++    NativeHitAttributes attributes;
++    if (!NativeRayHitAttributes(rp, worldBary, screen, uv, shade,
++        Params.viewport, Params.screenScale, Params.screenOffset, clip, float2(pixel) + 0.5f,
++        Params.inputDomain != 0, attributes)) {
++        InterlockedAdd(Results[Params.resultIndex].unsupported, 1);
++        return;
++    }
++    const OtherMode mode = {rp.omL, rp.omH};
++    bool clipped = attributes.position.z > 1022.0f / 1024.0f ||
++        (!renderFlagNoN(rp.flags) && attributes.position.z < 0);
++    bool culled = renderFlagCulling(rp.flags) && determinant >= 0;
++    uint2 seedPixel = uint2(floor(attributes.position.xy));
++    uint seed = initRand(FrParams.frameCount, indices.instanceIndex * seedPixel.y * seedPixel.x, 16);
++    float4 materialShade = 0, combined = 0;
++    float alphaCompare = 0, coverage = 0;
++    bool evaluated = !clipped && !culled && EvaluateNativeMaterial(rp, indices,
++        attributes.shade, attributes.position, attributes.uv, attributes.dx, attributes.dy,
++        seed, materialShade, combined, alphaCompare, coverage);
++    uint2 owner = NativeOwner.Load(int3(pixel, 0));
++    bool nativeCovered = owner.x == Params.renderIndex + 1 && owner.y == 0;
++    InterlockedAdd(Results[Params.resultIndex].tested, 1);
++    if (nativeCovered) InterlockedAdd(Results[Params.resultIndex].nativeCovered, 1);
++    if (evaluated) InterlockedAdd(Results[Params.resultIndex].evaluatedCovered, 1);
++    if (nativeCovered != evaluated || (owner.x != 0 && !nativeCovered)) {
++        InterlockedAdd(Results[Params.resultIndex].disagreements, 1);
++        uint previous;
++        InterlockedCompareExchange(Results[Params.resultIndex].firstMismatchPixel,
++            0xFFFFFFFF, uint(pixel.y) * Params.targetSize.x + uint(pixel.x), previous);
++        if (previous == 0xFFFFFFFF) {
++            Results[Params.resultIndex].sampleUVPosition = float4(attributes.uv, attributes.position.xy);
++            Results[Params.resultIndex].sampleDxDy = float4(attributes.dx, attributes.dy);
++            Results[Params.resultIndex].sampleAlphaDepthShade = float4(combined.a, alphaCompare,
++                attributes.position.z, attributes.shade.a);
++            Results[Params.resultIndex].nativeUVShadeAlpha = NativeUV.Load(int3(pixel, 0));
++            Results[Params.resultIndex].nativeDxDy = NativeDerivatives.Load(int3(pixel, 0));
++        }
++    }
++}
+diff --git a/src/shaders/NativeAlphaEvidenceDoubleCS.hlsl b/src/shaders/NativeAlphaEvidenceDoubleCS.hlsl
+new file mode 100644
+index 0000000..259a7dc
+--- /dev/null
++++ b/src/shaders/NativeAlphaEvidenceDoubleCS.hlsl
+@@ -0,0 +1,4 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#define NATIVE_HIT_D3D12_DOUBLE_UV
++#include "NativeAlphaEvidenceCS.hlsl"
+diff --git a/src/shaders/NativeAlphaInputPS.hlsl b/src/shaders/NativeAlphaInputPS.hlsl
+new file mode 100644
+index 0000000..6435508
+--- /dev/null
++++ b/src/shaders/NativeAlphaInputPS.hlsl
+@@ -0,0 +1,25 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#include "NativeMaterial.hlsli"
++#include "shared/rt64_raster_params.h"
++
++ConstantBuffer<RasterParams> gConstants : register(b0, space0);
++
++// Diagnostic inputs from the exact native vertex shader selected by the draw.
++// Material holes also write attributes into these isolated targets. The real
++// native owner pipeline separately supplies the authoritative discard result.
++void PSMain(float4 position : SV_POSITION, float2 uv : TEXCOORD,
++    float4 color : COLOR0, out float4 uvShadeAlpha : SV_TARGET0,
++    out float4 derivatives : SV_TARGET1) {
++    RenderIndices indices = instanceRenderIndices[gConstants.renderIndex];
++    RenderParams rp = DynamicRenderParams[indices.instanceIndex];
++    uint2 pixel = uint2(floor(position.xy));
++    uint seed = initRand(FrParams.frameCount, indices.instanceIndex * pixel.y * pixel.x, 16);
++    float4 shade, combined;
++    float alphaCompare, coverage;
++    float2 dx = ddx(uv), dy = ddy(uv);
++    EvaluateNativeMaterial(rp, indices, color, position, uv, dx, dy, seed,
++        shade, combined, alphaCompare, coverage);
++    uvShadeAlpha = float4(uv, color.a, combined.a);
++    derivatives = float4(dx, dy);
++}
+diff --git a/src/shaders/NativeAlphaVerticesGS.hlsl b/src/shaders/NativeAlphaVerticesGS.hlsl
+new file mode 100644
+index 0000000..8164b13
+--- /dev/null
++++ b/src/shaders/NativeAlphaVerticesGS.hlsl
+@@ -0,0 +1,19 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#include "shared/rt64_native_alpha_evidence.h"
++ConstantBuffer<NativeAlphaEvidenceParams> Params : register(b0, space4);
++RWStructuredBuffer<float4> NativeClip : register(u1, space4);
++struct Vertex {
++    float4 position : SV_POSITION;
++    float2 uv : TEXCOORD;
++    float4 color : COLOR0;
++};
++// Capture the actual selected RasterVS outputs before clipping. The reference
++// ownership pass remains the unmodified native VS/PS, without this shader.
++[maxvertexcount(3)]
++void GSMain(triangle Vertex vertices[3], inout TriangleStream<Vertex> output) {
++    for (uint i = 0; i < 3; ++i) {
++        NativeClip[Params.resultIndex * 3 + i] = vertices[i].position;
++        output.Append(vertices[i]);
++    }
++}
+diff --git a/src/shaders/NativeRayHit.hlsli b/src/shaders/NativeRayHit.hlsli
+index 7f3c1b8..6d4c4ec 100644
+--- a/src/shaders/NativeRayHit.hlsli
++++ b/src/shaders/NativeRayHit.hlsli
+@@ -42,6 +42,31 @@ float3 NativeScreenBarycentric(float2 pixel, float2 a, float2 b, float2 c, float
+     return float3(1 - y - z, y, z);
+ }
+ 
++#if defined(NATIVE_HIT_D3D12_SNAP_PROBE)
++float2 NativeHitD3D12ProjectedPixel(float4 clip, float4 viewport) {
++    return mad(clip.xy / clip.w, viewport.zw * float2(0.5f, -0.5f),
++        viewport.xy + viewport.zw / 2);
++}
++#endif
++
++#if defined(NATIVE_HIT_D3D12_DOUBLE_UV)
++bool NativeHitDoubleUV(float2 pixel, float2 positions[3], float3 w, float2 uv[3], out float2 result) {
++    double2 b = double2(positions[1]) - double2(positions[0]);
++    double2 c = double2(positions[2]) - double2(positions[0]);
++    double2 delta = double2(pixel) - double2(positions[0]);
++    double determinant = b.x * c.y - b.y * c.x;
++    if (determinant == 0.0) { result = 0; return false; }
++    double y = (delta.x * c.y - delta.y * c.x) / determinant;
++    double z = (b.x * delta.y - b.y * delta.x) / determinant;
++    double3 weights = double3(1.0 - y - z, y, z) / double3(w);
++    double divisor = weights.x + weights.y + weights.z;
++    if (divisor <= 1e-8) { result = 0; return false; }
++    result = float2((weights.x * double2(uv[0]) + weights.y * double2(uv[1]) +
++        weights.z * double2(uv[2])) / divisor);
++    return all(isfinite(result));
++}
++#endif
++
+ // Reconstruct the generated raster attributes at a world-space triangle hit.
+ // Input positions are RSPProcessCS output, not guest vertices or live transforms.
+ // viewport and scale/offset are the exact displayed draw's RasterVS values.
+@@ -51,6 +76,9 @@ float3 NativeScreenBarycentric(float2 pixel, float2 a, float2 b, float2 c, float
+ bool NativeRayHitAttributes(RenderParams rp, float3 worldBarycentric,
+     float4 screen[3], float2 uv[3], float4 shade[3],
+     float4 viewport, float2 screenScale, float2 screenOffset,
++#if defined(NATIVE_HIT_D3D12_SNAP_PROBE)
++    float4 nativeClip[3], float2 rasterSample, bool useRasterSample,
++#endif
+     out NativeHitAttributes attributes)
+ {
+     attributes = (NativeHitAttributes)0;
+@@ -60,14 +88,26 @@ bool NativeRayHitAttributes(RenderParams rp, float3 worldBarycentric,
+         !all(isfinite(screenScale)) || !all(isfinite(screenOffset)) ||
+         any(FbParams.resolution <= 0)) return false;
+     float2 pixel[3];
++#if defined(NATIVE_HIT_D3D12_SNAP_PROBE)
++    float2 snappedPixel[3];
++#endif
+     float3 w = float3(screen[0].w, screen[1].w, screen[2].w);
+     if (!all(isfinite(w)) || any(w <= 1e-6f)) return false;
+     for (uint i = 0; i < 3; ++i) {
+         if (!all(isfinite(screen[i])) || !all(isfinite(uv[i])) || !all(isfinite(shade[i]))) return false;
+         float2 ndc = (screen[i].xy - FbParams.resolution / 2) /
+             float2(FbParams.resolution.x / 2, -FbParams.resolution.y / 2);
++#if defined(NATIVE_HIT_D3D12_SNAP_PROBE)
++        if (!all(isfinite(nativeClip[i])) || nativeClip[i].w != screen[i].w) return false;
++        pixel[i] = NativeHitD3D12ProjectedPixel(nativeClip[i], viewport);
++        if (!all(isfinite(pixel[i])) || any(abs(pixel[i]) >= 32768.0f)) return false;
++        // Measured D3D12 hypothesis: fused float viewport scale/offset followed
++        // by nearest-even 16.8 snapping. Never used for production admission.
++        snappedPixel[i] = round(pixel[i] * 256.0f) / 256.0f;
++#else
+         ndc = ndc * screenScale + screenOffset;
+         pixel[i] = viewport.xy + viewport.zw / 2 + ndc * viewport.zw * float2(0.5f, -0.5f);
++#endif
+     }
+     float determinant = NativeCross2(pixel[1] - pixel[0], pixel[2] - pixel[0]);
+     if (!isfinite(determinant) || abs(determinant) < 1e-8f) return false;
+@@ -80,6 +120,23 @@ bool NativeRayHitAttributes(RenderParams rp, float3 worldBarycentric,
+     float3 screenBarycentric = worldBarycentric * w / hitW;
+     float2 hitPixel = screenBarycentric.x * pixel[0] + screenBarycentric.y * pixel[1] +
+         screenBarycentric.z * pixel[2];
++#if defined(NATIVE_HIT_D3D12_SNAP_PROBE)
++    // Native-pixel evidence isolates interpolation from hit reprojection.
++    // This override cannot authenticate a ray hit or authorize admission.
++    if (useRasterSample) hitPixel = rasterSample;
++#endif
++    float3 attributeWeights = worldBarycentric;
++#if defined(NATIVE_HIT_D3D12_SNAP_PROBE)
++    // Diagnostic hypothesis only: D3D raster interpolation setup uses snapped
++    // vertex positions. This has not authenticated other backends or clipping.
++    for (uint k = 0; k < 3; ++k) pixel[k] = snappedPixel[k];
++    determinant = NativeCross2(pixel[1] - pixel[0], pixel[2] - pixel[0]);
++    if (!isfinite(determinant) || abs(determinant) < 1e-8f) return false;
++    attributeWeights = NativeScreenBarycentric(hitPixel, pixel[0], pixel[1], pixel[2], determinant) / w;
++    float attributeDivisor = dot(attributeWeights, 1.0f);
++    if (!isfinite(attributeDivisor) || attributeDivisor <= 1e-8f) return false;
++    attributeWeights /= attributeDivisor;
++#endif
+     float2 quad = floor(hitPixel / 2) * 2 + 0.5f;
+     float3 weights[3];
+     weights[0] = NativeScreenBarycentric(quad, pixel[0], pixel[1], pixel[2], determinant) / w;
+@@ -91,11 +148,18 @@ bool NativeRayHitAttributes(RenderParams rp, float3 worldBarycentric,
+         if (!isfinite(divisor) || divisor <= 1e-8f) return false;
+         weights[j] /= divisor;
+         quadUV[j] = weights[j].x * uv[0] + weights[j].y * uv[1] + weights[j].z * uv[2];
++#if defined(NATIVE_HIT_D3D12_DOUBLE_UV)
++        float2 location = quad + (j == 1 ? float2(1, 0) : (j == 2 ? float2(0, 1) : 0));
++        if (!NativeHitDoubleUV(location, pixel, w, uv, quadUV[j])) return false;
++#endif
+     }
+-    attributes.uv = worldBarycentric.x * uv[0] + worldBarycentric.y * uv[1] + worldBarycentric.z * uv[2];
++    attributes.uv = attributeWeights.x * uv[0] + attributeWeights.y * uv[1] + attributeWeights.z * uv[2];
++#if defined(NATIVE_HIT_D3D12_DOUBLE_UV)
++    if (!NativeHitDoubleUV(hitPixel, pixel, w, uv, attributes.uv)) return false;
++#endif
+     attributes.dx = quadUV[1] - quadUV[0];
+     attributes.dy = quadUV[2] - quadUV[0];
+-    attributes.shade = worldBarycentric.x * shade[0] + worldBarycentric.y * shade[1] + worldBarycentric.z * shade[2];
++    attributes.shade = attributeWeights.x * shade[0] + attributeWeights.y * shade[1] + attributeWeights.z * shade[2];
+     if (!renderFlagSmoothShade(rp.flags)) attributes.shade.rgb = shade[0].rgb;
+     attributes.position = float4(hitPixel, dot(screenBarycentric,
+         float3(screen[0].z, screen[1].z, screen[2].z)), 1 / hitW);
+diff --git a/src/shared/rt64_native_alpha_evidence.h b/src/shared/rt64_native_alpha_evidence.h
+new file mode 100644
+index 0000000..46c87ea
+--- /dev/null
++++ b/src/shared/rt64_native_alpha_evidence.h
+@@ -0,0 +1,25 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#pragma once
++#include "shared/rt64_hlsl.h"
++#ifdef HLSL_CPU
++namespace interop {
++#endif
++struct NativeAlphaEvidenceParams {
++    uint renderIndex, faceStart, resultIndex, inputDomain;
++    float2 screenScale, screenOffset;
++    float4 viewport;
++    int4 testRect;
++    uint2 targetSize, padding;
++};
++struct NativeAlphaEvidenceResult {
++    uint renderIndex, faceStart, tested, nativeCovered;
++    uint evaluatedCovered, disagreements, unsupported, firstMismatchPixel;
++    float4 sampleUVPosition, sampleDxDy, sampleAlphaDepthShade;
++    float4 nativeUVShadeAlpha, nativeDxDy;
++};
++#ifdef HLSL_CPU
++static_assert(sizeof(NativeAlphaEvidenceParams) == 80);
++static_assert(sizeof(NativeAlphaEvidenceResult) == 112);
++}
++#endif
