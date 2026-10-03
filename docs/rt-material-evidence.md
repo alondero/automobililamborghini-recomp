@@ -323,6 +323,41 @@ admission or a conservative scene fallback, a material/fog/depth-preserving
 receiver and exact ready-gated overlay restoration. There is no player setting
 until those paths are usable.
 
+### Shared native material evaluator
+
+Patch 0026 extracts the existing RasterPS texture, combiner, alpha-compare and
+coverage code into `NativeMaterial.hlsli`. RasterPS supplies its native UV
+derivatives, pixel position, interpolated shade and random seed. Clipping,
+depth, blending, fog and output coverage remain in their original raster path.
+The helper samples the active native tile/cache/replacement resources. It
+does not read guest RAM or decide which materials may cast.
+
+Twelve fresh `rt-native-material-c<1-6>-m<0,2>` windowed D3D12 replays each
+completed 600/600 input frames and 601 swaps. All 48 task-60/300/420/540
+swapchain images match the earlier native baseline byte-for-byte. Native
+key/camera and strict presented-material checks also pass. The Circuit 1
+four-task comparison against the preceding owner-enabled repeat and exact
+overlay omission still attributes all 349,048 VI taps of 87,262 changed RGB
+pixels. Call, geometry, material, raster and VI identity checks were retained.
+Evidence is ignored under `artifacts/rt-caster-stage/native-material-matrix.json`
+and `native-material-owner-proof.json`.
+
+On the same RTX 3080/D3D12 adapter, 30 analytic GPU fixtures exercise the
+production evaluator through native descriptor layouts. They test transparent
+holes, the exact 1/8 coverage boundary, threshold alpha compare, HDR coverage,
+wrap/mirror/clamp, native three-point filtering, dynamic tile overrides, native
+samplers, a scaled replacement with different alpha, IA16 TMEM decoding and
+derivative-selected LOD tiles. Alpha and survival match analytic expectations;
+random-seed advancement and input identity also match. The existing 9,189
+shadow-kernel checks pass with the D3D12 debug layer and no errors. Logs are
+`material-resource-gpu.log` in the same ignored directory.
+
+These fixtures do not supply real ray candidates, reconstruct native UV/shade
+at game hits, exercise every texture format or validate game replacement packs.
+The geometry builder still admits opaque solids only. Every sampled Workload
+remains incomplete and native overlays stay enabled until the full ray-hit
+material contract is proved.
+
 ## Ownership and diagnostic failures
 
 `LAMBO_RT_RENDER_CAPTURE_DIR` requires the existing sunlight probe and native

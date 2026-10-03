@@ -19,6 +19,7 @@
 
 using namespace plume;
 using namespace RT64;
+void nativeMaterialProbe(RenderDevice* device, RenderWorker& worker, const char* shaderPath);
 namespace {
 size_t checks = 0;
 void require(bool value, const char *why) {
@@ -107,7 +108,7 @@ float referenceVisibility(float x, float height, float radius, float bias) {
 
 int main(int argc, char **argv) {
     try {
-        require(argc == 2, "Usage: lambo_rt_shadow_gpu sun-shadow-probe.dxil");
+        require(argc == 2 || argc == 3, "Usage: lambo_rt_shadow_gpu sun-shadow-probe.dxil [native-material-probe.dxil]");
         std::ifstream input(argv[1], std::ios::binary);
         std::vector<char> code((std::istreambuf_iterator<char>(input)), {});
         require(!code.empty(), "shader missing");
@@ -184,6 +185,7 @@ int main(int argc, char **argv) {
         set->setBuffer(resultsBinding, output.get(), probes.size() * sizeof(Result), &resultsView);
         RenderWorker worker(device.get(), "Sunlight shadow GPU probe", RenderCommandListType::DIRECT);
         textureReadback(worker);
+        if (argc == 3) nativeMaterialProbe(device.get(), worker, argv[2]);
         auto timestamps = device->createQueryPool(3);
         require(timestamps != nullptr, "GPU timestamp support unavailable");
         std::vector<double> buildTimes, kernelTimes;

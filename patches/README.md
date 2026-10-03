@@ -38,6 +38,7 @@ significant single-space lines from `git diff --check`;
 | 0023 | Plume inside RT64 | D3D12 texture-to-buffer readback selects source sample positions when destination is a placed-footprint buffer, avoiding a null texture dereference. ROM-free 7x3 padded-row GPU regression. |
 | 0024 | RT64 | Optional D3D12 owner-output pipelines mirror native raster clipping, material/discard and depth behavior, including the generic ubershader fallback, into an R32G32_UINT diagnostic target with cloned depth. On RTX 3080 captures, enabling the diagnostic leaves the actual swapchain byte-identical. It is evidence instrumentation only; it does not implement shadow replacement. |
 | 0025 | RT64 | Adds immutable sunlight and separate caster/receiver admission metadata to the matching Workload through the developer evidence observer. HLE copies projection address identity alongside transform groups. Typed screen/backdrop exclusions retain zero face-index extent for non-indexed draws. The latest 48 model-0/one-player task captures have no unclassified draws, but all fail closed on native texture-alpha coverage and blended car geometry. No production receiver consumes these values and no native overlay is suppressed. |
+| 0026 | RT64 | Extracts native texture/combiner/alpha/coverage evaluation into a shared shader helper, with explicit UV derivatives and unchanged native raster arithmetic. Adds the helper to raster shader build dependencies. All 48 fresh game images match the preceding native build byte-for-byte; 30 synthetic hardware material cases pass. Ray-hit resource/attribute integration is still required and alpha admission remains closed. |
 
 ## Application matrix
 
@@ -57,7 +58,7 @@ still references the conditional full RT path; its
 does not implement this angular-query kernel. This local groundwork is not an
 upstream-supported feature or dependency upgrade. No upstream issue was opened.
 
-Patches **0022/0023/0024/0025** are applied idempotently by CMake on all supported build
+Patches **0022/0023/0024/0025/0026** are applied idempotently by CMake on all supported build
 paths. Readback is an explicit D3D12 developer diagnostic; normal rendering has
 no observer or capture GPU allocations. The observer registers before queues
 start and is cleared after they join. Its scoped raster activation prevents
@@ -112,6 +113,18 @@ issue was opened. The patch applies cleanly to the pinned RT64 tree after
 0025 as the latest idempotence guard before skipping or replaying the RT64 patch
 series.
 
+Compared on 2026-10-03 with RT64 upstream `main` at
+`43373749dac9bbc1b653e6a02aed40a9e1783bed`, its
+[RasterPS](https://github.com/rt64/rt64/blob/43373749dac9bbc1b653e6a02aed40a9e1783bed/src/shaders/RasterPS.hlsl)
+still evaluates native texture, combiner, alpha compare and coverage inline.
+Patch 0026 shares that existing arithmetic with explicit derivatives; it adds
+no ray-query calls to the native shader and changes no ordinary shader profile.
+Windows builds compile the native DXIL and SPIR-V variants. A separate pinned
+patch replay matches all 32 modified/new source files byte-for-byte. The hardware
+probe covers cached textures, scaled replacements, IA16 TMEM, dynamic tiles,
+native samplers and derivative-selected LOD. This is fixture evidence, not
+complete game ray-hit parity. No upstream issue was opened.
+
 For an initialized Windows checkout with local dependency edits, use
 `./build.ps1 -PreserveSubmodules`. It verifies recursive dependency pins and
 skips checkout/clean operations. Like CMake, it recognizes 0025 before
@@ -122,9 +135,9 @@ No patch content or dependency pin changed in that continuation.
 
 | Build path | Applies |
 | --- | --- |
-| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0025 in CMake. |
-| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0025 in CMake. |
-| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0025 in CMake. |
+| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0026 in CMake. |
+| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0026 in CMake. |
+| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0026 in CMake. |
 
 If a patch no longer applies to its pinned submodule, stop and update the
 patch or pin as a deliberate change. Do not reset a developer's unrelated

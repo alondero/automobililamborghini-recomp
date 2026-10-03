@@ -21,6 +21,14 @@ observer checks the task's native key and classifies presented ranges, but
 incomplete material admission prevents it from selecting a receiver or changing
 draw selection.
 
+[Patch 0026](../patches/0026-rt64-native-material-evaluation.patch) shares the
+existing raster texture/combiner/alpha/coverage evaluator with explicit UV
+derivatives. All 48 fresh six-circuit/mode native images are byte-identical to
+the prior build, and 30 synthetic material cases pass on the RTX 3080. Active
+replacement, dynamic-tile, IA16 TMEM and LOD fixture paths are included. This
+does not yet connect the evaluator to real ray candidates or admit cutouts;
+details and limits are in [material evidence](rt-material-evidence.md#shared-native-material-evaluator).
+
 [Patch 0021](../patches/0021-rt64-sun-shadow-groundwork.patch) adds:
 
 - `SunShadowScene`: shadow-only BLAS/TLAS over caller-supplied presented float4
