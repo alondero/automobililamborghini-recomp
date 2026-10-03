@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -68,6 +69,9 @@ public:
     // Exact physical/KSEG0/KSEG1 roots share a single consumable task record.
     std::optional<TaskSunProbe> take(uint32_t dl_address);
     void invalidate();
+    // Production shadows copy object identity for every task; diagnostics
+    // copy it only on their sampled sequences.
+    void set_copy_all_objects(bool enabled) { copy_all_objects_ = enabled; }
 
 private:
     std::mutex mutex_;
@@ -80,12 +84,16 @@ private:
     int16_t players_ = -1;
     int16_t race_mode_ = -1;
     std::array<int16_t, 4> model_cursors_{};
+    std::atomic_bool copy_all_objects_{false};
 };
 
 bool physical_car_object(const std::vector<TaskSunProbe::ObjectIdentity>& objects, uint32_t object_id);
 bool procedural_world_object(const TaskSunProbe::ObjectIdentity& object);
 bool presented_object_id(uint32_t matrix_id, uint32_t& object_id);
 std::optional<TaskSunProbe> consume_sun_probe(uint32_t dl_address);
+// Enables the producer hooks for production shadows on tasks begun afterwards.
+// Only the compact identity is copied; no RAM snapshot or logging is added.
+void set_production_task_values(bool enabled);
 
 } // namespace lambo::rt
 

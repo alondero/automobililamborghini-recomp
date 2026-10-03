@@ -1,23 +1,21 @@
 # Optional ray-traced shadows: implementation plan
 
-Status: planning review from 2026-10-02, with evidence updated through
-2026-10-03. The [groundwork milestone](rt-shadows.md) implements task-owned art
-diagnostics and a hardware-tested AS/angular-shadow kernel. The
-[owner-map evidence](rt-material-evidence.md) now closes the visible-receiver
-evidence gate for model 0, one-player time trial and single race on all six
-circuits, including forward/rear views. **Production integration and ready
-replacement coverage remain incomplete:** capture-only Workload metadata now
-exists, but the sampled caster admission fails; there is no game-built shadow
-AS, receiver shader, user setting or suppression/fallback path. The planning
-review itself performed no GPU validation. The target is
-Automobili Lamborghini: Recompiled. RaceWave46 is a peer implementation to
-learn from; its courses, RAM addresses and lighting policy are not Lamborghini
-inputs.
+Status: phase 1 is implemented as an opt-in setting (Original by default).
+The [shadow feature page](rt-shadows.md) records the production path, its
+validated scope and its limits; [material evidence](rt-material-evidence.md)
+records the caster/receiver policy and contrast calibration. This page keeps
+the original plan from 2026-10-02 for its reasoning; later sections describe
+the planning state at that time, not the current code. Relighting, offscreen
+caster submission, multiplayer views and non-D3D12 backends remain follow-on
+work. The target is Automobili Lamborghini: Recompiled. RaceWave46 is a peer
+implementation to learn from; its courses, RAM addresses and lighting policy
+are not Lamborghini inputs.
 
-The latest [native game alpha diagnostic](rt-material-evidence.md#native-game-alpha-diagnostic)
-tests actual game resources across the six-circuit/mode matrix. Eight measured
-interior disagreements remain; clipping/edge and real ray-hit coverage are
-also unproved. Synthetic material parity cannot authorize game admission.
+Where the delivered design differs from this plan: native world cutouts are
+excluded casters rather than evaluated at ray hits; the measured car glass
+casts as opaque glass (maintainer decision); only prelit surfaces receive;
+and receivers composite once after re-rasterization at the native overlay's
+draw position instead of inside every native pixel shader.
 
 ## Recommendation and scope
 

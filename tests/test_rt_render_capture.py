@@ -10,6 +10,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from check_rt_overlay_capture import filter_taps, inside
 from check_rt_render_capture import (area, belongs_to_physical_car, non_caster_reason, opaque_coverage, procedural_world_object, receiver_material, validate_overlay_count,
+                                     world_cutout_reason, artistic_car_glass,
                                      screen_face, topology, uncovered_area, validate_draw_metadata, validate_pair,
                                      validate_shadow_admission, validate_generated_material_inputs)
 from inspect_rt_task import CaptureError
@@ -57,13 +58,17 @@ class GeneratedMaterialInputsTests(unittest.TestCase):
             with self.subTest(change=change):
                 render, buffers = copy.deepcopy(self.render), dict(self.buffers)
                 identity = render["raster"][0]["native_indices"]
-                if change == "params": buffers["render-params"] = bytes(8 * 20)
+                if change == "params":
+                    buffers["render-params"] = bytes(8 * 20)
                 elif change == "tile_range":
                     identity["tile_count"] = 2
                     render["calls"][0]["material"]["tile_count"] = 2
-                elif change == "face_start": identity["face_start"] = 13
-                elif change == "instance": identity["instance_index"] = -1
-                else: render["raster"][0].pop("native_indices")
+                elif change == "face_start":
+                    identity["face_start"] = 13
+                elif change == "instance":
+                    identity["instance_index"] = -1
+                else:
+                    render["raster"][0].pop("native_indices")
                 with self.assertRaises(CaptureError):
                     validate_generated_material_inputs(render, self.uv, buffers)
 
@@ -81,13 +86,20 @@ class GeneratedMaterialInputsTests(unittest.TestCase):
             with self.subTest(change=change):
                 render, buffers, uv = copy.deepcopy(self.render), dict(self.buffers), self.uv
                 records = render["native_material_buffers"]
-                if change == "short": buffers["gpu-tiles"] = buffers["gpu-tiles"][:-1]
-                elif change == "missing": records.pop()
-                elif change == "duplicate": records[2] = records[1]
-                elif change == "filename": records[0]["file"] = "../task-60-render-params.bin"
-                elif change == "count": records[0]["count"] = -1
-                elif change == "layout": render["generated_uv_layout"] = "guest"
-                else: uv = struct.pack("<2f", math.nan, 0)
+                if change == "short":
+                    buffers["gpu-tiles"] = buffers["gpu-tiles"][:-1]
+                elif change == "missing":
+                    records.pop()
+                elif change == "duplicate":
+                    records[2] = records[1]
+                elif change == "filename":
+                    records[0]["file"] = "../task-60-render-params.bin"
+                elif change == "count":
+                    records[0]["count"] = -1
+                elif change == "layout":
+                    render["generated_uv_layout"] = "guest"
+                else:
+                    uv = struct.pack("<2f", math.nan, 0)
                 with self.assertRaises(CaptureError):
                     validate_generated_material_inputs(render, uv, buffers)
 
@@ -108,6 +120,48 @@ class MaterialTests(unittest.TestCase):
                        dict(call, material=dict(m, z_compare=True)),
                        dict(call, material=dict(m, z_update=True))):
             self.assertEqual(non_caster_reason(unsafe), 0)
+
+    def test_world_cutout_exclusion_requires_measured_material_and_world_role(self):
+        m = dict(material(), other_lo=0xCB023038, other_hi=0x19ACFF, coverage_times_alpha=True,
+                 geometry=0x812205)
+        call = {"call": 9, "first": 0, "count": 3, "indexed": True, "projection_type": 1,
+                "extended_type": 0, "material": m, "shader_other_lo": m["other_lo"],
+                "shader_other_hi": m["other_hi"], "shader_flags": 0}
+        render = {"indices": [0, 1, 2], "world_indices": [0, 0, 0], "world_groups": [0x10010000],
+                  "native": {"objects": [{"flags": 0x601, "list": 0x80288160, "parent": -1, "kind": 0},
+                                         {"flags": 0x9, "list": 0x80200000, "parent": -1, "kind": 0}]}}
+        self.assertEqual(world_cutout_reason(call, render), 4)
+        procedural = copy.deepcopy(render)
+        procedural["native"]["objects"][0] = {"flags": 0xC01, "list": 0, "parent": -1, "kind": 13}
+        self.assertEqual(world_cutout_reason(call, procedural), 4)
+        car = dict(render, world_groups=[0x10010001])
+        self.assertEqual(world_cutout_reason(call, car), 0)
+        for field, value in (("other_lo", 0xCB023039), ("alpha_blend", True), ("force_blend", True),
+                             ("alpha_compare", 1), ("z_update", False), ("coverage_times_alpha", False)):
+            with self.subTest(field=field):
+                changed = copy.deepcopy(call)
+                changed["material"][field] = value
+                if field == "other_lo":
+                    changed["shader_other_lo"] = value
+                self.assertEqual(world_cutout_reason(changed, render), 0)
+        self.assertEqual(world_cutout_reason(dict(call, indexed=False), render), 0)
+
+    def test_measured_glass_casts_but_never_receives(self):
+        m = dict(material(), other_lo=0x504A50, other_hi=0x8ACFF, combine_w0=0xFC121824,
+                 combine_w1=0xFF33FFFF, alpha_blend=True, force_blend=True, z_update=False,
+                 z_mode=0x800, standard_fog=False, geometry=0x822205)
+        call = {"material": m, "shader_other_lo": m["other_lo"], "shader_other_hi": m["other_hi"],
+                "shader_flags": 0, "extended_type": 0}
+        self.assertTrue(artistic_car_glass(call))
+        self.assertFalse(receiver_material(call))
+        self.assertFalse(artistic_car_glass(dict(call, material=dict(m, combine_w1=0xFF33FFFE))))
+        self.assertFalse(artistic_car_glass(dict(call, material=dict(m, z_update=True))))
+
+    def test_vertex_lit_surfaces_never_receive(self):
+        call = {"material": dict(material(), geometry=0x12205), "shader_other_lo": 0xC8112230,
+                "shader_other_hi": 0x18ACFF, "shader_flags": 0}
+        self.assertTrue(receiver_material(call))
+        self.assertFalse(receiver_material(dict(call, material=dict(material(), geometry=0x832205))))
 
     def test_procedural_world_role_requires_the_complete_native_identity(self):
         obj = {"flags": 0xC01, "list": 0, "parent": -1, "kind": 13}
@@ -155,8 +209,9 @@ class MaterialTests(unittest.TestCase):
                 changed = copy.deepcopy(call)
                 changed["material"][field] = value
                 self.assertFalse(receiver_material(changed))
-        for field, value in (("shader_other_lo", 0), ("shader_flags", 1 << 29), ("shader_flags", 1 << 30)):
+        for field, value in (("shader_other_lo", 0), ("shader_flags", 1 << 29), ("shader_flags", 1)):
             self.assertFalse(receiver_material(dict(call, **{field: value})))
+        self.assertTrue(receiver_material(dict(call, shader_flags=1 << 30)), "MSAA receiver rejected")
 
     def test_edge_incidence_is_diagnostic_not_caster_policy(self):
         report = topology([[[0, 0, 0], [1, 0, 0], [0, 1, 0]]])

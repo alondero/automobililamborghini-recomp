@@ -40,6 +40,13 @@ int main() {
         staleShader.shaderOtherL = 0;
         require(caster_material_rejection(staleShader) & RejectShaderModeMismatch,
             "mismatched native/shader material admitted");
+        // MSAA receivers use the pass's averaged-depth variant; HDR stays unvalidated.
+        auto msaa = opaque;
+        msaa.shaderFlags = 1u << 30; // RenderFlags::sampleCount = 1 (2x).
+        require(receiver_material_rejection(msaa) == 0, "MSAA receiver rejected");
+        auto hdr = opaque;
+        hdr.shaderFlags = 1u << 29; // RenderFlags::usesHDR.
+        require(receiver_material_rejection(hdr) & RejectShaderFlags, "HDR receiver admitted");
         opaque.shaderOtherH &= ~63u;
         require(caster_material_rejection(opaque) == 0, "unused native mode bits changed admission");
 
@@ -65,6 +72,49 @@ int main() {
             if (field == 3) unsafe.shaderOtherL = 1;
             require(non_caster_reason(rectangle, unsafe) == UnknownCasterRole,
                 "unsupported screen draw bypassed role admission");
+        }
+        // Measured world-builder cutout: coverage-times-alpha with opaque depth.
+        ShadowMaterial worldCutout = opaque;
+        worldCutout.otherL = worldCutout.shaderOtherL = 0xCB023038u;
+        worldCutout.otherH = worldCutout.shaderOtherH = 0x19ACFFu;
+        worldCutout.coverageAlpha = true;
+        require(caster_material_rejection(worldCutout) == RejectCoverageAlphaOrBlending,
+            "measured world cutout no longer isolated to its coverage rejection");
+        require(world_cutout_exclusion(worldCutout) == NonCasterWorldCutout, "measured world cutout not excluded");
+        for (unsigned field = 0; field < 7; ++field) {
+            auto other = worldCutout;
+            if (field == 0) other.otherL = other.shaderOtherL = 0xCB023039u;
+            if (field == 1) other.alphaBlend = true;
+            if (field == 2) other.forceBlend = true;
+            if (field == 3) other.alphaCompare = 1;
+            if (field == 4) other.zUpdate = false;
+            if (field == 5) other.extended = true;
+            if (field == 6) other.coverageAlpha = false;
+            require(world_cutout_exclusion(other) == UnknownCasterRole, "unmeasured world material excluded silently");
+        }
+
+        // Measured car glass: blended, translucent depth mode, compare without update.
+        ShadowMaterial glass;
+        glass.otherL = glass.shaderOtherL = 0x00504A50u;
+        glass.otherH = glass.shaderOtherH = 0x8ACFFu;
+        glass.combineW0 = 0xFC121824u;
+        glass.combineW1 = 0xFF33FFFFu;
+        glass.alphaBlend = glass.forceBlend = glass.zCompare = true;
+        glass.zMode = 0x800u;
+        require(caster_material_rejection(glass) == (RejectCoverageAlphaOrBlending | RejectDepthBehavior),
+            "measured glass rejection changed");
+        require(artistic_opaque_car_glass(glass), "measured car glass not admitted as an opaque caster");
+        require(receiver_material_rejection(glass) != 0, "glass became a receiver");
+        for (unsigned field = 0; field < 7; ++field) {
+            auto other = glass;
+            if (field == 0) other.combineW1 = 0xFF33FFFEu;
+            if (field == 1) other.otherL = other.shaderOtherL = 0x00504A51u;
+            if (field == 2) other.zUpdate = true;
+            if (field == 3) other.zMode = 0;
+            if (field == 4) other.alphaCompare = 1;
+            if (field == 5) other.shaderOtherL = 0;
+            if (field == 6) other.extended = true;
+            require(!artistic_opaque_car_glass(other), "unmeasured blended car material admitted as glass");
         }
         std::puts("PASS: independent caster/receiver material and authenticated screen/backdrop policy");
         return 0;

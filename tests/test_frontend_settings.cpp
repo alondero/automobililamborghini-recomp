@@ -358,8 +358,15 @@ int main(int argc, char** argv) {
         // Debug tab's value through instead of writing the seeded one back.
         require(lambo::config::developer_mode(), "graphics apply reverted the debug tab value");
         auto& enhancements = recompui::config::get_config("enhancements");
-        for (const char* key : {"automatic_pit_stops", "fog_match", "sky_match", "no_lod", "draw_distance", "fog_scale", "camera_distance", "camera_height", "camera_fov", "menu_stick_sensitivity"})
+        for (const char* key : {"automatic_pit_stops", "fog_match", "sky_match", "no_lod", "draw_distance", "fog_scale", "camera_distance", "camera_height", "camera_fov", "menu_stick_sensitivity", "rt_shadows", "rt_shadow_rays", "rt_shadow_softness"})
             require(enhancements.has_option(key), "missing enhancement");
+        require(!lambo::config::rt_shadows() && !std::get<bool>(enhancements.get_option_value("rt_shadows")),
+                "ray-traced shadows must default to Original");
+        enhancements.set_option_value("rt_shadows", true);
+        enhancements.set_option_value("rt_shadow_rays", uint32_t(16));
+        enhancements.set_option_value("rt_shadow_softness", 1.25);
+        require(lambo::config::rt_shadows() && lambo::config::rt_shadow_rays() == 16 &&
+                lambo::config::rt_shadow_softness() == 1.25, "ray-traced shadow live update");
         require(!lambo::config::automatic_pit_stops(), "pit assistance defaults off");
         enhancements.set_option_value("automatic_pit_stops", true);
         require(lambo::config::automatic_pit_stops(), "pit assistance live update");
@@ -375,6 +382,8 @@ int main(int argc, char** argv) {
         require(saved.at("future_option") == "preserve me", "unknown settings lost");
         require(saved.at("automatic_pit_stops") == true, "pit assistance persistence");
         require(saved.at("menu_stick_sensitivity") == 1.8, "menu stick sensitivity persistence");
+        require(saved.at("rt_shadows") == true && saved.at("rt_shadow_rays") == 16 &&
+                saved.at("rt_shadow_softness") == 1.25, "ray-traced shadow persistence");
         require(saved.at("ds_option") == 4, "graphics persistence");
         require(saved.at("developer_mode") == true, "developer mode persistence");
         // The picker borrows the schema; the port keeps writing the existing
@@ -589,6 +598,7 @@ int main(int argc, char** argv) {
         const double before_distance = lambo::config::global_draw_distance();
         const bool before_fog_match = lambo::config::widescreen_fog_match();
         const bool before_sky_match = lambo::config::widescreen_sky_match();
+        const bool before_rt_shadows = lambo::config::rt_shadows();
         graphics.clear_config_option_updates();
         graphics.set_option_value("performance_preset", uint32_t(1));
         const auto preset_updates = graphics.get_config_option_updates();
@@ -612,7 +622,8 @@ int main(int argc, char** argv) {
                 lambo::config::no_lod() == before_lod &&
                 lambo::config::global_draw_distance() == before_distance &&
                 lambo::config::widescreen_fog_match() == before_fog_match &&
-                lambo::config::widescreen_sky_match() == before_sky_match,
+                lambo::config::widescreen_sky_match() == before_sky_match &&
+                lambo::config::rt_shadows() == before_rt_shadows,
                 "Discard leaked preset changes");
         const double unrelated_manual_rate =
             std::get<double>(graphics.get_temp_option_value("rr_manual_value")) + 1.0;
@@ -635,8 +646,9 @@ int main(int argc, char** argv) {
                 low.msaa_option == Antialiasing::None && low.rr_option == RefreshRate::Original &&
                 low.hpfb_option == HighPrecisionFramebuffer::Off, "low hardware renderer choices");
         require(!lambo::config::no_lod() && lambo::config::global_draw_distance() == 1.0 &&
-                !lambo::config::widescreen_fog_match() && !lambo::config::widescreen_sky_match(),
-                "preset did not restore stock geometry/distance/multiplayer policy");
+                !lambo::config::widescreen_fog_match() && !lambo::config::widescreen_sky_match() &&
+                !lambo::config::rt_shadows(),
+                "preset did not restore stock geometry/distance/multiplayer/shadow policy");
         require(!graphics.is_dirty() && std::get<uint32_t>(graphics.get_option_value("performance_preset")) == 0,
                 "preset action was not reset after Apply");
         lambo::config::flush_pending_graphics_updates();

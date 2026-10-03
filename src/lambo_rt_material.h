@@ -17,7 +17,14 @@ enum PhysicalShadowRejection : uint32_t {
     RejectDepthBehavior = 1u << 7,
     RejectShaderFlags = 1u << 8,
     RejectFogColor = 1u << 9,
+    // Receiver only: phase 1 attenuates native output and never relights, so a
+    // vertex-lit surface would lose fill/ambient light too and double-darken its
+    // light-averted faces. Lit surfaces still cast.
+    RejectVertexLighting = 1u << 10,
 };
+
+// F3DEX geometry-mode bit for per-vertex lighting.
+inline constexpr uint32_t f3dex_geometry_lighting = 0x00020000u;
 
 // Values come from a single admitted native GameCall and its selected shader.
 // No texture, guest-memory or renderer-resource lifetime is hidden here.
@@ -60,7 +67,9 @@ inline uint32_t receiver_material_rejection(const ShadowMaterial& material) {
     if (material.otherL != 0xC8112078u && material.otherL != 0xC8112230u) rejection |= RejectOtherMode;
     if (((material.otherH >> 20) & 3u) != 1u) rejection |= RejectDepthCompareMode;
     if (!material.standardFog) rejection |= RejectFogCycle;
-    if ((material.shaderFlags & ((1u << 29) | (3u << 30))) != 0) rejection |= RejectShaderFlags;
+    // RenderFlags::usesHDR (bit 29) is unvalidated. MSAA sample counts (bits
+    // 30-31) use the receiver's averaged-depth variant.
+    if ((material.shaderFlags & (1u << 29)) != 0) rejection |= RejectShaderFlags;
     for (float component : material.fog) {
         if (!std::isfinite(component) || component < 0 || component > 1) rejection |= RejectFogColor;
     }
@@ -72,7 +81,32 @@ enum NonCasterShadowDraw : uint32_t {
     NonCasterScreenRectangle = 1,
     NonCasterBackdrop = 2,
     NonCasterNativeHud = 3,
+    NonCasterWorldCutout = 4,
 };
+
+// Measured world-builder cutouts (coverage-times-alpha, opaque depth) discard
+// about a third of their interior samples, so they cannot be solid casters and
+// no ray-hit coverage is proven. Excluding a caster only removes occlusion; the
+// native game draws no scenery shadows. The caller restricts this to the world
+// roles. Measurements: docs/rt-material-evidence.md#production-caster-policy.
+inline uint32_t world_cutout_exclusion(const ShadowMaterial& material) {
+    const bool measured = material.otherL == 0xCB023038u && material.shaderMatches() &&
+        !material.extended && material.coverageAlpha && material.alphaCompare == 0 &&
+        !material.alphaBlend && !material.forceBlend && material.zCompare && material.zUpdate &&
+        material.zMode == 0 && material.zSource == 0;
+    return measured ? NonCasterWorldCutout : UnknownCasterRole;
+}
+
+// Maintainer policy: the one measured blended car-glass layer casts as opaque
+// tinted glass, so the car silhouette has no window-shaped gaps. This is an
+// artistic simplification, not measured transmission; the glass never receives.
+// The caller restricts this to physical-car descendants.
+inline bool artistic_opaque_car_glass(const ShadowMaterial& material) {
+    return material.otherL == 0x00504A50u && material.combineW0 == 0xFC121824u &&
+        material.combineW1 == 0xFF33FFFFu && material.shaderMatches() && !material.extended &&
+        material.alphaCompare == 0 && material.alphaBlend && material.zCompare && !material.zUpdate &&
+        material.zMode == 0x800u && material.zSource == 0;
+}
 
 // Numeric projection types follow RT64::Projection::Type, checked at the seam.
 // Addresses are HLE-copied identities, never pointers for a worker to follow.

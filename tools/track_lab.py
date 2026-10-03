@@ -636,7 +636,7 @@ def _validate_inspection_data(document: dict[str, Any], row_count: int) -> None:
             f"segments[{index}].decoded.cull_anchor",
         )
         raw_offset_x, raw_offset_z = struct.unpack_from(">hh", raw, 0x10)
-        raw_anchor = struct.unpack_from(">h", raw, 0x20)[0]
+        struct.unpack_from(">h", raw, 0x20)  # Raw record must cover the anchor field.
         anchor_index = _require_int(
             cull["anchor_index"],
             f"segments[{index}].decoded.cull_anchor.anchor_index",

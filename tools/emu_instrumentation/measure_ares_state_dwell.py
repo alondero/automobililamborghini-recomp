@@ -24,7 +24,9 @@ Usage:
   "C:/Users/alond/AppData/Local/Programs/Python/Python313/python.exe" \
     tools/emu_instrumentation/measure_ares_state_dwell.py [--port 9160] [--target-state 8] [--max-vi 8000]
 """
-import sys, time, argparse
+import sys
+import time
+import argparse
 
 sys.path.insert(0, r'F:\src\automobililamborghini-recomp\tools\emu_instrumentation')
 from ares_session import ares_session

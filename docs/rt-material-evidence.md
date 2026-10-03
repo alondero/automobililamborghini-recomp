@@ -1,13 +1,13 @@
 # Presented material and receiver-ownership evidence
 
-Status: diagnostic milestone after PR #279 (`bd05651`), measured on Windows
-through 2026-10-03. The D3D12 raster-owner diagnostic proves visible receiver
-ownership for every overlay-affected filter tap in the measured one-player
-scenes. Patch 0025 now attaches capture-only light and draw/face metadata to the
-matching RT64 Workload. The sampled Workload is incomplete, so there is still no
-production acceleration-structure, receiver or overlay-suppression path and no
-player setting. Every game scene continues to use native shadows. Relighting and
-offscreen caster submission remain follow-on phases.
+Status: evidence for the optional ray-traced shadow feature, measured on
+Windows through 2026-10-03. The D3D12 raster-owner diagnostic proves visible
+receiver ownership for every overlay-affected filter tap in the measured
+one-player scenes. The [production caster policy](#production-caster-policy)
+now completes admission for the measured scenes, and the
+[shadow feature page](rt-shadows.md) records the production pass, setting and
+in-game validation. Relighting and offscreen caster submission remain
+follow-on phases. The sections below keep the earlier diagnostic history.
 
 Read [native provenance](rt-provenance.md), [GPU groundwork](rt-shadows.md)
 and the [plan](ray-tracing-plan.md) with this page.
@@ -504,6 +504,61 @@ disagreements across its measured matrix.
 The twelve-patch pinned replay matches all 39 changed/new RT64 files byte-for-byte.
 All 150 preserved RecompFrontend files remain byte-identical. Generated game/RSP
 code, native shader bytecode, captures and ROM-derived data remain ignored.
+
+## Production caster policy
+
+The earlier strict gate failed every Workload on two material families. The
+production policy resolves both with measured, exact signatures and keeps
+every other unmeasured material incomplete, so its scene stays native.
+
+**World cutouts are explicit non-casters.** All 1,274 rejected world-builder
+ranges in the 48-task matrix share `OtherMode.L=0xCB023038`: coverage times
+alpha, opaque depth compare and update, standard fog, caster rejection exactly
+`0x40`. The native raster discarded 40,381 of 122,650 tested interior samples
+(about 33%) in Circuit 1 task 60 alone, so these are real cutouts. With no
+ray-hit coverage proof, they are excluded from the acceleration structure with
+non-caster reason 4, restricted to the world-builder and procedural world
+roles. Removing a caster can only remove occlusion; the car's own triangles
+still block every ray that reaches the car, and native draws no scenery
+shadows. A car-owned range with the same material stays rejected.
+
+**The car glass casts as opaque glass (maintainer decision).** Object 2
+(`flags=0x26`, parent the physical car) draws 20 translucent triangles with
+`OtherMode.L=0x00504A50`, combiner `FC121824/FF33FFFF`, translucent depth mode,
+compare without update. Every glass vertex coincides with a body vertex, but the
+glass spans openings: projecting dense glass samples along the measured key,
+7-17% fall outside the opaque body silhouette on Circuits 1-5 (0% on Circuit
+6). Excluding it would cut window-shaped gaps into the car shadow. The
+maintainer chose opaque glass. It is an artistic simplification, not measured
+transmission. The glass never receives.
+
+**Only prelit surfaces receive.** Phase 1 attenuates native output and never
+relights. A vertex-lit surface (F3DEX `G_LIGHTING`) would also lose its fill
+and ambient light, so light-averted car faces turned nearly black in the first
+rear-view capture. Lit surfaces cast but carry receiver rejection bit 10. In
+Circuit 1 task 60, 38 of 116 former receivers were lit car ranges; the 78
+prelit road, wall and cabin ranges remain receivers.
+
+**MSAA receivers are admitted; HDR is not.** `RenderFlags` bits 30-31 hold the
+sample count; bit 29 is `usesHDR`. The receiver pass has a multisample variant
+using RT64's averaged-depth decal rule, so only HDR keeps receiver rejection.
+
+Host tests: `lambo_rt_material_policy`, `lambo_rt_admission_policy` and
+`tests/test_rt_render_capture.py`. The offline checker authenticates each
+cutout exclusion against its exact material and world object role.
+
+## Native overlay contrast
+
+The swapchain transmission of the native overlay core is about 0.51 on every
+captured circuit and mode: p1 0.510-0.515 over 881,038 changed pixels of the
+earlier baseline/omission pairs. That ratio is after the VI. A hard
+ray-traced run applies an exactly known framebuffer transmission at full
+occlusion; with strength 0.49 (framebuffer 0.51) the displayed core was 0.727,
+so the display response is about `T_display = T_fb^0.47`. The same response maps
+the native 0.5115 core to framebuffer 0.243 at both p1 and p25. The production
+strength is therefore 0.757. A later hard run displays 0.517-0.519 against the
+native 0.512. This calibrates contrast on screen; it is not a physical light
+measurement.
 
 ## Ownership and diagnostic failures
 

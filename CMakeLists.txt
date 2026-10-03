@@ -35,10 +35,20 @@ set(N64MR ${CMAKE_CURRENT_SOURCE_DIR}/lib/N64ModernRuntime)
 include(cmake/Frontend.cmake)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0023-plume-texture-readback.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0028-plume-d3d12-pipeline-failure.patch)
+# Later RT64 patches change earlier patches' context. Recognize the newest
+# applied patch first, then replay only what is missing.
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0029-rt64-native-game-alpha-evidence.patch"
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0030-rt64-sun-shadow-receiver.patch"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
-    RESULT_VARIABLE rt64_native_alpha_patch_applied OUTPUT_QUIET ERROR_QUIET)
+    RESULT_VARIABLE rt64_sun_shadow_receiver_patch_applied OUTPUT_QUIET ERROR_QUIET)
+if(rt64_sun_shadow_receiver_patch_applied EQUAL 0)
+    set(rt64_native_alpha_patch_applied 0)
+else()
+    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0029-rt64-native-game-alpha-evidence.patch"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
+        RESULT_VARIABLE rt64_native_alpha_patch_applied OUTPUT_QUIET ERROR_QUIET)
+endif()
 if(rt64_native_alpha_patch_applied EQUAL 0)
     set(rt64_candidate_patch_applied 0)
 else()
@@ -63,7 +73,10 @@ endif()
 if(NOT rt64_native_alpha_patch_applied EQUAL 0)
     lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0027-rt64-native-ray-candidate-coverage.patch)
 endif()
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0029-rt64-native-game-alpha-evidence.patch)
+if(NOT rt64_sun_shadow_receiver_patch_applied EQUAL 0)
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0029-rt64-native-game-alpha-evidence.patch)
+endif()
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0030-rt64-sun-shadow-receiver.patch)
 
 # --- RT64 renderer boundary; see patches/README.md ---
 # recomp/lib/rt64 is a pinned git submodule; RT64 is always compiled in and is the
@@ -93,6 +106,11 @@ if(BUILD_TESTING)
     add_executable(lambo_rt_material_tests tests/test_rt_material.cpp)
     target_include_directories(lambo_rt_material_tests PRIVATE src)
     add_test(NAME lambo_rt_material_policy COMMAND lambo_rt_material_tests)
+    add_executable(lambo_rt_admission_tests tests/test_rt_admission.cpp
+        src/lambo_rt_admission.cpp src/lambo_rt_shadows.cpp src/lambo_log.cpp)
+    target_include_directories(lambo_rt_admission_tests PRIVATE src lib/rt64/src)
+    target_link_libraries(lambo_rt_admission_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_rt_admission_policy COMMAND lambo_rt_admission_tests)
 
     add_executable(lambo_rt_evidence_scope_tests tests/test_rt_evidence_scope.cpp
         lib/rt64/src/rhi/rt64_render_hooks.cpp)
@@ -816,7 +834,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     endif()
 
     # RT64 renderer: default presenter; see the RT64 block above.
-    target_sources(lamborghini_modern PRIVATE src/rt64_renderer.cpp src/lambo_rt_evidence.cpp)
+    target_sources(lamborghini_modern PRIVATE src/rt64_renderer.cpp src/lambo_rt_evidence.cpp
+    src/lambo_rt_presented.cpp src/lambo_rt_admission.cpp src/lambo_rt_production.cpp)
     # rt64's build_pixel_shader/build_vertex_shader read ${DXC} and the DXC_*_OPTS
     # variables from the CALLER's scope (CMake evaluates unreferenced variables at call
     # time). Those variables are set inside rt64/CMakeLists.txt's own project() scope, so

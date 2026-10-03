@@ -34,6 +34,7 @@
 #include "lambo_sky_panorama.h"
 #include "lambo_rt_shadows.h"
 #include "lambo_rt_evidence.h"
+#include "lambo_rt_production.h"
 
 extern "C" void lambo_fog_match_1p(uint8_t* rdram, uint32_t dl_addr);  // src/lambo_fog_widescreen.cpp
 
@@ -165,8 +166,19 @@ void set_application_user_config(RT64::Application* application, const ultramode
         // enabled so RSPWorld computes the same task's world positions.
         application->userConfig.refreshRate = RT64::UserConfiguration::RefreshRate::Manual;
         application->userConfig.refreshRateTarget = 30;
-        application->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::None;
-        application->userConfig.internalColorFormat = RT64::UserConfiguration::InternalColorFormat::Standard;
+        // Captures are single-sample unless a scenario explicitly pins MSAA to
+        // validate receivers; owner maps and the alpha diagnostic always need it.
+        const auto set = [](const char* name) {
+            const char* value = std::getenv(name);
+            return value && value[0] == '1';
+        };
+        if (!set("LAMBO_RT_CAPTURE_KEEP_MSAA") || set("LAMBO_RT_OWNER_BUFFER") || set("LAMBO_RT_NATIVE_ALPHA_CHECK")) {
+            application->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::None;
+        }
+        // A scenario may pin the high-precision framebuffer to validate receivers.
+        if (!set("LAMBO_RT_CAPTURE_KEEP_COLOR") || set("LAMBO_RT_OWNER_BUFFER") || set("LAMBO_RT_NATIVE_ALPHA_CHECK")) {
+            application->userConfig.internalColorFormat = RT64::UserConfiguration::InternalColorFormat::Standard;
+        }
     }
     application->userConfig.displayBuffering = RT64::UserConfiguration::DisplayBuffering::Triple;
 }
@@ -232,6 +244,7 @@ class RT64Context final : public ultramodern::renderer::RendererContext {
 public:
     RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle, bool debug) {
         if (evidence.enabled()) RT64::SetRenderEvidenceObserver(&evidence);
+        RT64::SetSunShadowProvider(&shadows);
         static unsigned char dummy_rom_header[0x40];
 
         // Wire the RT64 application core to the pivot runtime's state.
@@ -444,11 +457,17 @@ public:
         // would silently mis-resolve in RT64 if the root DL ever set segment 0.
         lambo_fog_match_1p(app->core.RDRAM, (uint32_t)task->t.data_ptr | 0x80000000u);
         app->interpreter->loadUCodeGBI(task->t.ucode & 0x3FFFFFF, task->t.ucode_data & 0x3FFFFFF, true);
+        // The setting enables producer values for tasks begun afterwards; this
+        // task keeps the snapshot taken here even if the setting changes later.
+        const bool rt_shadows = lambo::config::rt_shadows();
+        lambo::rt::set_production_task_values(rt_shadows);
         const auto probe = lambo::rt::consume_sun_probe(task->t.data_ptr);
         // This title emits one fullSync per graphics task. Install the immutable
         // observation before that synchronization publishes the next workload.
         const uint64_t next_workload = app->state->workloadId + 1;
         if (RT64::GetRenderEvidenceObserver()) evidence.remember(next_workload, probe);
+        shadows.remember(next_workload, probe, rt_shadows, lambo::rt::production_shadow_settings(
+            lambo::config::rt_shadow_rays(), lambo::config::rt_shadow_softness()));
         app->processDisplayLists(app->core.RDRAM, task->t.data_ptr & 0x3FFFFFF, 0, true);
         if (RT64::GetRenderEvidenceObserver()) evidence.processed(next_workload, app->state->workloadId);
         // Same sustained-pipeline heartbeat as the headless context, so RT64 runs are
@@ -521,6 +540,8 @@ public:
             app->end();
         }
         RT64::SetRenderEvidenceObserver(nullptr);
+        RT64::SetSunShadowProvider(nullptr);
+        shadows.invalidate();
     }
 
     uint32_t get_display_framerate() const override {
@@ -546,6 +567,7 @@ public:
 private:
     bool ended = false;
     lambo::rt::RenderEvidence evidence; // Outlives Application and its queue threads.
+    lambo::rt::SunShadowProduction shadows; // Likewise; registered until shutdown.
     std::unique_ptr<RT64::Application> app;
 };
 

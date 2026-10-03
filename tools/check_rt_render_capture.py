@@ -79,6 +79,49 @@ def topology(faces: list) -> dict:
             "consistent_orientation": consistent, "weld_world_units": 1e-4}
 
 
+# Phase 1 attenuates native output without relighting, so vertex-lit surfaces
+# would double-darken their light-averted faces. They cast but never receive.
+F3DEX_LIGHTING = 0x00020000
+
+
+def presented_object(render: dict, call: dict) -> int | None:
+    """Native object of an indexed draw's first presented vertex, if any."""
+    try:
+        group = render["world_groups"][render["world_indices"][render["indices"][call["first"]]]]
+    except (IndexError, KeyError, TypeError):
+        return None
+    return group & 0xFFFF if type(group) is int and group & 0xFFF00000 == 0x10000000 else None
+
+
+def world_cutout_reason(call: dict, render: dict) -> int:
+    """Measured world-builder cutouts are explicit non-casters (reason 4)."""
+    m = call["material"]
+    measured = (call.get("indexed") is True and call.get("projection_type") in (1, 2)
+                and call.get("extended_type", 0) == 0 and m["other_lo"] == 0xCB023038
+                and call["shader_other_lo"] == m["other_lo"]
+                and call["shader_other_hi"] & ~63 == m["other_hi"] & ~63
+                and m["coverage_times_alpha"] is True and m["alpha_compare"] == 0
+                and not m["alpha_blend"] and not m["force_blend"] and m["z_compare"] and m["z_update"]
+                and m["z_mode"] == 0 and m["z_source"] == 0)
+    objects = render.get("native", {}).get("objects", [])
+    index = presented_object(render, call)
+    if not measured or index is None or index >= len(objects):
+        return 0
+    obj = objects[index]
+    world = (index == 0 and obj.get("flags") == 0x601 and obj.get("list", 0) != 0) or procedural_world_object(obj)
+    return 4 if world else 0
+
+
+def artistic_car_glass(call: dict) -> bool:
+    """Maintainer policy: the measured blended car glass casts as opaque glass."""
+    m = call["material"]
+    return (m["other_lo"] == 0x504A50 and (m["combine_w0"], m["combine_w1"]) == (0xFC121824, 0xFF33FFFF)
+            and call["shader_other_lo"] == m["other_lo"]
+            and call["shader_other_hi"] & ~63 == m["other_hi"] & ~63
+            and call.get("extended_type", 0) == 0 and m["alpha_compare"] == 0 and m["alpha_blend"]
+            and m["z_compare"] and not m["z_update"] and m["z_mode"] == 0x800 and m["z_source"] == 0)
+
+
 def receiver_material(call: dict) -> bool:
     """Bounded measured two-cycle standard-fog paths, with finite native fog."""
     m = call["material"]
@@ -90,7 +133,8 @@ def receiver_material(call: dict) -> bool:
                        (0xFC327FFF, 0xFFFFF838), (0xFCFFFFFF, 0xFFFE7838)}
             and call["shader_other_lo"] == m["other_lo"]
             and call["shader_other_hi"] == m["other_hi"]
-            and not call["shader_flags"] & ((1 << 29) | (3 << 30) | 1)
+            and not call["shader_flags"] & ((1 << 29) | 1)
+            and not m.get("geometry", 0) & F3DEX_LIGHTING
             and len(m["fog_rgba"]) == 4
             and all(math.isfinite(v) and 0 <= v <= 1 for v in m["fog_rgba"]))
 
@@ -177,10 +221,12 @@ def validate_shadow_admission(render: dict) -> None:
                 if (call is None or any(item.get(key) != call[key] for key in ("first", "count", "projection_type"))):
                     raise CaptureError("shadow policy range differs from its presented draw")
                 if count_key == "non_casters":
+                    expected = 4 if item.get("reason") == 4 else non_caster_reason(call)
+                    if expected == 4:
+                        expected = world_cutout_reason(call, render)
                     if (type(item.get("reason")) is not int or item["reason"] == 0
-                            or non_caster_reason(call) != item["reason"]
-                            or item["draw"] in seen_noncasters):
-                        raise CaptureError("shadow draw excluded without supported screen/backdrop identity")
+                            or expected != item["reason"] or item["draw"] in seen_noncasters):
+                        raise CaptureError("shadow draw excluded without supported screen/backdrop/cutout identity")
                     seen_noncasters.add(item["draw"])
                 elif count_key == "receivers":
                     if item.get("reason") != 0 or not call["indexed"] or not receiver_material(call):

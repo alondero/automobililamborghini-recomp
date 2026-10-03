@@ -75,6 +75,11 @@ class ScenarioRunnerTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
+    def run_scenario_again(self, document: dict):
+        """Run another scenario in a fresh artifacts root."""
+        self.artifacts = self.root / f"artifacts-{document['name']}"
+        return self.run_scenario(document)
+
     def run_scenario(self, document: dict, mode: str = "success", timeout: float | None = None):
         scenario = self.scenario_dir / "scenario.json"
         scenario.write_text(json.dumps(document), encoding="utf-8")
@@ -144,6 +149,54 @@ class ScenarioRunnerTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 2)
         self.assertIn("alternative bootstraps", completed.stderr)
+
+    def test_graphics_settings_seed_isolated_config(self) -> None:
+        settings = {"rt_shadows": True, "rt_shadow_rays": 16, "rt_shadow_softness": 0.0,
+                    "msaa_option": "None"}
+        completed, artifact = self.run_scenario({"schema": 1, "name": "rt-on", "graphics": settings})
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        seeded = json.loads((artifact / "graphics.json").read_text(encoding="utf-8"))
+        self.assertEqual(seeded, settings)
+        environment = json.loads((artifact / "harness-environment.json").read_text())
+        self.assertNotIn("LAMBO_RT_CAPTURE_KEEP_MSAA", environment)
+
+        captured = {"schema": 1, "name": "rt-msaa", "headless": False,
+                    "graphics": {"rt_shadows": True, "msaa_option": "MSAA2X", "hpfb_option": "Auto"},
+                    "diagnostics": {"rt_sun_probe": True, "rt_task_capture": True, "rt_render_capture": True}}
+        _, msaa_artifact = self.run_scenario_again(captured)
+        environment = json.loads((msaa_artifact / "harness-environment.json").read_text())
+        self.assertEqual(environment["LAMBO_RT_CAPTURE_KEEP_MSAA"], "1")
+        self.assertEqual(environment["LAMBO_RT_CAPTURE_KEEP_COLOR"], "1")
+
+        for bad, message in (({"rt_shadows": 1}, "rt_shadows must be boolean"),
+                             ({"rt_shadow_rays": 5}, "rt_shadow_rays must be 4, 8 or 16"),
+                             ({"rt_shadow_softness": 6}, "rt_shadow_softness must be 0 through 5"),
+                             ({"msaa_option": "MSAA3X"}, "msaa_option must be"),
+                             ({"hpfb_option": "Maybe"}, "hpfb_option must be"),
+                             ({"texture_pack": "x"}, "unsupported scenario graphics setting")):
+            path = self.scenario_dir / "bad-graphics.json"
+            path.write_text(json.dumps({"schema": 1, "name": "bad", "graphics": bad}), encoding="utf-8")
+            rejected = subprocess.run([sys.executable, str(RUNNER), str(path), "--exe", str(self.fake)],
+                                      cwd=self.root, capture_output=True, text=True, timeout=10)
+            self.assertEqual(rejected.returncode, 2, bad)
+            self.assertIn(message, rejected.stderr)
+
+    def test_developer_env_is_allowlisted(self) -> None:
+        developer = {"LAMBO_RT_SHADOW_FAULT": "as", "LAMBO_TEST_RESIZE": "300:1280x720",
+                     "LAMBO_RT_SHADOW_ANY_MODEL": "1"}
+        completed, artifact = self.run_scenario({"schema": 1, "name": "dev", "developer_env": developer})
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        environment = json.loads((artifact / "harness-environment.json").read_text())
+        for key, value in developer.items():
+            self.assertEqual(environment[key], value)
+        for bad, message in (({"LAMBO_HEADLESS": "0"}, "unsupported scenario developer variable"),
+                             ({"LAMBO_RT_SHADOW_FAULT": 1}, "must be a string")):
+            path = self.scenario_dir / "bad-dev.json"
+            path.write_text(json.dumps({"schema": 1, "name": "bad", "developer_env": bad}), encoding="utf-8")
+            rejected = subprocess.run([sys.executable, str(RUNNER), str(path), "--exe", str(self.fake)],
+                                      cwd=self.root, capture_output=True, text=True, timeout=10)
+            self.assertEqual(rejected.returncode, 2, bad)
+            self.assertIn(message, rejected.stderr)
 
     def test_warp_accepts_car_index_range(self) -> None:
         completed, _ = self.run_scenario({"schema": 1, "name": "vehicle-23", "warp": "1:1:23:1"})

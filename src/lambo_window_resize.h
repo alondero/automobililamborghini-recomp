@@ -1,6 +1,8 @@
 #ifndef LAMBO_WINDOW_RESIZE_H
 #define LAMBO_WINDOW_RESIZE_H
 
+#include <optional>
+
 namespace lambo::window_resize {
 
 // What the window owner must do about the requested window mode this frame.
@@ -55,6 +57,16 @@ private:
 
 // The reconciler for the single SDL window the port owns.
 Reconciler& reconciler();
+
+// Developer lifecycle test: LAMBO_TEST_RESIZE="<replay frame>:<width>x<height>"
+// requests one live resize once the input replay has consumed that frame.
+// Sizes follow the graphics.json window bounds; anything else is rejected.
+struct ScheduledResize {
+    unsigned long long frame = 0;
+    int width = 0;
+    int height = 0;
+};
+std::optional<ScheduledResize> parse_scheduled_resize(const char* text);
 
 } // namespace lambo::window_resize
 

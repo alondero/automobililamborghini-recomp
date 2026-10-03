@@ -100,6 +100,42 @@ int main() {
     unsetenv("LAMBO_MENU_STICK_SENSITIVITY");
 #endif
     lambo::config::load_and_apply_graphics();
+
+    // Ray-traced shadows are opt-in: Original stays the default.
+    expect(!lambo::config::rt_shadows(), "ray-traced shadows default to Original");
+    expect(lambo::config::rt_shadow_rays() == 8, "shadow rays default");
+    expect(lambo::config::rt_shadow_softness() == 0.5, "authored softness default");
+    lambo::config::set_rt_shadows(true);
+    lambo::config::set_rt_shadow_rays(16);
+    lambo::config::set_rt_shadow_softness(2.0);
+    lambo::config::flush_pending_graphics_updates();
+    {
+        const auto saved = read_json(path);
+        expect(saved.at("rt_shadows") == true && saved.at("rt_shadow_rays") == 16 &&
+               saved.at("rt_shadow_softness") == 2.0, "ray-traced shadow settings persist");
+    }
+    lambo::config::load_and_apply_graphics();
+    expect(lambo::config::rt_shadows() && lambo::config::rt_shadow_rays() == 16 &&
+           lambo::config::rt_shadow_softness() == 2.0, "ray-traced shadow settings reload");
+    lambo::config::set_rt_shadow_rays(5);
+    expect(lambo::config::rt_shadow_rays() == 4, "unsupported ray count snaps to a quality level");
+    lambo::config::set_rt_shadow_rays(1000);
+    expect(lambo::config::rt_shadow_rays() == 16, "ray count clamps to the highest quality");
+    lambo::config::set_rt_shadow_softness(9.0);
+    expect(lambo::config::rt_shadow_softness() == 5.0, "softness clamps to 5 degrees");
+    lambo::config::set_rt_shadow_softness(-1.0);
+    expect(lambo::config::rt_shadow_softness() == 0.0, "softness clamps to hard shadows");
+    environment("LAMBO_RT_SHADOWS", "0");
+    lambo::config::load_and_apply_graphics();
+    expect(!lambo::config::rt_shadows(), "LAMBO_RT_SHADOWS=0 forces Original");
+    environment("LAMBO_RT_SHADOWS", nullptr);
+    lambo::config::set_rt_shadows(false);
+    lambo::config::set_rt_shadow_rays(8);
+    lambo::config::set_rt_shadow_softness(0.5);
+    lambo::config::flush_pending_graphics_updates();
+    lambo::config::load_and_apply_graphics();
+    expect(!lambo::config::rt_shadows(), "Original restored");
+
     lambo::config::flush_pending_graphics_updates();
     expect(std::filesystem::exists(path), "first load creates graphics.json");
     expect(cfg.ar_option == ultramodern::renderer::AspectRatio::Expand,

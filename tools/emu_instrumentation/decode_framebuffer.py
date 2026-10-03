@@ -75,10 +75,10 @@ def gold_mask(img: Image.Image) -> tuple[Image.Image, int, tuple, list, list]:
                 col_hist[x] += 1
                 row_hist[y] += 1
                 gold_count += 1
-                if x < x_min: x_min = x
-                if y < y_min: y_min = y
-                if x > x_max: x_max = x
-                if y > y_max: y_max = y
+                x_min = min(x_min, x)
+                y_min = min(y_min, y)
+                x_max = max(x_max, x)
+                y_max = max(y_max, y)
 
     if gold_count == 0:
         return mask, 0, (-1, -1, -1, -1), col_hist, row_hist
@@ -97,7 +97,7 @@ def main() -> None:
         print(f"ERROR: dump too small ({len(data)} bytes)")
         sys.exit(1)
 
-    print(f"=== Framebuffer Oracle ===")
+    print("=== Framebuffer Oracle ===")
     print(f"  Dump: {dump_path.name} ({len(data):,} bytes)")
 
     # Decode FB1 (front buffer)
@@ -117,7 +117,7 @@ def main() -> None:
     mask.save(out_mask)
     print(f"  Gold mask @ {out_mask}: {gold_count} pixels")
 
-    print(f"\n  === Gold Pixel Analysis ===")
+    print("\n  === Gold Pixel Analysis ===")
     print(f"  gold_pixel_count : {gold_count}")
     x_min, y_min, x_max, y_max = bbox
     print(f"  bounding_box     : ({x_min}, {y_min}, {x_max}, {y_max})")
@@ -140,9 +140,9 @@ def main() -> None:
         _, gc2, _, _, _ = gold_mask(img2)
         print(f"\n  FB2 @ 0x803BC000 gold_count={gc2} (for comparison)")
 
-    print(f"\n  NOTE: Validation gate — PNG must resemble lamborghini_03.png")
-    print(f"        If blank, the game may have advanced past copyright state.")
-    print(f"        The 'rumblepakdetected.bin' or 'pressstart.bin' dumps may match.")
+    print("\n  NOTE: Validation gate — PNG must resemble lamborghini_03.png")
+    print("        If blank, the game may have advanced past copyright state.")
+    print("        The 'rumblepakdetected.bin' or 'pressstart.bin' dumps may match.")
 
 
 if __name__ == "__main__":

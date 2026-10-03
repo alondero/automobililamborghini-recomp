@@ -21,6 +21,7 @@
 #include "shared/rt64_blender.h"
 #include "lambo_log.h"
 #include "lambo_rt_material.h"
+#include "lambo_rt_presented.h"
 
 namespace lambo::rt {
 namespace {
@@ -129,74 +130,6 @@ Json material(const RT64::DrawCall& call) {
             call.rdpParams.fogColor.z, call.rdpParams.fogColor.w}}};
 }
 
-enum UnclassifiedShadowDraw : uint32_t {
-    UnclassifiedProjection = 1,
-    UnclassifiedFaceRange = 2,
-    UnclassifiedTransformGroup = 3,
-    UnclassifiedObjectIdentity = 4,
-    UnclassifiedFaceCountOverflow = 5,
-    UnclassifiedObjectRole = 6,
-};
-
-ShadowMaterial shadow_material(const RT64::GameCall& game_call) {
-    const auto& call = game_call.callDesc;
-    const auto& shader = game_call.shaderDesc;
-    const auto& mode = call.otherMode;
-    const auto& fog = call.rdpParams.fogColor;
-    return {mode.L, mode.H, shader.otherMode.L, shader.otherMode.H,
-        call.colorCombiner.L, call.colorCombiner.H, shader.flags.value,
-        mode.alphaCompare(), mode.zMode(), mode.zSource(),
-        call.extendedType != RT64::DrawExtendedType::None,
-        mode.cvgXAlpha() != 0, interop::Blender::usesAlphaBlend(mode), mode.forceBlend() != 0,
-        mode.zCmp() != 0, mode.zUpd() != 0, interop::Blender::usesStandardFogCycle(mode),
-        {fog.x, fog.y, fog.z, fog.w}};
-}
-
-ShadowProjection shadow_projection(const RT64::Workload& workload, const RT64::Projection& projection,
-        const RT64::GameCall& game_call) {
-    static_assert(uint32_t(RT64::Projection::Type::Perspective) == 1 &&
-        uint32_t(RT64::Projection::Type::Orthographic) == 2 &&
-        uint32_t(RT64::Projection::Type::Rectangle) == 3 && G_EX_ASPECT_BACKDROP == 3);
-    ShadowProjection result;
-    result.type = uint32_t(projection.type);
-    result.geometry = game_call.callDesc.geometryMode;
-    result.rectangleShader = game_call.shaderDesc.flags.rect;
-    const auto& data = workload.drawData;
-    if (projection.transformsIndex < data.viewProjTransformGroups.size()) {
-        const uint32_t group = data.viewProjTransformGroups[projection.transformsIndex];
-        if (group < data.transformGroups.size()) result.aspectMode = data.transformGroups[group].aspectMode;
-    }
-    if (projection.transformsIndex < data.viewProjTransformPhysicalAddresses.size())
-        result.physicalAddress = data.viewProjTransformPhysicalAddresses[projection.transformsIndex];
-    return result;
-}
-
-bool presented_group(const RT64::Workload& workload, uint32_t vertex, uint32_t& matrix_id) {
-    const auto& draw = workload.drawData;
-    if (vertex >= draw.worldIndices.size()) return false;
-    const uint32_t world = draw.worldIndices[vertex];
-    if (world >= draw.worldTransformGroups.size()) return false;
-    const uint32_t group = draw.worldTransformGroups[world];
-    if (group >= draw.transformGroups.size()) return false;
-    matrix_id = draw.transformGroups[group].matrixId;
-    uint32_t object_id = 0;
-    return presented_object_id(matrix_id, object_id);
-}
-
-bool uniform_presented_group(const RT64::Workload& workload, uint32_t first, uint32_t count,
-        uint32_t& matrix_id) {
-    const auto& indices = workload.drawData.faceIndices;
-    if (count == 0 || first > indices.size() || count > indices.size() - first) return false;
-    uint32_t initial = 0;
-    if (!presented_group(workload, indices[first], initial)) return false;
-    for (uint32_t i = first + 1; i < first + count; ++i) {
-        uint32_t current = 0;
-        if (!presented_group(workload, indices[i], current) || current != initial) return false;
-    }
-    matrix_id = initial;
-    return true;
-}
-
 }
 
 struct RenderEvidence::Impl {
@@ -278,247 +211,49 @@ bool RenderEvidence::enabled() const { return !impl_->directory.empty(); }
 std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const RT64::Workload& workload) noexcept {
     if (!enabled()) return {};
     try {
-        Json task;
+        Json native;
         {
             std::lock_guard<std::mutex> lock(impl_->mutex);
             const auto found = impl_->tasks.find(workload.workloadId);
-            if (found == impl_->tasks.end()) {
-                return {};
-            }
-            task = found->second;
+            if (found == impl_->tasks.end()) return {};
+            native = found->second;
         }
-        const Json& native = task;
-        const int circuit = native.at("circuit").get<int>();
-        const int phase = native.at("phase").get<int>();
-        const int players = native.at("players").get<int>();
-        const int race_mode = native.at("race_mode").get<int>();
+        ShadowTask task;
+        task.epoch = native.at("epoch").get<uint64_t>();
+        task.sequence = native.at("sequence").get<uint64_t>();
+        task.circuit = native.at("circuit").get<int>();
+        task.phase = native.at("phase").get<int>();
+        task.players = native.at("players").get<int>();
+        task.race_mode = native.at("race_mode").get<int>();
         const auto& models = native.at("model_cursors");
-        // Player modes 0-3 share the car/light/view path. Mode 4 is attract;
-        // docs/camera-sequences.md records the gate. Authenticate the task's
-        // native key below; the harness's mode choices do not define lighting.
-        if (circuit < 0 || circuit >= 6 || phase != 8 || players != 1 ||
-            race_mode < 0 || race_mode > 3 || models.size() != 4 || models.at(0) != 0 ||
-            !native.at("emitters_complete").get<bool>()) {
-            LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload gated: unsupported scene circuit=%d phase=%d players=%d mode=%d emitters=%d\n",
-                circuit, phase, players, race_mode, native.at("emitters_complete").get<bool>());
-            return {};
-        }
-
-        const Json& objects = native.at("objects");
-        std::vector<TaskSunProbe::ObjectIdentity> object_identities;
-        object_identities.reserve(objects.size());
-        for (const auto& object : objects) {
+        require(models.size() == 4, "model cursor count");
+        for (size_t i = 0; i < 4; ++i) task.model_cursors[i] = models.at(i).get<int16_t>();
+        task.emitters_complete = native.at("emitters_complete").get<bool>();
+        for (const auto& object : native.at("objects")) {
             const uint32_t flags = object.at("flags").get<uint32_t>();
             const int parent = object.at("parent").get<int>();
             const int kind = object.at("kind").get<int>();
-            if (flags > std::numeric_limits<uint16_t>::max() ||
-                parent < std::numeric_limits<int16_t>::min() ||
-                parent > std::numeric_limits<int16_t>::max() ||
-                kind < std::numeric_limits<int16_t>::min() ||
-                kind > std::numeric_limits<int16_t>::max()) return {};
-            object_identities.push_back({uint16_t(flags), object.at("list").get<uint32_t>(),
+            require(flags <= std::numeric_limits<uint16_t>::max() &&
+                parent >= std::numeric_limits<int16_t>::min() && parent <= std::numeric_limits<int16_t>::max() &&
+                kind >= std::numeric_limits<int16_t>::min() && kind <= std::numeric_limits<int16_t>::max(),
+                "object identity outside native widths");
+            task.objects.push_back({uint16_t(flags), object.at("list").get<uint32_t>(),
                 int16_t(parent), int16_t(kind)});
         }
-
-        // Each circuit keeps its own measured policy entry even where the
-        // measured raw key matches. A Workload must contain the current task's
-        // matching native direction; no camera or car matrix contributes here.
-        // Keep one entry per circuit because future measurements may differ.
-        struct CircuitPolicy { int x, y, z; };
-        static constexpr std::array<CircuitPolicy, 6> policies{{
-            {-11, 55, -101}, {-11, 55, -101}, {-11, 55, -101},
-            {-11, 55, -101}, {-11, 55, -101}, {-11, 55, -101}
-        }};
-        const CircuitPolicy policy = policies[size_t(circuit)];
-        const float length = std::sqrt(float(policy.x * policy.x + policy.y * policy.y + policy.z * policy.z));
-        if (!std::isfinite(length) || length == 0) return {};
-        bool native_key_used_by_lit_vertex = false;
-        const auto& data = workload.drawData;
-        if (data.lightIndices.size() != data.lightCounts.size()) return {};
-        for (size_t vertex = 0; vertex < data.lightIndices.size(); ++vertex) {
-            const uint32_t matrix = [&]() -> uint32_t {
-                uint32_t value = 0;
-                if (!presented_group(workload, uint32_t(vertex), value)) return 0;
-                return value;
-            }();
-            if (matrix == 0) continue;
-            const uint32_t object_id = matrix & 0xFFFFu;
-            if (!physical_car_object(object_identities, object_id)) continue;
-            const uint32_t start = data.lightIndices[vertex];
-            const uint32_t count = data.lightCounts[vertex];
-            if (start > data.rspLights.size() || count > data.rspLights.size() - start) continue;
-            for (uint32_t i = start; i < start + count; ++i) {
-                const auto& light = data.rspLights[i];
-                if (std::abs(light.posDir.x - policy.x) < 1e-4f &&
-                    std::abs(light.posDir.y - policy.y) < 1e-4f &&
-                    std::abs(light.posDir.z - policy.z) < 1e-4f &&
-                    (light.kc == 0 && light.kl == 0 && light.kq == 0)) {
-                    native_key_used_by_lit_vertex = true;
-                    break;
-                }
-            }
-            if (native_key_used_by_lit_vertex) break;
-        }
-        if (!native_key_used_by_lit_vertex) {
-            LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload gated: circuit=%d key absent from lit physical-car vertices\n", circuit);
-            return {};
-        }
-
-        auto result = std::make_shared<RT64::SunShadowWorkload>();
-        result->sceneEpoch = native.at("epoch").get<uint64_t>();
-        result->taskSequence = native.at("sequence").get<uint64_t>();
-        result->circuit = uint32_t(circuit);
-        result->phase = phase;
-        result->playerCount = uint32_t(players);
-        result->params.direction[0] = float(policy.x) / length;
-        result->params.direction[1] = float(policy.y) / length;
-        result->params.direction[2] = float(policy.z) / length;
-        // Until native shadow contrast and emitter size are measured, this
-        // capture-only payload cannot request visible attenuation.
-        result->params.strength = 0.0f;
-        result->params.angularRadius = 0.0f;
-        result->params.rayMin = 0.01f;
-        result->params.rayMax = 10000.0f;
-        result->params.originBias = 0.005f;
-        result->params.sampleCount = 8;
-        result->params.valid = 1;
-        result->authenticated = true;
-
-        size_t admitted_faces = 0;
-        size_t rejected_physical_calls = 0;
-        size_t unclassified_draws = 0;
-        size_t overlay_calls = 0;
-        bool admission_complete = true;
-        std::array<size_t, 10> rejection_reasons{};
-        const auto mark_unclassified = [&](uint32_t first, uint32_t count, uint32_t draw, uint32_t reason,
-                uint32_t projection_type) {
-            result->unclassified.push_back({first, count, draw, false, reason, projection_type});
-            admission_complete = false;
-            ++unclassified_draws;
-        };
-        for (uint32_t f = 0; f < workload.fbPairCount; ++f) {
-            const auto& fb = workload.fbPairs[f];
-            for (uint32_t p = 0; p < fb.projectionCount; ++p) {
-                const auto& projection = fb.projections[p];
-                if (projection.type != RT64::Projection::Type::Perspective &&
-                    projection.type != RT64::Projection::Type::Orthographic) {
-                    for (uint32_t c = 0; c < projection.gameCallCount; ++c) {
-                        const auto& game_call = projection.gameCalls[c];
-                        // Non-indexed projections do not address faceIndices.
-                        // Keep draw identity without inventing a face range from
-                        // triangleCount or faceIndicesStart.
-                        const uint32_t exclusion = non_caster_reason(shadow_projection(workload, projection, game_call),
-                            shadow_material(game_call));
-                        if (exclusion != 0) {
-                            result->nonCasters.push_back({0, 0, game_call.callDesc.callIndex, false,
-                                exclusion, uint32_t(projection.type)});
-                        }
-                        else mark_unclassified(0, 0, game_call.callDesc.callIndex,
-                            UnclassifiedProjection, uint32_t(projection.type));
-                    }
-                    continue;
-                }
-                for (uint32_t c = 0; c < projection.gameCallCount; ++c) {
-                    const auto& game_call = projection.gameCalls[c];
-                    const auto& call = game_call.callDesc;
-                    const uint32_t first = game_call.meshDesc.faceIndicesStart;
-                    const uint64_t wide_count = uint64_t(call.triangleCount) * 3;
-                    if (wide_count > std::numeric_limits<uint32_t>::max()) {
-                        mark_unclassified(first, 0, call.callIndex, UnclassifiedFaceCountOverflow,
-                            uint32_t(projection.type));
-                        continue;
-                    }
-                    const uint32_t count = uint32_t(wide_count);
-                    if (count == 0) continue;
-                    if (first > data.faceIndices.size() || count > data.faceIndices.size() - first) {
-                        mark_unclassified(first, count, call.callIndex, UnclassifiedFaceRange,
-                            uint32_t(projection.type));
-                        continue;
-                    }
-                    const uint32_t exclusion = non_caster_reason(shadow_projection(workload, projection, game_call),
-                        shadow_material(game_call));
-                    if (exclusion != 0) {
-                        result->nonCasters.push_back({first, count, call.callIndex, false,
-                            exclusion, uint32_t(projection.type)});
-                        continue;
-                    }
-                    uint32_t matrix = 0;
-                    if (!uniform_presented_group(workload, first, count, matrix)) {
-                        mark_unclassified(first, count, call.callIndex, UnclassifiedTransformGroup,
-                            uint32_t(projection.type));
-                        continue;
-                    }
-                    const uint32_t object_id = matrix & 0xFFFFu;
-                    if (object_id >= objects.size()) {
-                        mark_unclassified(first, count, call.callIndex, UnclassifiedObjectIdentity,
-                            uint32_t(projection.type));
-                        continue;
-                    }
-                    const Json& object = objects[object_id];
-                    const uint32_t flags = object.at("flags").get<uint32_t>();
-                    const bool world_builder = object_id == 0 && flags == 0x601u &&
-                        object.at("list").get<uint32_t>() != 0;
-                    const bool physical_car = physical_car_object(object_identities, object_id);
-                    const bool procedural_world = procedural_world_object(object_identities[object_id]);
-                    const bool overlay_material = count == 48 && call.otherMode.L == 0xC8104A50u &&
-                        (call.colorCombiner.L & 0xFFFFFFu) == 0x11FFFFu &&
-                        call.colorCombiner.H == 0xFFFFF238u && (call.geometryMode & ~0x800000u) == 0x12005u;
-                    bool native_overlay = false;
-                    if (overlay_material && flags == 0x42u && object.at("list").get<uint32_t>() == 0x8013D3C8u) {
-                        const int parent = object.at("parent").get<int>();
-                        native_overlay = parent >= 0 && size_t(parent) < objects.size() &&
-                            (objects[size_t(parent)].at("flags").get<uint32_t>() & 8u) != 0;
-                    }
-                    if (native_overlay) {
-                        result->overlays.push_back({first, count, call.callIndex, false, 0,
-                            uint32_t(projection.type)});
-                        ++overlay_calls;
-                        continue;
-                    }
-                    if (!world_builder && !physical_car && !procedural_world) {
-                        mark_unclassified(first, count, call.callIndex, UnclassifiedObjectRole,
-                            uint32_t(projection.type));
-                        continue;
-                    }
-                    const auto traits = shadow_material(game_call);
-                    const uint32_t rejection = caster_material_rejection(traits);
-                    if (rejection != 0) {
-                        result->rejected.push_back({first, count, call.callIndex, false, rejection,
-                            uint32_t(projection.type)});
-                        ++rejected_physical_calls;
-                        for (uint32_t bit = 0; bit < rejection_reasons.size(); ++bit) {
-                            if (rejection & (1u << bit)) ++rejection_reasons[bit];
-                        }
-                        continue;
-                    }
-                    result->geometry.push_back({first, count, call.callIndex, true, 0,
-                        uint32_t(projection.type)});
-                    const uint32_t receiver_rejection = receiver_material_rejection(traits);
-                    if (receiver_rejection == 0) {
-                        result->receivers.push_back({first, count, call.callIndex, true, 0,
-                            uint32_t(projection.type)});
-                    }
-                    else {
-                        result->receiverRejected.push_back({first, count, call.callIndex, false,
-                            receiver_rejection, uint32_t(projection.type)});
-                    }
-                    admitted_faces += count / 3;
-                }
-            }
-        }
-        // This is only the metadata bridge. Until the raster receiver and the
-        // per-view ready gate consume it, no caller may suppress native output.
-        result->complete = admission_complete && admitted_faces != 0 && !result->receivers.empty() && overlay_calls != 0 &&
-            rejected_physical_calls == 0;
-        if (!RT64::validSunShadowParams(result->params)) {
-            LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload rejected: invalid light parameters circuit=%d\n", circuit);
+        // Capture-only: zero strength cannot request visible attenuation.
+        const auto scene = presented_scene(workload);
+        AdmissionStats stats;
+        auto result = admit_sun_shadow(task, scene.draws, scene.lights, {0.0f, 0.0f, 8}, stats);
+        if (!result) {
+            LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload gated: reason=%u circuit=%d phase=%d players=%d mode=%d\n",
+                uint32_t(stats.gate), task.circuit, task.phase, task.players, task.race_mode);
             return {};
         }
         if (!result->complete) {
+            const auto& r = stats.rejection_reasons;
             LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload incomplete: circuit=%d faces=%zu overlays=%zu rejected=%zu unclassified=%zu reason_bits=[%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu]\n",
-                circuit, admitted_faces, overlay_calls, rejected_physical_calls, unclassified_draws,
-                rejection_reasons[0], rejection_reasons[1], rejection_reasons[2], rejection_reasons[3], rejection_reasons[4],
-                rejection_reasons[5], rejection_reasons[6], rejection_reasons[7], rejection_reasons[8], rejection_reasons[9]);
+                task.circuit, stats.admitted_faces, stats.overlays, stats.rejected, stats.unclassified,
+                r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9]);
         }
         return result;
     } catch (const std::exception& e) {

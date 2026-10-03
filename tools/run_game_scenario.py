@@ -108,6 +108,28 @@ def load_scenario(path: Path) -> dict[str, Any]:
         scenario["capture"] = capture
 
     scenario["expect"] = _dict(scenario.get("expect", {}), "scenario.expect")
+    graphics = _dict(scenario.get("graphics", {}), "scenario.graphics")
+    if set(graphics) - {"rt_shadows", "rt_shadow_rays", "rt_shadow_softness", "msaa_option",
+                         "hpfb_option"}:
+        raise ScenarioError("unsupported scenario graphics setting")
+    if "rt_shadows" in graphics and type(graphics["rt_shadows"]) is not bool:
+        raise ScenarioError("scenario.graphics.rt_shadows must be boolean")
+    if "rt_shadow_rays" in graphics and graphics["rt_shadow_rays"] not in (4, 8, 16):
+        raise ScenarioError("scenario.graphics.rt_shadow_rays must be 4, 8 or 16")
+    softness = graphics.get("rt_shadow_softness", 0)
+    if type(softness) not in (int, float) or not 0 <= softness <= 5:
+        raise ScenarioError("scenario.graphics.rt_shadow_softness must be 0 through 5 degrees")
+    if graphics.get("msaa_option", "None") not in ("None", "MSAA2X", "MSAA4X", "MSAA8X"):
+        raise ScenarioError("scenario.graphics.msaa_option must be None, MSAA2X, MSAA4X or MSAA8X")
+    if graphics.get("hpfb_option", "Auto") not in ("Auto", "On", "Off"):
+        raise ScenarioError("scenario.graphics.hpfb_option must be Auto, On or Off")
+    scenario["graphics"] = graphics
+    developer = _dict(scenario.get("developer_env", {}), "scenario.developer_env")
+    if set(developer) - {"LAMBO_RT_SHADOW_FAULT", "LAMBO_TEST_RESIZE", "LAMBO_RT_SHADOW_ANY_MODEL"}:
+        raise ScenarioError("unsupported scenario developer variable")
+    if any(type(value) is not str for value in developer.values()):
+        raise ScenarioError("scenario.developer_env values must be a string")
+    scenario["developer_env"] = developer
     diagnostics = _dict(scenario.get("diagnostics", {}), "scenario.diagnostics")
     if set(diagnostics) - {"rt_sun_probe", "rt_task_capture", "rt_render_capture", "rt_drop_overlay", "rt_owner_buffer",
                            "rt_native_alpha_check", "rt_native_alpha_exact_pixels", "rt_native_alpha_double_uv"}:
@@ -196,6 +218,10 @@ def stage_fixtures(scenario: dict[str, Any], artifact: Path) -> dict[str, Any]:
         runtime["state_load"] = stage(scenario["state_load"], "state-load")
     if "replay" in scenario["input"]:
         runtime["input"]["replay"] = stage(scenario["input"]["replay"], "input-replay")
+    # Seeds only allowlisted keys; the game merges its defaults over them.
+    if scenario["graphics"]:
+        (artifact / "graphics.json").write_text(json.dumps(scenario["graphics"], indent=4) + "\n",
+                                                encoding="utf-8")
     (artifact / "fixtures.json").write_text(
         json.dumps({"schema": SCHEMA_VERSION, "fixtures": fixtures}, indent=2) + "\n",
         encoding="utf-8",
@@ -220,6 +246,7 @@ def build_environment(scenario: dict[str, Any], runtime: dict[str, Any], artifac
         "LOCALAPPDATA": str(artifact / "user-config"),
         "XDG_CONFIG_HOME": str(artifact / "user-config"),
     })
+    environment.update(scenario.get("developer_env", {}))
     if "warp" in runtime:
         environment["LAMBO_WARP"] = runtime["warp"]
     if "warp_mode" in runtime:
@@ -234,6 +261,10 @@ def build_environment(scenario: dict[str, Any], runtime: dict[str, Any], artifac
     if runtime.get("diagnostics", {}).get("rt_render_capture"):
         runtime["diagnostics"]["render_capture_path"] = str(artifact / "rt-render")
         environment["LAMBO_RT_RENDER_CAPTURE_DIR"] = str(artifact / "rt-render")
+        if "msaa_option" in scenario.get("graphics", {}):
+            environment["LAMBO_RT_CAPTURE_KEEP_MSAA"] = "1"
+        if "hpfb_option" in scenario.get("graphics", {}):
+            environment["LAMBO_RT_CAPTURE_KEEP_COLOR"] = "1"
         if runtime["diagnostics"].get("rt_owner_buffer"):
             environment["LAMBO_RT_OWNER_BUFFER"] = "1"
         if runtime["diagnostics"].get("rt_drop_overlay"):

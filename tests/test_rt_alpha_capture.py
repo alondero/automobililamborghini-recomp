@@ -43,11 +43,16 @@ class NativeAlphaCaptureTests(unittest.TestCase):
         for change in ("draw", "face", "duplicate", "framebuffer", "missing"):
             with self.subTest(change=change):
                 records, evidence = copy.deepcopy(self.records), dict(self.evidence)
-                if change == "draw": records[0][0] = 7
-                elif change == "face": records[0][1] = 10
-                elif change == "duplicate": records[1][1] = 9
-                elif change == "framebuffer": evidence["color_address"] = 78
-                else: records.pop()
+                if change == "draw":
+                    records[0][0] = 7
+                elif change == "face":
+                    records[0][1] = 10
+                elif change == "duplicate":
+                    records[1][1] = 9
+                elif change == "framebuffer":
+                    evidence["color_address"] = 78
+                else:
+                    records.pop()
                 with self.assertRaises(CaptureError):
                     validate_alpha_results(self.render, evidence, self.raw(records))
 
@@ -71,11 +76,16 @@ class NativeAlphaCaptureTests(unittest.TestCase):
         for change in ("pixel", "summary", "count", "nan", "extent"):
             with self.subTest(change=change):
                 records, evidence = copy.deepcopy(self.records), dict(self.evidence)
-                if change == "pixel": records[0][7] = 32
-                elif change == "summary": evidence["disagreements"] = 0
-                elif change == "count": records[0][3] = 11
-                elif change == "nan": records[0][8] = float("nan")
-                else: evidence["target_extent"] = [True, 4]
+                if change == "pixel":
+                    records[0][7] = 32
+                elif change == "summary":
+                    evidence["disagreements"] = 0
+                elif change == "count":
+                    records[0][3] = 11
+                elif change == "nan":
+                    records[0][8] = float("nan")
+                else:
+                    evidence["target_extent"] = [True, 4]
                 with self.assertRaises(CaptureError):
                     validate_alpha_results(self.render, evidence, self.raw(records))
 
@@ -87,7 +97,8 @@ class NativeAlphaCaptureTests(unittest.TestCase):
         self.assertTrue(result["interior_parity"])
         self.assertFalse(result["complete_face_evidence"])
         self.assertFalse(result["alpha_admitted"])
-        for record in self.records: record[2:7] = [0, 0, 0, 0, 1]
+        for record in self.records:
+            record[2:7] = [0, 0, 0, 0, 1]
         self.evidence.update(tested_pixels=0, native_covered=0, evaluated_covered=0,
                              unsupported_faces=2, no_interior_faces=2)
         self.assertFalse(validate_alpha_results(self.render, self.evidence, self.raw())["interior_parity"])

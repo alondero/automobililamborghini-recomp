@@ -226,6 +226,19 @@ int main() {
             compact->objects[0].flags == 0x42 && compact->objects[0].list == 0x8013D3C8u &&
             compact->objects[0].parent == 7 && compact->objects[0].kind == 13,
             "object identity was not copied into the task value");
+        // Production shadows need identity on every task, never a RAM snapshot.
+        lambo::rt::TaskSunProbes production;
+        production.set_copy_all_objects(true);
+        write(ram, 0x800B69A8u, uint16_t(0x601));
+        require(production.begin(ram.data(), ram.size()), "production task begin rejected");
+        require(production.snapshot(ram.data(), ram.size()), "production identity skipped on an unsampled task");
+        const auto productionTask = production.take(0x800BF400u);
+        require(productionTask && productionTask->sequence == 1 && productionTask->objects_complete &&
+            productionTask->objects[0].flags == 0x601 && !productionTask->native_ram,
+            "production task value lacked its own object identity");
+        lambo::rt::TaskSunProbes sampledOnly;
+        require(sampledOnly.begin(ram.data(), ram.size()) && !sampledOnly.snapshot(ram.data(), ram.size()),
+            "diagnostic mode copied identity outside its sampled tasks");
         lambo::rt::TaskSunProbes sceneSelections;
         write(ram, 0x800CE6B4u, int16_t(0));
         write(ram, 0x800CE7E8u, int16_t(3));

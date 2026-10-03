@@ -211,6 +211,22 @@ double draw_distance(int circuit);
 double global_draw_distance();
 void set_global_draw_distance(double scale);
 
+// Optional ray-traced sun shadows (docs/rt-shadows.md). Off = Original native
+// shadows, the default. When on, a scene replaces the native car overlay only
+// after its light, receiver coverage and GPU resources are ready; everything
+// else, including unsupported scenes and devices, stays native. Settings apply
+// to tasks produced afterwards; queued tasks keep their own snapshot.
+// graphics.json keys "rt_shadows" (bool, default false; LAMBO_RT_SHADOWS=1/0
+// overrides for capture/testing), "rt_shadow_rays" (4, 8 or 16, default 8) and
+// "rt_shadow_softness" (authored sun angular radius in degrees, 0 = hard
+// shadows, clamped to 0..5, default 0.5).
+bool rt_shadows();
+void set_rt_shadows(bool enabled);
+int rt_shadow_rays();
+void set_rt_shadow_rays(int rays);
+double rt_shadow_softness();
+void set_rt_shadow_softness(double degrees);
+
 } // namespace config
 } // namespace lambo
 

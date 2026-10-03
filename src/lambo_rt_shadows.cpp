@@ -108,8 +108,9 @@ bool probe_enabled() {
     }();
     return enabled;
 }
+std::atomic_bool production_task_values{false};
 bool task_capture_enabled() {
-    return probe_enabled();
+    return probe_enabled() || production_task_values.load(std::memory_order_relaxed);
 }
 }
 
@@ -223,7 +224,7 @@ bool TaskSunProbes::snapshot(const uint8_t* rdram, size_t size) {
         }
     }
     bool copied = false;
-    if (!record.objects_complete && capture_sequence(record.sequence)) {
+    if (!record.objects_complete && (copy_all_objects_ || capture_sequence(record.sequence))) {
         // Object table fields are copied on the game producer immediately
         // before task publication. Runtime addresses/layout are documented in
         // docs/rt-shadows.md. The copy is small and remains task-owned.
@@ -317,6 +318,11 @@ void capture_task(const TaskSunProbe& task) {
     catch (const std::exception& error) {
         LAMBO_LOG_WARN("rt-capture", "snapshot failed: %s\n", error.what());
     }
+}
+
+void set_production_task_values(bool enabled) {
+    probes.set_copy_all_objects(enabled);
+    production_task_values.store(enabled, std::memory_order_relaxed);
 }
 
 std::optional<TaskSunProbe> consume_sun_probe(uint32_t dl_address) {

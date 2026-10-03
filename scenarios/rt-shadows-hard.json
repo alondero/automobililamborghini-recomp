@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "name": "rt-shadows-hard",
+  "headless": false,
+  "warp": "1:1:0:1",
+  "warp_mode": 0,
+  "max_vis": 2400,
+  "graphics": {
+    "rt_shadows": true,
+    "rt_shadow_rays": 8,
+    "rt_shadow_softness": 0.0
+  },
+  "diagnostics": {
+    "rt_sun_probe": true,
+    "rt_task_capture": true,
+    "rt_render_capture": true
+  },
+  "input": {
+    "replay": "../recordings/rt-stationary-camera.jsonl",
+    "start_state": 8,
+    "start_delay": 0,
+    "exit_on_end": true
+  },
+  "expect": {
+    "max_state_at_least": 8,
+    "replay_complete": true,
+    "min_swaps": 60,
+    "presentation_mode": "PresentEarly",
+    "sun_probe": true,
+    "rt_task_captures": [60, 300, 420, 540],
+    "rt_render_captures": [60, 300, 420, 540]
+  }
+}
