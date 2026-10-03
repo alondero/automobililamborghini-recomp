@@ -202,6 +202,22 @@ table-size traversal bound, so child meshes inherit the authenticated car
 identity. A self-parent or cycle cannot loop indefinitely. The remaining
 unrecognized root object's caster policy is still unknown.
 
+Capture metadata keeps indexed face ranges separate from non-indexed
+projections. Perspective/orthographic calls report their face-index start and
+count; Rectangle/None calls report zero face-index extent and retain their
+projection type. Raw Triangle calls also report zero face-index extent and
+retain a separate raw-vertex start and count. Unclassified projection records
+therefore identify draws without claiming
+indices from `triangleCount` or `faceIndicesStart`.
+The changed render record uses schema 2; presentation records retain schema 1.
+
+The 2026-10-03 regression capture reran `rt-presented-materials` for 600/600
+frames and 601 swaps, then validated task sequences 60, 300, 420, and 540. At
+task 60 it recorded 375 Perspective, 3 Orthographic, and 91 Rectangle calls;
+Rectangle calls had `indexed=false` and zero face-index extent. The checker
+accepted all four reports, including their admitted-native-overlay records.
+This validates capture metadata only; it does not enable shadow replacement.
+
 The metadata direction is checked against the native key in the current
 Workload and kept separate from car and camera transforms. Its diagnostic
 strength and angular radius are not measured game-light policy. A valid
@@ -288,7 +304,7 @@ ran. Default headless `harness-smoke-rir310dn` and capture-disabled windowed
 
 The 2026-10-03 Workload admission run rebuilt `lamborghini_modern`,
 `lambo_rt_shadow_gpu` and `lambo_rt_sun_tests`; all 47 project CTests passed,
-including the D3D12 GPU probe. The Python host suite passed 81 tests. Twelve
+including the D3D12 GPU probe. The Python host suite passed 83 tests. Twelve
 windowed D3D12 game captures covered model 0, one player, time trial/single
 race and Circuits 1-6. Each consumed 600/600 replay frames and made 601 swaps;
 all 12 authenticated their task and overlay but remained `complete=false` for

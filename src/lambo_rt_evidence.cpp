@@ -187,7 +187,8 @@ bool presented_group(const RT64::Workload& workload, uint32_t vertex, uint32_t& 
     const uint32_t group = draw.worldTransformGroups[world];
     if (group >= draw.transformGroups.size()) return false;
     matrix_id = draw.transformGroups[group].matrixId;
-    return (matrix_id & 0xFFF00000u) == 0x10000000u;
+    uint32_t object_id = 0;
+    return presented_object_id(matrix_id, object_id);
 }
 
 bool uniform_presented_group(const RT64::Workload& workload, uint32_t first, uint32_t count,
@@ -250,8 +251,8 @@ struct RenderEvidence::Impl {
         const auto& indices = current->drawData.faceIndices;
         if (first > indices.size() || count > indices.size() - first) return false;
         uint32_t id = group(indices[first]);
-        if ((id & 0xFFFF0000u) != 0x10010000u) return false;
-        const uint32_t object = id & 0xFFFFu;
+        uint32_t object = 0;
+        if (!presented_object_id(id, object)) return false;
         const auto& objects = report["native"]["objects"];
         if (object >= objects.size()) return false;
         const auto& obj = objects[object];
@@ -300,9 +301,22 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
             return {};
         }
 
+        const Json& objects = native.at("objects");
+        std::vector<TaskSunProbe::ObjectIdentity> object_identities;
+        object_identities.reserve(objects.size());
+        for (const auto& object : objects) {
+            const uint32_t flags = object.at("flags").get<uint32_t>();
+            const int parent = object.at("parent").get<int>();
+            if (flags > std::numeric_limits<uint16_t>::max() ||
+                parent < std::numeric_limits<int16_t>::min() ||
+                parent > std::numeric_limits<int16_t>::max()) return {};
+            object_identities.push_back({uint16_t(flags), object.at("list").get<uint32_t>(), int16_t(parent)});
+        }
+
         // Each circuit keeps its own authored policy entry even where the
         // measured raw key matches. A Workload must contain the current task's
         // matching native direction; no camera or car matrix contributes here.
+        // Keep one entry per circuit because future measurements may differ.
         struct CircuitPolicy { int x, y, z; };
         static constexpr std::array<CircuitPolicy, 6> policies{{
             {-11, 55, -101}, {-11, 55, -101}, {-11, 55, -101},
@@ -322,8 +336,7 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
             }();
             if (matrix == 0) continue;
             const uint32_t object_id = matrix & 0xFFFFu;
-            const Json& objects = native.at("objects");
-            if (object_id >= objects.size() || !(objects[object_id].at("flags").get<uint32_t>() & 8u)) continue;
+            if (!physical_car_object(object_identities, object_id)) continue;
             const uint32_t start = data.lightIndices[vertex];
             const uint32_t count = data.lightCounts[vertex];
             if (start > data.rspLights.size() || count > data.rspLights.size() - start) continue;
@@ -364,25 +377,15 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
         result->params.valid = 1;
         result->authenticated = true;
 
-        const Json& objects = native.at("objects");
-        std::vector<TaskSunProbe::ObjectIdentity> object_identities;
-        object_identities.reserve(objects.size());
-        for (const auto& object : objects) {
-            const uint32_t flags = object.at("flags").get<uint32_t>();
-            const int parent = object.at("parent").get<int>();
-            if (flags > std::numeric_limits<uint16_t>::max() ||
-                parent < std::numeric_limits<int16_t>::min() ||
-                parent > std::numeric_limits<int16_t>::max()) return {};
-            object_identities.push_back({uint16_t(flags), object.at("list").get<uint32_t>(), int16_t(parent)});
-        }
         size_t admitted_faces = 0;
         size_t rejected_physical_calls = 0;
         size_t unclassified_draws = 0;
         size_t overlay_calls = 0;
         bool admission_complete = true;
         std::array<size_t, 10> rejection_reasons{};
-        const auto mark_unclassified = [&](uint32_t first, uint32_t count, uint32_t draw, uint32_t reason) {
-            result->unclassified.push_back({first, count, draw, false, reason});
+        const auto mark_unclassified = [&](uint32_t first, uint32_t count, uint32_t draw, uint32_t reason,
+                uint32_t projection_type) {
+            result->unclassified.push_back({first, count, draw, false, reason, projection_type});
             admission_complete = false;
             ++unclassified_draws;
         };
@@ -394,15 +397,11 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
                     projection.type != RT64::Projection::Type::Orthographic) {
                     for (uint32_t c = 0; c < projection.gameCallCount; ++c) {
                         const auto& game_call = projection.gameCalls[c];
-                        const uint64_t wide_count = uint64_t(game_call.callDesc.triangleCount) * 3;
-                        if (wide_count > std::numeric_limits<uint32_t>::max()) {
-                            mark_unclassified(game_call.meshDesc.faceIndicesStart, 0,
-                                game_call.callDesc.callIndex, UnclassifiedFaceCountOverflow);
-                            continue;
-                        }
-                        const uint32_t count = uint32_t(wide_count);
-                        if (count != 0) mark_unclassified(game_call.meshDesc.faceIndicesStart, count,
-                            game_call.callDesc.callIndex, UnclassifiedProjection);
+                        // Non-indexed projections do not address faceIndices.
+                        // Keep draw identity without inventing a face range from
+                        // triangleCount or faceIndicesStart.
+                        mark_unclassified(0, 0, game_call.callDesc.callIndex,
+                            UnclassifiedProjection, uint32_t(projection.type));
                     }
                     continue;
                 }
@@ -412,23 +411,27 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
                     const uint32_t first = game_call.meshDesc.faceIndicesStart;
                     const uint64_t wide_count = uint64_t(call.triangleCount) * 3;
                     if (wide_count > std::numeric_limits<uint32_t>::max()) {
-                        mark_unclassified(first, 0, call.callIndex, UnclassifiedFaceCountOverflow);
+                        mark_unclassified(first, 0, call.callIndex, UnclassifiedFaceCountOverflow,
+                            uint32_t(projection.type));
                         continue;
                     }
                     const uint32_t count = uint32_t(wide_count);
                     if (count == 0) continue;
                     if (first > data.faceIndices.size() || count > data.faceIndices.size() - first) {
-                        mark_unclassified(first, count, call.callIndex, UnclassifiedFaceRange);
+                        mark_unclassified(first, count, call.callIndex, UnclassifiedFaceRange,
+                            uint32_t(projection.type));
                         continue;
                     }
                     uint32_t matrix = 0;
                     if (!uniform_presented_group(workload, first, count, matrix)) {
-                        mark_unclassified(first, count, call.callIndex, UnclassifiedTransformGroup);
+                        mark_unclassified(first, count, call.callIndex, UnclassifiedTransformGroup,
+                            uint32_t(projection.type));
                         continue;
                     }
                     const uint32_t object_id = matrix & 0xFFFFu;
                     if (object_id >= objects.size()) {
-                        mark_unclassified(first, count, call.callIndex, UnclassifiedObjectIdentity);
+                        mark_unclassified(first, count, call.callIndex, UnclassifiedObjectIdentity,
+                            uint32_t(projection.type));
                         continue;
                     }
                     const Json& object = objects[object_id];
@@ -446,24 +449,28 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
                             (objects[size_t(parent)].at("flags").get<uint32_t>() & 8u) != 0;
                     }
                     if (native_overlay) {
-                        result->overlays.push_back({first, count, call.callIndex, false});
+                        result->overlays.push_back({first, count, call.callIndex, false, 0,
+                            uint32_t(projection.type)});
                         ++overlay_calls;
                         continue;
                     }
                     if (!world_builder && !physical_car) {
-                        mark_unclassified(first, count, call.callIndex, UnclassifiedObjectRole);
+                        mark_unclassified(first, count, call.callIndex, UnclassifiedObjectRole,
+                            uint32_t(projection.type));
                         continue;
                     }
                     const uint32_t rejection = physical_shadow_material_rejection(game_call);
                     if (rejection != 0) {
-                        result->rejected.push_back({first, count, call.callIndex, false, rejection});
+                        result->rejected.push_back({first, count, call.callIndex, false, rejection,
+                            uint32_t(projection.type)});
                         ++rejected_physical_calls;
                         for (uint32_t bit = 0; bit < rejection_reasons.size(); ++bit) {
                             if (rejection & (1u << bit)) ++rejection_reasons[bit];
                         }
                         continue;
                     }
-                    result->geometry.push_back({first, count, call.callIndex, true});
+                    result->geometry.push_back({first, count, call.callIndex, true, 0,
+                        uint32_t(projection.type)});
                     admitted_faces += count / 3;
                 }
             }
@@ -544,8 +551,18 @@ void RenderEvidence::begin(const RT64::Workload& w, float weight) noexcept {
                 for (uint32_t c = 0; c < proj.gameCallCount; ++c) {
                     const auto& call = proj.gameCalls[c];
                     const bool indexed = proj.type == RT64::Projection::Type::Perspective || proj.type == RT64::Projection::Type::Orthographic;
+                    const uint64_t wide_index_count = indexed ? uint64_t(call.callDesc.triangleCount) * 3 : 0;
+                    const uint64_t wide_raw_vertex_count = proj.type == RT64::Projection::Type::Triangle ?
+                        uint64_t(call.callDesc.triangleCount) * 3 : 0;
+                    require(wide_index_count <= std::numeric_limits<uint32_t>::max() &&
+                        wide_raw_vertex_count <= std::numeric_limits<uint32_t>::max(), "call range count overflow");
                     calls.push_back({{"call", call.callDesc.callIndex}, {"first", indexed ? call.meshDesc.faceIndicesStart : 0},
-                        {"count", call.callDesc.triangleCount * 3}, {"projection_type", int(proj.type)},
+                        {"count", uint32_t(wide_index_count)}, {"indexed", indexed},
+                        {"triangle_count", call.callDesc.triangleCount},
+                        {"raw_vertex_start", proj.type == RT64::Projection::Type::Triangle ?
+                            Json(call.meshDesc.rawVertexStart) : Json(nullptr)},
+                        {"raw_vertex_count", uint32_t(wide_raw_vertex_count)},
+                        {"projection_type", int(proj.type)},
                         {"color_address", fb.colorImage.address}, {"shader_flags", call.shaderDesc.flags.value},
                         {"shader_other_lo", call.shaderDesc.otherMode.L}, {"shader_other_hi", call.shaderDesc.otherMode.H},
                         {"material", material(call.callDesc)}});
@@ -573,6 +590,7 @@ void RenderEvidence::begin(const RT64::Workload& w, float weight) noexcept {
                             if (game_call.callDesc.callIndex != range.draw) continue;
                             shadowRejected.push_back({{"draw", range.draw}, {"first", range.faceStart},
                                 {"count", range.indexCount}, {"reason", range.rejection},
+                                {"projection_type", range.projectionType},
                                 {"material", material(game_call.callDesc)},
                                 {"shader_flags", game_call.shaderDesc.flags.value},
                                 {"extended_type", int(game_call.callDesc.extendedType)}});
@@ -582,7 +600,8 @@ void RenderEvidence::begin(const RT64::Workload& w, float weight) noexcept {
                     }
                 }
                 if (!found) shadowRejected.push_back({{"draw", range.draw}, {"first", range.faceStart},
-                    {"count", range.indexCount}, {"reason", range.rejection}, {"material", nullptr}});
+                    {"count", range.indexCount}, {"reason", range.rejection},
+                    {"projection_type", range.projectionType}, {"material", nullptr}});
             }
             for (const auto& range : w.sunShadow->unclassified) {
                 bool found = false;
@@ -595,7 +614,7 @@ void RenderEvidence::begin(const RT64::Workload& w, float weight) noexcept {
                             if (game_call.callDesc.callIndex != range.draw) continue;
                             shadowUnclassified.push_back({{"draw", range.draw}, {"first", range.faceStart},
                                 {"count", range.indexCount}, {"reason", range.rejection},
-                                {"projection_type", int(projection.type)},
+                                {"projection_type", range.projectionType},
                                 {"material", material(game_call.callDesc)}});
                             found = true;
                             break;
@@ -603,10 +622,11 @@ void RenderEvidence::begin(const RT64::Workload& w, float weight) noexcept {
                     }
                 }
                 if (!found) shadowUnclassified.push_back({{"draw", range.draw}, {"first", range.faceStart},
-                    {"count", range.indexCount}, {"reason", range.rejection}, {"material", nullptr}});
+                    {"count", range.indexCount}, {"reason", range.rejection},
+                    {"projection_type", range.projectionType}, {"material", nullptr}});
             }
         }
-        impl_->report = {{"schema", 1}, {"native", native}, {"workload", w.workloadId}, {"weight", weight},
+        impl_->report = {{"schema", 2}, {"native", native}, {"workload", w.workloadId}, {"weight", weight},
             {"drop_overlay", impl_->drop_overlay}, {"calls", calls}, {"raster", Json::array()},
             {"owner_buffers", Json::array()}, {"owner_incomplete_reasons", Json::array()},
             {"sun_shadow", w.sunShadow ? Json{{"authenticated", w.sunShadow->authenticated},
@@ -632,12 +652,15 @@ bool RenderEvidence::raster(const RT64::RasterEvidenceRange& range) noexcept {
     try {
         const auto [call, first, count, draw_index, indexed, test_z, scale, offset, scissor, resolution, viewport] = range;
         const RT64::DrawCall* desc = nullptr;
-        for (uint32_t f = 0; f < impl_->current->fbPairCount; ++f) {
+        for (uint32_t f = 0; f < impl_->current->fbPairCount && desc == nullptr; ++f) {
             const auto& fb = impl_->current->fbPairs[f];
-            for (uint32_t p = 0; p < fb.projectionCount; ++p) {
+            for (uint32_t p = 0; p < fb.projectionCount && desc == nullptr; ++p) {
                 const auto& proj = fb.projections[p];
                 for (uint32_t c = 0; c < proj.gameCallCount; ++c) {
-                    if (proj.gameCalls[c].callDesc.callIndex == call) desc = &proj.gameCalls[c].callDesc;
+                    if (proj.gameCalls[c].callDesc.callIndex == call) {
+                        desc = &proj.gameCalls[c].callDesc;
+                        break;
+                    }
                 }
             }
         }

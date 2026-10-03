@@ -76,6 +76,7 @@ private:
 };
 
 bool physical_car_object(const std::vector<TaskSunProbe::ObjectIdentity>& objects, uint32_t object_id);
+bool presented_object_id(uint32_t matrix_id, uint32_t& object_id);
 std::optional<TaskSunProbe> consume_sun_probe(uint32_t dl_address);
 
 } // namespace lambo::rt

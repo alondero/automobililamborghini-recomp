@@ -12,6 +12,12 @@
 
 namespace lambo::rt {
 
+bool presented_object_id(uint32_t matrix_id, uint32_t& object_id) {
+    if ((matrix_id & 0xFFF00000u) != 0x10000000u) return false;
+    object_id = matrix_id & 0xFFFFu;
+    return true;
+}
+
 bool physical_car_object(const std::vector<TaskSunProbe::ObjectIdentity>& objects, uint32_t object_id) {
     // HLE-owned parent links identify child meshes such as car components.
     // The table-size bound also terminates malformed parent cycles.
@@ -29,6 +35,18 @@ namespace {
 constexpr uint32_t first_task = 0x800BF240u;
 constexpr uint32_t task_stride = 0x7A50u;
 constexpr size_t guest_ram_size = 0x800000u;
+// USA fields documented in docs/rt-shadows.md's guest-bridge table and
+// docs/rt-provenance.md's emitter/object snapshot tables.
+constexpr uint32_t current_task_address = 0x800A2BFCu;
+constexpr uint32_t current_phase_address = 0x800CE6ACu;
+constexpr uint32_t current_circuit_address = 0x800CE794u;
+constexpr uint32_t current_players_address = 0x800CE6A4u;
+constexpr uint32_t task_cursor_address = 0x800A39CCu;
+constexpr uint32_t camera_slot_address = 0x800CE6AAu;
+constexpr uint32_t native_bearing_address = 0x800A2FB8u;
+constexpr uint32_t camera_heading_address = 0x800A2F10u;
+constexpr uint32_t camera_height_term_address = 0x800A2F90u;
+constexpr uint32_t native_object_table_address = 0x800B69A8u;
 
 int slot_index(uint32_t task) {
     if (task == first_task) return 0;
@@ -81,11 +99,11 @@ bool task_capture_enabled() {
 
 bool TaskSunProbes::begin(const uint8_t* rdram, size_t size) {
     if (!rdram || size < guest_ram_size) return false;
-    const uint32_t task = read<uint32_t>(rdram, 0x800A2BFCu);
+    const uint32_t task = read<uint32_t>(rdram, current_task_address);
     const int slot = slot_index(task);
-    const int16_t phase = read<int16_t>(rdram, 0x800CE6ACu);
-    const int16_t circuit = read<int16_t>(rdram, 0x800CE794u);
-    const int16_t players = read<int16_t>(rdram, 0x800CE6A4u);
+    const int16_t phase = read<int16_t>(rdram, current_phase_address);
+    const int16_t circuit = read<int16_t>(rdram, current_circuit_address);
+    const int16_t players = read<int16_t>(rdram, current_players_address);
     std::lock_guard lock(mutex_);
     if (phase != phase_ || circuit != circuit_) {
         slots_ = {};
@@ -102,11 +120,11 @@ bool TaskSunProbes::begin(const uint8_t* rdram, size_t size) {
 
 bool TaskSunProbes::emitter_begin(const uint8_t* rdram, size_t size, uint32_t emitter) {
     if (!rdram || size < guest_ram_size) return false;
-    const int slot = slot_index(read<uint32_t>(rdram, 0x800A2BFCu));
+    const int slot = slot_index(read<uint32_t>(rdram, current_task_address));
     const int index = emitter_index(emitter);
     if (slot < 0 || index < 0) return false;
-    const uint32_t cursor = read<uint32_t>(rdram, 0x800A39CCu);
-    const int16_t camera = read<int16_t>(rdram, 0x800CE6AAu);
+    const uint32_t cursor = read<uint32_t>(rdram, task_cursor_address);
+    const int16_t camera = read<int16_t>(rdram, camera_slot_address);
     std::lock_guard lock(mutex_);
     if (!slots_[slot]) return false;
     if (!valid_cursor(slot, cursor) || camera < 0 || camera >= 4 || open_emitters_[slot][index]) {
@@ -119,10 +137,10 @@ bool TaskSunProbes::emitter_begin(const uint8_t* rdram, size_t size, uint32_t em
 
 bool TaskSunProbes::emitter_end(const uint8_t* rdram, size_t size, uint32_t emitter) {
     if (!rdram || size < guest_ram_size) return false;
-    const int slot = slot_index(read<uint32_t>(rdram, 0x800A2BFCu));
+    const int slot = slot_index(read<uint32_t>(rdram, current_task_address));
     const int index = emitter_index(emitter);
     if (slot < 0 || index < 0) return false;
-    const uint32_t cursor = read<uint32_t>(rdram, 0x800A39CCu);
+    const uint32_t cursor = read<uint32_t>(rdram, task_cursor_address);
     std::lock_guard lock(mutex_);
     if (!slots_[slot]) return false;
     auto& pending = open_emitters_[slot][index];
@@ -139,13 +157,13 @@ bool TaskSunProbes::emitter_end(const uint8_t* rdram, size_t size, uint32_t emit
 
 bool TaskSunProbes::capture(const uint8_t* rdram, size_t size) {
     if (!rdram || size < guest_ram_size) return false;
-    const uint32_t task = read<uint32_t>(rdram, 0x800A2BFCu);
+    const uint32_t task = read<uint32_t>(rdram, current_task_address);
     const int slot = slot_index(task);
-    const int16_t camera_slot = read<int16_t>(rdram, 0x800CE6AAu);
+    const int16_t camera_slot = read<int16_t>(rdram, camera_slot_address);
     if (slot < 0 || camera_slot < 0 || camera_slot >= 4) return false;
-    const SunArt art{camera_slot, read<int16_t>(rdram, 0x800A2FB8u),
-        read<int16_t>(rdram, 0x800A2F10u + uint32_t(camera_slot) * 2),
-        read<float>(rdram, 0x800A2F90u)};
+    const SunArt art{camera_slot, read<int16_t>(rdram, native_bearing_address),
+        read<int16_t>(rdram, camera_heading_address + uint32_t(camera_slot) * 2),
+        read<float>(rdram, camera_height_term_address)};
     if (!std::isfinite(art.camera_height_term)) return false;
     std::lock_guard lock(mutex_);
     if (!slots_[slot] || slots_[slot]->epoch != epoch_) return false;
@@ -155,7 +173,7 @@ bool TaskSunProbes::capture(const uint8_t* rdram, size_t size) {
 
 bool TaskSunProbes::snapshot(const uint8_t* rdram, size_t size) {
     if (!rdram || size < guest_ram_size) return false;
-    const int slot = slot_index(read<uint32_t>(rdram, 0x800A2BFCu));
+    const int slot = slot_index(read<uint32_t>(rdram, current_task_address));
     if (slot < 0) return false;
     std::lock_guard lock(mutex_);
     if (!slots_[slot]) return false;
@@ -165,9 +183,8 @@ bool TaskSunProbes::snapshot(const uint8_t* rdram, size_t size) {
         // Object table fields are copied on the game producer immediately
         // before task publication. Runtime addresses/layout are documented in
         // docs/rt-shadows.md. The copy is small and remains task-owned.
-        constexpr uint32_t object_table = 0x800B69A8u;
         for (size_t object = 0; object < record.objects.size(); ++object) {
-            const uint32_t at = object_table + uint32_t(object) * 0x10Cu;
+            const uint32_t at = native_object_table_address + uint32_t(object) * 0x10Cu;
             record.objects[object] = {read<uint16_t>(rdram, at), read<uint32_t>(rdram, at + 8),
                 read<int16_t>(rdram, at + 0x58)};
         }

@@ -110,11 +110,24 @@ def validate_shadow_admission(render: dict) -> None:
     for field, ranges in (("rejected", rejected), ("unclassified", unclassified)):
         if type(shadow.get(field)) is not int or shadow[field] != len(ranges):
             raise CaptureError(f"shadow workload {field} count does not match its ranges")
+    for item in rejected:
+        if (not isinstance(item, dict) or type(item.get("first")) is not int
+                or type(item.get("count")) is not int or item["first"] < 0 or item["count"] < 0
+                or type(item.get("projection_type")) is not int or item["projection_type"] not in (1, 2)):
+            raise CaptureError("invalid indexed shadow rejected range")
     for item in unclassified:
         if not isinstance(item, dict) or type(item.get("reason")) is not int or not 1 <= item["reason"] <= 6:
             raise CaptureError("unknown shadow unclassified reason")
-        if type(item.get("count")) is not int or item["count"] < 0:
-            raise CaptureError("invalid shadow unclassified face count")
+        if (type(item.get("first")) is not int or type(item.get("count")) is not int
+                or item["first"] < 0 or item["count"] < 0
+                or type(item.get("projection_type")) is not int
+                or item["projection_type"] not in (0, 1, 2, 3, 4)):
+            raise CaptureError("invalid shadow unclassified metadata")
+        if item["reason"] == 1:
+            if item["projection_type"] not in (0, 3, 4) or item["first"] != 0 or item["count"] != 0:
+                raise CaptureError("non-indexed projection invented an indexed face range")
+        elif item["projection_type"] not in (1, 2):
+            raise CaptureError("indexed shadow rejection has a non-indexed projection type")
         if item["reason"] == 5 and item["count"] != 0:
             raise CaptureError("overflowed shadow face count is not represented as zero")
     if shadow.get("complete") is True:
@@ -124,6 +137,40 @@ def validate_shadow_admission(render: dict) -> None:
             raise CaptureError("shadow workload claims completeness with missing or rejected admission")
     elif shadow.get("complete") is not False:
         raise CaptureError("shadow workload completeness must be boolean")
+
+
+def validate_draw_metadata(calls: list) -> None:
+    """Keep index-buffer ranges distinct from raw/non-indexed projection calls."""
+    if not isinstance(calls, list):
+        raise CaptureError("invalid workload call metadata")
+    for call in calls:
+        if not isinstance(call, dict) or type(call.get("call")) is not int:
+            raise CaptureError("invalid workload draw identity")
+        if (type(call.get("indexed")) is not bool or type(call.get("first")) is not int
+                or type(call.get("count")) is not int or type(call.get("triangle_count")) is not int
+                or type(call.get("raw_vertex_count")) is not int
+                or type(call.get("projection_type")) is not int):
+            raise CaptureError("incomplete workload draw metadata")
+        if (call["first"] < 0 or call["count"] < 0 or call["triangle_count"] < 0
+                or call["raw_vertex_count"] < 0):
+            raise CaptureError("negative workload draw range")
+        if call["indexed"]:
+            if call["projection_type"] not in (1, 2) or call["count"] % 3 != 0:
+                raise CaptureError("invalid indexed projection range")
+            if call["count"] != call["triangle_count"] * 3:
+                raise CaptureError("indexed range disagrees with triangle count")
+            if call.get("raw_vertex_start") is not None or call["raw_vertex_count"] != 0:
+                raise CaptureError("indexed draw unexpectedly carries a raw vertex range")
+        else:
+            if (call["projection_type"] not in (0, 3, 4) or call["first"] != 0 or call["count"] != 0):
+                raise CaptureError("non-indexed projection invented an indexed face range")
+            raw_start = call.get("raw_vertex_start")
+            if call["projection_type"] == 4:
+                if (type(raw_start) is not int or raw_start < 0
+                        or call["raw_vertex_count"] != call["triangle_count"] * 3):
+                    raise CaptureError("raw triangle projection omitted or corrupted its vertex range")
+            elif raw_start is not None or call["raw_vertex_count"] != 0:
+                raise CaptureError("non-triangle projection carries a raw vertex range")
 
 
 def area(poly: list) -> float:
@@ -209,7 +256,7 @@ def screen_face(submitted: dict, indices: list, screen: list, flags: int = 0) ->
 
 
 def validate_pair(render: dict, present: dict, world: bytes, swap: bytes) -> list:
-    if (render.get("schema") != 1 or present.get("schema") != 1
+    if (render.get("schema") != 2 or present.get("schema") != 1
             or render["workload"] != present["workload"]
             or render["native"]["sequence"] != present["sequence"]
             or render["weight"] != 1 or render.get("gpu_indices_equal") is not True
@@ -217,6 +264,11 @@ def validate_pair(render: dict, present: dict, world: bytes, swap: bytes) -> lis
             or present["frames"] != 1 or present["frame"] != 0
             or present["format"] != "BGRA8"):
         raise CaptureError("unmatched/non-native/unsuccessful presentation")
+    validate_draw_metadata(render.get("calls"))
+    for call in render["calls"]:
+        if call["indexed"] and (call["first"] > len(render["indices"])
+                or call["count"] > len(render["indices"]) - call["first"]):
+            raise CaptureError("indexed draw range outside workload indices")
     width, height, row = present["width"], present["height"], present["row_bytes"]
     if not (type(width) is int and type(height) is int and 0 < width <= 4096 and 0 < height <= 4096
             and row == (width * 4 + 255) // 256 * 256 and len(swap) == row * height):

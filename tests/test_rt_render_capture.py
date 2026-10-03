@@ -10,7 +10,8 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from check_rt_overlay_capture import filter_taps, inside
 from check_rt_render_capture import (area, belongs_to_physical_car, opaque_coverage, receiver_material, validate_overlay_count,
-                                     screen_face, topology, uncovered_area, validate_pair, validate_shadow_admission)
+                                     screen_face, topology, uncovered_area, validate_draw_metadata, validate_pair,
+                                     validate_shadow_admission)
 from inspect_rt_task import CaptureError
 
 
@@ -107,10 +108,12 @@ class CoverageTests(unittest.TestCase):
 
 class PresentationTests(unittest.TestCase):
     def setUp(self):
-        self.render = {"schema": 1, "workload": 10, "native": {"sequence": 60}, "weight": 1,
+        self.render = {"schema": 2, "workload": 10, "native": {"sequence": 60}, "weight": 1,
                        "gpu_indices_equal": True, "world_bytes": 48, "world_indices": [0, 0, 0],
                        "local_positions": [0, 0, 0, 1, 0, 0, 0, 1, 0], "indices": [0, 1, 2],
-                       "world_groups": [0x10010001], "calls": [{"call": 1}], "raster": []}
+                       "world_groups": [0x10010001], "calls": [{"call": 1, "first": 0, "count": 3,
+                           "indexed": True, "triangle_count": 1, "projection_type": 1,
+                           "raw_vertex_start": None, "raw_vertex_count": 0}], "raster": []}
         self.present = {"schema": 1, "workload": 10, "sequence": 60, "successful_present": True,
                         "native_color_image": True, "frames": 1, "frame": 0, "format": "BGRA8",
                         "width": 4, "height": 2, "row_bytes": 256, "video_resolution": [4, 2],
@@ -122,6 +125,8 @@ class PresentationTests(unittest.TestCase):
         self.assertEqual(len(validate_pair(self.render, self.present, self.world, self.swap)), 3)
 
     def test_wrong_task_interpolation_or_failed_present_rejected(self):
+        with self.assertRaises(CaptureError):
+            validate_pair(dict(self.render, schema=1), self.present, self.world, self.swap)
         for field, value in (("workload", 11), ("frames", 2), ("frame", 1),
                              ("successful_present", False), ("native_color_image", False), ("row_bytes", 16)):
             with self.subTest(field=field), self.assertRaises(CaptureError):
@@ -132,7 +137,7 @@ class PresentationTests(unittest.TestCase):
     def test_corrupt_gpu_or_range_data_rejected(self):
         for field, value in (("indices", [0, 1, 3]), ("indices", [0, 1]),
                              ("world_indices", [1, 0, 0]), ("local_positions", [math.inf]*9),
-                             ("calls", [{"call": 1}, {"call": 1}])):
+                             ("calls", [self.render["calls"][0], dict(self.render["calls"][0])])):
             with self.subTest(field=field), self.assertRaises(CaptureError):
                 validate_pair(dict(self.render, **{field: value}), self.present, self.world, self.swap)
         for world in (self.world[:-4], struct.pack("<12f", *([math.nan]*12))):
@@ -146,13 +151,37 @@ class PresentationTests(unittest.TestCase):
         with self.assertRaises(CaptureError):
             validate_pair(dict(self.render, raster=[r, r]), self.present, self.world, self.swap)
 
+    def test_nonindexed_projection_metadata_does_not_claim_face_indices(self):
+        rectangle = {"call": 1, "first": 0, "count": 0, "indexed": False,
+                     "triangle_count": 2, "projection_type": 3, "raw_vertex_start": None,
+                     "raw_vertex_count": 0}
+        validate_draw_metadata([rectangle])
+        for field, value in (("first", 7), ("count", 6), ("projection_type", 1)):
+            with self.subTest(field=field), self.assertRaises(CaptureError):
+                validate_draw_metadata([dict(rectangle, **{field: value})])
+        raw_triangles = dict(rectangle, projection_type=4, raw_vertex_start=12,
+                             raw_vertex_count=6)
+        validate_draw_metadata([raw_triangles])
+
     def test_unknown_shadow_workload_ranges_block_complete_claim(self):
         workload = {"authenticated": True, "complete": False, "params_abi_valid": True,
                     "geometry": 2, "overlays": 1, "rejected": 0, "unclassified": 1}
         render = dict(self.render, sun_shadow=workload, sun_shadow_rejected_ranges=[],
-                      sun_shadow_unclassified_ranges=[{"reason": 3, "count": 12}])
+                      sun_shadow_unclassified_ranges=[{"reason": 3, "first": 0, "count": 12,
+                                                       "projection_type": 1}])
         validate_shadow_admission(render)
         workload["complete"] = True
+        with self.assertRaises(CaptureError):
+            validate_shadow_admission(render)
+
+    def test_nonindexed_shadow_rejection_keeps_projection_identity_without_face_range(self):
+        workload = {"authenticated": True, "complete": False, "params_abi_valid": True,
+                    "geometry": 1, "overlays": 1, "rejected": 0, "unclassified": 1}
+        render = dict(self.render, sun_shadow=workload, sun_shadow_rejected_ranges=[],
+                      sun_shadow_unclassified_ranges=[{"reason": 1, "first": 0, "count": 0,
+                                                       "projection_type": 3}])
+        validate_shadow_admission(render)
+        render["sun_shadow_unclassified_ranges"][0]["count"] = 6
         with self.assertRaises(CaptureError):
             validate_shadow_admission(render)
 
@@ -162,7 +191,8 @@ class PresentationTests(unittest.TestCase):
         render = dict(self.render, sun_shadow=workload, sun_shadow_rejected_ranges=[],
                       sun_shadow_unclassified_ranges=[])
         validate_shadow_admission(render)
-        render["sun_shadow_unclassified_ranges"].append({"reason": 4, "count": 3})
+        render["sun_shadow_unclassified_ranges"].append({"reason": 4, "first": 0, "count": 3,
+                                                          "projection_type": 1})
         workload["unclassified"] = 1
         with self.assertRaises(CaptureError):
             validate_shadow_admission(render)

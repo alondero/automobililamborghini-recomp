@@ -126,7 +126,7 @@ index 4c1a514..283197d 100644
  namespace RT64 {
  struct alignas(16) SunShadowParams {
      float direction[3] = {0, 0, 1}; // Unit receiver-to-light, world space.
-@@ -26,6 +28,31 @@ static_assert(offsetof(SunShadowParams, angularRadius) == 16);
+@@ -26,6 +28,32 @@ static_assert(offsetof(SunShadowParams, angularRadius) == 16);
  static_assert(offsetof(SunShadowParams, sampleCount) == 32);
  static_assert(offsetof(SunShadowParams, reserved) == 44);
  
@@ -136,6 +136,7 @@ index 4c1a514..283197d 100644
 +    uint32_t draw = 0;
 +    bool opaqueSolid = false;
 +    uint32_t rejection = 0;
++    uint32_t projectionType = 0; // RT64::Projection::Type value for draw identity.
 +};
 +
 +// Immutable, task-owned shadow input attached to exactly one Workload. The
