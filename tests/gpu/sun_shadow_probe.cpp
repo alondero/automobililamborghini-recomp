@@ -19,9 +19,25 @@
 
 using namespace plume;
 using namespace RT64;
-void nativeMaterialProbe(RenderDevice* device, RenderWorker& worker, const char* shaderPath);
+void nativeMaterialProbe(RenderDevice* device, RenderWorker& worker, const char* shaderPath,
+    const char* rasterVsPath, const char* rasterPsPath);
 namespace {
 size_t checks = 0;
+int debugErrorCount(ID3D12InfoQueue* messages) {
+    int errors = 0;
+    if (!messages) return errors;
+    for (UINT64 i = 0; i < messages->GetNumStoredMessagesAllowedByRetrievalFilter(); ++i) {
+        SIZE_T size = 0;
+        messages->GetMessage(i, nullptr, &size);
+        std::vector<char> bytes(size);
+        auto* message = reinterpret_cast<D3D12_MESSAGE*>(bytes.data());
+        if (SUCCEEDED(messages->GetMessage(i, message, &size)) && message->Severity <= D3D12_MESSAGE_SEVERITY_ERROR) {
+            std::fprintf(stderr, "D3D12 validation: %s\n", message->pDescription);
+            ++errors;
+        }
+    }
+    return errors;
+}
 void require(bool value, const char *why) {
     ++checks;
     if (!value) throw std::runtime_error(why);
@@ -108,7 +124,8 @@ float referenceVisibility(float x, float height, float radius, float bias) {
 
 int main(int argc, char **argv) {
     try {
-        require(argc == 2 || argc == 3, "Usage: lambo_rt_shadow_gpu sun-shadow-probe.dxil [native-material-probe.dxil]");
+        require(argc == 2 || argc == 3 || argc == 5,
+            "Usage: lambo_rt_shadow_gpu sun-shadow-probe.dxil [native-material-probe.dxil [native-vs.dxil native-ps.dxil]]");
         std::ifstream input(argv[1], std::ios::binary);
         std::vector<char> code((std::istreambuf_iterator<char>(input)), {});
         require(!code.empty(), "shader missing");
@@ -140,6 +157,12 @@ int main(int argc, char **argv) {
             debugLayer ? "enabled" : "unavailable");
         ID3D12InfoQueue *messages = nullptr;
         native->d3d->QueryInterface(IID_ID3D12InfoQueue, reinterpret_cast<void **>(&messages));
+        const auto releaseMessages = [](ID3D12InfoQueue* queue) {
+            if (!queue) return;
+            if (std::uncaught_exceptions()) debugErrorCount(queue);
+            queue->Release();
+        };
+        std::unique_ptr<ID3D12InfoQueue, decltype(releaseMessages)> messageOwner(messages, releaseMessages);
         if (messages) messages->ClearStoredMessages();
 
         constexpr uint32_t probeCount = 129;
@@ -185,7 +208,8 @@ int main(int argc, char **argv) {
         set->setBuffer(resultsBinding, output.get(), probes.size() * sizeof(Result), &resultsView);
         RenderWorker worker(device.get(), "Sunlight shadow GPU probe", RenderCommandListType::DIRECT);
         textureReadback(worker);
-        if (argc == 3) nativeMaterialProbe(device.get(), worker, argv[2]);
+        if (argc >= 3) nativeMaterialProbe(device.get(), worker, argv[2],
+            argc == 5 ? argv[3] : nullptr, argc == 5 ? argv[4] : nullptr);
         auto timestamps = device->createQueryPool(3);
         require(timestamps != nullptr, "GPU timestamp support unavailable");
         std::vector<double> buildTimes, kernelTimes;
@@ -258,8 +282,9 @@ int main(int argc, char **argv) {
             return results;
         };
         const std::vector<SunShadowRange> ceiling{{0,6,17,true}};
-        auto hard = execute({{0,6,17,true}, {UINT32_MAX,3,99,true}, {6,2,99,true}, {6,6,99,false}});
-        require(scene.stats().admitted == 1 && scene.stats().rejected == 3 && scene.stats().triangles == 2,
+        auto hard = execute({{0,6,17,true}, {UINT32_MAX,3,99,true}, {6,2,99,true}, {6,6,99,false},
+            {0,6,99,true,1}, {0,6,99,true,0,1,true}});
+        require(scene.stats().admitted == 1 && scene.stats().rejected == 5 && scene.stats().triangles == 2,
             "geometry admission/metadata changed");
         std::printf("AS: triangles=%llu bytes=%llu scratch=%llu\n",
             static_cast<unsigned long long>(scene.stats().triangles),
@@ -274,6 +299,12 @@ int main(int argc, char **argv) {
             for (int c = 0; c < 3; ++c) close(hard[i].color[c],
                 transmission * probes[i].native[c] + (1-transmission) * probes[i].fog[c], "fog composition changed");
             close(hard[i].color[3], probes[i].native[3], "native alpha changed");
+        }
+        auto unsupportedAlpha = execute({{0,6,17,false,0,1,true}});
+        for (uint32_t i = 0; i < probeCount; ++i) {
+            close(unsupportedAlpha[i].info[0], 1, "opaque-only shader turned cutouts into solids");
+            if (std::abs(probes[i].position[0]) < 1)
+                require(unsupportedAlpha[i].info[3] == 0, "missing candidate evaluator was not reported");
         }
         for (uint32_t quality : {4u,8u,16u}) {
             params.sampleCount = quality;
@@ -376,21 +407,7 @@ int main(int argc, char **argv) {
             ++presentation), "empty scene admitted");
         params.direction[0] = std::numeric_limits<float>::infinity();
         require(!validSunShadowParams(params), "invalid direction admitted");
-        int debugErrors = 0;
-        if (messages) {
-            for (UINT64 i = 0; i < messages->GetNumStoredMessagesAllowedByRetrievalFilter(); ++i) {
-                SIZE_T size = 0;
-                messages->GetMessage(i, nullptr, &size);
-                std::vector<char> bytes(size);
-                auto *message = reinterpret_cast<D3D12_MESSAGE *>(bytes.data());
-                if (SUCCEEDED(messages->GetMessage(i, message, &size)) && message->Severity <= D3D12_MESSAGE_SEVERITY_ERROR) {
-                    std::fprintf(stderr, "D3D12 validation: %s\n", message->pDescription);
-                    ++debugErrors;
-                }
-            }
-            messages->Release();
-        }
-        require(debugErrors == 0, "D3D12 validation errors");
+        require(debugErrorCount(messages) == 0, "D3D12 validation errors");
         const auto average = [](const std::vector<double>& values) {
             double sum = 0;
             for (double value : values) sum += value;

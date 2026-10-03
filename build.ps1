@@ -231,13 +231,16 @@ try {
         @{ Sub = 'lib/rt64/src/contrib/plume'; Patch = 'patches/0004-plume-d3d12-mingw-com-abi-struct-return.patch' }
     )
     # Later RT64 patches change the context of earlier patches. As in CMake,
-    # recognize the final metadata patch before replaying the earlier series.
+    # recognize the final candidate or metadata patch before replaying the series.
     # This guard is needed when dependency files are explicitly preserved.
     $Rt64SeriesApplied = $false
     if ($PreserveSubmodules) {
-        $Rt64Guard = Join-Path $RepoRoot 'patches/0025-rt64-workload-shadow-metadata.patch'
-        & git.exe -C lib/rt64 apply --reverse --check $Rt64Guard 2>&1 | Out-Null
-        $Rt64SeriesApplied = $LASTEXITCODE -eq 0
+        foreach ($GuardPatch in @('0027-rt64-native-ray-candidate-coverage.patch',
+                                 '0025-rt64-workload-shadow-metadata.patch')) {
+            $Rt64Guard = Join-Path $RepoRoot "patches/$GuardPatch"
+            & git.exe -C lib/rt64 apply --reverse --check $Rt64Guard 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { $Rt64SeriesApplied = $true; break }
+        }
     }
     foreach ($p in $patches) {
         if ($Rt64SeriesApplied -and $p.Sub -eq 'lib/rt64') {

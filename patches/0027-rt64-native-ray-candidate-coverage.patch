@@ -1,0 +1,225 @@
+diff --git a/src/render/rt64_sun_shadow_scene.cpp b/src/render/rt64_sun_shadow_scene.cpp
+index 0802616..41af679 100644
+--- a/src/render/rt64_sun_shadow_scene.cpp
++++ b/src/render/rt64_sun_shadow_scene.cpp
+@@ -41,7 +41,8 @@ bool SunShadowScene::prepare(RenderDevice *device, SunShadowBuffer positions,
+     std::vector<RenderBottomLevelASMesh> meshes;
+     std::vector<std::array<uint32_t, 4>> metadata;
+     for (const auto &range : ranges) {
+-        bool valid = range.opaqueSolid && range.indexCount && range.indexCount % 3 == 0 &&
++        bool valid = (range.opaqueSolid != range.nativeAlphaCoverage) && !range.rejection &&
++            range.indexCount && range.indexCount % 3 == 0 &&
+             range.faceStart <= cpuIndices.size() && range.indexCount <= cpuIndices.size() - range.faceStart;
+         if (valid) {
+             for (uint64_t i = range.faceStart; i < uint64_t(range.faceStart) + range.indexCount; ++i) {
+@@ -56,10 +57,10 @@ bool SunShadowScene::prepare(RenderDevice *device, SunShadowBuffer positions,
+         meshes.emplace_back(indices.buffer->at(uint64_t(range.faceStart) * 4), positions.buffer->at(0),
+             RenderFormat::R32_UINT, RenderFormat::R32G32B32_FLOAT,
+             range.indexCount, vertexCount, 16, false);
+-        metadata.push_back({range.faceStart, range.draw, range.indexCount, 0});
++        metadata.push_back({range.faceStart, range.draw, range.indexCount, range.nativeAlphaCoverage ? 1u : 0u});
+         stats_.triangles += range.indexCount / 3;
+     }
+-    if (meshes.empty()) return fail("No proven opaque solid casters");
++    if (meshes.empty()) return fail("No admitted material-covered casters");
+     device->setBottomLevelASBuildInfo(bottom_, meshes.data(), uint32_t(meshes.size()), true, false);
+     if (!bottom_.accelerationStructureSize || !bottom_.scratchSize ||
+         bottom_.accelerationStructureSize > 128u * 1024u * 1024u)
+diff --git a/src/render/rt64_sun_shadow_scene.h b/src/render/rt64_sun_shadow_scene.h
+index d886da3..b5ec0fb 100644
+--- a/src/render/rt64_sun_shadow_scene.h
++++ b/src/render/rt64_sun_shadow_scene.h
+@@ -31,6 +31,9 @@ struct SunShadowSceneStats {
+ // Owner MUST fence all prior builds/queries before prepare/invalidate/destruction.
+ // Input buffers stay alive and unchanged through build AND all receiver draws.
+ // One instance per in-flight presentation/view with a unique nonzero identity.
++// Alpha ranges require a caller-authenticated native material/attribute binding;
++// metadata tags them for candidate evaluation. The opaque-only shader rejects
++// that tag. This helper does not authenticate textures or admit game materials.
+ // No submission, wait, RAM read, game classifier or water dependency is hidden.
+ class SunShadowScene {
+ public:
+diff --git a/src/shaders/NativeRayHit.hlsli b/src/shaders/NativeRayHit.hlsli
+new file mode 100644
+index 0000000..7f3c1b8
+--- /dev/null
++++ b/src/shaders/NativeRayHit.hlsli
+@@ -0,0 +1,104 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#pragma once
++
++#include "NativeMaterial.hlsli"
++
++struct NativeHitAttributes {
++    float4 position;
++    float2 uv;
++    float2 dx;
++    float2 dy;
++    float4 shade;
++};
++
++// Varying shade alpha can straddle a native discard boundary because raster
++// interpolation and triangle-hit barycentrics have different rounding. No error
++// bound is authenticated yet, so those alpha paths and stochastic alpha compare
++// remain unsupported. Receiver fog alpha still runs in the native raster path.
++bool NativeRayCoverageInputsSupported(RenderParams rp, float4 shade[3]) {
++    const OtherMode mode = {rp.omL, rp.omH};
++    if (mode.alphaCompare() == G_AC_DITHER) return false;
++    if (!mode.cvgXAlpha() && mode.alphaCompare() == G_AC_NONE) return true;
++    if (shade[0].a == shade[1].a && shade[0].a == shade[2].a) return true;
++    const ColorCombiner combiner = {rp.ccL, rp.ccH};
++    const uint cycles = combiner.cycleCount(mode);
++    for (uint cycle = 0; cycle < cycles; ++cycle) {
++        const bool second = cycles == 1 || cycle == 1;
++        for (uint input = 0; input < 4; ++input)
++            if (combiner.decodeAlphaInput(input, second) == ColorCombiner::A_SHADE) return false;
++    }
++    return true;
++}
++
++float NativeCross2(float2 a, float2 b) {
++    return a.x * b.y - a.y * b.x;
++}
++
++float3 NativeScreenBarycentric(float2 pixel, float2 a, float2 b, float2 c, float determinant) {
++    float2 delta = pixel - a;
++    float y = NativeCross2(delta, c - a) / determinant;
++    float z = NativeCross2(b - a, delta) / determinant;
++    return float3(1 - y - z, y, z);
++}
++
++// Reconstruct the generated raster attributes at a world-space triangle hit.
++// Input positions are RSPProcessCS output, not guest vertices or live transforms.
++// viewport and scale/offset are the exact displayed draw's RasterVS values.
++// Behind-eye/degenerate/non-finite inputs are unsupported, never solid cutouts.
++// Coarse 2x2 UV differences match the DXIL raster derivative instructions; the
++// selected backend still needs raster-versus-hit validation before admission.
++bool NativeRayHitAttributes(RenderParams rp, float3 worldBarycentric,
++    float4 screen[3], float2 uv[3], float4 shade[3],
++    float4 viewport, float2 screenScale, float2 screenOffset,
++    out NativeHitAttributes attributes)
++{
++    attributes = (NativeHitAttributes)0;
++    if (renderFlagRect(rp.flags) || !all(isfinite(worldBarycentric)) ||
++        any(worldBarycentric < -1e-5f) || abs(dot(worldBarycentric, 1.0f) - 1) > 1e-4f ||
++        !all(isfinite(viewport)) || any(viewport.zw <= 0) ||
++        !all(isfinite(screenScale)) || !all(isfinite(screenOffset)) ||
++        any(FbParams.resolution <= 0)) return false;
++    float2 pixel[3];
++    float3 w = float3(screen[0].w, screen[1].w, screen[2].w);
++    if (!all(isfinite(w)) || any(w <= 1e-6f)) return false;
++    for (uint i = 0; i < 3; ++i) {
++        if (!all(isfinite(screen[i])) || !all(isfinite(uv[i])) || !all(isfinite(shade[i]))) return false;
++        float2 ndc = (screen[i].xy - FbParams.resolution / 2) /
++            float2(FbParams.resolution.x / 2, -FbParams.resolution.y / 2);
++        ndc = ndc * screenScale + screenOffset;
++        pixel[i] = viewport.xy + viewport.zw / 2 + ndc * viewport.zw * float2(0.5f, -0.5f);
++    }
++    float determinant = NativeCross2(pixel[1] - pixel[0], pixel[2] - pixel[0]);
++    if (!isfinite(determinant) || abs(determinant) < 1e-8f) return false;
++    const OtherMode mode = {rp.omL, rp.omH};
++    float2 extent = max(max(pixel[0], pixel[1]), pixel[2]) - min(min(pixel[0], pixel[1]), pixel[2]);
++    // A measured subpixel LOD fixture disagrees with native raster derivatives.
++    // Keep that unvalidated footprint unsupported, rather than asserting parity.
++    if (mode.textLOD() == G_TL_LOD && any(extent < 1)) return false;
++    float hitW = dot(worldBarycentric, w);
++    float3 screenBarycentric = worldBarycentric * w / hitW;
++    float2 hitPixel = screenBarycentric.x * pixel[0] + screenBarycentric.y * pixel[1] +
++        screenBarycentric.z * pixel[2];
++    float2 quad = floor(hitPixel / 2) * 2 + 0.5f;
++    float3 weights[3];
++    weights[0] = NativeScreenBarycentric(quad, pixel[0], pixel[1], pixel[2], determinant) / w;
++    weights[1] = NativeScreenBarycentric(quad + float2(1, 0), pixel[0], pixel[1], pixel[2], determinant) / w;
++    weights[2] = NativeScreenBarycentric(quad + float2(0, 1), pixel[0], pixel[1], pixel[2], determinant) / w;
++    float2 quadUV[3];
++    for (uint j = 0; j < 3; ++j) {
++        float divisor = dot(weights[j], 1.0f);
++        if (!isfinite(divisor) || divisor <= 1e-8f) return false;
++        weights[j] /= divisor;
++        quadUV[j] = weights[j].x * uv[0] + weights[j].y * uv[1] + weights[j].z * uv[2];
++    }
++    attributes.uv = worldBarycentric.x * uv[0] + worldBarycentric.y * uv[1] + worldBarycentric.z * uv[2];
++    attributes.dx = quadUV[1] - quadUV[0];
++    attributes.dy = quadUV[2] - quadUV[0];
++    attributes.shade = worldBarycentric.x * shade[0] + worldBarycentric.y * shade[1] + worldBarycentric.z * shade[2];
++    if (!renderFlagSmoothShade(rp.flags)) attributes.shade.rgb = shade[0].rgb;
++    attributes.position = float4(hitPixel, dot(screenBarycentric,
++        float3(screen[0].z, screen[1].z, screen[2].z)), 1 / hitW);
++    return all(isfinite(attributes.uv)) && all(isfinite(attributes.dx)) &&
++        all(isfinite(attributes.dy)) && all(isfinite(attributes.shade)) && all(isfinite(attributes.position));
++}
+diff --git a/src/shaders/SunShadow.hlsli b/src/shaders/SunShadow.hlsli
+index 9ebc63f..d67bdec 100644
+--- a/src/shaders/SunShadow.hlsli
++++ b/src/shaders/SunShadow.hlsli
+@@ -29,13 +29,14 @@ float3 SunShadowDirection(SunShadowParams p, uint sampleIndex) {
+     return p.direction*cosTheta + (tangent*cos(phi) + bitangent*sin(phi))*sinTheta;
+ }
+ 
+-// All admitted solids are marked non-opaque in the AS, allowing exact receiver
+-// triangle exclusion. Geometry metadata is {faceStart, draw, indexCount, 0}.
+-// Cutouts are not admitted: texture coverage needs a separate material contract.
++// All admitted triangles are non-opaque in the AS for exact face exclusion.
++// Metadata is {faceStart, draw, indexCount, nativeAlphaCoverage}. The optional
++// candidate evaluator must distinguish unsupported input from an alpha hole.
+ float SunShadowVisibility(RaytracingAccelerationStructure scene,
+     StructuredBuffer<uint4> geometry, float3 position, float3 geometricNormal,
+-    uint receiverDraw, uint receiverFaceStart, SunShadowParams p)
++    uint receiverDraw, uint receiverFaceStart, SunShadowParams p, out bool coverageValid)
+ {
++    coverageValid = true;
+     if (!SunShadowValid(p) || !all(isfinite(position)) || !all(isfinite(geometricNormal)) ||
+         dot(geometricNormal, geometricNormal) < 1e-12) return 1;
+     uint count = p.angularRadius == 0 ? 1 : p.sampleCount;
+@@ -62,6 +63,18 @@ float SunShadowVisibility(RaytracingAccelerationStructure scene,
+             uint4 range = geometry[query.CandidateGeometryIndex()];
+             uint face = range.x + 3 * query.CandidatePrimitiveIndex();
+             if (range.y == receiverDraw && face == receiverFaceStart) continue;
++            if (range.w != 0) {
++#ifdef SUN_SHADOW_CANDIDATE_COVERAGE
++                bool supported;
++                bool covered = SUN_SHADOW_CANDIDATE_COVERAGE(range, face,
++                    query.CandidateTriangleBarycentrics(), supported);
++                if (!supported) { coverageValid = false; return 1; }
++                if (!covered) continue;
++#else
++                coverageValid = false;
++                return 1;
++#endif
++            }
+             query.CommitNonOpaqueTriangleHit();
+         }
+         visibility += query.CommittedStatus() == COMMITTED_NOTHING ? 1 : 0;
+@@ -69,6 +82,17 @@ float SunShadowVisibility(RaytracingAccelerationStructure scene,
+     return visibility / float(count);
+ }
+ 
++// Existing opaque-only callers have no alpha resources. A tagged candidate
++// returns native visibility rather than silently turning a cutout into a solid.
++float SunShadowVisibility(RaytracingAccelerationStructure scene,
++    StructuredBuffer<uint4> geometry, float3 position, float3 geometricNormal,
++    uint receiverDraw, uint receiverFaceStart, SunShadowParams p)
++{
++    bool coverageValid;
++    return SunShadowVisibility(scene, geometry, position, geometricNormal,
++        receiverDraw, receiverFaceStart, p, coverageValid);
++}
++
+ // Caller must run native alpha/depth/combiner logic first and admit only a
+ // supported standard-fog receiver. fogContribution already includes its factor.
+ // No Lambert term or albedo reconstruction is introduced here.
+diff --git a/src/shared/rt64_sun_shadow.h b/src/shared/rt64_sun_shadow.h
+index 6b38ec8..fa0f302 100644
+--- a/src/shared/rt64_sun_shadow.h
++++ b/src/shared/rt64_sun_shadow.h
+@@ -35,6 +35,9 @@ struct SunShadowRange {
+     bool opaqueSolid = false;
+     uint32_t rejection = 0;
+     uint32_t projectionType = 0; // RT64::Projection::Type value for draw identity.
++    // Caller has authenticated native texture/attribute resources for candidate
++    // evaluation. This is mutually exclusive with opaqueSolid; unknown is neither.
++    bool nativeAlphaCoverage = false;
+ };
+ 
+ // Immutable, task-owned shadow input attached to exactly one Workload. The

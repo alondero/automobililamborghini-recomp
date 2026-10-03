@@ -29,13 +29,22 @@ replacement, dynamic-tile, IA16 TMEM and LOD fixture paths are included. This
 does not yet connect the evaluator to real ray candidates or admit cutouts;
 details and limits are in [material evidence](rt-material-evidence.md#shared-native-material-evaluator).
 
+[Patch 0027](../patches/0027-rt64-native-ray-candidate-coverage.patch) adds an
+explicit alpha candidate contract and generated-attribute reconstruction.
+Thirty hardware fixture cases agree with native raster ownership; varying
+shade alpha and subpixel LOD remain unsupported after measured mismatches.
+Missing evaluators report invalid coverage and never turn cutouts into solids.
+Game texture/attribute bindings and admission are still pending. See
+[candidate evidence](rt-material-evidence.md#native-material-at-ray-candidates).
+
 [Patch 0021](../patches/0021-rt64-sun-shadow-groundwork.patch) adds:
 
 - `SunShadowScene`: shadow-only BLAS/TLAS over caller-supplied presented float4
   positions and original uint32 indices. Selected ranges and every referenced
   vertex index are validated against the matching CPU index upload and supplied
   actual GPU allocation capacities. Undersized buffers fail before AS allocation. Only
-  explicitly admitted opaque solids qualify; cutouts/translucency stay excluded.
+  explicitly admitted opaque solids or caller-authenticated native-alpha ranges
+  qualify. The game still admits opaque solids only; translucency stays excluded.
 - `SunShadowParams`: a shared 48-byte aligned CPU/HLSL layout, offset assertions
   and finite/unit/bounds validation. Direction points from receiver toward the
   light; angular radius is radians, limited to 0 through 5 degrees.

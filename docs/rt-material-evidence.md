@@ -358,6 +358,51 @@ The geometry builder still admits opaque solids only. Every sampled Workload
 remains incomplete and native overlays stay enabled until the full ray-hit
 material contract is proved.
 
+### Native material at ray candidates
+
+Patch 0027 adds reconstruction from generated screen positions, UVs and shaded
+colors at the candidate's original indexed face. World barycentrics preserve
+perspective interpolation; displayed viewport, scale and offset determine
+pixel position and coarse 2x2 UV differences. The native DXIL raster binary
+uses `DerivCoarseX/Y`, confirmed by DXC disassembly. Behind-eye, degenerate and
+non-finite input is unsupported. The caller must bind the matching presented
+attributes, material and texture resources and propagate coverage failure to
+the view's readiness gate.
+
+The real D3D12 probe now builds 66 textured triangles and traces candidate hits
+through the production sunlight kernel and native material evaluator. Thirty
+supported cases match both analytic alpha expectations and actual native
+RasterVS/RasterPS owner output at matching pixel centres, with native clipping
+and depth enabled. Cached textures, scaled replacement alpha, IA16 TMEM,
+dynamic tiles, native samplers, filtering and LOD are included. Two additional
+shade-alpha cases and a subpixel-LOD case explicitly return invalid coverage.
+The probe also rejects behind-eye/degenerate attributes, conflicting material
+tags, rejected AS ranges and alpha candidates without an evaluator. The full
+shadow probe passes 9,795 checks with the debug layer and no errors. Local log:
+`artifacts/rt-caster-stage/material-raster-candidate-gpu.log`.
+
+Two precision limits were measured. At exactly 1/8 alpha with a varying shade
+input, hit interpolation survived while the native raster fragment discarded.
+A 0.5-pixel LOD footprint also disagreed with native owner output. The helper
+therefore rejects alpha-dependent varying shade and subpixel LOD footprints;
+it does not infer a safe interpolation tolerance. Stochastic alpha compare is
+also unsupported. Native receiver fog continues to use native raster shade.
+The fixtures remain in the hardware probe with explicit unsupported results.
+
+These measurements do not authenticate game texture bindings, every format,
+replacement packs, view isolation or complete ray-hit coverage. Game admission
+still rejects every native alpha range and blended car child. No game AS,
+receiver, setting or overlay suppression is enabled by this patch.
+
+The preserving supported build and all 48 project CTests/88 Python tests pass.
+A separate replay applies all eleven RT64 patches and matches all 33 changed
+source files byte-for-byte. A fresh Circuit 1 native capture completes
+600/600 frames and 601 swaps; all four forward/rear task images match the
+earlier native baseline. Its material/light checks still pass with zero
+unclassified draws and `complete=false`. All 150 preserved RecompFrontend
+files remain byte-identical. This is a sampled native regression check, not
+full-game RT coverage.
+
 ## Ownership and diagnostic failures
 
 `LAMBO_RT_RENDER_CAPTURE_DIR` requires the existing sunlight probe and native
