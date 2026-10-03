@@ -36,6 +36,15 @@ struct TaskSunProbe {
     };
     std::vector<EmitterSpan> emitters;
     bool emitters_complete = true;
+    struct ObjectIdentity {
+        uint16_t flags = 0;
+        uint32_t list = 0;
+        int16_t parent = -1;
+    };
+    // Compact producer-owned object table used only to authenticate the native
+    // car-child overlay. It replaces an unsafe worker-side guest-RAM lookup.
+    std::array<ObjectIdentity, 128> objects{};
+    bool objects_complete = false;
     // Immutable, opt-in low-RAM copy made by the game producer before queueing.
     std::shared_ptr<const std::vector<uint8_t>> native_ram;
 };

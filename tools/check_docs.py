@@ -15,6 +15,7 @@ IGNORED_MARKDOWN_PARTS = {
     ".venv",
     "build",
     "build-android",
+    "artifacts",
     "dist",
     "emulators",
     "env",

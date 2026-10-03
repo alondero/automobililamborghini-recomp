@@ -4,19 +4,22 @@ Status: experimental developer groundwork, measured on Windows through
 2026-10-03. The GPU builder and angular-shadow kernel run on hardware. The
 [owner-map evidence](rt-material-evidence.md) proves native overlay attribution
 and visible eligible receiver ownership for model 0, one-player time trial and
-single race across all six circuits, in forward and rear views. **In-game
-ray-traced shadows are not enabled.** Workload light/admission values, a runtime
-shadow scene, receiver shader, opt-in setting and production fallback are still
-absent. Unsupported scenes remain native. Relighting and offscreen caster
-submission remain deferred.
+single race across all six circuits, in forward and rear views. Patch 0025 adds
+capture-only light and draw/face metadata to the matching Workload, but the
+sampled caster set is incomplete. **In-game ray-traced shadows are not enabled.**
+No game scene builds or consumes the RT scene, no receiver or overlay-ready gate
+is connected, and there is no player setting. Every scene remains native.
+Relighting and offscreen caster submission remain deferred.
 
 ## Delivered boundary
 
 [lambo_rt_shadows.cpp](../src/lambo_rt_shadows.cpp) records native sun-art inputs
 on the game producer, keyed by the exact graphics-task arena. The HLE consumer
-takes a copy before interpreting that task. Opt-in bounded task snapshots and
-emitter spans now support offline provenance checks. It logs provenance and never supplies
-a physical light, admits a game material or changes draw selection.
+takes copied values before interpreting that task. Opt-in bounded task snapshots
+and emitter spans support offline provenance checks. The capture-only Workload
+observer checks the task's native key and classifies presented ranges, but
+incomplete material admission prevents it from selecting a receiver or changing
+draw selection.
 
 [Patch 0021](../patches/0021-rt64-sun-shadow-groundwork.patch) adds:
 
@@ -48,9 +51,11 @@ is no water, guest-memory reader, automatic submission or wait inside the helper
 
 CMake applies the patch idempotently after the scripts' normal patch set. Normal
 builds compile the scene module but no SM6.5 shadow pipeline. The opt-in probe
-compiles the shared kernel. No RasterVS varying, receiver pipeline, Workload light
-field or live framebuffer integration exists yet. Tests must be interpreted at
-this boundary, not as validation of native game materials or depth/coverage.
+compiles the shared kernel. Patch 0025 adds capture-only Workload metadata, but
+the sampled admission is incomplete. No game AS build, RasterVS varying,
+receiver pipeline or live framebuffer integration consumes it. Tests must be
+interpreted at this boundary, not as validation of native game materials or
+depth/coverage.
 
 ## Native provenance finding
 
@@ -96,8 +101,9 @@ RT64 draws are native car shadows. [Task captures](rt-provenance.md#exact-overla
 now distinguish that trail emitter from the car-parented overlay and falsify
 render-mode-only identity. The [owner-map differential](rt-material-evidence.md)
 now attributes every affected tap to the exact overlay and a supported receiver
-for its sampled one-player matrix. No production draw is suppressed; the
-Workload, receiver path and failure restoration remain unimplemented.
+for its sampled one-player matrix. Patch 0025 carries capture-only Workload
+metadata, but the receiver path and failure restoration remain unimplemented;
+no production draw is suppressed.
 
 ## Guest bridge contract
 
@@ -199,23 +205,28 @@ remaining third-party compression stress tests are not validation of this featur
 
 ## Remaining gates
 
-1. Carry the measured native key into a task-owned, per-circuit world-light
-   policy. The 21-case snapshot matrix covers all six circuits and up to three
-   players in the listed time-trial/single-race cases. Camera independence is
-   directly proved on Circuit 1 only; other player counts, car models, modes and
-   cameras still need verification before admission.
+1. Native key direction has been measured across the six circuits in the
+   recorded one-to-three-player time-trial/single-race task matrix, and the
+   diagnostic Workload checks the current task's matching lit-car direction.
+   Camera independence was directly proved on Circuit 1 only. Shadow strength,
+   angular size and a complete supported-mode policy remain unmeasured.
 2. The [presented material and owner-map evidence](rt-material-evidence.md)
-   passes visible receiver ownership for all overlay-affected taps in the
-   measured six-circuit, one-player, model-0 time-trial/single-race matrix.
-   Preserve this exact draw/face mapping in a production Workload and receiver
-   path; runtime replacement readiness and restoration are not implemented.
-3. Copy physical-light/settings and admitted draws into the matching Workload;
-   add receiver vertex/pixel pipelines, descriptors, presented-geometry barriers,
-   readiness/resource failure handling and budgets.
-4. Add Original/default and opt-in settings with a usable pipeline. Then validate
-   actual ray-traced game swapchain pixels, fallback, task/load/resize/resource
-   transitions, timings, vehicle/player/mode coverage and missing offscreen
-   casters. This diagnostic milestone does not meet these game gates.
+   passes receiver ownership for every overlay-affected VI tap in the measured
+   six-circuit, one-player, model-0 time-trial/single-race matrix. Workload
+   admission now fails closed in all 12 matching cases: 334 ordinary
+   world-builder ranges use textured coverage-times-alpha. Preserve this
+   rejection until ray-hit material behavior is proven.
+3. Patch 0025 carries task epoch/sequence, key direction and admitted,
+   overlay and rejected face ranges into the exact Workload in developer capture
+   mode. All 12 captures are incomplete; no game AS build or receiver uses these
+   values. Add material/coverage parity, then a per-view AS and receiver that
+   preserves native fog, alpha, depth and face behavior.
+4. Add the Original-default setting and suppression only after a complete
+   per-view ready gate can restore the native overlay on every pending, failed
+   or unsupported path. Validate real game swapchain pixels, hard parity,
+   softness, self-shadow bias, lifecycle, resize, resource failures and GPU
+   cost. Expand vehicles, modes, player counts and real-hardware backends; all
+   remain native until individually validated.
 
 Relighting, offscreen caster submission and wider scenes/backends remain the
 [follow-on phases](ray-tracing-plan.md#follow-on-phases).

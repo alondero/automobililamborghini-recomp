@@ -15,6 +15,7 @@ public:
     bool enabled() const;
     void remember(uint64_t workload_id, const std::optional<TaskSunProbe>& task);
     void processed(uint64_t first, uint64_t last);
+    std::shared_ptr<const RT64::SunShadowWorkload> sunShadow(const RT64::Workload&) noexcept override;
     void begin(const RT64::Workload&, float weight) noexcept override;
     bool raster(const RT64::RasterEvidenceRange&) noexcept override;
     bool ownerBufferEnabled() const noexcept override;

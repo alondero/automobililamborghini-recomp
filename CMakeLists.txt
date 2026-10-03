@@ -35,14 +35,15 @@ set(N64MR ${CMAKE_CURRENT_SOURCE_DIR}/lib/N64ModernRuntime)
 include(cmake/Frontend.cmake)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0023-plume-texture-readback.patch)
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0024-d3d12-raster-owner-evidence.patch"
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0025-rt64-workload-shadow-metadata.patch"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
-    RESULT_VARIABLE rt64_owner_patch_applied OUTPUT_QUIET ERROR_QUIET)
-if(NOT rt64_owner_patch_applied EQUAL 0)
+    RESULT_VARIABLE rt64_shadow_metadata_patch_applied OUTPUT_QUIET ERROR_QUIET)
+if(NOT rt64_shadow_metadata_patch_applied EQUAL 0)
     lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0021-rt64-sun-shadow-groundwork.patch)
     lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0022-rt64-render-evidence-hooks.patch)
     lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0024-d3d12-raster-owner-evidence.patch)
 endif()
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0025-rt64-workload-shadow-metadata.patch)
 
 # --- RT64 renderer boundary; see patches/README.md ---
 # recomp/lib/rt64 is a pinned git submodule; RT64 is always compiled in and is the

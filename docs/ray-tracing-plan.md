@@ -6,9 +6,10 @@ diagnostics and a hardware-tested AS/angular-shadow kernel. The
 [owner-map evidence](rt-material-evidence.md) now closes the visible-receiver
 evidence gate for model 0, one-player time trial and single race on all six
 circuits, including forward/rear views. **Production integration and ready
-replacement coverage remain incomplete:** no Workload light/admission snapshot,
-runtime shadow AS, receiver shader, user setting or suppression/fallback path
-exists. The planning review itself performed no GPU validation. The target is
+replacement coverage remain incomplete:** capture-only Workload metadata now
+exists, but the sampled caster admission fails; there is no game-built shadow
+AS, receiver shader, user setting or suppression/fallback path. The planning
+review itself performed no GPU validation. The target is
 Automobili Lamborghini: Recompiled. RaceWave46 is a peer implementation to
 learn from; its courses, RAM addresses and lighting policy are not Lamborghini
 inputs.
@@ -366,6 +367,20 @@ settings, actual RT game pixels, softness, lifecycle or performance. Detailed
 scope and unsupported cases are in [material evidence](rt-material-evidence.md)
 and [native provenance](rt-provenance.md).
 
+The capture-only Workload bridge added by patch 0025 is not production readiness.
+Task sequence 60 was captured in all 12 one-player model-0 circuit/mode cases;
+each replay completed 600/600 frames and 601 swaps. All 12 Workloads
+authenticated their native key and exact overlay ranges, then returned
+`complete=false`. Across them, 334 ordinary indexed world-builder ranges in
+object 0 use textured coverage-times-alpha (`OtherMode.L=0xCB023038`). The
+current ray-hit kernel does not reproduce their per-sample coverage/alpha
+behavior. Per-circuit display-list identities and admitted/rejected counts are
+in [material evidence](rt-material-evidence.md#presented-geometry-and-material-evidence).
+No in-game AS was built, no receiver consumed this metadata, and the native
+overlay was never suppressed. Model 0/one-player is the only Workload matrix
+captured; other vehicles, player counts, modes, menus and backends remain
+unvalidated and native.
+
 For the original documentation change, the repository's required checks passed:
 documentation validation covered 45 Markdown files, the Python host suite ran
 47 tests, and Git found no whitespace errors. Exact commands:
@@ -381,19 +396,20 @@ git diff --check
 ~~~text
 Continue PR #279 and issue #278 from the current branch. Read CLAUDE.md,
 CONTRIBUTING.md, patches/README.md, docs/rt-provenance.md,
-docs/rt-material-evidence.md, docs/rt-shadows.md and this plan. Do not redo the
-completed D3D12 owner-map proof for model 0, one-player time trial/single race,
-Circuits 1–6, forward/rear views. Finish the production integration in stages:
-per-circuit task-owned native light policy; scene epoch/task/light and
-authenticated draw/face values copied into RT64 Workload; shadow AS from
-admitted presented geometry; native-material/fog/depth-preserving receiver
-path; ready-gated exact overlay suppression with unconditional native fallback;
-and an opt-in setting whose default is Original. Then test real game swapchain
-pixels, hard parity, softening, self-shadow bias, scene transitions, resize,
-resource failures and GPU cost. Expand coverage across all supported vehicles,
-circuits, race modes and player counts; keep unvalidated backends/scenes native.
-Keep relighting and offscreen caster submission deferred. Do not close #278
-until its proof and integration requirements are complete. Use finish.
+docs/rt-material-evidence.md, docs/rt-shadows.md and this plan. The owner-map
+proof passes for model 0, one-player time trial and single race on Circuits 1-6
+in forward/rear views. Workload admission fails in all 12 corresponding cases:
+334 world-builder ranges use textured coverage-times-alpha. First investigate
+how RT hit tests can preserve native texture-alpha, coverage, fog and depth, or
+prove a conservative caster exclusion. Keep all native shadows while this is
+unresolved. Only after complete presented caster/receiver admission, add a per-view AS and
+native-equivalent raster receiver, followed by an Original-default setting and
+ready-gated exact overlay replacement with unconditional fallback. Validate
+actual game swapchain pixels, hard parity, softness, self-shadow bias, lifecycle,
+resize, resource failure and GPU cost. Expand vehicles, modes, player counts
+and real-hardware backends; retain native output for unvalidated cases. Keep
+relighting and offscreen caster submission deferred. Do not close #278 until
+the requested proof and integration requirements are complete. Use finish.
 ~~~
 
 [peer-light]: https://github.com/DomazinUS/RaceWave46/blob/5c34f3711426978107707a8f06af9c2af4ee5401/lib/rt64/src/common/rt64_wr64_rt_shadow.h

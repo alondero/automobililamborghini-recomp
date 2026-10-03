@@ -6,7 +6,8 @@ separation below. A separate 21-case task snapshot matrix measures key
 direction and per-circuit light colors; the
 [presented-material evidence](rt-material-evidence.md) now proves visible
 receiver ownership for the sampled one-player cases on all six circuits.
-**No production Workload, raster receiver or overlay replacement is connected.**
+Capture-only Workload metadata now exists, but **no production Workload
+consumer, raster receiver or overlay replacement is connected.**
 Relighting and offscreen submission remain follow-on phases in the
 [plan](ray-tracing-plan.md).
 

@@ -60,6 +60,9 @@ bool probe_enabled() {
     }();
     return enabled;
 }
+bool task_capture_enabled() {
+    return probe_enabled();
+}
 }
 
 bool TaskSunProbes::begin(const uint8_t* rdram, size_t size) {
@@ -141,11 +144,28 @@ bool TaskSunProbes::snapshot(const uint8_t* rdram, size_t size) {
     const int slot = slot_index(read<uint32_t>(rdram, 0x800A2BFCu));
     if (slot < 0) return false;
     std::lock_guard lock(mutex_);
-    if (!slots_[slot] || slots_[slot]->native_ram || !capture_sequence(slots_[slot]->sequence)) return false;
+    if (!slots_[slot]) return false;
+    auto& record = *slots_[slot];
+    bool copied = false;
+    if (!record.objects_complete && capture_sequence(record.sequence)) {
+        // Object table fields are copied on the game producer immediately
+        // before task publication. Runtime addresses/layout are documented in
+        // docs/rt-shadows.md. The copy is small and remains task-owned.
+        constexpr uint32_t object_table = 0x800B69A8u;
+        for (size_t object = 0; object < record.objects.size(); ++object) {
+            const uint32_t at = object_table + uint32_t(object) * 0x10Cu;
+            record.objects[object] = {read<uint16_t>(rdram, at), read<uint32_t>(rdram, at + 8),
+                read<int16_t>(rdram, at + 0x58)};
+        }
+        record.objects_complete = true;
+        copied = true;
+    }
+    const char* directory = std::getenv("LAMBO_RT_CAPTURE_DIR");
+    if (!directory || !*directory || record.native_ram || !capture_sequence(record.sequence)) return copied;
     // Game-owned records/light banks may change while an older task is queued.
     // Copy on the game producer at 0x80005728, before osSendMesg publishes the
     // completed task. A task-arena reuse fence alone cannot protect globals.
-    slots_[slot]->native_ram = std::make_shared<const std::vector<uint8_t>>(rdram, rdram + guest_ram_size);
+    record.native_ram = std::make_shared<const std::vector<uint8_t>>(rdram, rdram + guest_ram_size);
     return true;
 }
 
@@ -180,7 +200,8 @@ void TaskSunProbes::invalidate() {
 // Opt-in, bounded local evidence: four immutable producer snapshots consumed
 // with the matching HLE task. Emitter spans travel in the same copied record;
 // HLE/workers never read guest globals for this diagnostic. RAM contains copyrighted
-// assets and must remain ignored. This is not a Workload light/eligibility API.
+// assets and must remain ignored. The Workload bridge is diagnostic only and
+// cannot select a receiver or suppress native output.
 void capture_task(const TaskSunProbe& task) {
     const char* directory = std::getenv("LAMBO_RT_CAPTURE_DIR");
     if (!directory || !*directory || !task.native_ram) return;
@@ -221,11 +242,11 @@ void capture_task(const TaskSunProbe& task) {
 }
 
 std::optional<TaskSunProbe> consume_sun_probe(uint32_t dl_address) {
-    if (!probe_enabled()) return std::nullopt;
+    if (!task_capture_enabled()) return std::nullopt;
     const auto task = probes.take(dl_address);
     if (task) capture_task(*task);
     // Evidence is sampled by task sequence, not frame/view. See rt-shadows.md.
-    if (!task || (task->sequence > 12 && task->sequence % 60 != 0)) return task;
+    if (!probe_enabled() || !task || (task->sequence > 12 && task->sequence % 60 != 0)) return task;
     for (const auto& camera : task->cameras) {
         if (!camera) continue;
         LAMBO_LOG("rt-sun", "epoch=%llu task=%llu arena=0x%08X phase=%d circuit=%d players=%d camera_slot=%d art_bearing=%d camera_heading=%d camera_height_term=%.6f physical_sun=unproved\n",
@@ -239,24 +260,22 @@ std::optional<TaskSunProbe> consume_sun_probe(uint32_t dl_address) {
 } // namespace lambo::rt
 
 extern "C" void lambo_rt_probe_task_begin(uint8_t* rdram) {
-    if (lambo::rt::probe_enabled()) lambo::rt::probes.begin(rdram, lambo::rt::guest_ram_size);
+    if (lambo::rt::task_capture_enabled()) lambo::rt::probes.begin(rdram, lambo::rt::guest_ram_size);
 }
 extern "C" void lambo_rt_probe_sun_art(uint8_t* rdram) {
-    if (lambo::rt::probe_enabled()) lambo::rt::probes.capture(rdram, lambo::rt::guest_ram_size);
+    if (lambo::rt::task_capture_enabled()) lambo::rt::probes.capture(rdram, lambo::rt::guest_ram_size);
 }
 extern "C" void lambo_rt_probe_invalidate() {
-    if (lambo::rt::probe_enabled()) lambo::rt::probes.invalidate();
+    if (lambo::rt::task_capture_enabled()) lambo::rt::probes.invalidate();
 }
 extern "C" void lambo_rt_probe_emitter_begin(uint8_t* rdram, uint32_t emitter) {
-    if (lambo::rt::probe_enabled()) lambo::rt::probes.emitter_begin(rdram, lambo::rt::guest_ram_size, emitter);
+    if (lambo::rt::task_capture_enabled()) lambo::rt::probes.emitter_begin(rdram, lambo::rt::guest_ram_size, emitter);
 }
 extern "C" void lambo_rt_probe_emitter_end(uint8_t* rdram, uint32_t emitter) {
-    if (lambo::rt::probe_enabled()) lambo::rt::probes.emitter_end(rdram, lambo::rt::guest_ram_size, emitter);
+    if (lambo::rt::task_capture_enabled()) lambo::rt::probes.emitter_end(rdram, lambo::rt::guest_ram_size, emitter);
 }
 extern "C" void lambo_rt_probe_task_publish(uint8_t* rdram) {
-    if (!lambo::rt::probe_enabled()) return;
-    const char* directory = std::getenv("LAMBO_RT_CAPTURE_DIR");
-    if (!directory || !*directory) return;
+    if (!lambo::rt::task_capture_enabled()) return;
     try {
         lambo::rt::probes.snapshot(rdram, lambo::rt::guest_ram_size);
     }

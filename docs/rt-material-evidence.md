@@ -1,12 +1,13 @@
 # Presented material and receiver-ownership evidence
 
 Status: diagnostic milestone after PR #279 (`bd05651`), measured on Windows
-on 2026-10-03. The D3D12 raster-owner diagnostic proves visible receiver
+through 2026-10-03. The D3D12 raster-owner diagnostic proves visible receiver
 ownership for every overlay-affected filter tap in the measured one-player
-scenes. **Production shadow replacement is still unimplemented:** no shadow
-Workload value, scene acceleration structure, receiver shader, user setting or
-native-overlay suppression path is connected. Unsupported cases remain native.
-Relighting and offscreen caster submission remain follow-on phases.
+scenes. Patch 0025 now attaches capture-only light and draw/face metadata to the
+matching RT64 Workload. The sampled Workload is incomplete, so there is still no
+production acceleration-structure, receiver or overlay-suppression path and no
+player setting. Every game scene continues to use native shadows. Relighting and
+offscreen caster submission remain follow-on phases.
 
 Read [native provenance](rt-provenance.md), [GPU groundwork](rt-shadows.md)
 and the [plan](ray-tracing-plan.md) with this page.
@@ -124,13 +125,47 @@ offscreen caster, HDR, MSAA, interpolated presentation, or non-D3D12 backend has
 passed. A sampled owner map is not runtime replacement readiness; unsupported,
 pending and failed cases must continue to use native output.
 
-The earlier candidate inventory authenticates submitted opaque surfaces, not
-production admission. The owner proof removes the visible-receiver *evidence*
-gate; it does not by itself authorize production suppression. Integration must
-carry task light and exact draw/face metadata into Workload, build the shadow
-scene from admitted presented geometry, and restore native output on every
-unsupported, pending or failed path. No such Workload field, receiver shader,
-setting or production fallback is implemented yet.
+The owner proof removes the visible-receiver *evidence* gate; it does not by
+itself authorize production suppression. Patch 0025 attaches an immutable
+capture-only `SunShadowWorkload` to its matching RT64 Workload. It carries the
+task epoch and sequence, circuit and phase, normalized key direction, and
+admitted, overlay and rejected face ranges. The HLE producer supplies copied
+task values; renderer workers do not read guest RAM. We ran task sequence 60
+for all 12 circuit/mode combinations: model 0, one player, time trial and single
+race on Circuits 1-6. Each replay consumed 600/600 frames and made 601 swaps.
+Every Workload authenticated its task and exact overlay ranges, but every one
+reported `complete=false`. The per-case admitted/rejected range counts and
+native world-builder list are:
+
+| Circuit | World-builder display list | Time trial admitted/rejected | Single race admitted/rejected |
+| --- | --- | ---: | ---: |
+| 1 | `0x80288160` | 92 / 33 | 152 / 33 |
+| 2 | `0x80295BF0` | 67 / 24 | 127 / 24 |
+| 3 | `0x802944B0` | 81 / 29 | 141 / 29 |
+| 4 | `0x802FF790` | 46 / 24 | 106 / 24 |
+| 5 | `0x802DCCB0` | 120 / 20 | 180 / 20 |
+| 6 | `0x80303D40` | 80 / 37 | 140 / 37 |
+
+Across the 12 Workloads, all 334 rejected ranges map through the presented
+vertex/index and transform tables to ordinary indexed draws in native object 0
+(`flags=0x601`), the per-circuit world builder. Every row has rejection mask
+`0x44` and `OtherMode.L=0xCB023038`: coverage-times-alpha is enabled and the
+mode falls outside the admitted opaque set. The captured combiner selects
+textured alpha; alpha compare, conventional alpha blend and force blend are
+off, while alpha-coverage-select is on. These are identified track draws, not
+unknown owners, but the existing ray-hit kernel has no per-sample RDP
+coverage/texture-alpha evaluation for them. The admitted ranges therefore do
+not form a complete caster set. No game AS was prepared and no receiver
+consumed any Workload; `complete=false` keeps every native overlay.
+
+The metadata direction is checked against the native key in the current
+Workload and kept separate from car and camera transforms. Its diagnostic
+strength and angular radius are not measured game-light policy. A valid
+parameter ABI and a matched direction do not prove either value. The production
+path still needs calibrated per-circuit material/light policy, complete caster
+admission or a conservative scene fallback, a material/fog/depth-preserving
+receiver and exact ready-gated overlay restoration. There is no player setting
+until those paths are usable.
 
 ## Ownership and diagnostic failures
 
@@ -207,23 +242,35 @@ its virtual-controller assertions still
 ran. Default headless `harness-smoke-rir310dn` and capture-disabled windowed
 `rt-stationary-camera-tarrxa2d` also completed 600/600 frames and 601 swaps.
 
+The 2026-10-03 Workload admission run rebuilt `lamborghini_modern`,
+`lambo_rt_shadow_gpu` and `lambo_rt_sun_tests`; all 47 project CTests passed,
+including the D3D12 GPU probe. The Python host suite passed 79 tests. Twelve
+windowed D3D12 game captures covered model 0, one player, time trial/single
+race and Circuits 1-6. Each consumed 600/600 replay frames and made 601 swaps;
+all 12 authenticated their task and overlay but remained `complete=false` for
+the material reason above. The capture outputs and scenario inputs remain
+ignored under `artifacts/`. The documentation checker now skips that ignored
+directory and passes on tracked project documentation. These runs do not show
+ray-traced game pixels because no production receiver is connected.
+
 ## Next-session prompt
 
 ~~~text
 Continue PR #279 and issue #278 from the current branch. Read CLAUDE.md,
 CONTRIBUTING.md, patches/README.md, docs/rt-provenance.md,
 docs/rt-material-evidence.md, docs/rt-shadows.md and docs/ray-tracing-plan.md.
-The D3D12 owner-map gate passes for model 0, one-player time trial and single
-race on all six circuits, with forward/rear views and exact overlay pixel
-attribution. Implement the production path in stages: use a measured
-per-circuit task-owned world-light policy (do not hard-code Circuit 1 as
-universal), carry scene epoch/task/light plus authenticated draw/face metadata
-into RT64 Workload, build shadow AS from admitted presented geometry, preserve
-native material/fog/depth behavior in a ready-gated receiver path, then add the
-opt-in Original-default setting and native fallback. Validate actual game
-swapchain pixels, hard parity, softness, self-shadow bias, transitions, resize,
-resource failure and GPU cost. Keep unsupported vehicles, player counts, modes
-and backends native until measured; keep relighting and offscreen caster
-submission deferred. Do not close #278 until integration and expanded coverage
-requirements are complete. Use finish.
+The D3D12 owner-map proof passes for model 0, one-player time trial and single
+race on Circuits 1-6 in forward/rear views. Workload admission now fails in all
+12 circuit/mode cases: 334 world-builder ranges use textured
+coverage-times-alpha. First prove a ray-hit policy that preserves native
+texture-alpha and coverage behavior, or prove a conservative way to exclude
+them without omitting required casters. Keep native overlays for every
+incomplete or unsupported Workload. Only after complete presented caster and
+receiver admission, integrate a per-view AS and native-equivalent receiver;
+then add an Original-default setting, exact ready-gated suppression and
+restoration. Test game swapchain pixels, hard parity, softening, self-shadow
+bias, lifecycle, resize, failure and GPU cost. Expand supported vehicles,
+modes, players and validated backends. Keep relighting and offscreen caster
+submission deferred; do not close #278 until its requirements are complete.
+Use finish.
 ~~~

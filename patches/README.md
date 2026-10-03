@@ -37,6 +37,7 @@ significant single-space lines from `git diff --check`;
 | 0022 | RT64 | Opt-in queue-owned material/raster evidence and fenced GPU/present observation. Thread-local raster scope excludes HLE's framebuffer renderer. Port-owned capture policy; no sunlight Workload fields or production receiver integration. |
 | 0023 | Plume inside RT64 | D3D12 texture-to-buffer readback selects source sample positions when destination is a placed-footprint buffer, avoiding a null texture dereference. ROM-free 7x3 padded-row GPU regression. |
 | 0024 | RT64 | Optional D3D12 owner-output pipelines mirror native raster clipping, material/discard and depth behavior, including the generic ubershader fallback, into an R32G32_UINT diagnostic target with cloned depth. On RTX 3080 captures, enabling the diagnostic leaves the actual swapchain byte-identical. It is evidence instrumentation only; it does not implement shadow replacement. |
+| 0025 | RT64 | Adds immutable sunlight and admitted draw/face metadata to the matching Workload through the developer evidence observer. All 12 captured model-0/one-player circuit/mode Workloads remain incomplete: 334 native world-builder ranges use unsupported coverage-times-alpha behavior. No renderer consumes these values and no native overlay is suppressed. |
 
 ## Application matrix
 
@@ -56,7 +57,7 @@ still references the conditional full RT path; its
 does not implement this angular-query kernel. This local groundwork is not an
 upstream-supported feature or dependency upgrade. No upstream issue was opened.
 
-Patches **0022/0023/0024** are applied idempotently by CMake on all supported build
+Patches **0022/0023/0024/0025** are applied idempotently by CMake on all supported build
 paths. Readback is an explicit D3D12 developer diagnostic; normal rendering has
 no observer or capture GPU allocations. The observer registers before queues
 start and is cleared after they join. Its scoped raster activation prevents
@@ -64,7 +65,8 @@ HLE calls from entering queue-owned mutable capture state. Ownership, current
 measurements and remaining gates are in [presented evidence](../docs/rt-material-evidence.md).
 The owner map authenticates the exact draw that won native depth and the
 post-omission visible receiver at each VI filtering tap in the measured
-one-player matrix; the production Workload/receiver path remains unimplemented.
+one-player matrix. Patch 0025 carries diagnostic metadata into its exact Workload,
+but sampled caster coverage is incomplete and no production receiver consumes it.
 
 Compared on 2026-10-02 with RT64
 `43373749dac9bbc1b653e6a02aed40a9e1783bed`: its
@@ -90,11 +92,20 @@ separate worktree from the pin, then matched all 29 changed/new RT64 source
 paths byte-for-byte against the live patched checkout (excluding the nested
 Plume submodule). No upstream issue was opened.
 
+Compared on 2026-10-03 with RT64 upstream `main`, its [Workload](https://github.com/rt64/rt64/blob/main/src/hle/rt64_workload.h)
+has no sunlight metadata field and its [render hooks](https://github.com/rt64/rt64/blob/main/src/rhi/rt64_render_hooks.h)
+have no matching Workload callback. Patch 0025 adds that immutable diagnostic
+seam only; it does not add a game receiver or suppression path. No upstream
+issue was opened. The patch applies cleanly to the pinned RT64 tree after
+0005/0006/0009/0010/0011/0021/0022/0024, and the supported CMake build recognizes
+0025 as the latest idempotence guard before skipping or replaying the RT64 patch
+series.
+
 | Build path | Applies |
 | --- | --- |
-| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0024 in CMake. |
-| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0024 in CMake. |
-| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0024 in CMake. |
+| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0025 in CMake. |
+| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0025 in CMake. |
+| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0025 in CMake. |
 
 If a patch no longer applies to its pinned submodule, stop and update the
 patch or pin as a deliberate change. Do not reset a developer's unrelated

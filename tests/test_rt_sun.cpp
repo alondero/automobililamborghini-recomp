@@ -2,6 +2,7 @@
 #include "shared/rt64_sun_shadow.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -147,6 +148,11 @@ int main() {
         lambo::rt::TaskSunProbes snapshots;
         require(!snapshots.snapshot(nullptr, ram.size()) && !snapshots.snapshot(ram.data(), 16),
             "snapshot admitted absent/short RAM");
+#if defined(_WIN32)
+        _putenv_s("LAMBO_RT_CAPTURE_DIR", "rt-sun-test-capture");
+#else
+        setenv("LAMBO_RT_CAPTURE_DIR", "rt-sun-test-capture", 1);
+#endif
         write(ram, 0x800A2BFCu, 0x800BF240u);
         for (unsigned i = 1; i < 60; ++i) {
             require(snapshots.begin(ram.data(), ram.size()), "snapshot sequence begin failed");
@@ -166,6 +172,26 @@ int main() {
         snapshots.invalidate();
         require((*owned->native_ram)[0xB69A8] == 0x11 && !snapshots.take(0x800BF400),
             "immutable consumer snapshot or one-time ownership lost");
+#if defined(_WIN32)
+        _putenv_s("LAMBO_RT_CAPTURE_DIR", "");
+#else
+        unsetenv("LAMBO_RT_CAPTURE_DIR");
+#endif
+        lambo::rt::TaskSunProbes compactSnapshots;
+        write(ram, 0x800A2BFCu, 0x800BF240u);
+        write(ram, 0x800B69A8u, uint16_t(0x42));
+        write(ram, 0x800B69B0u, uint32_t(0x8013D3C8u));
+        write(ram, 0x800B6A00u, int16_t(7));
+        for (unsigned i = 0; i < 59; ++i) {
+            require(compactSnapshots.begin(ram.data(), ram.size()), "compact snapshot sampling setup failed");
+        }
+        require(compactSnapshots.begin(ram.data(), ram.size()), "compact snapshot begin rejected");
+        require(compactSnapshots.snapshot(ram.data(), ram.size()), "compact producer metadata rejected");
+        write(ram, 0x800B69A8u, uint16_t(0));
+        const auto compact = compactSnapshots.take(0x800BF400u);
+        require(compact && compact->objects_complete && !compact->native_ram &&
+            compact->objects[0].flags == 0x42 && compact->objects[0].list == 0x8013D3C8u &&
+            compact->objects[0].parent == 7, "object identity was not copied into the task value");
         RT64::SunShadowParams params;
         require(!RT64::validSunShadowParams(params), "default parameters enabled shadows");
         params.valid = 1;

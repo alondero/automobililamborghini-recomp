@@ -2,6 +2,8 @@
 #include "lambo_rt_evidence.h"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -123,6 +125,60 @@ Json material(const RT64::DrawCall& call) {
         {"fog_rgba", {call.rdpParams.fogColor.x, call.rdpParams.fogColor.y,
             call.rdpParams.fogColor.z, call.rdpParams.fogColor.w}}};
 }
+
+uint32_t physical_shadow_material_rejection(const RT64::GameCall& game_call) {
+    const auto& call = game_call.callDesc;
+    const auto& shader = game_call.shaderDesc;
+    const auto& mode = call.otherMode;
+    const auto& shader_mode = shader.otherMode;
+    const auto& combine = call.colorCombiner;
+    const bool measured_combine =
+        (combine.L == 0xFC127FFFu && combine.H == 0xFFFFF238u) ||
+        (combine.L == 0xFC26A004u && combine.H == 0x1FFC93F8u) ||
+        (combine.L == 0xFC327FFFu && combine.H == 0xFFFFF838u) ||
+        (combine.L == 0xFCFFFFFFu && combine.H == 0xFFFE7838u);
+    const uint32_t unsupported_flags = (1u << 29) | (3u << 30) | 1u;
+    const auto& fog = call.rdpParams.fogColor;
+    uint32_t rejection = 0;
+    if (game_call.callDesc.extendedType != RT64::DrawExtendedType::None) rejection |= 1u << 0;
+    if (!measured_combine) rejection |= 1u << 1;
+    if (mode.L != 0xC8112078u && mode.L != 0xC8112230u) rejection |= 1u << 2;
+    if (((mode.H >> 20) & 3u) != 1u) rejection |= 1u << 3;
+    if (shader_mode.L != mode.L || (shader_mode.H & ~63u) != (mode.H & ~63u)) rejection |= 1u << 4;
+    if (!interop::Blender::usesStandardFogCycle(mode)) rejection |= 1u << 5;
+    if (mode.alphaCompare() != 0 || mode.cvgXAlpha() || interop::Blender::usesAlphaBlend(mode) || mode.forceBlend()) rejection |= 1u << 6;
+    if (!mode.zCmp() || !mode.zUpd() || mode.zMode() != 0 || mode.zSource() != 0) rejection |= 1u << 7;
+    if ((shader.flags.value & unsupported_flags) != 0) rejection |= 1u << 8;
+    if (!std::isfinite(fog.x) || !std::isfinite(fog.y) || !std::isfinite(fog.z) || !std::isfinite(fog.w) ||
+        fog.x < 0 || fog.x > 1 || fog.y < 0 || fog.y > 1 || fog.z < 0 || fog.z > 1 || fog.w < 0 || fog.w > 1)
+        rejection |= 1u << 9;
+    return rejection;
+}
+
+bool presented_group(const RT64::Workload& workload, uint32_t vertex, uint32_t& matrix_id) {
+    const auto& draw = workload.drawData;
+    if (vertex >= draw.worldIndices.size()) return false;
+    const uint32_t world = draw.worldIndices[vertex];
+    if (world >= draw.worldTransformGroups.size()) return false;
+    const uint32_t group = draw.worldTransformGroups[world];
+    if (group >= draw.transformGroups.size()) return false;
+    matrix_id = draw.transformGroups[group].matrixId;
+    return (matrix_id & 0xFFF00000u) == 0x10000000u;
+}
+
+bool uniform_presented_group(const RT64::Workload& workload, uint32_t first, uint32_t count,
+        uint32_t& matrix_id) {
+    const auto& indices = workload.drawData.faceIndices;
+    if (count == 0 || first > indices.size() || count > indices.size() - first) return false;
+    uint32_t initial = 0;
+    if (!presented_group(workload, indices[first], initial)) return false;
+    for (uint32_t i = first + 1; i < first + count; ++i) {
+        uint32_t current = 0;
+        if (!presented_group(workload, indices[i], current) || current != initial) return false;
+    }
+    matrix_id = initial;
+    return true;
+}
 }
 
 struct RenderEvidence::Impl {
@@ -196,6 +252,168 @@ RenderEvidence::RenderEvidence() : impl_(std::make_unique<Impl>()) {
 RenderEvidence::~RenderEvidence() = default;
 bool RenderEvidence::enabled() const { return !impl_->directory.empty(); }
 
+std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const RT64::Workload& workload) noexcept {
+    if (!enabled()) return {};
+    try {
+        Json task;
+        {
+            std::lock_guard<std::mutex> lock(impl_->mutex);
+            const auto found = impl_->tasks.find(workload.workloadId);
+            if (found == impl_->tasks.end()) {
+                return {};
+            }
+            task = found->second;
+        }
+        const Json& native = task;
+        const int circuit = native.at("circuit").get<int>();
+        const int phase = native.at("phase").get<int>();
+        const int players = native.at("players").get<int>();
+        if (circuit < 0 || circuit >= 6 || phase != 8 || players != 1 ||
+            !native.at("emitters_complete").get<bool>()) {
+            LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload gated: unsupported scene circuit=%d phase=%d players=%d emitters=%d\n",
+                circuit, phase, players, native.at("emitters_complete").get<bool>());
+            return {};
+        }
+
+        // Each circuit keeps its own authored policy entry even where the
+        // measured raw key matches. A Workload must contain the current task's
+        // matching native direction; no camera or car matrix contributes here.
+        struct CircuitPolicy { int x, y, z; };
+        static constexpr std::array<CircuitPolicy, 6> policies{{
+            {-11, 55, -101}, {-11, 55, -101}, {-11, 55, -101},
+            {-11, 55, -101}, {-11, 55, -101}, {-11, 55, -101}
+        }};
+        const CircuitPolicy policy = policies[size_t(circuit)];
+        const float length = std::sqrt(float(policy.x * policy.x + policy.y * policy.y + policy.z * policy.z));
+        if (!std::isfinite(length) || length == 0) return {};
+        bool native_key_used_by_lit_vertex = false;
+        const auto& data = workload.drawData;
+        if (data.lightIndices.size() != data.lightCounts.size()) return {};
+        for (size_t vertex = 0; vertex < data.lightIndices.size(); ++vertex) {
+            const uint32_t matrix = [&]() -> uint32_t {
+                uint32_t value = 0;
+                if (!presented_group(workload, uint32_t(vertex), value)) return 0;
+                return value;
+            }();
+            if (matrix == 0) continue;
+            const uint32_t object_id = matrix & 0xFFFFu;
+            const Json& objects = native.at("objects");
+            if (object_id >= objects.size() || !(objects[object_id].at("flags").get<uint32_t>() & 8u)) continue;
+            const uint32_t start = data.lightIndices[vertex];
+            const uint32_t count = data.lightCounts[vertex];
+            if (start > data.rspLights.size() || count > data.rspLights.size() - start) continue;
+            for (uint32_t i = start; i < start + count; ++i) {
+                const auto& light = data.rspLights[i];
+                if (std::abs(light.posDir.x - policy.x) < 1e-4f &&
+                    std::abs(light.posDir.y - policy.y) < 1e-4f &&
+                    std::abs(light.posDir.z - policy.z) < 1e-4f &&
+                    (light.kc == 0 && light.kl == 0 && light.kq == 0)) {
+                    native_key_used_by_lit_vertex = true;
+                    break;
+                }
+            }
+            if (native_key_used_by_lit_vertex) break;
+        }
+        if (!native_key_used_by_lit_vertex) {
+            LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload gated: circuit=%d key absent from lit physical-car vertices\n", circuit);
+            return {};
+        }
+
+        auto result = std::make_shared<RT64::SunShadowWorkload>();
+        result->sceneEpoch = native.at("epoch").get<uint64_t>();
+        result->taskSequence = native.at("sequence").get<uint64_t>();
+        result->circuit = uint32_t(circuit);
+        result->phase = phase;
+        result->playerCount = uint32_t(players);
+        result->params.direction[0] = float(policy.x) / length;
+        result->params.direction[1] = float(policy.y) / length;
+        result->params.direction[2] = float(policy.z) / length;
+        // Until native shadow contrast and emitter size are measured, this
+        // capture-only payload cannot request visible attenuation.
+        result->params.strength = 0.0f;
+        result->params.angularRadius = 0.0f;
+        result->params.rayMin = 0.01f;
+        result->params.rayMax = 10000.0f;
+        result->params.originBias = 0.005f;
+        result->params.sampleCount = 8;
+        result->params.valid = 1;
+        result->authenticated = true;
+
+        const Json& objects = native.at("objects");
+        size_t admitted_faces = 0;
+        size_t rejected_physical_calls = 0;
+        size_t overlay_calls = 0;
+        std::array<size_t, 10> rejection_reasons{};
+        for (uint32_t f = 0; f < workload.fbPairCount; ++f) {
+            const auto& fb = workload.fbPairs[f];
+            for (uint32_t p = 0; p < fb.projectionCount; ++p) {
+                const auto& projection = fb.projections[p];
+                if (projection.type != RT64::Projection::Type::Perspective &&
+                    projection.type != RT64::Projection::Type::Orthographic) continue;
+                for (uint32_t c = 0; c < projection.gameCallCount; ++c) {
+                    const auto& game_call = projection.gameCalls[c];
+                    const auto& call = game_call.callDesc;
+                    const uint32_t first = game_call.meshDesc.faceIndicesStart;
+                    const uint32_t count = call.triangleCount * 3;
+                    if (count == 0 || first > data.faceIndices.size() || count > data.faceIndices.size() - first) continue;
+                    uint32_t matrix = 0;
+                    if (!uniform_presented_group(workload, first, count, matrix)) continue;
+                    const uint32_t object_id = matrix & 0xFFFFu;
+                    if (object_id >= objects.size()) continue;
+                    const Json& object = objects[object_id];
+                    const uint32_t flags = object.at("flags").get<uint32_t>();
+                    const bool world_builder = object_id == 0 && flags == 0x601u &&
+                        object.at("list").get<uint32_t>() != 0;
+                    const bool physical_car = (flags & 8u) != 0;
+                    const bool overlay_material = count == 48 && call.otherMode.L == 0xC8104A50u &&
+                        (call.colorCombiner.L & 0xFFFFFFu) == 0x11FFFFu &&
+                        call.colorCombiner.H == 0xFFFFF238u && (call.geometryMode & ~0x800000u) == 0x12005u;
+                    bool native_overlay = false;
+                    if (overlay_material && flags == 0x42u && object.at("list").get<uint32_t>() == 0x8013D3C8u) {
+                        const int parent = object.at("parent").get<int>();
+                        native_overlay = parent >= 0 && size_t(parent) < objects.size() &&
+                            (objects[size_t(parent)].at("flags").get<uint32_t>() & 8u) != 0;
+                    }
+                    if (native_overlay) {
+                        result->overlays.push_back({first, count, call.callIndex, false});
+                        ++overlay_calls;
+                        continue;
+                    }
+                    if (!world_builder && !physical_car) continue;
+                    const uint32_t rejection = physical_shadow_material_rejection(game_call);
+                    if (rejection != 0) {
+                        result->rejected.push_back({first, count, call.callIndex, false, rejection});
+                        ++rejected_physical_calls;
+                        for (uint32_t bit = 0; bit < rejection_reasons.size(); ++bit) {
+                            if (rejection & (1u << bit)) ++rejection_reasons[bit];
+                        }
+                        continue;
+                    }
+                    result->geometry.push_back({first, count, call.callIndex, true});
+                    admitted_faces += count / 3;
+                }
+            }
+        }
+        // This is only the metadata bridge. Until the raster receiver and the
+        // per-view ready gate consume it, no caller may suppress native output.
+        result->complete = admitted_faces != 0 && overlay_calls != 0 && rejected_physical_calls == 0;
+        if (!RT64::validSunShadowParams(result->params)) {
+            LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload rejected: invalid light parameters circuit=%d\n", circuit);
+            return {};
+        }
+        if (!result->complete) {
+            LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload incomplete: circuit=%d faces=%zu overlays=%zu rejected=%zu reason_bits=[%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu]\n",
+                circuit, admitted_faces, overlay_calls, rejected_physical_calls,
+                rejection_reasons[0], rejection_reasons[1], rejection_reasons[2], rejection_reasons[3], rejection_reasons[4],
+                rejection_reasons[5], rejection_reasons[6], rejection_reasons[7], rejection_reasons[8], rejection_reasons[9]);
+        }
+        return result;
+    } catch (const std::exception& e) {
+        LAMBO_LOG_INFO("rt-evidence", "shadow Workload rejected: %s\n", e.what());
+        return {};
+    }
+}
+
 bool RenderEvidence::ownerBufferEnabled() const noexcept {
     return enabled() && flag("LAMBO_RT_OWNER_BUFFER");
 }
@@ -212,25 +430,19 @@ void RenderEvidence::ownerBufferIncomplete(uint32_t color_address, const char* r
 }
 
 void RenderEvidence::remember(uint64_t id, const std::optional<TaskSunProbe>& task) {
-    if (!enabled() || !task || !task->native_ram || !task->emitters_complete) return;
+    if (!enabled() || !task || !task->native_ram || !task->objects_complete || !task->emitters_complete) return;
     try {
-        const auto& ram = *task->native_ram;
-        require(ram.size() == 0x800000, "invalid producer snapshot");
-        // USA object layout, producer-before-submit, word-swapped. All reads are
-        // on HLE from an immutable copy, never from mutable global RDRAM.
-        auto u16 = [&](size_t at) { uint16_t v; std::memcpy(&v, ram.data() + (at ^ 2), 2); return v; };
-        auto u32 = [&](size_t at) { uint32_t v; std::memcpy(&v, ram.data() + at, 4); return v; };
         Json objects = Json::array();
-        for (size_t object = 0; object < 128; ++object) {
-            size_t at = 0xB69A8 + object * 0x10C;
-            objects.push_back({{"flags", u16(at)}, {"list", u32(at + 8)},
-                {"parent", static_cast<int16_t>(u16(at + 0x58))}});
+        for (const auto& object : task->objects) {
+            objects.push_back({{"flags", object.flags}, {"list", object.list}, {"parent", object.parent}});
         }
         std::lock_guard lock(impl_->mutex);
-        require(impl_->tasks.size() < 4 && !impl_->tasks.count(id), "ambiguous workload mapping");
+        if (impl_->tasks.count(id)) throw std::runtime_error("duplicate workload mapping");
+        while (impl_->tasks.size() >= 8) impl_->tasks.erase(impl_->tasks.begin());
         impl_->tasks.emplace(id, Json{{"epoch", task->epoch}, {"sequence", task->sequence},
             {"root", task->task_address + 0x1C0u}, {"phase", task->phase}, {"circuit", task->circuit},
-            {"players", task->players}, {"objects", objects}});
+            {"players", task->players}, {"emitters_complete", task->emitters_complete},
+            {"objects_complete", task->objects_complete}, {"objects", objects}});
     } catch (const std::exception& e) { LAMBO_LOG_INFO("rt-evidence", "task rejected: %s\n", e.what()); }
 }
 
@@ -272,9 +484,42 @@ void RenderEvidence::begin(const RT64::Workload& w, float weight) noexcept {
         }
         Json fog = Json::array();
         for (const auto& f : d.rspFog) fog.push_back({f.mul, f.offset});
+        Json shadowRejected = Json::array();
+        if (w.sunShadow) {
+            for (const auto& range : w.sunShadow->rejected) {
+                bool found = false;
+                for (uint32_t f = 0; f < w.fbPairCount && !found; ++f) {
+                    const auto& fb = w.fbPairs[f];
+                    for (uint32_t p = 0; p < fb.projectionCount && !found; ++p) {
+                        const auto& projection = fb.projections[p];
+                        for (uint32_t c = 0; c < projection.gameCallCount; ++c) {
+                            const auto& game_call = projection.gameCalls[c];
+                            if (game_call.callDesc.callIndex != range.draw) continue;
+                            shadowRejected.push_back({{"draw", range.draw}, {"first", range.faceStart},
+                                {"count", range.indexCount}, {"reason", range.rejection},
+                                {"material", material(game_call.callDesc)},
+                                {"shader_flags", game_call.shaderDesc.flags.value},
+                                {"extended_type", int(game_call.callDesc.extendedType)}});
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if (!found) shadowRejected.push_back({{"draw", range.draw}, {"first", range.faceStart},
+                    {"count", range.indexCount}, {"reason", range.rejection}, {"material", nullptr}});
+            }
+        }
         impl_->report = {{"schema", 1}, {"native", native}, {"workload", w.workloadId}, {"weight", weight},
             {"drop_overlay", impl_->drop_overlay}, {"calls", calls}, {"raster", Json::array()},
             {"owner_buffers", Json::array()}, {"owner_incomplete_reasons", Json::array()},
+            {"sun_shadow", w.sunShadow ? Json{{"authenticated", w.sunShadow->authenticated},
+                {"complete", w.sunShadow->complete}, {"epoch", w.sunShadow->sceneEpoch},
+                {"sequence", w.sunShadow->taskSequence}, {"circuit", w.sunShadow->circuit},
+                {"phase", w.sunShadow->phase}, {"players", w.sunShadow->playerCount},
+                {"params_abi_valid", RT64::validSunShadowParams(w.sunShadow->params)},
+                {"geometry", w.sunShadow->geometry.size()}, {"overlays", w.sunShadow->overlays.size()},
+                {"rejected", w.sunShadow->rejected.size()}} : Json(nullptr)},
+            {"sun_shadow_rejected_ranges", shadowRejected},
             {"indices", d.faceIndices}, {"world_indices", d.worldIndices}, {"world_groups", groups},
             {"world_addresses", d.worldTransformPhysicalAddresses}, {"local_positions", d.posFloats},
             {"normal_color_bytes", d.normColBytes}, {"fog_indices", d.fogIndices}, {"fog_params", fog}, {"light_counts", d.lightCounts}};
