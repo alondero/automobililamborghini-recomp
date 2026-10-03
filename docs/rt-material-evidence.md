@@ -403,6 +403,16 @@ unclassified draws and `complete=false`. All 150 preserved RecompFrontend
 files remain byte-identical. This is a sampled native regression check, not
 full-game RT coverage.
 
+The raster fixture also exposed a native pipeline-failure signal: pinned Plume
+returned a graphics wrapper even when its native D3D12 PSO was null. Patch 0028
+returns null for failed graphics/compute PSOs. The hardware probe deliberately
+fails both creations using incompatible root signatures, then successfully
+submits the valid raster and ray paths. Only the expected validation IDs 683
+and 882 are filtered within the injection scope. Other D3D12 errors still fail
+the probe. Evidence is `artifacts/rt-caster-stage/pipeline-failure-gpu.log`.
+This proves the factory signal and continued device use, not a game overlay
+restoration path or device-loss recovery.
+
 ## Ownership and diagnostic failures
 
 `LAMBO_RT_RENDER_CAPTURE_DIR` requires the existing sunlight probe and native

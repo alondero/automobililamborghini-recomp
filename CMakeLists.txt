@@ -34,6 +34,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(N64MR ${CMAKE_CURRENT_SOURCE_DIR}/lib/N64ModernRuntime)
 include(cmake/Frontend.cmake)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0023-plume-texture-readback.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0028-plume-d3d12-pipeline-failure.patch)
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
     "${CMAKE_CURRENT_SOURCE_DIR}/patches/0027-rt64-native-ray-candidate-coverage.patch"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"

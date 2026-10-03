@@ -25,6 +25,7 @@
 #include "shared/rt64_render_params.h"
 #include "shared/rt64_raster_params.h"
 #include "plume_d3d12.h"
+#include <directx/d3d12sdklayers.h>
 
 using namespace plume;
 using namespace RT64;
@@ -43,6 +44,29 @@ void upload(RenderBuffer* buffer, const void* data, size_t size) {
     const RenderRange written(0, size);
     buffer->unmap(0, &written);
 }
+
+// Suppress only the two errors intentionally produced by pipeline failure
+// injection. The outer probe still reports every other D3D12 error, including
+// errors from the subsequent successful native raster and query submissions.
+struct ExpectedPipelineFailureMessages {
+    ID3D12InfoQueue* queue = nullptr;
+    explicit ExpectedPipelineFailureMessages(RenderDevice* device) {
+        auto* native = static_cast<D3D12Device*>(device);
+        native->d3d->QueryInterface(IID_ID3D12InfoQueue, reinterpret_cast<void**>(&queue));
+        if (!queue) return;
+        D3D12_MESSAGE_ID ids[]{D3D12_MESSAGE_ID_CREATEGRAPHICSPIPELINESTATE_MISSING_ROOT_SIGNATURE_FLAGS,
+            D3D12_MESSAGE_ID_CREATECOMPUTEPIPELINESTATE_CS_ROOT_SIGNATURE_MISMATCH};
+        D3D12_INFO_QUEUE_FILTER filter{};
+        filter.DenyList.NumIDs = 2; filter.DenyList.pIDList = ids;
+        if (FAILED(queue->PushStorageFilter(&filter))) {
+            queue->Release(); queue = nullptr;
+            throw std::runtime_error("expected pipeline failure filter unavailable");
+        }
+    }
+    ~ExpectedPipelineFailureMessages() {
+        if (queue) { queue->PopStorageFilter(); queue->Release(); }
+    }
+};
 }
 
 void nativeMaterialProbe(RenderDevice* device, RenderWorker& worker, const char* shaderPath,
@@ -393,10 +417,29 @@ void nativeMaterialProbe(RenderDevice* device, RenderWorker& worker, const char*
         desc.depthFunction = RenderComparisonFunction::LESS; desc.depthTargetFormat = RenderFormat::D32_FLOAT;
         desc.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_LIST;
         auto rasterPipeline = device->createGraphicsPipeline(desc);
-        // Pinned Plume can return a non-null wrapper after failed native PSO
-        // creation. Validate the real D3D12 handle before recording a draw.
-        require(rasterPipeline && static_cast<D3D12GraphicsPipeline*>(rasterPipeline.get())->d3d,
-            "native raster pipeline creation failed");
+        require(bool(rasterPipeline), "native raster pipeline creation failed");
+        {
+            ExpectedPipelineFailureMessages expected(device);
+            RenderPipelineLayoutBuilder wrongGraphicsBuilder;
+            wrongGraphicsBuilder.begin(); // Deliberately missing native vertex-input flag.
+            wrongGraphicsBuilder.addPushConstant(0, 0, sizeof(interop::RasterParams),
+                RenderShaderStageFlag::VERTEX | RenderShaderStageFlag::PIXEL);
+            wrongGraphicsBuilder.addDescriptorSet(common); wrongGraphicsBuilder.addDescriptorSet(textures);
+            wrongGraphicsBuilder.addDescriptorSet(tmem); wrongGraphicsBuilder.addDescriptorSet(framebuffer);
+            wrongGraphicsBuilder.end();
+            auto wrongGraphicsLayout = wrongGraphicsBuilder.create(device);
+            require(bool(wrongGraphicsLayout), "failure injection root signature unavailable");
+            auto wrongGraphicsDesc = desc;
+            wrongGraphicsDesc.pipelineLayout = wrongGraphicsLayout.get();
+            require(!device->createGraphicsPipeline(wrongGraphicsDesc), "failed native graphics PSO exposed as ready");
+            RenderPipelineLayoutBuilder emptyBuilder;
+            emptyBuilder.begin(); emptyBuilder.end();
+            auto emptyLayout = emptyBuilder.create(device);
+            require(bool(emptyLayout), "failure injection compute root signature unavailable");
+            require(!device->createComputePipeline(RenderComputePipelineDesc(emptyLayout.get(), shader.get(), 64, 1, 1)),
+                "failed native compute PSO exposed as ready");
+        }
+        std::puts("PASS: native graphics/compute pipeline creation failures return null; device remains usable");
         auto owner = device->createTexture(RenderTextureDesc::ColorTarget(32, 32, RenderFormat::R32G32_UINT));
         auto depth = device->createTexture(RenderTextureDesc::DepthTarget(32, 32, RenderFormat::D32_FLOAT));
         const RenderTexture* ownerTarget = owner.get();

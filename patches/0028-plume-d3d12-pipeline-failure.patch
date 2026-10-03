@@ -1,0 +1,22 @@
+diff --git a/plume_d3d12.cpp b/plume_d3d12.cpp
+index c797ad5..b8a9688 100644
+--- a/plume_d3d12.cpp
++++ b/plume_d3d12.cpp
+@@ -3921,11 +3921,15 @@ namespace plume {
+     }
+ 
+     std::unique_ptr<RenderPipeline> D3D12Device::createComputePipeline(const RenderComputePipelineDesc &desc) {
+-        return std::make_unique<D3D12ComputePipeline>(this, desc);
++        auto pipeline = std::make_unique<D3D12ComputePipeline>(this, desc);
++        if (pipeline->d3d == nullptr) return nullptr;
++        return pipeline;
+     }
+ 
+     std::unique_ptr<RenderPipeline> D3D12Device::createGraphicsPipeline(const RenderGraphicsPipelineDesc &desc) {
+-        return std::make_unique<D3D12GraphicsPipeline>(this, desc);
++        auto pipeline = std::make_unique<D3D12GraphicsPipeline>(this, desc);
++        if (pipeline->d3d == nullptr) return nullptr;
++        return pipeline;
+     }
+ 
+     std::unique_ptr<RenderPipeline> D3D12Device::createRaytracingPipeline(const RenderRaytracingPipelineDesc &desc, const RenderPipeline *previousPipeline) {
