@@ -56,7 +56,7 @@ def _warp(value: Any) -> str:
     if not 1 <= circuit <= 6 or not 1 <= laps <= 30:
         raise ScenarioError("scenario.warp circuit must be 1-6 and laps must be 1-30")
     if not 0 <= car <= 23:
-        raise ScenarioError("scenario.warp car must be a supported model 0-23")
+        raise ScenarioError("scenario.warp car index must be in the valid range 0-23")
     if not 1 <= players <= 4 or (players >= 3 and circuit > 3):
         raise ScenarioError("scenario.warp has an unsupported player/track combination")
     return text

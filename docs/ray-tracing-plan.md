@@ -374,12 +374,16 @@ authenticated their native key and exact overlay ranges, then returned
 `complete=false`. Across them, 334 ordinary indexed world-builder ranges in
 object 0 use textured coverage-times-alpha (`OtherMode.L=0xCB023038`). The
 current ray-hit kernel does not reproduce their per-sample coverage/alpha
-behavior. Per-circuit display-list identities and admitted/rejected counts are
-in [material evidence](rt-material-evidence.md#presented-geometry-and-material-evidence).
+behavior. Another 12 ranges belong to a car child but use unsupported blending,
+depth and fog behavior. A further 3,924 ranges remain unclassified: Rectangle
+projection draws, draws with the `0xFFFFFFFF` transform sentinel, and a
+parentless `0xC01` object with no display-list identity. The evidence and
+per-circuit counts are in
+[material evidence](rt-material-evidence.md#presented-geometry-and-material-evidence).
 No in-game AS was built, no receiver consumed this metadata, and the native
-overlay was never suppressed. Model 0/one-player is the only Workload matrix
-captured; other vehicles, player counts, modes, menus and backends remain
-unvalidated and native.
+overlay was never suppressed. Model 0/one-player time-trial and single-race
+Workloads are the only matrix captured; other vehicles, player counts, modes,
+menus and backends remain unvalidated and native.
 
 For the original documentation change, the repository's required checks passed:
 documentation validation covered 45 Markdown files, the Python host suite ran
@@ -398,11 +402,14 @@ Continue PR #279 and issue #278 from the current branch. Read CLAUDE.md,
 CONTRIBUTING.md, patches/README.md, docs/rt-provenance.md,
 docs/rt-material-evidence.md, docs/rt-shadows.md and this plan. The owner-map
 proof passes for model 0, one-player time trial and single race on Circuits 1-6
-in forward/rear views. Workload admission fails in all 12 corresponding cases:
-334 world-builder ranges use textured coverage-times-alpha. First investigate
-how RT hit tests can preserve native texture-alpha, coverage, fog and depth, or
-prove a conservative caster exclusion. Keep all native shadows while this is
-unresolved. Only after complete presented caster/receiver admission, add a per-view AS and
+in forward/rear views. The 12 Workloads fail closed: 334 world-builder ranges
+use textured coverage-times-alpha, 12 physical-car child ranges use unsupported
+blending/depth/fog, and 3,924 ranges remain unclassified (Rectangle projections,
+the 0xFFFFFFFF transform sentinel, and parentless 0xC01 objects). First
+investigate native texture-alpha/coverage parity and classify every caster, or
+prove a conservative exclusion that preserves hard-shadow parity. Keep all
+native shadows while this is unresolved. Only after complete presented
+caster/receiver admission, add a per-view AS and
 native-equivalent raster receiver, followed by an Original-default setting and
 ready-gated exact overlay replacement with unconditional fallback. Validate
 actual game swapchain pixels, hard parity, softness, self-shadow bias, lifecycle,

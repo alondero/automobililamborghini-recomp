@@ -8,6 +8,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <set>
@@ -126,6 +127,28 @@ Json material(const RT64::DrawCall& call) {
             call.rdpParams.fogColor.z, call.rdpParams.fogColor.w}}};
 }
 
+enum PhysicalShadowRejection : uint32_t {
+    RejectExtendedDraw = 1u << 0,
+    RejectCombiner = 1u << 1,
+    RejectOtherMode = 1u << 2,
+    RejectDepthCompareMode = 1u << 3,
+    RejectShaderModeMismatch = 1u << 4,
+    RejectFogCycle = 1u << 5,
+    RejectCoverageAlphaOrBlending = 1u << 6,
+    RejectDepthBehavior = 1u << 7,
+    RejectShaderFlags = 1u << 8,
+    RejectFogColor = 1u << 9,
+};
+
+enum UnclassifiedShadowDraw : uint32_t {
+    UnclassifiedProjection = 1,
+    UnclassifiedFaceRange = 2,
+    UnclassifiedTransformGroup = 3,
+    UnclassifiedObjectIdentity = 4,
+    UnclassifiedFaceCountOverflow = 5,
+    UnclassifiedObjectRole = 6,
+};
+
 uint32_t physical_shadow_material_rejection(const RT64::GameCall& game_call) {
     const auto& call = game_call.callDesc;
     const auto& shader = game_call.shaderDesc;
@@ -140,18 +163,19 @@ uint32_t physical_shadow_material_rejection(const RT64::GameCall& game_call) {
     const uint32_t unsupported_flags = (1u << 29) | (3u << 30) | 1u;
     const auto& fog = call.rdpParams.fogColor;
     uint32_t rejection = 0;
-    if (game_call.callDesc.extendedType != RT64::DrawExtendedType::None) rejection |= 1u << 0;
-    if (!measured_combine) rejection |= 1u << 1;
-    if (mode.L != 0xC8112078u && mode.L != 0xC8112230u) rejection |= 1u << 2;
-    if (((mode.H >> 20) & 3u) != 1u) rejection |= 1u << 3;
-    if (shader_mode.L != mode.L || (shader_mode.H & ~63u) != (mode.H & ~63u)) rejection |= 1u << 4;
-    if (!interop::Blender::usesStandardFogCycle(mode)) rejection |= 1u << 5;
-    if (mode.alphaCompare() != 0 || mode.cvgXAlpha() || interop::Blender::usesAlphaBlend(mode) || mode.forceBlend()) rejection |= 1u << 6;
-    if (!mode.zCmp() || !mode.zUpd() || mode.zMode() != 0 || mode.zSource() != 0) rejection |= 1u << 7;
-    if ((shader.flags.value & unsupported_flags) != 0) rejection |= 1u << 8;
+    if (game_call.callDesc.extendedType != RT64::DrawExtendedType::None) rejection |= RejectExtendedDraw;
+    if (!measured_combine) rejection |= RejectCombiner;
+    if (mode.L != 0xC8112078u && mode.L != 0xC8112230u) rejection |= RejectOtherMode;
+    if (((mode.H >> 20) & 3u) != 1u) rejection |= RejectDepthCompareMode;
+    if (shader_mode.L != mode.L || (shader_mode.H & ~63u) != (mode.H & ~63u)) rejection |= RejectShaderModeMismatch;
+    if (!interop::Blender::usesStandardFogCycle(mode)) rejection |= RejectFogCycle;
+    if (mode.alphaCompare() != 0 || mode.cvgXAlpha() || interop::Blender::usesAlphaBlend(mode) || mode.forceBlend())
+        rejection |= RejectCoverageAlphaOrBlending;
+    if (!mode.zCmp() || !mode.zUpd() || mode.zMode() != 0 || mode.zSource() != 0) rejection |= RejectDepthBehavior;
+    if ((shader.flags.value & unsupported_flags) != 0) rejection |= RejectShaderFlags;
     if (!std::isfinite(fog.x) || !std::isfinite(fog.y) || !std::isfinite(fog.z) || !std::isfinite(fog.w) ||
         fog.x < 0 || fog.x > 1 || fog.y < 0 || fog.y > 1 || fog.z < 0 || fog.z > 1 || fog.w < 0 || fog.w > 1)
-        rejection |= 1u << 9;
+        rejection |= RejectFogColor;
     return rejection;
 }
 
@@ -179,6 +203,7 @@ bool uniform_presented_group(const RT64::Workload& workload, uint32_t first, uin
     matrix_id = initial;
     return true;
 }
+
 }
 
 struct RenderEvidence::Impl {
@@ -340,31 +365,77 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
         result->authenticated = true;
 
         const Json& objects = native.at("objects");
+        std::vector<TaskSunProbe::ObjectIdentity> object_identities;
+        object_identities.reserve(objects.size());
+        for (const auto& object : objects) {
+            const uint32_t flags = object.at("flags").get<uint32_t>();
+            const int parent = object.at("parent").get<int>();
+            if (flags > std::numeric_limits<uint16_t>::max() ||
+                parent < std::numeric_limits<int16_t>::min() ||
+                parent > std::numeric_limits<int16_t>::max()) return {};
+            object_identities.push_back({uint16_t(flags), object.at("list").get<uint32_t>(), int16_t(parent)});
+        }
         size_t admitted_faces = 0;
         size_t rejected_physical_calls = 0;
+        size_t unclassified_draws = 0;
         size_t overlay_calls = 0;
+        bool admission_complete = true;
         std::array<size_t, 10> rejection_reasons{};
+        const auto mark_unclassified = [&](uint32_t first, uint32_t count, uint32_t draw, uint32_t reason) {
+            result->unclassified.push_back({first, count, draw, false, reason});
+            admission_complete = false;
+            ++unclassified_draws;
+        };
         for (uint32_t f = 0; f < workload.fbPairCount; ++f) {
             const auto& fb = workload.fbPairs[f];
             for (uint32_t p = 0; p < fb.projectionCount; ++p) {
                 const auto& projection = fb.projections[p];
                 if (projection.type != RT64::Projection::Type::Perspective &&
-                    projection.type != RT64::Projection::Type::Orthographic) continue;
+                    projection.type != RT64::Projection::Type::Orthographic) {
+                    for (uint32_t c = 0; c < projection.gameCallCount; ++c) {
+                        const auto& game_call = projection.gameCalls[c];
+                        const uint64_t wide_count = uint64_t(game_call.callDesc.triangleCount) * 3;
+                        if (wide_count > std::numeric_limits<uint32_t>::max()) {
+                            mark_unclassified(game_call.meshDesc.faceIndicesStart, 0,
+                                game_call.callDesc.callIndex, UnclassifiedFaceCountOverflow);
+                            continue;
+                        }
+                        const uint32_t count = uint32_t(wide_count);
+                        if (count != 0) mark_unclassified(game_call.meshDesc.faceIndicesStart, count,
+                            game_call.callDesc.callIndex, UnclassifiedProjection);
+                    }
+                    continue;
+                }
                 for (uint32_t c = 0; c < projection.gameCallCount; ++c) {
                     const auto& game_call = projection.gameCalls[c];
                     const auto& call = game_call.callDesc;
                     const uint32_t first = game_call.meshDesc.faceIndicesStart;
-                    const uint32_t count = call.triangleCount * 3;
-                    if (count == 0 || first > data.faceIndices.size() || count > data.faceIndices.size() - first) continue;
+                    const uint64_t wide_count = uint64_t(call.triangleCount) * 3;
+                    if (wide_count > std::numeric_limits<uint32_t>::max()) {
+                        mark_unclassified(first, 0, call.callIndex, UnclassifiedFaceCountOverflow);
+                        continue;
+                    }
+                    const uint32_t count = uint32_t(wide_count);
+                    if (count == 0) continue;
+                    if (first > data.faceIndices.size() || count > data.faceIndices.size() - first) {
+                        mark_unclassified(first, count, call.callIndex, UnclassifiedFaceRange);
+                        continue;
+                    }
                     uint32_t matrix = 0;
-                    if (!uniform_presented_group(workload, first, count, matrix)) continue;
+                    if (!uniform_presented_group(workload, first, count, matrix)) {
+                        mark_unclassified(first, count, call.callIndex, UnclassifiedTransformGroup);
+                        continue;
+                    }
                     const uint32_t object_id = matrix & 0xFFFFu;
-                    if (object_id >= objects.size()) continue;
+                    if (object_id >= objects.size()) {
+                        mark_unclassified(first, count, call.callIndex, UnclassifiedObjectIdentity);
+                        continue;
+                    }
                     const Json& object = objects[object_id];
                     const uint32_t flags = object.at("flags").get<uint32_t>();
                     const bool world_builder = object_id == 0 && flags == 0x601u &&
                         object.at("list").get<uint32_t>() != 0;
-                    const bool physical_car = (flags & 8u) != 0;
+                    const bool physical_car = physical_car_object(object_identities, object_id);
                     const bool overlay_material = count == 48 && call.otherMode.L == 0xC8104A50u &&
                         (call.colorCombiner.L & 0xFFFFFFu) == 0x11FFFFu &&
                         call.colorCombiner.H == 0xFFFFF238u && (call.geometryMode & ~0x800000u) == 0x12005u;
@@ -379,7 +450,10 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
                         ++overlay_calls;
                         continue;
                     }
-                    if (!world_builder && !physical_car) continue;
+                    if (!world_builder && !physical_car) {
+                        mark_unclassified(first, count, call.callIndex, UnclassifiedObjectRole);
+                        continue;
+                    }
                     const uint32_t rejection = physical_shadow_material_rejection(game_call);
                     if (rejection != 0) {
                         result->rejected.push_back({first, count, call.callIndex, false, rejection});
@@ -396,14 +470,15 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
         }
         // This is only the metadata bridge. Until the raster receiver and the
         // per-view ready gate consume it, no caller may suppress native output.
-        result->complete = admitted_faces != 0 && overlay_calls != 0 && rejected_physical_calls == 0;
+        result->complete = admission_complete && admitted_faces != 0 && overlay_calls != 0 &&
+            rejected_physical_calls == 0;
         if (!RT64::validSunShadowParams(result->params)) {
             LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload rejected: invalid light parameters circuit=%d\n", circuit);
             return {};
         }
         if (!result->complete) {
-            LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload incomplete: circuit=%d faces=%zu overlays=%zu rejected=%zu reason_bits=[%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu]\n",
-                circuit, admitted_faces, overlay_calls, rejected_physical_calls,
+            LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload incomplete: circuit=%d faces=%zu overlays=%zu rejected=%zu unclassified=%zu reason_bits=[%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu]\n",
+                circuit, admitted_faces, overlay_calls, rejected_physical_calls, unclassified_draws,
                 rejection_reasons[0], rejection_reasons[1], rejection_reasons[2], rejection_reasons[3], rejection_reasons[4],
                 rejection_reasons[5], rejection_reasons[6], rejection_reasons[7], rejection_reasons[8], rejection_reasons[9]);
         }
@@ -485,6 +560,7 @@ void RenderEvidence::begin(const RT64::Workload& w, float weight) noexcept {
         Json fog = Json::array();
         for (const auto& f : d.rspFog) fog.push_back({f.mul, f.offset});
         Json shadowRejected = Json::array();
+        Json shadowUnclassified = Json::array();
         if (w.sunShadow) {
             for (const auto& range : w.sunShadow->rejected) {
                 bool found = false;
@@ -508,6 +584,27 @@ void RenderEvidence::begin(const RT64::Workload& w, float weight) noexcept {
                 if (!found) shadowRejected.push_back({{"draw", range.draw}, {"first", range.faceStart},
                     {"count", range.indexCount}, {"reason", range.rejection}, {"material", nullptr}});
             }
+            for (const auto& range : w.sunShadow->unclassified) {
+                bool found = false;
+                for (uint32_t f = 0; f < w.fbPairCount && !found; ++f) {
+                    const auto& fb = w.fbPairs[f];
+                    for (uint32_t p = 0; p < fb.projectionCount && !found; ++p) {
+                        const auto& projection = fb.projections[p];
+                        for (uint32_t c = 0; c < projection.gameCallCount; ++c) {
+                            const auto& game_call = projection.gameCalls[c];
+                            if (game_call.callDesc.callIndex != range.draw) continue;
+                            shadowUnclassified.push_back({{"draw", range.draw}, {"first", range.faceStart},
+                                {"count", range.indexCount}, {"reason", range.rejection},
+                                {"projection_type", int(projection.type)},
+                                {"material", material(game_call.callDesc)}});
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if (!found) shadowUnclassified.push_back({{"draw", range.draw}, {"first", range.faceStart},
+                    {"count", range.indexCount}, {"reason", range.rejection}, {"material", nullptr}});
+            }
         }
         impl_->report = {{"schema", 1}, {"native", native}, {"workload", w.workloadId}, {"weight", weight},
             {"drop_overlay", impl_->drop_overlay}, {"calls", calls}, {"raster", Json::array()},
@@ -518,8 +615,10 @@ void RenderEvidence::begin(const RT64::Workload& w, float weight) noexcept {
                 {"phase", w.sunShadow->phase}, {"players", w.sunShadow->playerCount},
                 {"params_abi_valid", RT64::validSunShadowParams(w.sunShadow->params)},
                 {"geometry", w.sunShadow->geometry.size()}, {"overlays", w.sunShadow->overlays.size()},
-                {"rejected", w.sunShadow->rejected.size()}} : Json(nullptr)},
+                {"rejected", w.sunShadow->rejected.size()},
+                {"unclassified", w.sunShadow->unclassified.size()}} : Json(nullptr)},
             {"sun_shadow_rejected_ranges", shadowRejected},
+            {"sun_shadow_unclassified_ranges", shadowUnclassified},
             {"indices", d.faceIndices}, {"world_indices", d.worldIndices}, {"world_groups", groups},
             {"world_addresses", d.worldTransformPhysicalAddresses}, {"local_positions", d.posFloats},
             {"normal_color_bytes", d.normColBytes}, {"fog_indices", d.fogIndices}, {"fog_params", fog}, {"light_counts", d.lightCounts}};

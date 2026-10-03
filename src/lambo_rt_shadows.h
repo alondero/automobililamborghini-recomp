@@ -41,8 +41,9 @@ struct TaskSunProbe {
         uint32_t list = 0;
         int16_t parent = -1;
     };
-    // Compact producer-owned object table used only to authenticate the native
-    // car-child overlay. It replaces an unsafe worker-side guest-RAM lookup.
+    // Compact producer-owned object table authenticates the native car-child
+    // overlay and its physical-car caster ancestry. It replaces an unsafe
+    // worker-side guest-RAM lookup.
     std::array<ObjectIdentity, 128> objects{};
     bool objects_complete = false;
     // Immutable, opt-in low-RAM copy made by the game producer before queueing.
@@ -74,6 +75,7 @@ private:
     int16_t circuit_ = -1;
 };
 
+bool physical_car_object(const std::vector<TaskSunProbe::ObjectIdentity>& objects, uint32_t object_id);
 std::optional<TaskSunProbe> consume_sun_probe(uint32_t dl_address);
 
 } // namespace lambo::rt

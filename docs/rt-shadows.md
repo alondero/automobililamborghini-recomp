@@ -213,14 +213,19 @@ remaining third-party compression stress tests are not validation of this featur
 2. The [presented material and owner-map evidence](rt-material-evidence.md)
    passes receiver ownership for every overlay-affected VI tap in the measured
    six-circuit, one-player, model-0 time-trial/single-race matrix. Workload
-   admission now fails closed in all 12 matching cases: 334 ordinary
-   world-builder ranges use textured coverage-times-alpha. Preserve this
-   rejection until ray-hit material behavior is proven.
+   admission now fails closed in all 12 matching cases: 334 world-builder
+   ranges use unsupported textured coverage-times-alpha, 12 physical-car child
+   ranges use unsupported blend/depth/fog behavior, and another 3,924 draws
+   remain unclassified. That includes Rectangle projections, the
+   `0xFFFFFFFF` transform sentinel, and a parentless `0xC01` object whose role
+   is unknown. Preserve native shadows until these draws are classified and
+   ray-hit material behavior is proven.
 3. Patch 0025 carries task epoch/sequence, key direction and admitted,
-   overlay and rejected face ranges into the exact Workload in developer capture
-   mode. All 12 captures are incomplete; no game AS build or receiver uses these
-   values. Add material/coverage parity, then a per-view AS and receiver that
-   preserves native fog, alpha, depth and face behavior.
+   overlay, rejected and unclassified face ranges into the exact Workload in
+   developer capture mode. All 12 captures are incomplete; no game AS build or
+   receiver uses these values. Add material/coverage parity, classify unknown
+   transforms and object roles, then a per-view AS and receiver that preserves
+   native fog, alpha, depth and face behavior.
 4. Add the Original-default setting and suppression only after a complete
    per-view ready gate can restore the native overlay on every pending, failed
    or unsupported path. Validate real game swapchain pixels, hard parity,

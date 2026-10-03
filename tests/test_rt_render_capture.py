@@ -10,7 +10,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from check_rt_overlay_capture import filter_taps, inside
 from check_rt_render_capture import (area, belongs_to_physical_car, opaque_coverage, receiver_material, validate_overlay_count,
-                                     screen_face, topology, uncovered_area, validate_pair)
+                                     screen_face, topology, uncovered_area, validate_pair, validate_shadow_admission)
 from inspect_rt_task import CaptureError
 
 
@@ -145,6 +145,27 @@ class PresentationTests(unittest.TestCase):
         r = {"call": 1, "first": 0, "count": 3, "indexed": True, "test_z": False}
         with self.assertRaises(CaptureError):
             validate_pair(dict(self.render, raster=[r, r]), self.present, self.world, self.swap)
+
+    def test_unknown_shadow_workload_ranges_block_complete_claim(self):
+        workload = {"authenticated": True, "complete": False, "params_abi_valid": True,
+                    "geometry": 2, "overlays": 1, "rejected": 0, "unclassified": 1}
+        render = dict(self.render, sun_shadow=workload, sun_shadow_rejected_ranges=[],
+                      sun_shadow_unclassified_ranges=[{"reason": 3, "count": 12}])
+        validate_shadow_admission(render)
+        workload["complete"] = True
+        with self.assertRaises(CaptureError):
+            validate_shadow_admission(render)
+
+    def test_complete_shadow_workload_requires_empty_rejections_and_valid_params(self):
+        workload = {"authenticated": True, "complete": True, "params_abi_valid": True,
+                    "geometry": 2, "overlays": 1, "rejected": 0, "unclassified": 0}
+        render = dict(self.render, sun_shadow=workload, sun_shadow_rejected_ranges=[],
+                      sun_shadow_unclassified_ranges=[])
+        validate_shadow_admission(render)
+        render["sun_shadow_unclassified_ranges"].append({"reason": 4, "count": 3})
+        workload["unclassified"] = 1
+        with self.assertRaises(CaptureError):
+            validate_shadow_admission(render)
 
 
 if __name__ == "__main__":

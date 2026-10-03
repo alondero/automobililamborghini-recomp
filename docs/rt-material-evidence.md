@@ -133,30 +133,74 @@ admitted, overlay and rejected face ranges. The HLE producer supplies copied
 task values; renderer workers do not read guest RAM. We ran task sequence 60
 for all 12 circuit/mode combinations: model 0, one player, time trial and single
 race on Circuits 1-6. Each replay consumed 600/600 frames and made 601 swaps.
+The scenario harness accepts car indices 0-23, but this matrix covers model 0
+only; it does not establish runtime support for the other vehicles.
 Every Workload authenticated its task and exact overlay ranges, but every one
-reported `complete=false`. The per-case admitted/rejected range counts and
-native world-builder list are:
+reported `complete=false`. Counts below are admitted caster ranges, material
+rejections, and unclassified draws. Each race case contains six authenticated
+overlay ranges; each time-trial case contains one.
 
-| Circuit | World-builder display list | Time trial admitted/rejected | Single race admitted/rejected |
+| Circuit | World-builder display list | Time trial admitted / rejected / unclassified | Single race admitted / rejected / unclassified |
 | --- | --- | ---: | ---: |
-| 1 | `0x80288160` | 92 / 33 | 152 / 33 |
-| 2 | `0x80295BF0` | 67 / 24 | 127 / 24 |
-| 3 | `0x802944B0` | 81 / 29 | 141 / 29 |
-| 4 | `0x802FF790` | 46 / 24 | 106 / 24 |
-| 5 | `0x802DCCB0` | 120 / 20 | 180 / 20 |
-| 6 | `0x80303D40` | 80 / 37 | 140 / 37 |
+| 1 | `0x80288160` | 92 / 34 / 342 | 157 / 34 / 312 |
+| 2 | `0x80295BF0` | 67 / 25 / 342 | 132 / 25 / 312 |
+| 3 | `0x802944B0` | 81 / 30 / 342 | 146 / 30 / 312 |
+| 4 | `0x802FF790` | 46 / 25 / 342 | 111 / 25 / 312 |
+| 5 | `0x802DCCB0` | 120 / 21 / 342 | 185 / 21 / 312 |
+| 6 | `0x80303D40` | 80 / 38 / 342 | 145 / 38 / 312 |
 
-Across the 12 Workloads, all 334 rejected ranges map through the presented
+Across the 12 Workloads, 334 rejected ranges map through the presented
 vertex/index and transform tables to ordinary indexed draws in native object 0
-(`flags=0x601`), the per-circuit world builder. Every row has rejection mask
+(`flags=0x601`), the per-circuit world builder. All 334 ranges have rejection mask
 `0x44` and `OtherMode.L=0xCB023038`: coverage-times-alpha is enabled and the
 mode falls outside the admitted opaque set. The captured combiner selects
 textured alpha; alpha compare, conventional alpha blend and force blend are
 off, while alpha-coverage-select is on. These are identified track draws, not
 unknown owners, but the existing ray-hit kernel has no per-sample RDP
 coverage/texture-alpha evaluation for them. The admitted ranges therefore do
-not form a complete caster set. No game AS was prepared and no receiver
+not form a complete caster set. A further 12 ranges map to child object 2
+(`flags=0x26`, parent object 1 with physical-car flag `0x9`). The bounded parent
+walk correctly classifies that child as car geometry, but rejects its material
+with mask `0xEE` because its combiner, depth/fog state and blending behavior
+fall outside the admitted policy. No game AS was prepared and no receiver
 consumed any Workload; `complete=false` keeps every native overlay.
+
+The material rejection mask is cumulative. Bit 0 marks an extended draw; bit 1
+an unmeasured combiner; bit 2 an `OtherMode.L` outside the measured opaque
+allowlist; bit 3 an unsupported depth-compare mode; bit 4 a mismatch between
+native and shader RDP modes; bit 5 an unsupported fog cycle; bit 6 unsupported
+alpha compare, coverage-times-alpha, blending or force-blend behavior; bit 7
+unsupported depth compare/update/mode/source behavior; bit 8 an unsupported
+shader flag; and bit 9 invalid or out-of-range fog color. Thus `0x44`
+identifies bits 2 and 6 for the measured world-builder draws.
+
+The Workload is incomplete if a nonempty draw uses an unsupported projection,
+has an invalid face-index range, or cannot be mapped through one uniform
+presented transform group to a copied native object identity, or maps to an
+object role other than the measured world builder and physical cars. These
+ranges are listed separately as `unclassified`; they cannot be silently
+omitted from a future receiver's completeness decision. Reasons 1-6 mean
+unsupported projection, invalid face range, unsupported transform group,
+unknown copied object identity, triangle-count overflow, and unrecognized
+object role, respectively. An overflow entry has index count zero because the
+true count cannot fit in the metadata field. This is conservative because
+some such draws may be non-casters, so the implementation keeps native
+shadows.
+
+Across the same matrix, 3,924 ranges remain unclassified: 912 use the
+unsupported Rectangle projection; 2,724 perspective/orthographic draws map to
+the `0xFFFFFFFF` transform sentinel rather than a presented object matrix; and
+288 map to a parentless object with flags `0xC01` and display-list address zero
+(object 4 in time trial, object 19 in single race). Its role is not established,
+so it stays unknown. No invalid face range, out-of-table object identity, or
+triangle-count overflow occurred in these captures. The capture validator
+requires all rejected and unclassified lists to be empty before accepting a
+`complete=true` Workload.
+
+Physical-car classification follows the copied native parent chain with a
+table-size traversal bound, so child meshes inherit the authenticated car
+identity. A self-parent or cycle cannot loop indefinitely. The remaining
+unrecognized root object's caster policy is still unknown.
 
 The metadata direction is checked against the native key in the current
 Workload and kept separate from car and camera transforms. Its diagnostic
@@ -244,7 +288,7 @@ ran. Default headless `harness-smoke-rir310dn` and capture-disabled windowed
 
 The 2026-10-03 Workload admission run rebuilt `lamborghini_modern`,
 `lambo_rt_shadow_gpu` and `lambo_rt_sun_tests`; all 47 project CTests passed,
-including the D3D12 GPU probe. The Python host suite passed 79 tests. Twelve
+including the D3D12 GPU probe. The Python host suite passed 81 tests. Twelve
 windowed D3D12 game captures covered model 0, one player, time trial/single
 race and Circuits 1-6. Each consumed 600/600 replay frames and made 601 swaps;
 all 12 authenticated their task and overlay but remained `complete=false` for
@@ -261,16 +305,19 @@ CONTRIBUTING.md, patches/README.md, docs/rt-provenance.md,
 docs/rt-material-evidence.md, docs/rt-shadows.md and docs/ray-tracing-plan.md.
 The D3D12 owner-map proof passes for model 0, one-player time trial and single
 race on Circuits 1-6 in forward/rear views. Workload admission now fails in all
-12 circuit/mode cases: 334 world-builder ranges use textured
-coverage-times-alpha. First prove a ray-hit policy that preserves native
-texture-alpha and coverage behavior, or prove a conservative way to exclude
-them without omitting required casters. Keep native overlays for every
-incomplete or unsupported Workload. Only after complete presented caster and
-receiver admission, integrate a per-view AS and native-equivalent receiver;
-then add an Original-default setting, exact ready-gated suppression and
-restoration. Test game swapchain pixels, hard parity, softening, self-shadow
-bias, lifecycle, resize, failure and GPU cost. Expand supported vehicles,
-modes, players and validated backends. Keep relighting and offscreen caster
-submission deferred; do not close #278 until its requirements are complete.
-Use finish.
+12 circuit/mode cases. The evidence records 334 world-builder ranges rejected
+for textured coverage-times-alpha, 12 car-child ranges rejected for their
+combiner/depth/fog/blend behavior, and 3,924 unclassified draws: 912 rectangle
+projections, 2,724 transform-sentinel ranges, and 288 parentless objects with
+unknown roles. First prove ray-hit policies that preserve native texture-alpha,
+coverage, depth, fog and blend behavior, and classify or conservatively retain
+the unclassified draws without omitting required casters. Keep native overlays
+for every incomplete or unsupported Workload. Only after complete presented
+caster and receiver admission, integrate a per-view AS and native-equivalent
+receiver; then add an Original-default setting, exact ready-gated suppression
+and restoration. Test game swapchain pixels, hard parity, softening,
+self-shadow bias, lifecycle, resize, failure and GPU cost. Expand supported
+vehicles, modes, players and validated backends. Keep relighting and offscreen
+caster submission deferred; do not close #278 until its requirements are
+complete. Use finish.
 ~~~

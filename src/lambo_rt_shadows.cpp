@@ -11,6 +11,20 @@
 #include "lambo_log.h"
 
 namespace lambo::rt {
+
+bool physical_car_object(const std::vector<TaskSunProbe::ObjectIdentity>& objects, uint32_t object_id) {
+    // HLE-owned parent links identify child meshes such as car components.
+    // The table-size bound also terminates malformed parent cycles.
+    for (size_t depth = 0; depth < objects.size(); ++depth) {
+        if (object_id >= objects.size()) return false;
+        const auto& object = objects[object_id];
+        if ((object.flags & 8u) != 0) return true;
+        if (object.parent < 0) return false;
+        object_id = uint32_t(object.parent);
+    }
+    return false;
+}
+
 namespace {
 constexpr uint32_t first_task = 0x800BF240u;
 constexpr uint32_t task_stride = 0x7A50u;

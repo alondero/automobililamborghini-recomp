@@ -145,7 +145,7 @@ class ScenarioRunnerTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 2)
         self.assertIn("alternative bootstraps", completed.stderr)
 
-    def test_warp_accepts_supported_vehicle_range(self) -> None:
+    def test_warp_accepts_car_index_range(self) -> None:
         completed, _ = self.run_scenario({"schema": 1, "name": "vehicle-23", "warp": "1:1:23:1"})
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("PASS vehicle-23", completed.stdout)
@@ -155,7 +155,7 @@ class ScenarioRunnerTests(unittest.TestCase):
         rejected = subprocess.run([sys.executable, str(RUNNER), str(path), "--exe", str(self.fake)],
                                   cwd=self.root, capture_output=True, text=True, timeout=10)
         self.assertEqual(rejected.returncode, 2)
-        self.assertIn("car must be a supported model 0-23", rejected.stderr)
+        self.assertIn("car index must be in the valid range 0-23", rejected.stderr)
 
     def test_sun_probe_is_explicit_and_missing_output_fails(self) -> None:
         scenario = {"schema": 1, "name": "sun-probe", "headless": False,

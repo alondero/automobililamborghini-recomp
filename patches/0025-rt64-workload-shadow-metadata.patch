@@ -126,7 +126,7 @@ index 4c1a514..283197d 100644
  namespace RT64 {
  struct alignas(16) SunShadowParams {
      float direction[3] = {0, 0, 1}; // Unit receiver-to-light, world space.
-@@ -26,6 +28,30 @@ static_assert(offsetof(SunShadowParams, angularRadius) == 16);
+@@ -26,6 +28,31 @@ static_assert(offsetof(SunShadowParams, angularRadius) == 16);
  static_assert(offsetof(SunShadowParams, sampleCount) == 32);
  static_assert(offsetof(SunShadowParams, reserved) == 44);
  
@@ -150,6 +150,7 @@ index 4c1a514..283197d 100644
 +    std::vector<SunShadowRange> geometry;
 +    std::vector<SunShadowRange> overlays;
 +    std::vector<SunShadowRange> rejected;
++    std::vector<SunShadowRange> unclassified;
 +    bool authenticated = false;
 +    bool complete = false;
 +};

@@ -96,6 +96,36 @@ def validate_overlay_count(overlay_faces: int, require_overlay: bool = True) -> 
         raise CaptureError(f"native shadow children did not form complete 16-triangle groups: {overlay_faces} triangles")
 
 
+def validate_shadow_admission(render: dict) -> None:
+    """Keep incomplete native metadata from being mistaken for suppressible work."""
+    shadow = render.get("sun_shadow")
+    if shadow is None:
+        return
+    if not isinstance(shadow, dict):
+        raise CaptureError("invalid shadow workload metadata")
+    rejected = render.get("sun_shadow_rejected_ranges")
+    unclassified = render.get("sun_shadow_unclassified_ranges")
+    if not isinstance(rejected, list) or not isinstance(unclassified, list):
+        raise CaptureError("shadow workload omitted rejected or unclassified ranges")
+    for field, ranges in (("rejected", rejected), ("unclassified", unclassified)):
+        if type(shadow.get(field)) is not int or shadow[field] != len(ranges):
+            raise CaptureError(f"shadow workload {field} count does not match its ranges")
+    for item in unclassified:
+        if not isinstance(item, dict) or type(item.get("reason")) is not int or not 1 <= item["reason"] <= 6:
+            raise CaptureError("unknown shadow unclassified reason")
+        if type(item.get("count")) is not int or item["count"] < 0:
+            raise CaptureError("invalid shadow unclassified face count")
+        if item["reason"] == 5 and item["count"] != 0:
+            raise CaptureError("overflowed shadow face count is not represented as zero")
+    if shadow.get("complete") is True:
+        if (shadow.get("authenticated") is not True or shadow.get("params_abi_valid") is not True
+                or shadow.get("geometry", 0) <= 0 or shadow.get("overlays", 0) <= 0
+                or rejected or unclassified):
+            raise CaptureError("shadow workload claims completeness with missing or rejected admission")
+    elif shadow.get("complete") is not False:
+        raise CaptureError("shadow workload completeness must be boolean")
+
+
 def area(poly: list) -> float:
     return abs(sum(a[0]*b[1] - b[0]*a[1] for a, b in zip(poly, poly[1:] + poly[:1]))) / 2
 
@@ -232,6 +262,7 @@ def inspect(directory: Path, sequence: int, include_geometry: bool = False,
     render = json.loads(prefix.with_name(prefix.name + "-render.json").read_text(encoding="utf-8"))
     present = json.loads(prefix.with_name(prefix.name + "-present.json").read_text(encoding="utf-8"))
     hle = json.loads(prefix.with_name(prefix.name + "-hle.json").read_text(encoding="utf-8"))
+    validate_shadow_admission(render)
     if hle["first"] != hle["last"] or hle["first"] != render["workload"] or any(
             hle[key] != meta[key] for key in ("epoch", "sequence", "root")):
         raise CaptureError("task did not publish exactly one authenticated workload")

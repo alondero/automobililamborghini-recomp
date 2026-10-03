@@ -21,6 +21,16 @@ template<class T> void write(std::vector<uint8_t>& ram, uint32_t address, T valu
 
 int main() {
     try {
+        std::vector<lambo::rt::TaskSunProbe::ObjectIdentity> car_objects{{9, 0x80001000u, -1},
+            {0x26, 0x80002000u, 0}, {0x26, 0x80003000u, 9}};
+        require(lambo::rt::physical_car_object(car_objects, 0), "physical car root not identified");
+        require(lambo::rt::physical_car_object(car_objects, 1), "physical car child not identified through parent");
+        require(!lambo::rt::physical_car_object(car_objects, 2), "out-of-range parent identity admitted");
+        require(!lambo::rt::physical_car_object(car_objects, 99), "out-of-range object identity admitted");
+        std::vector<lambo::rt::TaskSunProbe::ObjectIdentity> cyclic_objects{{0, 0, 1}, {0, 0, 0}};
+        require(!lambo::rt::physical_car_object(cyclic_objects, 0), "parent cycle admitted as physical car");
+        std::vector<lambo::rt::TaskSunProbe::ObjectIdentity> negative_root{{0, 0, -144}};
+        require(!lambo::rt::physical_car_object(negative_root, 0), "negative root sentinel admitted as a car");
         std::vector<uint8_t> ram(0x800000);
         lambo::rt::TaskSunProbes probes;
         auto begin = [&](uint32_t task, int16_t phase = 8, int16_t circuit = 0) {
