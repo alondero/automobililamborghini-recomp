@@ -1,5 +1,17 @@
+diff --git a/src/hle/rt64_rsp.cpp b/src/hle/rt64_rsp.cpp
+index 8a62045..b24d0e2 100644
+--- a/src/hle/rt64_rsp.cpp
++++ b/src/hle/rt64_rsp.cpp
+@@ -469,6 +469,7 @@ namespace RT64 {
+             drawData.projTransforms.emplace_back(hlslpp::mul(extended.invProjMatrix, projMatrixStack[projectionMatrixStackSize - 1]));
+             drawData.viewProjTransforms.emplace_back(hlslpp::mul(extended.invViewProjMatrix, viewProjMatrixStack[projectionMatrixStackSize - 1]));
+             drawData.viewProjTransformGroups.emplace_back(extended.curViewProjMatrixIdGroupIndex);
++            drawData.viewProjTransformPhysicalAddresses.emplace_back(physicalAddress);
+             drawData.rspViewports.emplace_back(viewportStack[viewportStackSize - 1]);
+             drawData.viewportOrigins.emplace_back(extended.viewportOriginStack[viewportStackSize - 1]);
+ 
 diff --git a/src/hle/rt64_workload.cpp b/src/hle/rt64_workload.cpp
-index b4c85f5..c5971cf 100644
+index b4c85f5..d44b32c 100644
 --- a/src/hle/rt64_workload.cpp
 +++ b/src/hle/rt64_workload.cpp
 @@ -26,6 +26,7 @@ namespace RT64 {
@@ -10,7 +22,23 @@ index b4c85f5..c5971cf 100644
          fbChangePool.reset();
          fbStorage.reset();
          physicalAddressTransformMap.clear();
-@@ -323,4 +324,4 @@ namespace RT64 {
+@@ -92,6 +93,7 @@ namespace RT64 {
+         drawData.transformGroups.clear();
+         drawData.worldTransformGroups.clear();
+         drawData.viewProjTransformGroups.clear();
++        drawData.viewProjTransformPhysicalAddresses.clear();
+         drawData.worldTransformSegmentedAddresses.clear();
+         drawData.worldTransformPhysicalAddresses.clear();
+         drawData.worldTransformVertexIndices.clear();
+@@ -109,6 +111,7 @@ namespace RT64 {
+         drawData.transformGroups.push_back(TransformGroup());
+         drawData.worldTransformGroups.push_back(0);
+         drawData.viewProjTransformGroups.push_back(0);
++        drawData.viewProjTransformPhysicalAddresses.push_back(0);
+         drawData.worldTransformSegmentedAddresses.push_back(0);
+         drawData.worldTransformPhysicalAddresses.push_back(0);
+         drawData.worldTransformVertexIndices.push_back(0);
+@@ -323,4 +326,4 @@ namespace RT64 {
              return 0;
          }
      }
@@ -18,7 +46,7 @@ index b4c85f5..c5971cf 100644
 \ No newline at end of file
 +};
 diff --git a/src/hle/rt64_workload.h b/src/hle/rt64_workload.h
-index 8ea27d5..3731f21 100644
+index 8ea27d5..c4a1899 100644
 --- a/src/hle/rt64_workload.h
 +++ b/src/hle/rt64_workload.h
 @@ -13,6 +13,7 @@
@@ -29,7 +57,17 @@ index 8ea27d5..3731f21 100644
  
  #include "rt64_command_warning.h"
  #include "rt64_draw_call.h"
-@@ -219,6 +220,7 @@ namespace RT64 {
+@@ -73,6 +74,9 @@ namespace RT64 {
+         std::vector<TransformGroup> transformGroups;
+         std::vector<uint32_t> worldTransformGroups;
+         std::vector<uint32_t> viewProjTransformGroups;
++        // Native projection address captured by HLE at the same matrix load.
++        // CPU provenance only; render workers never dereference this address.
++        std::vector<uint32_t> viewProjTransformPhysicalAddresses;
+         std::vector<uint32_t> worldTransformSegmentedAddresses;
+         std::vector<uint32_t> worldTransformPhysicalAddresses;
+         std::vector<uint32_t> worldTransformVertexIndices;
+@@ -219,6 +223,7 @@ namespace RT64 {
          std::vector<CommandWarning> commandWarnings;
          std::vector<SpriteCommand> spriteCommands;
          std::vector<interop::PointLight> pointLights;
@@ -37,7 +75,7 @@ index 8ea27d5..3731f21 100644
          uint32_t fbPairCount;
          uint32_t fbPairSubmitted;
          uint32_t gameCallCount;
-@@ -254,4 +256,4 @@ namespace RT64 {
+@@ -254,4 +259,4 @@ namespace RT64 {
          bool addFramebufferPair(uint32_t colorAddress, uint8_t colorFmt, uint8_t colorSiz, uint16_t colorWidth, uint32_t depthAddress);
          int currentFramebufferPairIndex() const;
      };
@@ -114,7 +152,7 @@ index 8c94429..c585c9d 100644
          virtual bool raster(const RasterEvidenceRange &range) noexcept = 0;
          virtual bool ownerBufferEnabled() const noexcept { return false; }
 diff --git a/src/shared/rt64_sun_shadow.h b/src/shared/rt64_sun_shadow.h
-index 4c1a514..283197d 100644
+index 4c1a514..6b38ec8 100644
 --- a/src/shared/rt64_sun_shadow.h
 +++ b/src/shared/rt64_sun_shadow.h
 @@ -7,6 +7,8 @@
@@ -126,7 +164,7 @@ index 4c1a514..283197d 100644
  namespace RT64 {
  struct alignas(16) SunShadowParams {
      float direction[3] = {0, 0, 1}; // Unit receiver-to-light, world space.
-@@ -26,6 +28,32 @@ static_assert(offsetof(SunShadowParams, angularRadius) == 16);
+@@ -26,6 +28,39 @@ static_assert(offsetof(SunShadowParams, angularRadius) == 16);
  static_assert(offsetof(SunShadowParams, sampleCount) == 32);
  static_assert(offsetof(SunShadowParams, reserved) == 44);
  
@@ -152,6 +190,13 @@ index 4c1a514..283197d 100644
 +    std::vector<SunShadowRange> overlays;
 +    std::vector<SunShadowRange> rejected;
 +    std::vector<SunShadowRange> unclassified;
++    // Classified screen/backdrop draws carry typed identity even when they
++    // have no indexed geometry. The owner supplies the exclusion reason.
++    std::vector<SunShadowRange> nonCasters;
++    // Caster coverage and receiver composition have separate policies.
++    // A native-only receiver can still cast if its opacity is proven.
++    std::vector<SunShadowRange> receivers;
++    std::vector<SunShadowRange> receiverRejected;
 +    bool authenticated = false;
 +    bool complete = false;
 +};

@@ -12,6 +12,14 @@ offscreen caster submission remain follow-on phases.
 Read [native provenance](rt-provenance.md), [GPU groundwork](rt-shadows.md)
 and the [plan](ray-tracing-plan.md) with this page.
 
+The latest continuation classifies the procedural world object, explicit sky
+backdrop, native HUD projection and screen rectangles. All 48 newly captured
+model-0/one-player Workloads have zero unclassified draws. They remain incomplete
+because native texture-alpha coverage and blended car geometry are unsupported.
+The older counts below describe the earlier admission policy;
+[separate material policies](#separate-caster-and-receiver-policies) records the
+current gate and verification.
+
 ## Presented geometry and material evidence
 
 Producer-owned schema-2 task snapshots supply native object, segment, emitter
@@ -237,6 +245,58 @@ native image; the four owner differentials still attribute all 349,048 VI taps
 of 87,262 changed RGB pixels. The preserving supported Windows build, two
 focused CTests, 86 Python tests, scoped Ruff, documentation and whitespace checks
 passed. No production ray-query draw was added by this classification change.
+
+### Separate caster and receiver policies
+
+Caster opacity no longer depends on whether a surface's RGB combiner and fog
+can receive attenuation. The task metadata has separate caster, receiver and
+native-only receiver ranges. Alpha/discard, shader agreement and native depth
+restrictions still guard opaque caster admission. The measured receiver
+combiner/fog/depth policy remains unchanged. These values cannot enable native
+overlay suppression without the later visible-coverage and resource gates.
+
+Classified non-casters are recorded separately instead of silently skipped:
+
+- Screen rectangles require Rectangle projection, the rectangle shader, no
+  native depth compare/update, matching shader/native modes and no extended draw.
+  Their face-index extent stays zero.
+- Panorama draws require the explicit producer `G_EX_ASPECT_BACKDROP` projection
+  tag and the same depth/mode/extended checks. Camera transforms and the
+  `0xFFFFFFFF` world-group sentinel do not identify sky on their own.
+- Native orthographic HUD geometry additionally requires HLE-copied projection
+  identity `0x000A2C40` and no native geometry flags. The native task loads that
+  static HUD matrix before the needle/minimap arrow quads; the captured local
+  vertices, transforms and draw path agree with [HUD evidence](HUD.md).
+
+Patch 0025 copies each projection's physical address alongside its transform
+group in HLE. Reset clears both arrays and seeds the same identity slot. Workers
+use those values without following guest pointers. Material policy schema 2
+records every exclusion and receiver range; the checker verifies the range
+against its exact presented draw and rejects exclusions without the required
+projection/material evidence.
+
+Twelve fresh replays covered Circuits 1-6 in time trial and single race, each
+600/600 frames and 601 swaps, with four forward/rear task pairs. All 48 pairs
+passed native/presented authentication and had zero unclassified draws. Their
+native swapchain bytes match the previous build exactly. The task-60 world
+coverage-alpha ranges still total 334 and use caster rejection bit `0x40`;
+the twelve blended car-child ranges use `0xC0` (alpha/blending and depth).
+Receiver-only RGB/fog rejections no longer appear as caster rejection reasons.
+Every Workload remains `complete=false` and retains native shadows.
+
+A fresh Circuit 1 owner-enabled repeat and exact-overlay omission used the same
+metadata build. Enabling ownership still produces a byte-identical native image.
+All 349,048 actual filter taps of 87,262 changed RGB pixels resolve to admitted
+fog-safe receivers. Older owner files cannot be compared directly with these
+records because their call metadata lacks the newly copied projection identity;
+the strict comparison correctly rejects that mismatch.
+
+The preserving supported Windows build, all 48 project CTests (including the
+real RTX 3080 D3D12 ray-query probe), 88 Python tests, scoped Ruff, documentation
+and whitespace checks passed. The pinned patch replay matched all 31 modified/new
+RT64 files byte-for-byte. All 150 preserved RecompFrontend files also remain
+byte-identical. This measures sampled native output and admission only; it adds
+no game AS, RT receiver, setting, performance claim or full-game coverage claim.
 
 Capture metadata keeps indexed face ranges separate from non-indexed
 projections. Perspective/orthographic calls report their face-index start and

@@ -230,18 +230,18 @@ remaining third-party compression stress tests are not validation of this featur
 2. The [presented material and owner-map evidence](rt-material-evidence.md)
    passes receiver ownership for every overlay-affected VI tap in the measured
    six-circuit, one-player, model-0 time-trial/single-race matrix. Workload
-   admission now fails closed in all 12 matching cases: 334 world-builder
+   admission still fails closed in all 12 matching cases: 334 world-builder
    ranges use unsupported textured coverage-times-alpha, 12 physical-car child
-   ranges use unsupported blend/depth/fog behavior, and another 3,924 draws
-   remain unclassified. That includes Rectangle projections, the
-   `0xFFFFFFFF` transform sentinel, and a parentless `0xC01` object whose role
-   is unknown. Preserve native shadows until these draws are classified and
-   ray-hit material behavior is proven.
+   ranges use unsupported blend/depth behavior. The later continuation
+   authenticates the procedural world object and explicitly identifies screen
+   rectangles, sky and HUD draws. All 48 fresh circuit/mode task pairs now have
+   zero unclassified draws and byte-identical native output. Preserve native
+   shadows until ray-hit texture-alpha/coverage behavior is proven.
 3. Patch 0025 carries task epoch/sequence, key direction and admitted,
-   overlay, rejected and unclassified face ranges into the exact Workload in
-   developer capture mode. All 12 captures are incomplete; no game AS build or
-   receiver uses these values. Add material/coverage parity, classify unknown
-   transforms and object roles, then a per-view AS and receiver that preserves
+   overlay, rejected, receiver and classified non-caster ranges into the exact
+   Workload in developer capture mode. All sampled captures are incomplete; no
+   game AS build or receiver uses these values. Add material/coverage parity,
+   then a per-view AS and receiver that preserves
    native fog, alpha, depth and face behavior.
 4. Add the Original-default setting and suppression only after a complete
    per-view ready gate can restore the native overlay on every pending, failed

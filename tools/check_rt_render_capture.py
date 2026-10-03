@@ -95,6 +95,23 @@ def receiver_material(call: dict) -> bool:
             and all(math.isfinite(v) and 0 <= v <= 1 for v in m["fog_rgba"]))
 
 
+def non_caster_reason(call: dict) -> int:
+    """Authenticate screen/backdrop exclusions using HLE-copied projection identity."""
+    m = call["material"]
+    if (m["z_compare"] or m["z_update"] or call.get("extended_type", 0) != 0
+            or call["shader_other_lo"] != m["other_lo"]
+            or call["shader_other_hi"] & ~63 != m["other_hi"] & ~63):
+        return 0
+    if call["projection_type"] == 3 and call["shader_flags"] & 1:
+        return 1
+    if call["projection_type"] == 1 and call.get("projection_aspect") == 3:
+        return 2
+    if (call["projection_type"] == 2 and call.get("projection_address") == 0xA2C40
+            and m["geometry"] & ~0x800000 == 0):
+        return 3
+    return 0
+
+
 def validate_overlay_count(overlay_faces: int, require_overlay: bool = True) -> None:
     # Time trial has one authenticated player shadow. Single race can submit
     # the same 16-triangle native child for several visible car parents.
@@ -143,6 +160,35 @@ def validate_shadow_admission(render: dict) -> None:
             raise CaptureError("shadow workload claims completeness with missing or rejected admission")
     elif shadow.get("complete") is not False:
         raise CaptureError("shadow workload completeness must be boolean")
+    if "policy_schema" in shadow and (type(shadow["policy_schema"]) is not int or shadow["policy_schema"] != 2):
+        raise CaptureError("unknown shadow material policy schema")
+    if shadow.get("policy_schema") == 2:
+        calls = {call["call"]: call for call in render["calls"]}
+        seen_noncasters = set()
+        for count_key, records_key in (("non_casters", "sun_shadow_non_caster_ranges"),
+                                       ("receivers", "sun_shadow_receiver_ranges"),
+                                       ("receiver_rejected", "sun_shadow_receiver_rejected_ranges")):
+            records = render.get(records_key)
+            if (not isinstance(records, list) or type(shadow.get(count_key)) is not int
+                    or shadow[count_key] != len(records)):
+                raise CaptureError("shadow workload omitted or miscounted a material policy list")
+            for item in records:
+                call = calls.get(item.get("draw"))
+                if (call is None or any(item.get(key) != call[key] for key in ("first", "count", "projection_type"))):
+                    raise CaptureError("shadow policy range differs from its presented draw")
+                if count_key == "non_casters":
+                    if (type(item.get("reason")) is not int or item["reason"] == 0
+                            or non_caster_reason(call) != item["reason"]
+                            or item["draw"] in seen_noncasters):
+                        raise CaptureError("shadow draw excluded without supported screen/backdrop identity")
+                    seen_noncasters.add(item["draw"])
+                elif count_key == "receivers":
+                    if item.get("reason") != 0 or not call["indexed"] or not receiver_material(call):
+                        raise CaptureError("shadow receiver lacks supported native material proof")
+                elif type(item.get("reason")) is not int or item["reason"] <= 0:
+                    raise CaptureError("native-only receiver omitted its rejection reason")
+        if shadow["complete"] and shadow["receivers"] == 0:
+            raise CaptureError("complete shadow workload has no admitted receiver")
 
 
 def validate_draw_metadata(calls: list) -> None:

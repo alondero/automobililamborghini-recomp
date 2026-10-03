@@ -37,7 +37,7 @@ significant single-space lines from `git diff --check`;
 | 0022 | RT64 | Opt-in queue-owned material/raster evidence and fenced GPU/present observation. Thread-local raster scope excludes HLE's framebuffer renderer. Port-owned capture policy; no sunlight Workload fields or production receiver integration. |
 | 0023 | Plume inside RT64 | D3D12 texture-to-buffer readback selects source sample positions when destination is a placed-footprint buffer, avoiding a null texture dereference. ROM-free 7x3 padded-row GPU regression. |
 | 0024 | RT64 | Optional D3D12 owner-output pipelines mirror native raster clipping, material/discard and depth behavior, including the generic ubershader fallback, into an R32G32_UINT diagnostic target with cloned depth. On RTX 3080 captures, enabling the diagnostic leaves the actual swapchain byte-identical. It is evidence instrumentation only; it does not implement shadow replacement. |
-| 0025 | RT64 | Adds immutable sunlight and draw/face admission metadata, including projection identity, to the matching Workload through the developer evidence observer. Non-indexed projections remain typed unclassified draws with zero face-index extent. The 12 model-0/one-player circuit/mode captures all fail closed: 334 world-builder ranges use unsupported coverage-times-alpha behavior, 12 physical-car child ranges use unsupported blend/depth/fog material behavior, and 3,924 further ranges remain unclassified. No renderer consumes these values and no native overlay is suppressed. |
+| 0025 | RT64 | Adds immutable sunlight and separate caster/receiver admission metadata to the matching Workload through the developer evidence observer. HLE copies projection address identity alongside transform groups. Typed screen/backdrop exclusions retain zero face-index extent for non-indexed draws. The latest 48 model-0/one-player task captures have no unclassified draws, but all fail closed on native texture-alpha coverage and blended car geometry. No production receiver consumes these values and no native overlay is suppressed. |
 
 ## Application matrix
 
@@ -67,6 +67,17 @@ The owner map authenticates the exact draw that won native depth and the
 post-omission visible receiver at each VI filtering tap in the measured
 one-player matrix. Patch 0025 carries diagnostic metadata into its exact Workload,
 but sampled caster coverage is incomplete and no production receiver consumes it.
+
+The continuation separates receiver RGB/fog constraints from opaque caster
+coverage and records explicit screen/backdrop/HUD exclusions. The copied
+projection address is generic CPU provenance, with no game RAM reader in RT64;
+the port owns the USA HUD address and material policy. A preserving Windows
+build and all 48 project CTests pass. Twelve fresh circuit/mode replays have
+zero unclassified draws in all 48 tasks, with byte-identical native swapchain
+output. Texture-alpha and blended car ranges still keep every Workload incomplete.
+The current patch series matches all 31 modified/new RT64 source files in a
+separate pinned replay. Detailed policy evidence is in
+[material admission](../docs/rt-material-evidence.md#separate-caster-and-receiver-policies).
 
 Compared on 2026-10-02 with RT64
 `43373749dac9bbc1b653e6a02aed40a9e1783bed`: its

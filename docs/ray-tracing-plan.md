@@ -415,11 +415,13 @@ Continue PR #279 and issue #278 from the current branch. Read CLAUDE.md,
 CONTRIBUTING.md, patches/README.md, docs/rt-provenance.md,
 docs/rt-material-evidence.md, docs/rt-shadows.md and this plan. The owner-map
 proof passes for model 0, one-player time trial and single race on Circuits 1-6
-in forward/rear views. The 12 Workloads fail closed: 334 world-builder ranges
-use textured coverage-times-alpha, 12 physical-car child ranges use unsupported
-blending/depth/fog, and 3,924 ranges remain unclassified (Rectangle projections,
-the 0xFFFFFFFF transform sentinel, and parentless 0xC01 objects). First
-investigate native texture-alpha/coverage parity and classify every caster, or
+in forward/rear views. The latest 48 task pairs have zero unclassified draws:
+producer-owned kind authenticates procedural world geometry; explicit backdrop
+and native HUD projection identity authenticate non-casters; Rectangle draws
+keep zero face-index extent. Caster and receiver material policies are separate.
+The Workloads still fail closed: 334 world-builder task-60 ranges use textured
+coverage-times-alpha, and 12 physical-car child ranges use unsupported
+blending/depth. First investigate native texture-alpha/coverage parity, or
 prove a conservative exclusion that preserves hard-shadow parity. Keep all
 native shadows while this is unresolved. Only after complete presented
 caster/receiver admission, add a per-view AS and

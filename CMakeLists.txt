@@ -70,6 +70,9 @@ if(BUILD_TESTING)
     target_include_directories(lambo_rt_sun_tests PRIVATE src lib/rt64/src)
     target_link_libraries(lambo_rt_sun_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_rt_sun_tasks COMMAND lambo_rt_sun_tests)
+    add_executable(lambo_rt_material_tests tests/test_rt_material.cpp)
+    target_include_directories(lambo_rt_material_tests PRIVATE src)
+    add_test(NAME lambo_rt_material_policy COMMAND lambo_rt_material_tests)
 
     add_executable(lambo_rt_evidence_scope_tests tests/test_rt_evidence_scope.cpp
         lib/rt64/src/rhi/rt64_render_hooks.cpp)

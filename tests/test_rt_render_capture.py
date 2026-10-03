@@ -9,7 +9,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from check_rt_overlay_capture import filter_taps, inside
-from check_rt_render_capture import (area, belongs_to_physical_car, opaque_coverage, procedural_world_object, receiver_material, validate_overlay_count,
+from check_rt_render_capture import (area, belongs_to_physical_car, non_caster_reason, opaque_coverage, procedural_world_object, receiver_material, validate_overlay_count,
                                      screen_face, topology, uncovered_area, validate_draw_metadata, validate_pair,
                                      validate_shadow_admission)
 from inspect_rt_task import CaptureError
@@ -23,6 +23,22 @@ def material() -> dict:
 
 
 class MaterialTests(unittest.TestCase):
+    def test_screen_draw_exclusion_needs_projection_and_native_depth_identity(self):
+        m = dict(material(), z_compare=False, z_update=False, geometry=0)
+        call = {"material": m, "shader_other_lo": m["other_lo"], "shader_other_hi": m["other_hi"],
+                "shader_flags": 1, "projection_type": 3, "extended_type": 0}
+        self.assertEqual(non_caster_reason(call), 1)
+        sky = dict(call, projection_type=1, shader_flags=0, projection_aspect=3)
+        self.assertEqual(non_caster_reason(sky), 2)
+        self.assertEqual(non_caster_reason(dict(sky, projection_aspect=0)), 0)
+        hud = dict(call, projection_type=2, shader_flags=0, projection_address=0xA2C40)
+        self.assertEqual(non_caster_reason(hud), 3)
+        self.assertEqual(non_caster_reason(dict(hud, projection_address=0xA2C80)), 0)
+        for unsafe in (dict(call, extended_type=1), dict(call, shader_other_lo=0),
+                       dict(call, material=dict(m, z_compare=True)),
+                       dict(call, material=dict(m, z_update=True))):
+            self.assertEqual(non_caster_reason(unsafe), 0)
+
     def test_procedural_world_role_requires_the_complete_native_identity(self):
         obj = {"flags": 0xC01, "list": 0, "parent": -1, "kind": 13}
         self.assertTrue(procedural_world_object(obj))
@@ -206,6 +222,31 @@ class PresentationTests(unittest.TestCase):
         workload["unclassified"] = 1
         with self.assertRaises(CaptureError):
             validate_shadow_admission(render)
+
+    def test_non_caster_list_cannot_hide_unknown_draws_or_fabricate_faces(self):
+        m = dict(material(), z_compare=False, z_update=False, geometry=0)
+        call = {"call": 5, "first": 0, "count": 0, "projection_type": 3,
+                "material": m, "shader_other_lo": m["other_lo"], "shader_other_hi": m["other_hi"],
+                "shader_flags": 1, "extended_type": 0}
+        shadow = {"authenticated": True, "complete": False, "params_abi_valid": True,
+                  "geometry": 0, "overlays": 1, "rejected": 0, "unclassified": 0,
+                  "policy_schema": 2, "non_casters": 1, "receivers": 0, "receiver_rejected": 0}
+        render = {"calls": [call], "sun_shadow": shadow, "sun_shadow_rejected_ranges": [],
+                  "sun_shadow_unclassified_ranges": [], "sun_shadow_receiver_ranges": [],
+                  "sun_shadow_receiver_rejected_ranges": [],
+                  "sun_shadow_non_caster_ranges": [{"draw": 5, "first": 0, "count": 0,
+                                                     "projection_type": 3, "reason": 1}]}
+        validate_shadow_admission(render)
+        for field, value in (("draw", 6), ("first", 1), ("count", 6), ("reason", 2), ("projection_type", 1)):
+            changed = copy.deepcopy(render)
+            changed["sun_shadow_non_caster_ranges"][0][field] = value
+            with self.subTest(field=field), self.assertRaises(CaptureError):
+                validate_shadow_admission(changed)
+        for field in ("sun_shadow_receiver_ranges", "sun_shadow_non_caster_ranges"):
+            changed = copy.deepcopy(render)
+            changed.pop(field)
+            with self.subTest(missing=field), self.assertRaises(CaptureError):
+                validate_shadow_admission(changed)
 
 
 if __name__ == "__main__":
