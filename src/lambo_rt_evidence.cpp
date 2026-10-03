@@ -296,8 +296,11 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
         const int players = native.at("players").get<int>();
         const int race_mode = native.at("race_mode").get<int>();
         const auto& models = native.at("model_cursors");
+        // Player modes 0-3 share the car/light/view path. Mode 4 is attract;
+        // docs/camera-sequences.md records the gate. Authenticate the task's
+        // native key below; the harness's mode choices do not define lighting.
         if (circuit < 0 || circuit >= 6 || phase != 8 || players != 1 ||
-            (race_mode != 0 && race_mode != 2) || models.size() != 4 || models.at(0) != 0 ||
+            race_mode < 0 || race_mode > 3 || models.size() != 4 || models.at(0) != 0 ||
             !native.at("emitters_complete").get<bool>()) {
             LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload gated: unsupported scene circuit=%d phase=%d players=%d mode=%d emitters=%d\n",
                 circuit, phase, players, race_mode, native.at("emitters_complete").get<bool>());

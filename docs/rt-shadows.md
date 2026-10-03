@@ -140,7 +140,10 @@ record incomplete and copies no object table or RAM. The shared model layout and
 its setup consumers are documented in [car identity](CAR_DIFFERENCES.md#the-actual-car-selection-path);
 the mode store mirrors [the warp](../src/lambo_warp.c). Selectors are diagnostic
 identity, not proof of every selected vehicle's materials. Capture-only Workload
-authentication is restricted to the measured model-0, one-player modes 0/2.
+authentication is restricted to model 0, one player and documented player race
+modes 0-3; it requires the current task's matching native key. Pixel evidence
+covers modes 0/2. The player/attract distinction follows
+[camera sequence gating](camera-sequences.md).
 Save-state restore and renderer shutdown explicitly invalidate them. Records can
 be consumed once across all accepted address aliases. The consumer normalizes
 physical, KSEG0 and KSEG1 roots to the same arena; other segments and interior

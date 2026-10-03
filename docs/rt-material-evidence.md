@@ -328,8 +328,10 @@ The continuation adds producer-owned race-mode/model selectors, invalidation
 on scene selection changes, publication-time consistency checks and offline
 authentication against the owned RAM. The render checker requires native and
 presented records to retain the same selectors. The diagnostic remains scoped
-to model 0, one player, time trial/single race; its selection is a measurement
-boundary, not a different world-light transform for other modes.
+to model 0, one player and documented player modes 0-3. Each task must contain
+the circuit's matching native key; mode does not alter world-light direction.
+Mode 4 (attract) stays gated. Pixel evidence covers time trial/single race;
+unmeasured modes gain no replacement eligibility from this diagnostic scope.
 
 Twelve fresh stationary captures independently checked forward/rear camera
 rotation and unchanged native key/fill on all six circuits in both measured
@@ -390,6 +392,10 @@ geometry is not offscreen caster coverage. PR #279 remains draft and #278 open.
 Continue PR #279 and issue #278 from the current branch. Read CLAUDE.md,
 CONTRIBUTING.md, patches/README.md, docs/rt-provenance.md,
 docs/rt-material-evidence.md, docs/rt-shadows.md and docs/ray-tracing-plan.md.
+The complete reviewer report was recovered and all six findings verified
+addressed. The maintainer confirms shared cars/light records/views across race
+modes; the diagnostic authenticates player modes 0-3 against each task's key.
+Race mode/model selectors and player count now invalidate pending scene epochs.
 The D3D12 owner-map proof passes for model 0, one-player time trial and single
 race on Circuits 1-6 in forward/rear views. Workload admission now fails in all
 12 circuit/mode cases. The evidence records 334 world-builder ranges rejected
