@@ -380,6 +380,16 @@ windowed `rt-stationary-camera-81_3l5px` also passed 600/600 input frames and
 601 swaps each. The host frontend tests used physical-controller isolation
 from [testing](testing.md); gameplay captures retained normal input handling.
 
+After applying the shared-mode clarification, `1523d79` admits diagnostic light
+authentication for documented player modes 0-3, requires each task's matching
+native key, and excludes attract mode 4. The preservation build and four
+relevant RT CTests passed again. A final Circuit 1 capture
+(`rt-continuation-final-mode-policy-k17r_ov9`) completed 600/600 frames and
+601 swaps, then rechecked all four tasks against the earlier owner repeat and
+exact omission. Native pixels remained byte-identical, and all 349,048 taps of
+87,262 changed pixels still passed. Mode 1/3 playthroughs and ownership were
+not measured; this diagnostic scope does not grant replacement eligibility.
+
 There is still no production game AS, receiver, setting or overlay replacement.
 Hard/soft game shadows, self-shadow bias, resource failure, resize/lifecycle
 and representative-resolution GPU cost remain unvalidated. All game scenes
