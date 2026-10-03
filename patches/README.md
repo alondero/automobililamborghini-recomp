@@ -77,6 +77,19 @@ a placed-footprint destination has a buffer and no texture. Patch 0023 selects
 the source texture in that case. These are local generic changes, not upstream
 support claims; no upstream issue was opened.
 
+Compared on 2026-10-03 with current RT64 upstream `main` at
+`43373749dac9bbc1b653e6a02aed40a9e1783bed` (verified as the branch head) and
+the pinned source at `f0728a2520d5aa735886240de3fee75cc805f6d6`: the current
+[framebuffer renderer](https://github.com/rt64/rt64/blob/43373749dac9bbc1b653e6a02aed40a9e1783bed/src/render/rt64_framebuffer_renderer.cpp)
+and [raster shader](https://github.com/rt64/rt64/blob/43373749dac9bbc1b653e6a02aed40a9e1783bed/src/render/rt64_raster_shader.cpp)
+have no owner target allocation/depth clone, mirrored raster pass, or integer
+owner-output pipeline. Patch 0024 adds opt-in D3D12 diagnostic instrumentation
+for those behaviors; it does not add shadow replacement or upstream support.
+The full patch was replayed after 0005/0006/0009/0010/0011/0021/0022 on a
+separate worktree from the pin, then matched all 29 changed/new RT64 source
+paths byte-for-byte against the live patched checkout (excluding the nested
+Plume submodule). No upstream issue was opened.
+
 | Build path | Applies |
 | --- | --- |
 | Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0024 in CMake. |

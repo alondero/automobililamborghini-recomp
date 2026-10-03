@@ -99,6 +99,10 @@ without an overlay-owned tap in the native repeat and zero unsupported receiver
 taps after omission. These are repeated per-frame pixel counts, not unique
 screen locations. The visible-receiver evidence gate passes for this sampled
 matrix. The diagnostic does not build a shadow scene or change player rendering.
+The checker indexes VI tap coordinates directly as source texels (`floor(tx)` /
+`floor(ty)`); allocation padding does not stretch those coordinates. All twelve
+archived circuit/mode triples were rerun after correcting that lookup, and an
+unequal-allocation fixture guards the distinction.
 
 Projected polygons are retained only as diagnostics. Two affected pixels
 (Circuit 6, rear task 300 in time trial and single race) fall outside the old
@@ -139,8 +143,12 @@ fields. Its raster activation is thread-local to scoped queue rendering: HLE
 uses the same framebuffer renderer and must not enter the mutable observer.
 Shared task/completion maps use a mutex. The queue-thread Workload borrow spans
 begin/raster/completed within that render scope; completion or rejection clears
-it. GPU objects are callback-local. At most four sampled tasks and bounded vertex/index arrays
-are captured. Byte outputs are capped at 128 MiB, image dimensions at 4096.
+it. `ownerBufferRendered` retains non-owning texture pointers in the queue-owned
+`PendingOwner` list until `completed` reads them after the workload GPU fence.
+The list is cleared at the next `begin`, on raster rejection, and after
+completion whether the capture succeeds or fails, so the pointers are not used
+after that fenced callback. At most four sampled tasks and bounded vertex/index
+arrays are captured. Byte outputs are capped at 128 MiB, image dimensions at 4096.
 GPU copies fence before mapping and restore buffer/texture usage. Missing,
 short, duplicate, nonfinite or mismatched evidence fails the scenario/checker.
 
@@ -191,7 +199,7 @@ game pixels, performance budget, Vulkan/Android shadows, HDR/MSAA lifecycle or
 second-vendor support is claimed.
 
 The supported build, all 47 project CTests (including GPU and queue-scope
-checks), 70 Python tests, scoped Ruff, documentation and whitespace checks
+checks), 79 Python tests, scoped Ruff, documentation and whitespace checks
 passed. The Windows frontend fixture required the physical-controller isolation
 documented in [testing](testing.md) and tracked in
 [issue 280](https://github.com/alondero/automobililamborghini-recomp/issues/280);

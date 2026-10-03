@@ -1,6 +1,8 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 2551db2..f29a772 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -498,6 +498,7 @@
+@@ -498,6 +498,7 @@ endif()
  
  build_pixel_shader(  rt64 "src/shaders/RasterPS.hlsl" "src/shaders/RasterPSDynamic.hlsl" "-D DYNAMIC_RENDER_PARAMS")
  build_pixel_shader(  rt64 "src/shaders/RasterPS.hlsl" "src/shaders/RasterPSDynamicMS.hlsl" "-D DYNAMIC_RENDER_PARAMS" "-D MULTISAMPLING")
@@ -8,160 +10,272 @@
  build_pixel_shader_spec_constants(rt64 "src/shaders/RasterPS.hlsl" "src/shaders/RasterPSSpecConstant.hlsl" "-D SPEC_CONSTANT_RENDER_PARAMS")
  build_pixel_shader_spec_constants(rt64 "src/shaders/RasterPS.hlsl" "src/shaders/RasterPSSpecConstantMS.hlsl" "-D SPEC_CONSTANT_RENDER_PARAMS" "-D MULTISAMPLING")
  build_pixel_shader_spec_constants(rt64 "src/shaders/RasterPS.hlsl" "src/shaders/RasterPSSpecConstantFlat.hlsl" "-D SPEC_CONSTANT_RENDER_PARAMS" "-D VERTEX_FLAT_COLOR")
---- a/src/shaders/RasterPS.hlsl
-+++ b/src/shaders/RasterPS.hlsl
-@@ -290,8 +290,13 @@
- #if defined(DYNAMIC_RENDER_PARAMS)
-     , bool isFrontFace : SV_IsFrontFace
- #endif
-+#if defined(OWNER_BUFFER)
-+    , in uint primitiveID : SV_PrimitiveID
-+    , out uint2 pixelOwner : SV_TARGET0
-+#else
-     , [[vk::location(0)]] [[vk::index(0)]] out float4 pixelColor : SV_TARGET0
-     , [[vk::location(0)]] [[vk::index(1)]] out float4 pixelAlpha : SV_TARGET1
-+#endif
- )
- {
- #if !defined(DYNAMIC_RENDER_PARAMS)
-@@ -307,7 +312,11 @@
-         discard;
-     }
+diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
+index 4513893..7942a25 100644
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -919,6 +919,14 @@ namespace RT64 {
+                 workloadProfiler.start();
+                 threadConfigurationUpdate(workload.viFbSize, workloadConfig);
  
-+#if defined(OWNER_BUFFER)
-+    pixelOwner = uint2(gConstants.renderIndex + 1, primitiveID);
-+#else
-     pixelColor = resultColor;
-     pixelAlpha = resultAlpha;
--}
--#endif
-\ No newline at end of file
-+#endif
-+}
-+#endif
---- a/src/render/rt64_raster_shader.cpp
-+++ b/src/render/rt64_raster_shader.cpp
-@@ -22,6 +22,7 @@
- #ifdef _WIN32
- #   include "shaders/RasterPSLibrary.hlsl.dxil.h"
- #   include "shaders/RasterPSLibraryMS.hlsl.dxil.h"
-+#   include "shaders/RasterPSOwner.hlsl.dxil.h"
- #   include "shaders/RasterVSLibrary.hlsl.dxil.h"
- #   include "shaders/RasterPSDynamic.hlsl.dxil.h"
- #   include "shaders/RasterPSDynamicMS.hlsl.dxil.h"
-@@ -369,7 +370,7 @@
- 
-         // Alpha blending is performed by using dual source blending. The blending factor will be in the secondary output.
-         RenderBlendDesc &targetBlend = pipelineDesc.renderTargetBlend[0];
--        if (c.alphaBlend) {
-+        if (c.alphaBlend && !c.ownerBuffer) {
-             targetBlend.blendEnabled = true;
-             targetBlend.srcBlend = RenderBlend::SRC1_ALPHA;
-             targetBlend.dstBlend = RenderBlend::INV_SRC1_ALPHA;
-@@ -377,7 +378,7 @@
-         }
- 
-         // Emulating coverage wrap requires turning the alpha blending into an additive mode.
--        if (c.cvgAdd) {
-+        if (c.cvgAdd && !c.ownerBuffer) {
-             targetBlend.blendEnabled = true;
-             targetBlend.dstBlendAlpha = RenderBlend::ONE;
-         }
-@@ -481,6 +482,11 @@
- 
-         vertexShader = device->createShader(VSBlob, VSBlobSize, "VSMain", shaderFormat);
-         pixelShader = device->createShader(PSBlob, PSBlobSize, "PSMain", shaderFormat);
-+        const bool ownerSupported = shaderFormat == RenderShaderFormat::DXIL && !useMSAA;
-+        if (ownerSupported) {
-+            ownerPixelShader = device->createShader(RasterPSOwnerBlobDXIL,
-+                uint32_t(std::size(RasterPSOwnerBlobDXIL)), "PSMain", shaderFormat);
-+        }
- 
-         FramebufferRendererDescriptorCommonSet descriptorCommonSet(shaderLibrary->samplerLibrary, device->getCapabilities().raytracing);
-         FramebufferRendererDescriptorTextureSet descriptorTextureSet;
-@@ -496,7 +502,8 @@
-         pipelineLayout = layoutBuilder.create(device);
- 
-         // Generate all possible combinations of pipeline creations and assign them to each thread. Skip the ones that are invalid.
--        uint32_t pipelineCount = uint32_t(std::size(pipelines));
-+        constexpr uint32_t PipelineStateCount = 8;
-+        uint32_t pipelineCount = PipelineStateCount;
-         pipelineThreadCreations.clear();
-         pipelineThreadCreations.resize(std::min(threadCount, pipelineCount));
- 
-@@ -518,6 +525,12 @@
-             creation.cvgAdd = i & (1 << 2);
- 
-             pipelineThreadCreations[threadIndex].emplace_back(creation);
-+            if (ownerSupported) {
-+                PipelineCreation ownerCreation = creation;
-+                ownerCreation.pixelShader = ownerPixelShader.get();
-+                ownerCreation.ownerBuffer = true;
-+                pipelineThreadCreations[threadIndex].emplace_back(ownerCreation);
-+            }
-             threadIndex = (threadIndex + 1) % threadCount;
-         }
- 
-@@ -608,7 +621,8 @@
-         }
- 
-         for (const PipelineCreation &creation : pipelineThreadCreations[threadIndex]) {
--            uint32_t pipelineIndex = pipelineStateIndex(creation.zCmp, creation.zUpd, creation.cvgAdd);
-+            uint32_t pipelineIndex = pipelineStateIndex(creation.zCmp, creation.zUpd, creation.cvgAdd) +
-+                (creation.ownerBuffer ? 8 : 0);
- 
-             if (pipelineIndex == 0) {
-                 firstPipelineMutex.lock();
-@@ -632,6 +646,7 @@
-             pipelineThreadCreations.clear();
-             vertexShader.reset();
-             pixelShader.reset();
-+            ownerPixelShader.reset();
-             pipelinesCreated = true;
-         }
-     }
-@@ -646,4 +661,8 @@
-     const RenderPipeline *RasterShaderUber::getPipeline(bool zCmp, bool zUpd, bool cvgAdd) const {
-         return pipelines[pipelineStateIndex(zCmp, zUpd, cvgAdd)].get();
-     }
++                // Evidence must describe the native task pose, not an
++                // interpolated mixture. Keep frame matching enabled, but pace
++                // this opt-in diagnostic at the game's detected VI rate so the
++                // current Workload is submitted with weight 1 on every mode.
++                if (GetRenderEvidenceObserver() != nullptr && workload.viOriginalRate > 0) {
++                    workloadConfig.targetRate = workload.viOriginalRate;
++                }
 +
-+    const RenderPipeline *RasterShaderUber::getOwnerPipeline(bool zCmp, bool zUpd, bool cvgAdd) const {
-+        return pipelines[pipelineStateIndex(zCmp, zUpd, cvgAdd) + 8].get();
-+    }
- };
---- a/src/render/rt64_raster_shader.h
-+++ b/src/render/rt64_raster_shader.h
-@@ -81,7 +81,7 @@
-         static const uint64_t RasterVSLibraryHash;
-         static const uint64_t RasterPSLibraryHash;
- 
--        std::unique_ptr<RenderPipeline> pipelines[8];
-+        std::unique_ptr<RenderPipeline> pipelines[16];
-         std::unique_ptr<RenderPipeline> postBlendDitherNoiseAddPipeline;
-         std::unique_ptr<RenderPipeline> postBlendDitherNoiseSubPipeline;
-         std::unique_ptr<RenderPipeline> postBlendDitherNoiseSubNegativePipeline;
-@@ -93,6 +93,7 @@
-         std::vector<std::unique_ptr<std::thread>> pipelineThreads;
-         std::unique_ptr<RenderShader> vertexShader;
-         std::unique_ptr<RenderShader> pixelShader;
-+        std::unique_ptr<RenderShader> ownerPixelShader;
- 
-         RasterShaderUber(RenderDevice *device, RenderShaderFormat shaderFormat, const RenderMultisampling &multisampling, const ShaderLibrary *shaderLibrary, uint32_t threadCount);
-         ~RasterShaderUber();
-@@ -100,5 +101,6 @@
-         void waitForPipelineCreation();
-         uint32_t pipelineStateIndex(bool zCmp, bool zUpd, bool cvgAdd) const;
-         const RenderPipeline *getPipeline(bool zCmp, bool zUpd, bool cvgAdd) const;
-+        const RenderPipeline *getOwnerPipeline(bool zCmp, bool zUpd, bool cvgAdd) const;
-     };
- };
+                 // FIXME: This is a very hacky way to find out if we need to advance the frame if the workload was paused for the first time.
+                 if (!workload.paused || (!gameFrames[curFrameIndex].workloads.empty() && (gameFrames[curFrameIndex].workloads[0] != (uint32_t)processCursor))) {
+                     prevFrameIndex = curFrameIndex;
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+index eb8c87a..58aa51b 100644
 --- a/src/render/rt64_framebuffer_renderer.cpp
 +++ b/src/render/rt64_framebuffer_renderer.cpp
-@@ -1792,7 +1792,10 @@
+@@ -467,7 +467,7 @@ namespace RT64 {
+         return true;
+     }
+     
+-    void FramebufferRenderer::submitRasterScene(RenderWorker *worker, const Framebuffer &framebuffer, RenderFramebufferStorage *fbStorage, const RasterScene &rasterScene, bool &depthState) {
++    void FramebufferRenderer::submitRasterScene(RenderWorker *worker, Framebuffer &framebuffer, RenderFramebufferStorage *fbStorage, const RasterScene &rasterScene, bool &depthState) {
+         InstanceDrawCall::Type previousCallType = InstanceDrawCall::Type::Unknown;
+         bool previousVertexTestZ = false;
+         const RenderPipeline *previousPipeline = nullptr;
+@@ -501,6 +501,28 @@ namespace RT64 {
+             }
+         };
+ 
++        RenderEvidenceObserver *evidence = GetActiveRenderEvidenceObserver();
++        const bool ownerTargetActive = evidence != nullptr && evidence->ownerBufferEnabled() &&
++            framebuffer.renderTargetDrawCall.fbStorage == fbStorage &&
++            framebuffer.evidenceOwnerTexture != nullptr && framebuffer.evidenceOwnerDepthTexture != nullptr;
++        auto switchToOwnerDepthAccess = [&](bool readOnly) {
++            if (!ownerTargetActive) return;
++            if (framebuffer.evidenceOwnerDepthReadOnly != readOnly) {
++                worker->commandList->barriers(RenderBarrierStage::GRAPHICS,
++                    RenderTextureBarrier(framebuffer.evidenceOwnerDepthTexture.get(),
++                        readOnly ? RenderTextureLayout::DEPTH_READ : RenderTextureLayout::DEPTH_WRITE));
++                framebuffer.evidenceOwnerDepthReadOnly = readOnly;
++            }
++            worker->commandList->setFramebuffer(readOnly ? framebuffer.evidenceOwnerDepthRead.get() : framebuffer.evidenceOwnerDepthWrite.get());
++            worker->commandList->setGraphicsDescriptorSet(
++                readOnly ? framebuffer.evidenceOwnerRealFbSet->get() : framebuffer.evidenceOwnerDummyFbSet->get(), 3);
++        };
++        auto restoreNativeFramebuffer = [&]() {
++            worker->commandList->setFramebuffer(depthState ? fbStorage->colorWriteDepthRead.get() : fbStorage->colorDepthWrite.get());
++            worker->commandList->setGraphicsDescriptorSet(depthState ? descRealFbSet : descDummyFbSet, 3);
++            previousPipeline = nullptr;
++        };
++
+         auto drawCallTriangles = [&](const InstanceDrawCall &drawCall) {
+             if (drawCall.type == InstanceDrawCall::Type::IndexedTriangles) {
+                 worker->commandList->drawIndexedInstanced(drawCall.triangles.faceCount * 3, 1, drawCall.triangles.indexStart, 0, 0);
+@@ -581,7 +603,7 @@ namespace RT64 {
+                 RenderEvidenceObserver *evidence = GetActiveRenderEvidenceObserver();
+                 if (evidence != nullptr) {
+                     RasterEvidenceRange range{renderIndicesVector[i].instanceIndex, triangles.indexStart,
+-                        triangles.faceCount * 3, drawCall.type == InstanceDrawCall::Type::IndexedTriangles,
++                        triangles.faceCount * 3, i, drawCall.type == InstanceDrawCall::Type::IndexedTriangles,
+                         triangles.vertexTestZ, {triangles.screenScale.x, triangles.screenScale.y},
+                         {triangles.screenOffset.x, triangles.screenOffset.y}, triangles.scissor,
+                         {framebuffer.evidenceParams.resolution.x, framebuffer.evidenceParams.resolution.y}, framebuffer.viewport};
+@@ -605,6 +627,24 @@ namespace RT64 {
+                     previousPipeline = nullptr;
+                 }
+ 
++                if (ownerTargetActive) {
++                    if (triangles.ownerPipeline != nullptr) {
++                        switchToOwnerDepthAccess(depthState);
++                        worker->commandList->setPipeline(triangles.ownerPipeline);
++                        drawCallTriangles(drawCall);
++                        restoreNativeFramebuffer();
++                    }
++                    else {
++                        // A missing diagnostic permutation makes this target
++                        // ineligible for ownership proof; never reuse a stale ID.
++                        framebuffer.evidenceOwnerComplete = false;
++                        if (evidence != nullptr) {
++                            evidence->ownerBufferIncomplete(framebuffer.evidenceOwnerAddress,
++                                "missing_owner_pipeline", i);
++                        }
++                    }
++                }
++
+                 break;
+             };
+             case InstanceDrawCall::Type::FillRect: {
+@@ -615,6 +655,11 @@ namespace RT64 {
+                 uint32_t clearRectCount = rectCoversWholeTarget ? 0 : 1;
+                 if (fbStorage->colorTarget != nullptr) {
+                     worker->commandList->clearColor(0, clearRect.color, clearRects, clearRectCount);
++                    if (ownerTargetActive) {
++                        switchToOwnerDepthAccess(framebuffer.evidenceOwnerDepthReadOnly);
++                        worker->commandList->clearColor(0, RenderColor(0.0f, 0.0f, 0.0f, 0.0f), clearRects, clearRectCount);
++                        restoreNativeFramebuffer();
++                    }
+                 }
+                 else {
+                     worker->commandList->clearDepth(true, clearRect.depth, clearRects, clearRectCount);
+@@ -1244,7 +1289,7 @@ namespace RT64 {
+         thread_local std::vector<RenderTextureBarrier> startBarriers;
+         startBarriers.clear();
+ 
+-        const Framebuffer &framebuffer = framebufferVector[framebufferIndex];
++        Framebuffer &framebuffer = framebufferVector[framebufferIndex];
+         for (RenderTarget *target : framebuffer.transitionRenderTargetSet) {
+             startBarriers.emplace_back(RenderTextureBarrier(target->getResolvedTexture(), RenderTextureLayout::SHADER_READ));
+         }
+@@ -1257,13 +1302,48 @@ namespace RT64 {
+         }
+ 
+         startBarriers.emplace_back(RenderTextureBarrier(depthTarget->texture.get(), RenderTextureLayout::DEPTH_WRITE));
++        RenderEvidenceObserver *ownerObserver = GetActiveRenderEvidenceObserver();
++        const bool ownerTargetActive = ownerObserver != nullptr && ownerObserver->ownerBufferEnabled() &&
++            framebuffer.evidenceOwnerTexture != nullptr && framebuffer.evidenceOwnerDepthTexture != nullptr &&
++            colorTarget != nullptr && depthTarget != nullptr;
++        if (ownerTargetActive) {
++            startBarriers.emplace_back(RenderTextureBarrier(framebuffer.evidenceOwnerTexture.get(), RenderTextureLayout::COLOR_WRITE));
++            startBarriers.emplace_back(RenderTextureBarrier(framebuffer.evidenceOwnerDepthTexture.get(), RenderTextureLayout::DEPTH_WRITE));
++        }
+         worker->commandList->barriers(RenderBarrierStage::GRAPHICS, startBarriers);
+ 
++        if (ownerTargetActive) {
++            framebuffer.evidenceOwnerComplete = true;
++            framebuffer.evidenceOwnerDepthReadOnly = false;
++            // The native depth target may contain framebuffer data imported
++            // from RDRAM. Seed a separate depth surface before mirroring each
++            // real draw so the diagnostic depth decisions start identically.
++            worker->commandList->barriers(RenderBarrierStage::COPY, {
++                RenderTextureBarrier(depthTarget->texture.get(), RenderTextureLayout::COPY_SOURCE),
++                RenderTextureBarrier(framebuffer.evidenceOwnerDepthTexture.get(), RenderTextureLayout::COPY_DEST)
++            });
++            worker->commandList->copyTextureRegion(
++                RenderTextureCopyLocation::Subresource(framebuffer.evidenceOwnerDepthTexture.get()),
++                RenderTextureCopyLocation::Subresource(depthTarget->texture.get()));
++            worker->commandList->barriers(RenderBarrierStage::GRAPHICS, {
++                RenderTextureBarrier(depthTarget->texture.get(), RenderTextureLayout::DEPTH_WRITE),
++                RenderTextureBarrier(framebuffer.evidenceOwnerDepthTexture.get(), RenderTextureLayout::DEPTH_WRITE)
++            });
++            worker->commandList->setFramebuffer(framebuffer.evidenceOwnerDepthWrite.get());
++            worker->commandList->clearColor(0, RenderColor(0.0f, 0.0f, 0.0f, 0.0f));
++            worker->commandList->setFramebuffer(targetDrawCall.fbStorage->colorDepthWrite.get());
++        }
++
+         bool depthState = false;
+         worker->commandList->setFramebuffer(targetDrawCall.fbStorage->colorDepthWrite.get());
+         for (const auto &pair : targetDrawCall.sceneIndices) {
+ #       if RT_ENABLED
+             if (pair.second) {
++                if (ownerTargetActive) {
++                    framebuffer.evidenceOwnerComplete = false;
++                    ownerObserver->ownerBufferIncomplete(framebuffer.evidenceOwnerAddress,
++                        "raytracing_scene", pair.first);
++                }
+                 const auto &rtScene = targetDrawCall.rtScenes[pair.first];
+ 
+                 // Draw all the interleaved rasterized buffers that will be used in the render target.
+@@ -1310,6 +1390,13 @@ namespace RT64 {
+                 submitRasterScene(worker, framebuffer, targetDrawCall.fbStorage, rasterScene, depthState);
+             }
+         }
++
++        if (ownerTargetActive) {
++            ownerObserver->ownerBufferRendered(
++                framebuffer.evidenceOwnerAddress, framebuffer.evidenceOwnerWidth,
++                framebuffer.evidenceOwnerHeight, framebuffer.evidenceOwnerTexture.get(),
++                framebuffer.evidenceOwnerComplete);
++        }
+     }
+ 
+     void FramebufferRenderer::waitForUploaders() {
+@@ -1351,6 +1438,59 @@ namespace RT64 {
+         framebuffer.evidenceParams = fbParams;
+         framebuffer.paramsBuffer->unmap();
+ 
++        RenderEvidenceObserver *evidenceObserver = GetActiveRenderEvidenceObserver();
++        RenderTarget *nativeColorTarget = p.fbStorage->colorTarget;
++        RenderTarget *nativeDepthTarget = p.fbStorage->depthTarget;
++        const bool ownerEvidenceSupported = evidenceObserver != nullptr && evidenceObserver->ownerBufferEnabled() && nativeColorTarget != nullptr &&
++            nativeDepthTarget != nullptr && nativeColorTarget->multisampling.sampleCount <= 1 &&
++            nativeDepthTarget->multisampling.sampleCount <= 1;
++        if (ownerEvidenceSupported) {
++            const bool recreateOwnerTargets = framebuffer.evidenceOwnerTexture == nullptr ||
++                framebuffer.evidenceOwnerWidth != nativeColorTarget->width ||
++                framebuffer.evidenceOwnerHeight != nativeColorTarget->height ||
++                framebuffer.evidenceOwnerDepthWidth != nativeDepthTarget->width ||
++                framebuffer.evidenceOwnerDepthHeight != nativeDepthTarget->height;
++            if (recreateOwnerTargets) {
++                framebuffer.evidenceOwnerDepthRead.reset();
++                framebuffer.evidenceOwnerDepthWrite.reset();
++                framebuffer.evidenceOwnerTextureView.reset();
++                framebuffer.evidenceOwnerTexture.reset();
++                framebuffer.evidenceOwnerDepthTextureView.reset();
++                framebuffer.evidenceOwnerDepthTexture.reset();
++
++                RenderClearValue ownerClear = RenderClearValue::Color(
++                    RenderColor(0.0f, 0.0f, 0.0f, 0.0f), RenderFormat::R32G32_UINT);
++                RenderTextureDesc ownerColorDesc = RenderTextureDesc::ColorTarget(
++                    nativeColorTarget->width, nativeColorTarget->height, RenderFormat::R32G32_UINT,
++                    RenderMultisampling(), &ownerClear);
++                framebuffer.evidenceOwnerTexture = p.worker->device->createTexture(ownerColorDesc);
++                framebuffer.evidenceOwnerTextureView = framebuffer.evidenceOwnerTexture->createTextureView(
++                    RenderTextureViewDesc::Texture2D(RenderFormat::R32G32_UINT));
++
++                RenderClearValue depthClear = RenderClearValue::Depth(RenderDepth(1.0f), RenderFormat::D32_FLOAT);
++                RenderTextureDesc ownerDepthDesc = RenderTextureDesc::DepthTarget(
++                    nativeDepthTarget->width, nativeDepthTarget->height, RenderFormat::D32_FLOAT,
++                    RenderMultisampling(), &depthClear);
++                framebuffer.evidenceOwnerDepthTexture = p.worker->device->createTexture(ownerDepthDesc);
++                framebuffer.evidenceOwnerDepthTextureView = framebuffer.evidenceOwnerDepthTexture->createTextureView(
++                    RenderTextureViewDesc::Texture2D(RenderFormat::D32_FLOAT));
++
++                const RenderTexture *ownerColorAttachment = framebuffer.evidenceOwnerTexture.get();
++                RenderFramebufferDesc ownerFramebufferDesc(&ownerColorAttachment, 1,
++                    framebuffer.evidenceOwnerDepthTexture.get());
++                framebuffer.evidenceOwnerDepthWrite = p.worker->device->createFramebuffer(ownerFramebufferDesc);
++                ownerFramebufferDesc.depthAttachmentReadOnly = true;
++                framebuffer.evidenceOwnerDepthRead = p.worker->device->createFramebuffer(ownerFramebufferDesc);
++                framebuffer.evidenceOwnerWidth = nativeColorTarget->width;
++                framebuffer.evidenceOwnerHeight = nativeColorTarget->height;
++                framebuffer.evidenceOwnerDepthWidth = nativeDepthTarget->width;
++                framebuffer.evidenceOwnerDepthHeight = nativeDepthTarget->height;
++                framebuffer.evidenceOwnerRealFbSet = std::make_unique<FramebufferRendererDescriptorFramebufferSet>(p.worker->device);
++                framebuffer.evidenceOwnerDummyFbSet = std::make_unique<FramebufferRendererDescriptorFramebufferSet>(p.worker->device);
++            }
++            framebuffer.evidenceOwnerAddress = nativeColorTarget->addressForName;
++        }
++
+         RenderTexture *backgroundColorTexture = (p.fbStorage->colorTarget != nullptr) ? p.fbStorage->colorTarget->getResolvedTexture() : dummyColorTarget.get();
+         RenderTextureView *backgroundColorTextureView = (p.fbStorage->colorTarget != nullptr) ? p.fbStorage->colorTarget->getResolvedTextureView() : dummyColorTargetView.get();
+         framebuffer.descRealFbSet->setBuffer(framebuffer.descRealFbSet->FbParams, framebuffer.paramsBuffer.get(), sizeof(interop::FramebufferParams));
+@@ -1359,6 +1499,14 @@ namespace RT64 {
+         framebuffer.descDummyFbSet->setBuffer(framebuffer.descDummyFbSet->FbParams, framebuffer.paramsBuffer.get(), sizeof(interop::FramebufferParams));
+         framebuffer.descDummyFbSet->setTexture(framebuffer.descDummyFbSet->gBackgroundColor, backgroundColorTexture, RenderTextureLayout::SHADER_READ, backgroundColorTextureView);
+         framebuffer.descDummyFbSet->setTexture(framebuffer.descDummyFbSet->gBackgroundDepth, dummyDepthTarget.get(), RenderTextureLayout::DEPTH_READ, dummyDepthTargetView.get());
++        if (ownerEvidenceSupported) {
++            framebuffer.evidenceOwnerRealFbSet->setBuffer(framebuffer.evidenceOwnerRealFbSet->FbParams, framebuffer.paramsBuffer.get(), sizeof(interop::FramebufferParams));
++            framebuffer.evidenceOwnerRealFbSet->setTexture(framebuffer.evidenceOwnerRealFbSet->gBackgroundColor, backgroundColorTexture, RenderTextureLayout::SHADER_READ, backgroundColorTextureView);
++            framebuffer.evidenceOwnerRealFbSet->setTexture(framebuffer.evidenceOwnerRealFbSet->gBackgroundDepth, framebuffer.evidenceOwnerDepthTexture.get(), RenderTextureLayout::DEPTH_READ, framebuffer.evidenceOwnerDepthTextureView.get());
++            framebuffer.evidenceOwnerDummyFbSet->setBuffer(framebuffer.evidenceOwnerDummyFbSet->FbParams, framebuffer.paramsBuffer.get(), sizeof(interop::FramebufferParams));
++            framebuffer.evidenceOwnerDummyFbSet->setTexture(framebuffer.evidenceOwnerDummyFbSet->gBackgroundColor, backgroundColorTexture, RenderTextureLayout::SHADER_READ, backgroundColorTextureView);
++            framebuffer.evidenceOwnerDummyFbSet->setTexture(framebuffer.evidenceOwnerDummyFbSet->gBackgroundDepth, dummyDepthTarget.get(), RenderTextureLayout::DEPTH_READ, dummyDepthTargetView.get());
++        }
+ 
+         // Store ubershader and other effect pipelines.
+         const RasterShaderUber *rasterShaderUber = p.rasterShaderCache->getGPUShaderUber();
+@@ -1636,6 +1784,7 @@ namespace RT64 {
+                         RasterShader *gpuShader = p.ubershadersOnly ? nullptr : p.rasterShaderCache->getGPUShader(call.shaderDesc);
+                         if (gpuShader != nullptr) {
+                             triangles.pipeline = gpuShader->pipeline.get();
++                            triangles.ownerPipeline = gpuShader->ownerPipeline.get();
+                         }
+                         else {
+                             const bool copyMode = (call.shaderDesc.otherMode.cycleType() == G_CYC_COPY);
+@@ -1643,6 +1792,10 @@ namespace RT64 {
                                  !copyMode && call.shaderDesc.otherMode.zCmp() && (call.shaderDesc.otherMode.zMode() != ZMODE_DEC),
                                  !copyMode && call.shaderDesc.otherMode.zUpd(),
                                  (call.shaderDesc.otherMode.cvgDst() == CVG_DST_WRAP) || (call.shaderDesc.otherMode.cvgDst() == CVG_DST_SAVE));
--                            triangles.ownerPipeline = nullptr;
 +                            triangles.ownerPipeline = rasterShaderUber->getOwnerPipeline(
 +                                !copyMode && call.shaderDesc.otherMode.zCmp() && (call.shaderDesc.otherMode.zMode() != ZMODE_DEC),
 +                                !copyMode && call.shaderDesc.otherMode.zUpd(),
@@ -169,9 +283,11 @@
                          }
                          
                          triangles.faceCount = call.callDesc.triangleCount;
+diff --git a/src/render/rt64_framebuffer_renderer.h b/src/render/rt64_framebuffer_renderer.h
+index 0eb5a35..bc35c2f 100644
 --- a/src/render/rt64_framebuffer_renderer.h
 +++ b/src/render/rt64_framebuffer_renderer.h
-@@ -117,6 +117,21 @@
+@@ -117,6 +117,21 @@ namespace RT64 {
              std::unique_ptr<RenderBuffer> paramsBuffer;
              std::unique_ptr<FramebufferRendererDescriptorFramebufferSet> descRealFbSet;
              std::unique_ptr<FramebufferRendererDescriptorFramebufferSet> descDummyFbSet;
@@ -193,7 +309,7 @@
              std::set<RenderTarget *> transitionRenderTargetSet;
              RenderTargetDrawCall renderTargetDrawCall;
              RenderViewport viewport;
-@@ -166,7 +181,7 @@
+@@ -166,7 +181,7 @@ namespace RT64 {
          void updateShaderViews(RenderWorker *worker, const DrawBuffers *drawBuffers, const OutputBuffers *outputBuffers, bool raytracingEnabled);
          void submitRSPSmoothNormalCompute(RenderWorker *worker, const OutputBuffers *outputBuffers);
          bool submitDepthAccess(RenderWorker *worker, RenderFramebufferStorage *fbStorage, bool readOnly, bool &depthState);
@@ -202,9 +318,11 @@
          void addFramebuffer(const DrawParams &p);
          void endFramebuffers(RenderWorker *worker, const DrawBuffers *drawBuffers, const OutputBuffers *outputBuffers, bool rtEnabled);
          void recordSetup(RenderWorker *worker, std::vector<BufferUploader *> bufferUploaders, RSPProcessor *rspProcessor, VertexProcessor *vertexProcessor, const OutputBuffers *outputBuffers, bool rtEnabled);
+diff --git a/src/render/rt64_framebuffer_renderer_call.h b/src/render/rt64_framebuffer_renderer_call.h
+index f2eee70..e2237c2 100644
 --- a/src/render/rt64_framebuffer_renderer_call.h
 +++ b/src/render/rt64_framebuffer_renderer_call.h
-@@ -33,6 +33,7 @@
+@@ -33,6 +33,7 @@ namespace RT64 {
              struct {
                  ShaderDescription shaderDesc;
                  const RenderPipeline *pipeline;
@@ -212,33 +330,259 @@
                  interop::float2 screenScale;
                  interop::float2 screenOffset;
                  RenderRect scissor;
-@@ -61,4 +62,4 @@
+@@ -61,4 +62,4 @@ namespace RT64 {
  
          ~InstanceDrawCall() { }
      };
 -};
 \ No newline at end of file
 +};
-diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
---- a/src/hle/rt64_workload_queue.cpp
-+++ b/src/hle/rt64_workload_queue.cpp
-@@ -919,4 +919,13 @@ namespace RT64 {
-                 ElapsedTimer workloadTimer;
-                 workloadProfiler.start();
-                 threadConfigurationUpdate(workload.viFbSize, workloadConfig);
+diff --git a/src/render/rt64_raster_shader.cpp b/src/render/rt64_raster_shader.cpp
+index 721a01e..857a02a 100644
+--- a/src/render/rt64_raster_shader.cpp
++++ b/src/render/rt64_raster_shader.cpp
+@@ -22,6 +22,7 @@
+ #ifdef _WIN32
+ #   include "shaders/RasterPSLibrary.hlsl.dxil.h"
+ #   include "shaders/RasterPSLibraryMS.hlsl.dxil.h"
++#   include "shaders/RasterPSOwner.hlsl.dxil.h"
+ #   include "shaders/RasterVSLibrary.hlsl.dxil.h"
+ #   include "shaders/RasterPSDynamic.hlsl.dxil.h"
+ #   include "shaders/RasterPSDynamicMS.hlsl.dxil.h"
+@@ -237,11 +238,39 @@ namespace RT64 {
+ #endif
+         creation.multisampling = multisampling;
+         pipeline = createPipeline(creation);
 +
-+                // Evidence must describe the native task pose, not an
-+                // interpolated mixture. Keep frame matching enabled, but pace
-+                // this opt-in diagnostic at the game's detected VI rate so the
-+                // current Workload is submitted with weight 1 on every mode.
-+                if (GetRenderEvidenceObserver() != nullptr && workload.viOriginalRate > 0) {
-+                    workloadConfig.targetRate = workload.viOriginalRate;
-+                }
++#   if defined(_WIN32)
++        // The opt-in D3D12 evidence pass shares the exact native vertex path
++        // and material/discard function, but writes draw/primitive identity to
++        // a separate integer target. MSAA ownership is deliberately unsupported.
++        if ((shaderFormat == RenderShaderFormat::DXIL) && !useMSAA && (shaderCompiler != nullptr)) {
++            RasterShaderText ownerText = generateShaderText(desc, false, true);
++            IDxcBlob *ownerLibraries[] = { nullptr, nullptr };
++            shaderCompiler->dxcUtils->CreateBlobFromPinned(RasterPSLibraryBlobDXIL, sizeof(RasterPSLibraryBlobDXIL), DXC_CP_ACP, (IDxcBlobEncoding **)(&ownerLibraries[1]));
++            const wchar_t *ownerLibraryNames[] = { L"RasterPSEntry", L"RasterPSLibrary" };
++            IDxcBlob *ownerEntry = nullptr;
++            IDxcBlob *ownerLinked = nullptr;
++            shaderCompiler->compile(ownerText.pixelShader, L"PSMain", L"lib_6_3", shaderFormat, &ownerEntry);
++            ownerLibraries[0] = ownerEntry;
++            shaderCompiler->link(L"PSMain", L"ps_6_3", ownerLibraries, ownerLibraryNames, uint32_t(std::size(ownerLibraries)), &ownerLinked);
++            ownerPixelShader = device->createShader(ownerLinked->GetBufferPointer(), ownerLinked->GetBufferSize(), "PSMain", shaderFormat);
++            ownerLibraries[0]->Release();
++            ownerLibraries[1]->Release();
++            ownerLinked->Release();
 +
-                 // FIXME: This is a very hacky way to find out if we need to advance the frame if the workload was paused for the first time.
++            PipelineCreation ownerCreation = creation;
++            ownerCreation.pixelShader = ownerPixelShader.get();
++            ownerCreation.alphaBlend = false;
++            ownerCreation.cvgAdd = false;
++            ownerCreation.ownerBuffer = true;
++            ownerPipeline = createPipeline(ownerCreation);
++        }
++#   endif
+     }
+ 
+     RasterShader::~RasterShader() { }
+ 
+-    RasterShaderText RasterShader::generateShaderText(const ShaderDescription &desc, bool multisampling) {
++    RasterShaderText RasterShader::generateShaderText(const ShaderDescription &desc, bool multisampling, bool ownerOutput) {
+         const std::string renderParamsCode = desc.toShader();
+ 
+         // Generate vertex shader.
+@@ -272,6 +301,10 @@ namespace RT64 {
+ 
+         // Generate pixel shader.
+         std::stringstream pss;
++        if (ownerOutput) {
++            pss << "struct RasterParams { uint renderIndex; uint3 padding; float2 screenScale; float2 screenOffset; };"
++                "[[vk::push_constant]] ConstantBuffer<RasterParams> gConstants : register(b0, space0);";
++        }
+         pss << std::string_view(RenderParamsText, sizeof(RenderParamsText));
+         pss << "RenderParams getRenderParams() {" + renderParamsCode + "; return rp; }";
+         pss <<
+@@ -286,10 +319,12 @@ namespace RT64 {
+             pss << ", nointerpolation in float4 vertexFlatColor : COLOR1";
+         }
+ 
+-        pss <<
+-            ", out float4 pixelColor : SV_TARGET0"
+-            ", out float4 pixelAlpha : SV_TARGET1"
+-            ") {";
++        if (ownerOutput) {
++            pss << ", in uint primitiveID : SV_PrimitiveID, out uint2 pixelOwner : SV_TARGET0) {";
++        }
++        else {
++            pss << ", out float4 pixelColor : SV_TARGET0, out float4 pixelAlpha : SV_TARGET1) {";
++        }
+ 
+         if (desc.flags.smoothShade) {
+             pss << "float4 vertexFlatColor = vertexSmoothColor;";
+@@ -298,10 +333,14 @@ namespace RT64 {
+         pss <<
+             "   float4 resultColor;"
+             "   float4 resultAlpha;"
+-            "   if (!RasterPS(getRenderParams(), vertexPosition, vertexUV, vertexSmoothColor, vertexFlatColor, false, resultColor, resultAlpha)) discard;"
+-            "   pixelColor = resultColor;"
+-            "   pixelAlpha = resultAlpha;"
+-            "}";
++            "   if (!RasterPS(getRenderParams(), vertexPosition, vertexUV, vertexSmoothColor, vertexFlatColor, false, resultColor, resultAlpha)) discard;";
++        if (ownerOutput) {
++            pss << "   pixelOwner = uint2(gConstants.renderIndex + 1, primitiveID);";
++        }
++        else {
++            pss << "   pixelColor = resultColor; pixelAlpha = resultAlpha;";
++        }
++        pss << "}";
+ 
+         return { vss.str(), pss.str() };
+     }
+@@ -309,7 +348,7 @@ namespace RT64 {
+     std::unique_ptr<RenderPipeline> RasterShader::createPipeline(const PipelineCreation &c) {
+         RenderGraphicsPipelineDesc pipelineDesc;
+         pipelineDesc.renderTargetBlend[0] = RenderBlendDesc::Copy();
+-        pipelineDesc.renderTargetFormat[0] = RenderTarget::colorBufferFormat(c.usesHDR);
++        pipelineDesc.renderTargetFormat[0] = c.ownerBuffer ? RenderFormat::R32G32_UINT : RenderTarget::colorBufferFormat(c.usesHDR);
+         pipelineDesc.renderTargetCount = 1;
+         pipelineDesc.cullMode = c.culling ? RenderCullMode::FRONT : RenderCullMode::NONE;
+         pipelineDesc.depthClipEnabled = !c.NoN;
+@@ -331,7 +370,7 @@ namespace RT64 {
+ 
+         // Alpha blending is performed by using dual source blending. The blending factor will be in the secondary output.
+         RenderBlendDesc &targetBlend = pipelineDesc.renderTargetBlend[0];
+-        if (c.alphaBlend) {
++        if (c.alphaBlend && !c.ownerBuffer) {
+             targetBlend.blendEnabled = true;
+             targetBlend.srcBlend = RenderBlend::SRC1_ALPHA;
+             targetBlend.dstBlend = RenderBlend::INV_SRC1_ALPHA;
+@@ -339,7 +378,7 @@ namespace RT64 {
+         }
+ 
+         // Emulating coverage wrap requires turning the alpha blending into an additive mode.
+-        if (c.cvgAdd) {
++        if (c.cvgAdd && !c.ownerBuffer) {
+             targetBlend.blendEnabled = true;
+             targetBlend.dstBlendAlpha = RenderBlend::ONE;
+         }
+@@ -443,6 +482,11 @@ namespace RT64 {
+ 
+         vertexShader = device->createShader(VSBlob, VSBlobSize, "VSMain", shaderFormat);
+         pixelShader = device->createShader(PSBlob, PSBlobSize, "PSMain", shaderFormat);
++        const bool ownerSupported = shaderFormat == RenderShaderFormat::DXIL && !useMSAA;
++        if (ownerSupported) {
++            ownerPixelShader = device->createShader(RasterPSOwnerBlobDXIL,
++                uint32_t(std::size(RasterPSOwnerBlobDXIL)), "PSMain", shaderFormat);
++        }
+ 
+         FramebufferRendererDescriptorCommonSet descriptorCommonSet(shaderLibrary->samplerLibrary, device->getCapabilities().raytracing);
+         FramebufferRendererDescriptorTextureSet descriptorTextureSet;
+@@ -458,7 +502,8 @@ namespace RT64 {
+         pipelineLayout = layoutBuilder.create(device);
+ 
+         // Generate all possible combinations of pipeline creations and assign them to each thread. Skip the ones that are invalid.
+-        uint32_t pipelineCount = uint32_t(std::size(pipelines));
++        constexpr uint32_t PipelineStateCount = 8;
++        uint32_t pipelineCount = PipelineStateCount;
+         pipelineThreadCreations.clear();
+         pipelineThreadCreations.resize(std::min(threadCount, pipelineCount));
+ 
+@@ -480,6 +525,12 @@ namespace RT64 {
+             creation.cvgAdd = i & (1 << 2);
+ 
+             pipelineThreadCreations[threadIndex].emplace_back(creation);
++            if (ownerSupported) {
++                PipelineCreation ownerCreation = creation;
++                ownerCreation.pixelShader = ownerPixelShader.get();
++                ownerCreation.ownerBuffer = true;
++                pipelineThreadCreations[threadIndex].emplace_back(ownerCreation);
++            }
+             threadIndex = (threadIndex + 1) % threadCount;
+         }
+ 
+@@ -570,7 +621,8 @@ namespace RT64 {
+         }
+ 
+         for (const PipelineCreation &creation : pipelineThreadCreations[threadIndex]) {
+-            uint32_t pipelineIndex = pipelineStateIndex(creation.zCmp, creation.zUpd, creation.cvgAdd);
++            uint32_t pipelineIndex = pipelineStateIndex(creation.zCmp, creation.zUpd, creation.cvgAdd) +
++                (creation.ownerBuffer ? 8 : 0);
+ 
+             if (pipelineIndex == 0) {
+                 firstPipelineMutex.lock();
+@@ -594,6 +646,7 @@ namespace RT64 {
+             pipelineThreadCreations.clear();
+             vertexShader.reset();
+             pixelShader.reset();
++            ownerPixelShader.reset();
+             pipelinesCreated = true;
+         }
+     }
+@@ -608,4 +661,8 @@ namespace RT64 {
+     const RenderPipeline *RasterShaderUber::getPipeline(bool zCmp, bool zUpd, bool cvgAdd) const {
+         return pipelines[pipelineStateIndex(zCmp, zUpd, cvgAdd)].get();
+     }
++
++    const RenderPipeline *RasterShaderUber::getOwnerPipeline(bool zCmp, bool zUpd, bool cvgAdd) const {
++        return pipelines[pipelineStateIndex(zCmp, zUpd, cvgAdd) + 8].get();
++    }
+ };
+diff --git a/src/render/rt64_raster_shader.h b/src/render/rt64_raster_shader.h
+index 3b991ff..987b987 100644
+--- a/src/render/rt64_raster_shader.h
++++ b/src/render/rt64_raster_shader.h
+@@ -51,6 +51,7 @@ namespace RT64 {
+         bool zUpd;
+         bool cvgAdd;
+         bool usesHDR;
++        bool ownerBuffer = false;
+         std::vector<RenderSpecConstant> specConstants;
+         RenderMultisampling multisampling;
+     };
+@@ -64,12 +65,14 @@ namespace RT64 {
+         ShaderDescription desc;
+         RenderDevice *device;
+         std::unique_ptr<RenderPipeline> pipeline;
++        std::unique_ptr<RenderShader> ownerPixelShader;
++        std::unique_ptr<RenderPipeline> ownerPipeline;
+ 
+         RasterShader(RenderDevice *device, const ShaderDescription &desc, const RenderPipelineLayout *pipelineLayout, RenderShaderFormat shaderFormat, const RenderMultisampling &multisampling, 
+             const ShaderCompiler *shaderCompiler, const OptimizerCacheSPIRV *optimizerCacheSPIRV);
+ 
+         ~RasterShader();
+-        static RasterShaderText generateShaderText(const ShaderDescription &desc, bool multisampling);
++        static RasterShaderText generateShaderText(const ShaderDescription &desc, bool multisampling, bool ownerOutput = false);
+         static std::unique_ptr<RenderPipeline> createPipeline(const PipelineCreation &c);
+         static RenderMultisampling generateMultisamplingPattern(uint32_t sampleCount, bool sampleLocationsSupported);
+     };
+@@ -78,7 +81,7 @@ namespace RT64 {
+         static const uint64_t RasterVSLibraryHash;
+         static const uint64_t RasterPSLibraryHash;
+ 
+-        std::unique_ptr<RenderPipeline> pipelines[8];
++        std::unique_ptr<RenderPipeline> pipelines[16];
+         std::unique_ptr<RenderPipeline> postBlendDitherNoiseAddPipeline;
+         std::unique_ptr<RenderPipeline> postBlendDitherNoiseSubPipeline;
+         std::unique_ptr<RenderPipeline> postBlendDitherNoiseSubNegativePipeline;
+@@ -90,6 +93,7 @@ namespace RT64 {
+         std::vector<std::unique_ptr<std::thread>> pipelineThreads;
+         std::unique_ptr<RenderShader> vertexShader;
+         std::unique_ptr<RenderShader> pixelShader;
++        std::unique_ptr<RenderShader> ownerPixelShader;
+ 
+         RasterShaderUber(RenderDevice *device, RenderShaderFormat shaderFormat, const RenderMultisampling &multisampling, const ShaderLibrary *shaderLibrary, uint32_t threadCount);
+         ~RasterShaderUber();
+@@ -97,5 +101,6 @@ namespace RT64 {
+         void waitForPipelineCreation();
+         uint32_t pipelineStateIndex(bool zCmp, bool zUpd, bool cvgAdd) const;
+         const RenderPipeline *getPipeline(bool zCmp, bool zUpd, bool cvgAdd) const;
++        const RenderPipeline *getOwnerPipeline(bool zCmp, bool zUpd, bool cvgAdd) const;
+     };
+ };
+diff --git a/src/rhi/rt64_render_hooks.h b/src/rhi/rt64_render_hooks.h
+index 72f563a..8c94429 100644
 --- a/src/rhi/rt64_render_hooks.h
 +++ b/src/rhi/rt64_render_hooks.h
-@@ -15,6 +15,7 @@
+@@ -15,6 +15,7 @@ namespace RT64 {
      struct RenderWorker;
      struct RasterEvidenceRange {
          uint32_t callIndex, firstIndex, indexCount;
@@ -246,7 +590,17 @@ diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
          bool indexed, testZ;
          float scale[2], offset[2];
          RenderRect scissor;
-@@ -42,6 +43,11 @@
+@@ -35,13 +36,20 @@ namespace RT64 {
+     // Developer-only observation at queue-owned boundaries. Register before
+     // creating queue threads; unregister after they join. begin's Workload may
+     // be borrowed on that queue thread until matching completed returns. GPU
+-    // objects are callback-local. Do not re-enter queues, throw, or read RAM.
++    // objects are borrowed from RT64; ownerBufferRendered's texture remains
++    // valid through matching completed, and must not be retained after it
++    // returns. Do not re-enter queues, throw, or read RAM.
+     // An observer may omit a raster range for a controlled diagnostic only.
+     // No observer means the original command stream and no readback allocation.
+     struct RenderEvidenceObserver {
          virtual ~RenderEvidenceObserver() = default;
          virtual void begin(const Workload &workload, float weight) noexcept = 0;
          virtual bool raster(const RasterEvidenceRange &range) noexcept = 0;
@@ -258,3 +612,35 @@ diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
          // The workload GPU fence has completed; the worker is still exclusive.
          virtual void completed(const Workload &workload, RenderWorker *worker) noexcept = 0;
          // Called after a successful swap and its GPU fence, before image reuse.
+diff --git a/src/shaders/RasterPS.hlsl b/src/shaders/RasterPS.hlsl
+index e7895c3..7887627 100644
+--- a/src/shaders/RasterPS.hlsl
++++ b/src/shaders/RasterPS.hlsl
+@@ -290,8 +290,13 @@ void PSMain(
+ #if defined(DYNAMIC_RENDER_PARAMS)
+     , bool isFrontFace : SV_IsFrontFace
+ #endif
++#if defined(OWNER_BUFFER)
++    , in uint primitiveID : SV_PrimitiveID
++    , out uint2 pixelOwner : SV_TARGET0
++#else
+     , [[vk::location(0)]] [[vk::index(0)]] out float4 pixelColor : SV_TARGET0
+     , [[vk::location(0)]] [[vk::index(1)]] out float4 pixelAlpha : SV_TARGET1
++#endif
+ )
+ {
+ #if !defined(DYNAMIC_RENDER_PARAMS)
+@@ -307,7 +312,11 @@ void PSMain(
+         discard;
+     }
+ 
++#if defined(OWNER_BUFFER)
++    pixelOwner = uint2(gConstants.renderIndex + 1, primitiveID);
++#else
+     pixelColor = resultColor;
+     pixelAlpha = resultAlpha;
++#endif
+ }
+-#endif
+\ No newline at end of file
++#endif

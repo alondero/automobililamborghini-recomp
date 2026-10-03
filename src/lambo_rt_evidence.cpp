@@ -237,6 +237,7 @@ void RenderEvidence::remember(uint64_t id, const std::optional<TaskSunProbe>& ta
 void RenderEvidence::begin(const RT64::Workload& w, float weight) noexcept {
     impl_->capturing = false;
     impl_->current = nullptr;
+    impl_->ownerTextures.clear();
     try {
         Json native;
         {
@@ -277,7 +278,6 @@ void RenderEvidence::begin(const RT64::Workload& w, float weight) noexcept {
             {"indices", d.faceIndices}, {"world_indices", d.worldIndices}, {"world_groups", groups},
             {"world_addresses", d.worldTransformPhysicalAddresses}, {"local_positions", d.posFloats},
             {"normal_color_bytes", d.normColBytes}, {"fog_indices", d.fogIndices}, {"fog_params", fog}, {"light_counts", d.lightCounts}};
-        impl_->ownerTextures.clear();
         impl_->current = &w;
         impl_->capturing = true;
     } catch (const std::exception& e) { LAMBO_LOG_INFO("rt-evidence", "begin rejected: %s\n", e.what()); }
@@ -310,6 +310,7 @@ bool RenderEvidence::raster(const RT64::RasterEvidenceRange& range) noexcept {
     } catch (const std::exception& e) {
         impl_->capturing = false;
         impl_->current = nullptr;
+        impl_->ownerTextures.clear();
         LAMBO_LOG_INFO("rt-evidence", "raster rejected: %s\n", e.what());
         return true;
     }
@@ -398,6 +399,7 @@ void RenderEvidence::completed(const RT64::Workload& w, RT64::RenderWorker* work
         impl_->completed_tasks.emplace(w.workloadId, sequence);
         impl_->rendered_tasks.insert(w.workloadId);
     } catch (const std::exception& e) { LAMBO_LOG_INFO("rt-evidence", "completion rejected: %s\n", e.what()); }
+    impl_->ownerTextures.clear();
 }
 
 void RenderEvidence::presented(const RT64::PresentationEvidence& presentation, RT64::RenderWorker* worker) noexcept {

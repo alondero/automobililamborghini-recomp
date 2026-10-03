@@ -62,19 +62,22 @@ def owner_image(run: Path, render: dict, present: dict, require_complete: bool =
     return owner, raw
 
 
-def owner_at_tap(tx: float, ty: float, video_resolution: list, owner: dict, raw: bytes) -> tuple[int, int]:
+def owner_at_tap(tx: float, ty: float, owner: dict, raw: bytes) -> tuple[int, int]:
     width, height = owner["width"], owner["height"]
-    x = min(max(math.floor(tx * width / video_resolution[0]), 0), width - 1)
-    y = min(max(math.floor(ty * height / video_resolution[1]), 0), height - 1)
+    # VI tap positions are already source-texture texel coordinates. The VI
+    # shader divides them by texture resolution; allocated padding does not
+    # stretch those coordinates across the owner target.
+    x = min(max(math.floor(tx), 0), width - 1)
+    y = min(max(math.floor(ty), 0), height - 1)
     draw_id, primitive_id = struct.unpack_from("<II", raw, (y * width + x) * 8)
     if draw_id == 0:
         raise CaptureError(f"unowned VI tap at ({x},{y})")
     return draw_id - 1, primitive_id
 
 
-def verify_owner_tap(tx: float, ty: float, video_resolution: list, owner: dict, raw: bytes,
+def verify_owner_tap(tx: float, ty: float, owner: dict, raw: bytes,
                      render: dict, receiver_faces: set, calls: dict, draws: dict) -> tuple[int, int]:
-    draw_index, primitive_id = owner_at_tap(tx, ty, video_resolution, owner, raw)
+    draw_index, primitive_id = owner_at_tap(tx, ty, owner, raw)
     draw = draws.get(draw_index)
     if draw is None or not draw["indexed"] or draw["test_z"] or draw["overlay"]:
         raise CaptureError(f"owner {draw_index} at tap ({tx:.2f},{ty:.2f}) is unknown, raw, test-Z or overlay")
@@ -143,14 +146,13 @@ def compare(baseline: Path, repeat: Path, omitted: Path, sequence: int,
             taps = filter_taps(x, y, info)
             native_overlay_tap = False
             for tx, ty in taps:
-                native_draw_index, _ = owner_at_tap(tx, ty, info["video_resolution"],
-                    control_owner, control_owner_bytes)
+                native_draw_index, _ = owner_at_tap(tx, ty, control_owner, control_owner_bytes)
                 native_draw = draws.get(native_draw_index)
                 if native_draw is None:
                     raise CaptureError(f"native owner {native_draw_index} has no authenticated draw range")
                 native_overlay_tap = native_overlay_tap or native_draw["overlay"]
-                visible_receivers.add(verify_owner_tap(tx, ty, info["video_resolution"], owner,
-                    owner_bytes, changed["render_info"], receiver_faces, calls, draws))
+                visible_receivers.add(verify_owner_tap(tx, ty, owner, owner_bytes,
+                    changed["render_info"], receiver_faces, calls, draws))
                 taps_checked += 1
             unattributed_overlay += not native_overlay_tap
             # Geometry projections are reported to explain edge cases only.
