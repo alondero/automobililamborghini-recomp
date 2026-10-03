@@ -213,6 +213,36 @@ int main() {
         require(compact && compact->objects_complete && !compact->native_ram &&
             compact->objects[0].flags == 0x42 && compact->objects[0].list == 0x8013D3C8u &&
             compact->objects[0].parent == 7, "object identity was not copied into the task value");
+        lambo::rt::TaskSunProbes sceneSelections;
+        write(ram, 0x800CE6B4u, int16_t(0));
+        write(ram, 0x800CE7E8u, int16_t(3));
+        require(sceneSelections.begin(ram.data(), ram.size()), "scene identity setup failed");
+        const auto trial = sceneSelections.take(0x800BF400u);
+        require(trial && trial->race_mode == 0 && trial->model_cursors[0] == 3,
+            "scene selectors missing from owned task values");
+        require(sceneSelections.begin(ram.data(), ram.size()), "pending old mode setup failed");
+        write(ram, 0x800A2BFCu, 0x800C6C90u);
+        write(ram, 0x800CE6B4u, int16_t(2));
+        require(sceneSelections.begin(ram.data(), ram.size()), "race mode transition failed");
+        require(!sceneSelections.take(0x800BF400u), "old mode task survived scene transition");
+        const auto race = sceneSelections.take(0x800C6E50u);
+        require(race && race->epoch > trial->epoch && race->race_mode == 2 && trial->race_mode == 0,
+            "mode transition changed consumed identity or failed to advance epoch");
+        write(ram, 0x800CE7E8u, int16_t(7));
+        require(sceneSelections.begin(ram.data(), ram.size()), "model transition failed");
+        const auto model = sceneSelections.take(0x800C6E50u);
+        require(model && model->epoch > race->epoch && model->model_cursors[0] == 7,
+            "model transition failed to invalidate the scene epoch");
+        write(ram, 0x800CE6A4u, int16_t(2));
+        require(sceneSelections.begin(ram.data(), ram.size()), "player count transition failed");
+        const auto twoPlayers = sceneSelections.take(0x800C6E50u);
+        require(twoPlayers && twoPlayers->epoch > model->epoch, "player count failed to advance scene epoch");
+        require(sceneSelections.begin(ram.data(), ram.size()), "publication mismatch setup failed");
+        write(ram, 0x800CE6B4u, int16_t(0));
+        require(!sceneSelections.snapshot(ram.data(), ram.size()), "mixed scene snapshot admitted");
+        const auto mixedScene = sceneSelections.take(0x800C6E50u);
+        require(mixedScene && !mixedScene->emitters_complete && !mixedScene->objects_complete &&
+            !mixedScene->native_ram, "mixed scene remained usable as proof");
         RT64::SunShadowParams params;
         require(!RT64::validSunShadowParams(params), "default parameters enabled shadows");
         params.valid = 1;

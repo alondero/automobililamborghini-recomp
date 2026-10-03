@@ -55,6 +55,30 @@ class TaskCaptureTests(unittest.TestCase):
         self.assertEqual(first["max"], [10, 0, 10])
         self.assertEqual(result["eligibility"], "unproved; native observations only")
 
+    def test_scene_selectors_must_match_owned_ram(self):
+        self.commands(self.root, [(0xB8000000, 0)])
+        for name, address, value in (("phase", 0x800CE6AC, 8), ("circuit", 0x800CE794, 5),
+                                     ("players", 0x800CE6A4, 1), ("race_mode", 0x800CE6B4, 2)):
+            self.meta[name] = value
+            self.write(address, "h", value)
+        self.meta["model_cursors"] = [3, 6, 9, 12]
+        for player, model in enumerate(self.meta["model_cursors"]):
+            self.write(0x800CE7E8 + player * 2, "h", model)
+        self.assertEqual(self.inspect()["task"]["race_mode"], 2)
+        for name in ("phase", "circuit", "players", "race_mode", "model_cursors"):
+            old = self.meta[name]
+            self.meta[name] = [0, 0, 0, 0] if name == "model_cursors" else old + 1
+            with self.subTest(name=name), self.assertRaises(CaptureError):
+                self.inspect()
+            self.meta[name] = old
+        self.meta["players"] = True
+        with self.assertRaises(CaptureError):
+            self.inspect()
+        self.meta["players"] = 1
+        self.meta.pop("race_mode")
+        with self.assertRaises(CaptureError):
+            self.inspect()
+
     def test_light_and_transform_are_captured_when_vertices_load(self):
         self.triangle_list()
         # Row-vector matrix: identity plus a fractional world translation.
@@ -136,6 +160,23 @@ class TaskCaptureTests(unittest.TestCase):
         reports[1]["draws"][0]["view"][0][0] = -1
         reports[1]["draws"][0]["view"][2][2] = -1
         self.assertEqual(compare_stationary(reports)["unit_key_direction"], [0, 1, 0])
+        for circuit in range(6):
+            other = copy.deepcopy(reports)
+            for report in other:
+                report["task"]["circuit"] = circuit
+                report["draws"][0]["state"]["lights"][0]["direction"] = [circuit + 1, 7, -13]
+            result = compare_stationary(other)
+            self.assertEqual(result["circuit"], circuit)
+            self.assertEqual(result["native_directional_vectors"], [[circuit + 1, 7, -13]])
+        mixed = copy.deepcopy(reports)
+        mixed[1]["task"]["circuit"] = 1
+        with self.assertRaises(CaptureError):
+            compare_stationary(mixed)
+        for field, value in (("race_mode", 2), ("model_cursors", [1, 0, 0, 0])):
+            mixed = copy.deepcopy(reports)
+            mixed[1]["task"][field] = value
+            with self.subTest(field=field), self.assertRaises(CaptureError):
+                compare_stationary(mixed)
         for mutation in ("motion", "light", "view", "turn", "unchanged_view"):
             bad = copy.deepcopy(reports)
             if mutation == "motion":

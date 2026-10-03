@@ -294,10 +294,13 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
         const int circuit = native.at("circuit").get<int>();
         const int phase = native.at("phase").get<int>();
         const int players = native.at("players").get<int>();
+        const int race_mode = native.at("race_mode").get<int>();
+        const auto& models = native.at("model_cursors");
         if (circuit < 0 || circuit >= 6 || phase != 8 || players != 1 ||
+            (race_mode != 0 && race_mode != 2) || models.size() != 4 || models.at(0) != 0 ||
             !native.at("emitters_complete").get<bool>()) {
-            LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload gated: unsupported scene circuit=%d phase=%d players=%d emitters=%d\n",
-                circuit, phase, players, native.at("emitters_complete").get<bool>());
+            LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload gated: unsupported scene circuit=%d phase=%d players=%d mode=%d emitters=%d\n",
+                circuit, phase, players, race_mode, native.at("emitters_complete").get<bool>());
             return {};
         }
 
@@ -313,7 +316,7 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
             object_identities.push_back({uint16_t(flags), object.at("list").get<uint32_t>(), int16_t(parent)});
         }
 
-        // Each circuit keeps its own authored policy entry even where the
+        // Each circuit keeps its own measured policy entry even where the
         // measured raw key matches. A Workload must contain the current task's
         // matching native direction; no camera or car matrix contributes here.
         // Keep one entry per circuit because future measurements may differ.
@@ -524,6 +527,7 @@ void RenderEvidence::remember(uint64_t id, const std::optional<TaskSunProbe>& ta
         impl_->tasks.emplace(id, Json{{"epoch", task->epoch}, {"sequence", task->sequence},
             {"root", task->task_address + 0x1C0u}, {"phase", task->phase}, {"circuit", task->circuit},
             {"players", task->players}, {"emitters_complete", task->emitters_complete},
+            {"race_mode", task->race_mode}, {"model_cursors", task->model_cursors},
             {"objects_complete", task->objects_complete}, {"objects", objects}});
     } catch (const std::exception& e) { LAMBO_LOG_INFO("rt-evidence", "task rejected: %s\n", e.what()); }
 }

@@ -44,6 +44,11 @@
     of the ROM doesn't fork the script's hardcoded default from the workflow's
     env-var convention.
 
+.PARAMETER PreserveSubmodules
+    Build using already initialized, pinned dependencies without checking out or
+    cleaning their files. Patch application remains idempotent and rejects
+    conflicts. Use this when a checkout contains local dependency changes.
+
 .EXAMPLE
     .\build.ps1                                   # incremental build
     .\build.ps1 -Clean                            # full clean rebuild
@@ -52,7 +57,8 @@
 [CmdletBinding()]
 param(
     [switch]$Clean,
-    [string]$RomPath = 'Automobili Lamborghini (USA).z64'
+    [string]$RomPath = 'Automobili Lamborghini (USA).z64',
+    [switch]$PreserveSubmodules
 )
 
 $ErrorActionPreference = 'Continue'
@@ -166,9 +172,19 @@ try {
     # in the apply step below neutralises that, but autocrlf=false is also
     # defensive (CI runs this too).
     git config --global core.autocrlf false | Out-Null
-    Write-Host "`n[1/5] Initialising submodules..." -ForegroundColor Cyan
-    git submodule update --init --recursive | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'submodule update failed.' }
+    if ($PreserveSubmodules) {
+        Write-Host "`n[1/5] Verifying existing submodule pins..." -ForegroundColor Cyan
+        $SubmodulePins = @(git submodule status --recursive)
+        if ($LASTEXITCODE -ne 0 -or $SubmodulePins.Count -eq 0 -or
+            ($SubmodulePins | Where-Object { $_ -match '^[-+U]' })) {
+            throw 'PreserveSubmodules requires initialized dependencies at their recorded pins; no files were reset.'
+        }
+    }
+    else {
+        Write-Host "`n[1/5] Initialising submodules..." -ForegroundColor Cyan
+        git submodule update --init --recursive | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'submodule update failed.' }
+    }
 
     # --- 5. Defensive submodule reset -----------------------------------------
     # A prior run that patched only partially (or died mid-apply) would otherwise
@@ -182,10 +198,12 @@ try {
     # cmake/Frontend.cmake patches (0016/0018 on N64ModernRuntime, 0017, 0019, and
     # 0020 on RecompFrontend) - lambo_frontend_patch refuses to configure a dirty tree
     # rather than reset it.
-    Write-Host "[2/5] Resetting submodules to clean state before patching..." -ForegroundColor Cyan
-    foreach ($sub in @('lib/N64ModernRuntime', 'lib/rt64', 'lib/rt64/src/contrib/plume', 'lib/RecompFrontend')) {
-        git -C $sub checkout -- . | Out-Null
-        git -C $sub clean -fd | Out-Null
+    if (-not $PreserveSubmodules) {
+        Write-Host "[2/5] Resetting submodules to clean state before patching..." -ForegroundColor Cyan
+        foreach ($sub in @('lib/N64ModernRuntime', 'lib/rt64', 'lib/rt64/src/contrib/plume', 'lib/RecompFrontend')) {
+            git -C $sub checkout -- . | Out-Null
+            git -C $sub clean -fd | Out-Null
+        }
     }
 
     # --- 6. Apply Lamborghini patches (Windows: 0001, 0007, 0012, 0006, 0005, 0009, 0010, 0011, 0004) -
@@ -212,7 +230,20 @@ try {
         @{ Sub = 'lib/rt64';                   Patch = 'patches/0011-rt64-fov-independent-backdrop.patch' },
         @{ Sub = 'lib/rt64/src/contrib/plume'; Patch = 'patches/0004-plume-d3d12-mingw-com-abi-struct-return.patch' }
     )
+    # Later RT64 patches change the context of earlier patches. As in CMake,
+    # recognize the final metadata patch before replaying the earlier series.
+    # This guard is needed when dependency files are explicitly preserved.
+    $Rt64SeriesApplied = $false
+    if ($PreserveSubmodules) {
+        $Rt64Guard = Join-Path $RepoRoot 'patches/0025-rt64-workload-shadow-metadata.patch'
+        & git.exe -C lib/rt64 apply --reverse --check $Rt64Guard 2>&1 | Out-Null
+        $Rt64SeriesApplied = $LASTEXITCODE -eq 0
+    }
     foreach ($p in $patches) {
+        if ($Rt64SeriesApplied -and $p.Sub -eq 'lib/rt64') {
+            Write-Host "  skipped  $($p.Sub) <- $($p.Patch) (final RT64 patch present)" -ForegroundColor DarkGray
+            continue
+        }
         $PatchAbs = Join-Path $RepoRoot $p.Patch
         # Idempotency check: distinguish three states.
         #   (a) --check 0      -> not yet applied, will apply cleanly

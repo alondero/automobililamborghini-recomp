@@ -395,6 +395,19 @@ python -m unittest discover tests
 git diff --check
 ~~~
 
+The continuation from verified `8a4329a` independently repeated stationary
+forward/rear native-light comparisons on every circuit in both measured modes
+(twelve cases, four task pairs each). It also authenticates race-mode and model
+selectors against producer-owned RAM and advances the scene epoch when those
+selections or player count change. A fresh Circuit 1 four-task owner
+differential retained byte-identical native output and attributed all 349,048
+filter taps of 87,262 changed RGB pixels. The native model-3 and two-player
+light observations passed, but strict two-player presented evidence failed on
+missing present records. Those cases remain native. The recovered independent
+review's six findings were verified addressed; no new review loop was run.
+See [continuation verification](rt-material-evidence.md#continuation-verification)
+for checks, preserved artifacts and remaining integration requirements.
+
 ## Next-session prompt
 
 ~~~text

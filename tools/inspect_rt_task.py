@@ -13,6 +13,13 @@ import math
 import struct
 from pathlib import Path
 
+# USA producer-owned signed halfwords, read through the word-swapped snapshot.
+# Layout, timing and fail-closed behavior: docs/rt-shadows.md#guest-bridge-contract.
+SCENE_SELECTOR_FIELDS = (("phase", 0x800CE6AC), ("circuit", 0x800CE794),
+                         ("players", 0x800CE6A4), ("race_mode", 0x800CE6B4))
+MODEL_CURSOR_ADDRESS = 0x800CE7E8
+MODEL_CURSOR_STRIDE = 2
+
 
 class CaptureError(ValueError):
     pass
@@ -54,6 +61,18 @@ class TaskInspector:
         self.ram = ram
         self.metadata = metadata
         self.segments = [0] * 16
+        # Additive scene selectors in current schema 2 must agree with the
+        # producer's RAM copy. Older captures retain their narrower evidence.
+        if "race_mode" in metadata or "model_cursors" in metadata:
+            selectors = metadata.get("model_cursors")
+            if (any(type(metadata.get(name)) is not int for name, _ in SCENE_SELECTOR_FIELDS)
+                    or not isinstance(selectors, list)
+                    or len(selectors) != 4 or any(type(model) is not int for model in selectors)):
+                raise CaptureError("incomplete race mode/model selector identity")
+            if any(metadata.get(name) != self.read(address, "h") for name, address in SCENE_SELECTOR_FIELDS):
+                raise CaptureError("scene selectors do not match producer RAM")
+            if selectors != [self.read(MODEL_CURSOR_ADDRESS + player * MODEL_CURSOR_STRIDE, "h") for player in range(4)]:
+                raise CaptureError("model selectors do not match producer RAM")
         self.geometry = self.other_hi = self.other_lo = self.combine = self.prim = self.fog = 0
         self.texture = self.light_count = 0
         self.lights = {}

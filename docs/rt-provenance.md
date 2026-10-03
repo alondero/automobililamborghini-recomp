@@ -1,8 +1,9 @@
 # Native RT input evidence across measured circuits
 
 Status: experimental diagnostics, measured on Windows through 2026-10-03 after
-PR #277 (baseline `e2a44ab`). Circuit 1 establishes the camera/model/light
-separation below. A separate 21-case task snapshot matrix measures key
+PR #277 (baseline `e2a44ab`). Stationary forward/rear traces now establish the
+camera/model/light separation independently on all six circuits. A separate
+21-case task snapshot matrix measures key
 direction and per-circuit light colors; the
 [presented-material evidence](rt-material-evidence.md) now proves visible
 receiver ownership for the sampled one-player cases on all six circuits.
@@ -73,12 +74,50 @@ from its measured policy.
 | 6 | `(152,161,97)` | `(148,156,94)`, `(149,157,94)`, `(152,161,97)` or `(153,162,97)` across copied car records |
 
 These are sampled light-record colors, not direct/ambient terms or new lighting
-policy. The unchanged direction across circuits does not establish camera
-independence outside the Circuit 1 stationary/two-view tests. Three-player
+policy. Direction agreement alone does not establish camera independence. The
+later stationary matrix below tests camera rotation on each circuit. Three-player
 records authenticate direction only; presented ownership is incomplete or
 missing in those captures. Four-player emitter snapshots failed strict
 completeness. Other car models, other race modes, menus and every camera state
-remain unmeasured.
+remain outside the measured matrix.
+
+### Stationary circuit matrix and scene identity
+
+The continuation from verified `8a4329a` ran twelve new windowed D3D12 cases:
+Circuits 1-6, model 0, one player, time trial and single race. Each consumed
+600/600 replay frames and made 601 swaps. All four sampled tasks
+(60/300/420/540) were captured in every case. The offline checker derives each
+circuit's key directly from its own native records; it does not substitute
+Circuit 1's vector. Each case had a stationary, unchanged full car-body model
+matrix and a changed view rotation spanning a 180-degree camera turn. Every
+case independently measured key `(-11,55,-101)` and fill `(11,45,101)`.
+
+Task values now include the race-mode halfword and four native model-selection
+cursors. They are copied on the producer, checked again before queue
+publication, and authenticated against that task's word-swapped RAM snapshot
+by the offline inspector. Changes to mode, player count or model selection
+advance the scene epoch and invalidate pending arena records. Consumed records
+retain their values. Older schema-2 captures without these additive fields
+remain usable for their original narrower observations, without proving mode
+or model identity.
+
+A new Circuit 1 two-player single-race native trace and a model-3 time-trial
+trace also passed the four-task stationary light comparison. Both views in the
+two-player trace use the same independently copied key/fill vectors. This is
+native-light evidence; model 3 and two-player replacement remain unsupported.
+The owner/presentation limitation is recorded in
+[material evidence](rt-material-evidence.md#continuation-verification).
+
+The maintainer reports that cars, light records and camera views are shared
+across race modes. Separate mode fixtures are therefore not prerequisites for
+investigating that shared lighting path. Empirical game-pixel coverage remains
+the recorded time-trial/single-race matrix; this report does not claim a
+Championship playthrough or full-game coverage. Modes never contribute a
+rotation to the world key.
+
+Local inputs and measurements remain ignored in
+`artifacts/rt-continuation/stationary-light-matrix.json` and
+`artifacts/rt-continuation/additional-captures.json`.
 
 ## Exact overlay provenance and material counterexample
 

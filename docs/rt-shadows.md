@@ -121,6 +121,8 @@ nonfinite height are rejected. This narrow diagnostic is not a world-light API.
 | Phase | `0x800CE6AC` | s16 game state |
 | Circuit | `0x800CE794` | s16 circuit index |
 | Players | `0x800CE6A4` | s16 player count |
+| Race mode | `0x800CE6B4` | s16; measured 0=time trial, 2=single race |
+| Model cursors | `0x800CE7E8 + player * 2` | four s16 model selectors, 0 through 23; not object IDs |
 | Camera scratch slot | `0x800CE6AA` | s16 index used by flare; viewport mapping unproved |
 | Art bearing | `0x800A2FB8` | s16 degrees |
 | Camera heading | `0x800A2F10 + 2 * camera slot` | s16 degrees |
@@ -132,7 +134,14 @@ captures before flare visibility culling. The existing task reuse fence protects
 producer storage until HLE consumption; see [sky ownership](sky-panorama.md).
 A mutex publishes copies between game and graphics threads. Workers never read
 guest RAM. Phase/circuit transitions advance the epoch and clear pending records;
-save-state restore and renderer shutdown explicitly invalidate them. Records can
+race mode, player count and model-selection changes now do the same. The
+producer checks these selectors again before publication; a mismatch marks the
+record incomplete and copies no object table or RAM. The shared model layout and
+its setup consumers are documented in [car identity](CAR_DIFFERENCES.md#the-actual-car-selection-path);
+the mode store mirrors [the warp](../src/lambo_warp.c). Selectors are diagnostic
+identity, not proof of every selected vehicle's materials. Capture-only Workload
+authentication is restricted to the measured model-0, one-player modes 0/2.
+Save-state restore and renderer shutdown explicitly invalidate them. Records can
 be consumed once across all accepted address aliases. The consumer normalizes
 physical, KSEG0 and KSEG1 roots to the same arena; other segments and interior
 list addresses are rejected without consuming a pending record. Log sampling
@@ -153,7 +162,7 @@ configuration after changing hooks. Do not configure while Ninja is running.
 
 ~~~powershell
 python scripts/gen_syms_toml.py
-./build.ps1
+./build.ps1 -PreserveSubmodules
 cmake -S . -B build -DLAMBO_RT_GPU_TESTS=ON
 cmake --build build --target lambo_rt_shadow_gpu lambo_rt_sun_tests -j 4
 ctest --test-dir build -R '^lambo_rt_(sun_tasks|shadow_gpu)$' --output-on-failure
@@ -208,8 +217,12 @@ remaining third-party compression stress tests are not validation of this featur
 1. Native key direction has been measured across the six circuits in the
    recorded one-to-three-player time-trial/single-race task matrix, and the
    diagnostic Workload checks the current task's matching lit-car direction.
-   Camera independence was directly proved on Circuit 1 only. Shadow strength,
-   angular size and a complete supported-mode policy remain unmeasured.
+   A new four-task stationary comparison proves camera independence separately
+   on all six circuits in model-0, one-player time trial and single race.
+   The shared race-mode light path and additional native model-3/two-view
+   observations are recorded in [provenance](rt-provenance.md).
+   Shadow strength, angular size and a complete supported-mode policy remain
+   unmeasured.
 2. The [presented material and owner-map evidence](rt-material-evidence.md)
    passes receiver ownership for every overlay-affected VI tap in the measured
    six-circuit, one-player, model-0 time-trial/single-race matrix. Workload

@@ -9,6 +9,7 @@
 #include "contrib/json/json.hpp"
 
 #include "lambo_log.h"
+#include "lambo_vehicle.h"
 
 namespace lambo::rt {
 
@@ -41,6 +42,9 @@ constexpr uint32_t current_task_address = 0x800A2BFCu;
 constexpr uint32_t current_phase_address = 0x800CE6ACu;
 constexpr uint32_t current_circuit_address = 0x800CE794u;
 constexpr uint32_t current_players_address = 0x800CE6A4u;
+// USA signed halfword mode, copied on the game producer. Model cursors use
+// the shared vehicle layout; docs/rt-shadows.md records timing and failure.
+constexpr uint32_t race_mode_address = 0x800CE6B4u;
 constexpr uint32_t task_cursor_address = 0x800A39CCu;
 constexpr uint32_t camera_slot_address = 0x800CE6AAu;
 constexpr uint32_t native_bearing_address = 0x800A2FB8u;
@@ -104,17 +108,29 @@ bool TaskSunProbes::begin(const uint8_t* rdram, size_t size) {
     const int16_t phase = read<int16_t>(rdram, current_phase_address);
     const int16_t circuit = read<int16_t>(rdram, current_circuit_address);
     const int16_t players = read<int16_t>(rdram, current_players_address);
+    const int16_t race_mode = read<int16_t>(rdram, race_mode_address);
+    std::array<int16_t, 4> model_cursors;
+    for (size_t player = 0; player < model_cursors.size(); ++player) {
+        model_cursors[player] = read<int16_t>(rdram, LAMBO_GUEST_PLAYER_MODEL_CURSOR_ADDR +
+            uint32_t(player) * LAMBO_GUEST_PLAYER_MODEL_CURSOR_STRIDE);
+    }
     std::lock_guard lock(mutex_);
-    if (phase != phase_ || circuit != circuit_) {
+    if (phase != phase_ || circuit != circuit_ || players != players_ || race_mode != race_mode_ ||
+        model_cursors != model_cursors_) {
         slots_ = {};
         open_emitters_ = {};
         ++epoch_;
         phase_ = phase;
         circuit_ = circuit;
+        players_ = players;
+        race_mode_ = race_mode;
+        model_cursors_ = model_cursors;
     }
     if (slot < 0) return false;
     open_emitters_[slot] = {};
     slots_[slot] = TaskSunProbe{epoch_, ++sequence_, task, phase, circuit, players, {}};
+    slots_[slot]->race_mode = race_mode;
+    slots_[slot]->model_cursors = model_cursors;
     return true;
 }
 
@@ -178,6 +194,22 @@ bool TaskSunProbes::snapshot(const uint8_t* rdram, size_t size) {
     std::lock_guard lock(mutex_);
     if (!slots_[slot]) return false;
     auto& record = *slots_[slot];
+    // A scene selection must not change between begin and queue publication.
+    // Reject its proof instead of pairing old identity with new RAM bytes.
+    if (record.phase != read<int16_t>(rdram, current_phase_address) ||
+        record.circuit != read<int16_t>(rdram, current_circuit_address) ||
+        record.players != read<int16_t>(rdram, current_players_address) ||
+        record.race_mode != read<int16_t>(rdram, race_mode_address)) {
+        record.emitters_complete = false;
+        return false;
+    }
+    for (size_t player = 0; player < record.model_cursors.size(); ++player) {
+        if (record.model_cursors[player] != read<int16_t>(rdram, LAMBO_GUEST_PLAYER_MODEL_CURSOR_ADDR +
+            uint32_t(player) * LAMBO_GUEST_PLAYER_MODEL_CURSOR_STRIDE)) {
+            record.emitters_complete = false;
+            return false;
+        }
+    }
     bool copied = false;
     if (!record.objects_complete && capture_sequence(record.sequence)) {
         // Object table fields are copied on the game producer immediately
@@ -243,6 +275,7 @@ void capture_task(const TaskSunProbe& task) {
             {"epoch", task.epoch}, {"sequence", task.sequence},
             {"task_address", task.task_address}, {"root", task.task_address + 0x1C0u},
             {"phase", task.phase}, {"circuit", task.circuit}, {"players", task.players},
+            {"race_mode", task.race_mode}, {"model_cursors", task.model_cursors},
             {"emitters_complete", task.emitters_complete}, {"ram_layout", "word-swapped"},
             {"cameras", nlohmann::json::array()}, {"emitters", nlohmann::json::array()}};
         for (const auto& camera : task.cameras) {

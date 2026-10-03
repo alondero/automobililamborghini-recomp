@@ -313,6 +313,77 @@ ignored under `artifacts/`. The documentation checker now skips that ignored
 directory and passes on tracked project documentation. These runs do not show
 ray-traced game pixels because no production receiver is connected.
 
+## Continuation verification
+
+The complete independent reviewer report was recovered locally before this
+round. Its three correctness findings and three hygiene suggestions are
+addressed in verified `8a4329a`: non-indexed projection/raw-vertex metadata is
+separate from indexed face ranges; light authentication follows physical-car
+ancestry; overlay identity uses the shared group prefix and extracted object;
+raster lookup terminates on a match; per-circuit measured-key repetition is
+explained; and task RAM fields have named, documented constants. No finding
+was rejected, and no additional independent review was launched.
+
+The continuation adds producer-owned race-mode/model selectors, invalidation
+on scene selection changes, publication-time consistency checks and offline
+authentication against the owned RAM. The render checker requires native and
+presented records to retain the same selectors. The diagnostic remains scoped
+to model 0, one player, time trial/single race; its selection is a measurement
+boundary, not a different world-light transform for other modes.
+
+Twelve fresh stationary captures independently checked forward/rear camera
+rotation and unchanged native key/fill on all six circuits in both measured
+modes. All 48 native/rendered task pairs passed the geometry/material checker.
+All twelve task-60 Workloads still report `complete=false`, with the same
+334 rejected world-builder ranges, 12 rejected car-child ranges and 3,924
+unclassified draws documented above. These are sampled totals, not full-course
+asset coverage.
+
+A fresh Circuit 1 time-trial baseline/owner-repeat/exact-omission triple
+passed at tasks 60/300/420/540. The owner-enabled native repeat was byte-identical
+to the baseline. Exact omission changed 87,262 RGB pixels; all 349,048 actual VI
+filtering taps resolved to admitted fog-safe receivers. No changed pixel lacked
+native-overlay ownership and no receiver tap was unknown or unsupported. This
+fresh four-task proof is additional evidence; the earlier 48-task cross-circuit
+owner matrix was not recaptured in this continuation. Outputs are ignored under
+`artifacts/rt-continuation/owner-differential.json`.
+
+Model 3 time trial on Circuit 1 passed all four native/presented task checks and
+the stationary light comparison. Its shadow Workload was explicitly gated by
+the model policy. A two-player single-race render scenario exited successfully
+and completed 600/600 replay frames and 601 swaps, but failed strict evidence:
+present records for tasks 60/420/540 were missing. Queue/presentation logs show
+native tasks can be skipped by the diagnostic presentation path. A separate
+native-only repeat captured all four tasks and passed the two-view stationary
+comparison. The failed render capture is preserved as
+`rt-continuation-two-views-1pnc7vmd`; two-player pixel ownership remains unproved.
+Neither result authorizes two-player overlay suppression.
+
+The supported MinGW build passed using `./build.ps1 -PreserveSubmodules`, which
+verifies initialized dependency pins and avoids checkout/clean operations.
+The pre-existing RecompFrontend files were byte-identical after the builds.
+A separate pinned RT64 worktree replayed all nine Windows RT64 patches; all 31
+changed/new files matched the active patched source byte-for-byte. The replay
+did not reset the active dependency checkouts. ROM-derived captures, ROM data,
+generated game/RSP output and local review records stay ignored.
+
+All 47 project CTests and 84 Python tests passed, together with scoped Ruff,
+documentation and whitespace checks. The real RTX 3080 D3D12 probe passed
+9,189 checks with the debug layer enabled and no errors. The two-triangle AS
+used 2,816 bytes plus 2,304 scratch bytes; its synthetic mean GPU costs were
+53.862 microseconds for AS work and 13.773 microseconds for the query/composition
+kernel. These tiny-fixture measurements are not game performance evidence.
+The default headless `harness-smoke-pxuf3noq` and render-capture-disabled
+windowed `rt-stationary-camera-81_3l5px` also passed 600/600 input frames and
+601 swaps each. The host frontend tests used physical-controller isolation
+from [testing](testing.md); gameplay captures retained normal input handling.
+
+There is still no production game AS, receiver, setting or overlay replacement.
+Hard/soft game shadows, self-shadow bias, resource failure, resize/lifecycle
+and representative-resolution GPU cost remain unvalidated. All game scenes
+retain native shadows. Unvalidated backends remain native; visible submitted
+geometry is not offscreen caster coverage. PR #279 remains draft and #278 open.
+
 ## Next-session prompt
 
 ~~~text

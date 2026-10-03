@@ -332,6 +332,9 @@ def inspect(directory: Path, sequence: int, include_geometry: bool = False,
     shade = list(struct.iter_unpack("<4f", shade_bytes))
     if any(render["native"][key] != meta[key] for key in ("epoch", "sequence", "root", "phase", "circuit", "players")):
         raise CaptureError("native task/workload mismatch")
+    for key in ("race_mode", "model_cursors"):
+        if render["native"].get(key) != meta.get(key):
+            raise CaptureError("native scene selectors differ from matching Workload")
     native_faces = defaultdict(list)
     for draw in native["draws"]:
         state = draw["state"]

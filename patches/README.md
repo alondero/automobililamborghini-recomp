@@ -101,6 +101,14 @@ issue was opened. The patch applies cleanly to the pinned RT64 tree after
 0025 as the latest idempotence guard before skipping or replaying the RT64 patch
 series.
 
+For an initialized Windows checkout with local dependency edits, use
+`./build.ps1 -PreserveSubmodules`. It verifies recursive dependency pins and
+skips checkout/clean operations. Like CMake, it recognizes 0025 before
+revisiting earlier RT64 patches whose contexts have changed. The continuation
+replayed the nine Windows RT64 patches in a separate clean pinned worktree:
+all 31 modified/new files matched the active patched dependency byte-for-byte.
+No patch content or dependency pin changed in that continuation.
+
 | Build path | Applies |
 | --- | --- |
 | Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0025 in CMake. |

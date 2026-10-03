@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the stationary Circuit 1 diagnostic; this is not an RT eligibility gate."""
+"""Check a stationary circuit's native light; this is not an RT eligibility gate."""
 from __future__ import annotations
 
 import argparse
@@ -14,6 +14,12 @@ def compare_stationary(reports):
     if len(reports) != 4 or {r["task"]["sequence"] for r in reports} != {60, 300, 420, 540}:
         raise CaptureError("expected the four sampled tasks: 60, 300, 420, 540")
     players = reports[0]["task"]["players"]
+    circuit = reports[0]["task"]["circuit"]
+    # Older local schema-2 captures lack these additive scene fields. They can
+    # still establish camera independence, but cannot prove mode/model identity.
+    scene = {key: reports[0]["task"].get(key) for key in ("race_mode", "model_cursors")}
+    if type(circuit) is not int or not 0 <= circuit < 6:
+        raise CaptureError("unknown circuit in stationary light observations")
     if players not in (1, 2):
         raise CaptureError("stationary fixture supports one or two players")
     reference_model = reference_lights = None
@@ -21,8 +27,10 @@ def compare_stationary(reports):
     headings = {slot: set() for slot in range(1, players + 1)}
     for report in reports:
         task = report["task"]
-        if task["phase"] != 8 or task["circuit"] != 0 or task["players"] != players:
-            raise CaptureError("tasks do not share the Circuit 1 race phase/player count")
+        if task["phase"] != 8 or task["circuit"] != circuit or task["players"] != players:
+            raise CaptureError("tasks do not share the race phase/circuit/player count")
+        if any(task.get(key) != value for key, value in scene.items()):
+            raise CaptureError("tasks do not share race mode/model selection")
         for slot in headings:
             camera = next((c for c in task["cameras"] if c["slot"] == slot), None)
             if not camera:
@@ -66,6 +74,8 @@ def compare_stationary(reports):
     key = reference_lights[0]
     length = math.sqrt(sum(v * v for v in key))
     return {"task_sequences": sorted(r["task"]["sequence"] for r in reports), "players": players,
+            "circuit": circuit,
+            **scene,
             "headings": {slot: sorted(values) for slot, values in headings.items()},
             "body_model": reference_model, "native_directional_vectors": reference_lights,
             "unit_key_direction": [v / length for v in key],

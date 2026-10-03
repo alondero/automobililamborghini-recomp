@@ -28,6 +28,9 @@ struct TaskSunProbe {
     int16_t circuit = -1;
     int16_t players = 0;
     std::array<std::optional<SunArt>, 4> cameras;
+    int16_t race_mode = -1; // USA menu/race mode; 0=time trial, 2=single race.
+    // Native model-selection cursors, not physical object IDs or categories.
+    std::array<int16_t, 4> model_cursors{};
     struct EmitterSpan {
         uint32_t emitter = 0; // Runtime entry PC, not a material classification.
         uint32_t begin = 0; // Guest display-list cursor, inclusive.
@@ -73,6 +76,9 @@ private:
     uint64_t sequence_ = 0;
     int16_t phase_ = -1;
     int16_t circuit_ = -1;
+    int16_t players_ = -1;
+    int16_t race_mode_ = -1;
+    std::array<int16_t, 4> model_cursors_{};
 };
 
 bool physical_car_object(const std::vector<TaskSunProbe::ObjectIdentity>& objects, uint32_t object_id);
