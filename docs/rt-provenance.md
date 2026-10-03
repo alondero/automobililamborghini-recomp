@@ -211,7 +211,7 @@ Offline annotation reads the same snapshot, never live RAM:
 
 | Field | USA layout | Width/meaning |
 | --- | --- | --- |
-| Native object | `0x800B69A8 + index * 0x10C` | flags u16 +0, list u32 +8, parent s16 +`0x58`; observation budget 128 objects |
+| Native object | `0x800B69A8 + index * 0x10C` | flags u16 +0, list u32 +8, constructor kind s16 +`0x0E`, parent s16 +`0x58`; observation budget 128 objects |
 | Track header pointer | `0x80098238` | u32; header +4/+8 bound 20-byte PVS rows |
 | Segment-record pointer | `0x800BF1D0` | u32; 64-byte records with u32 road/wall/scenery lists |
 | Lights | F3DEX MoveMem pointer | RGB u8 +0..2; directional signed bytes +8..10; MoveWord supplies count, followed by ambient |

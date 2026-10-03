@@ -32,6 +32,14 @@ bool physical_car_object(const std::vector<TaskSunProbe::ObjectIdentity>& object
     return false;
 }
 
+bool procedural_world_object(const TaskSunProbe::ObjectIdentity& object) {
+    // The native world builder's 0x800 branch emits tiled geometry directly,
+    // so this measured kind has no child display-list pointer. Other kinds or
+    // flag combinations remain unknown; material admission is a separate gate.
+    // Constructor/dispatch and all-circuit observations: docs/rt-material-evidence.md.
+    return object.flags == 0xC01u && object.list == 0 && object.parent == -1 && object.kind == 13;
+}
+
 namespace {
 constexpr uint32_t first_task = 0x800BF240u;
 constexpr uint32_t task_stride = 0x7A50u;
@@ -51,6 +59,10 @@ constexpr uint32_t native_bearing_address = 0x800A2FB8u;
 constexpr uint32_t camera_heading_address = 0x800A2F10u;
 constexpr uint32_t camera_height_term_address = 0x800A2F90u;
 constexpr uint32_t native_object_table_address = 0x800B69A8u;
+constexpr uint32_t native_object_stride = 0x10Cu;
+constexpr uint32_t native_object_list_offset = 0x08u;
+constexpr uint32_t native_object_kind_offset = 0x0Eu;
+constexpr uint32_t native_object_parent_offset = 0x58u;
 
 int slot_index(uint32_t task) {
     if (task == first_task) return 0;
@@ -216,9 +228,11 @@ bool TaskSunProbes::snapshot(const uint8_t* rdram, size_t size) {
         // before task publication. Runtime addresses/layout are documented in
         // docs/rt-shadows.md. The copy is small and remains task-owned.
         for (size_t object = 0; object < record.objects.size(); ++object) {
-            const uint32_t at = native_object_table_address + uint32_t(object) * 0x10Cu;
-            record.objects[object] = {read<uint16_t>(rdram, at), read<uint32_t>(rdram, at + 8),
-                read<int16_t>(rdram, at + 0x58)};
+            const uint32_t at = native_object_table_address + uint32_t(object) * native_object_stride;
+            record.objects[object] = {read<uint16_t>(rdram, at),
+                read<uint32_t>(rdram, at + native_object_list_offset),
+                read<int16_t>(rdram, at + native_object_parent_offset),
+                read<int16_t>(rdram, at + native_object_kind_offset)};
         }
         record.objects_complete = true;
         copied = true;

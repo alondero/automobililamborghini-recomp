@@ -42,6 +42,16 @@ int main() {
         require(!lambo::rt::physical_car_object(cyclic_objects, 0), "parent cycle admitted as physical car");
         std::vector<lambo::rt::TaskSunProbe::ObjectIdentity> negative_root{{0, 0, -144}};
         require(!lambo::rt::physical_car_object(negative_root, 0), "negative root sentinel admitted as a car");
+        const lambo::rt::TaskSunProbe::ObjectIdentity procedural{0xC01, 0, -1, 13};
+        require(lambo::rt::procedural_world_object(procedural), "native procedural world role not identified");
+        for (unsigned field = 0; field < 4; ++field) {
+            auto unknown = procedural;
+            if (field == 0) unknown.flags = 0x801;
+            if (field == 1) unknown.list = 0x80100000u;
+            if (field == 2) unknown.parent = 0;
+            if (field == 3) unknown.kind = 12;
+            require(!lambo::rt::procedural_world_object(unknown), "unknown procedural identity admitted");
+        }
         std::vector<uint8_t> ram(0x800000);
         lambo::rt::TaskSunProbes probes;
         auto begin = [&](uint32_t task, int16_t phase = 8, int16_t circuit = 0) {
@@ -203,16 +213,19 @@ int main() {
         write(ram, 0x800B69A8u, uint16_t(0x42));
         write(ram, 0x800B69B0u, uint32_t(0x8013D3C8u));
         write(ram, 0x800B6A00u, int16_t(7));
+        write(ram, 0x800B69B6u, int16_t(13));
         for (unsigned i = 0; i < 59; ++i) {
             require(compactSnapshots.begin(ram.data(), ram.size()), "compact snapshot sampling setup failed");
         }
         require(compactSnapshots.begin(ram.data(), ram.size()), "compact snapshot begin rejected");
         require(compactSnapshots.snapshot(ram.data(), ram.size()), "compact producer metadata rejected");
         write(ram, 0x800B69A8u, uint16_t(0));
+        write(ram, 0x800B69B6u, int16_t(-1));
         const auto compact = compactSnapshots.take(0x800BF400u);
         require(compact && compact->objects_complete && !compact->native_ram &&
             compact->objects[0].flags == 0x42 && compact->objects[0].list == 0x8013D3C8u &&
-            compact->objects[0].parent == 7, "object identity was not copied into the task value");
+            compact->objects[0].parent == 7 && compact->objects[0].kind == 13,
+            "object identity was not copied into the task value");
         lambo::rt::TaskSunProbes sceneSelections;
         write(ram, 0x800CE6B4u, int16_t(0));
         write(ram, 0x800CE7E8u, int16_t(3));

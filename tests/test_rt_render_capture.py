@@ -9,7 +9,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from check_rt_overlay_capture import filter_taps, inside
-from check_rt_render_capture import (area, belongs_to_physical_car, opaque_coverage, receiver_material, validate_overlay_count,
+from check_rt_render_capture import (area, belongs_to_physical_car, opaque_coverage, procedural_world_object, receiver_material, validate_overlay_count,
                                      screen_face, topology, uncovered_area, validate_draw_metadata, validate_pair,
                                      validate_shadow_admission)
 from inspect_rt_task import CaptureError
@@ -23,6 +23,16 @@ def material() -> dict:
 
 
 class MaterialTests(unittest.TestCase):
+    def test_procedural_world_role_requires_the_complete_native_identity(self):
+        obj = {"flags": 0xC01, "list": 0, "parent": -1, "kind": 13}
+        self.assertTrue(procedural_world_object(obj))
+        for field, value in (("flags", 0x801), ("list", 0x80100000), ("parent", 0), ("kind", 12)):
+            with self.subTest(field=field):
+                self.assertFalse(procedural_world_object(dict(obj, **{field: value})))
+                incomplete = dict(obj)
+                incomplete.pop(field)
+                self.assertFalse(procedural_world_object(incomplete))
+
     def test_physical_car_components_follow_authenticated_parent_chain(self):
         objects = [{"flags": 0x9, "parent": -1}, {"flags": 0x26, "parent": 0}]
         self.assertTrue(belongs_to_physical_car({"index": 0}, objects))

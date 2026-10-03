@@ -19,6 +19,14 @@ SCENE_SELECTOR_FIELDS = (("phase", 0x800CE6AC), ("circuit", 0x800CE794),
                          ("players", 0x800CE6A4), ("race_mode", 0x800CE6B4))
 MODEL_CURSOR_ADDRESS = 0x800CE7E8
 MODEL_CURSOR_STRIDE = 2
+# USA native object layout; producer-owned snapshot and field evidence are in
+# docs/rt-provenance.md. Kind is a signed constructor discriminator, not a role
+# inferred from the object's current material.
+OBJECT_TABLE_ADDRESS = 0x800B69A8
+OBJECT_STRIDE = 0x10C
+OBJECT_LIST_OFFSET = 0x08
+OBJECT_KIND_OFFSET = 0x0E
+OBJECT_PARENT_OFFSET = 0x58
 
 
 class CaptureError(ValueError):
@@ -340,10 +348,11 @@ class TaskInspector:
                 index = group & 0xFFFF
                 # An observation budget, not a claim about the native capacity.
                 if index < 128:
-                    address = 0x800B69A8 + index * 0x10C
+                    address = OBJECT_TABLE_ADDRESS + index * OBJECT_STRIDE
                     draw["native_object"] = {"index": index, "address": address,
-                        "flags": self.read(address, "H"), "list": self.read(address + 8, "I"),
-                        "parent": self.read(address + 0x58, "h")}
+                        "flags": self.read(address, "H"), "list": self.read(address + OBJECT_LIST_OFFSET, "I"),
+                        "kind": self.read(address + OBJECT_KIND_OFFSET, "h"),
+                        "parent": self.read(address + OBJECT_PARENT_OFFSET, "h")}
 
 
 def main():

@@ -200,7 +200,43 @@ requires all rejected and unclassified lists to be empty before accepting a
 Physical-car classification follows the copied native parent chain with a
 table-size traversal bound, so child meshes inherit the authenticated car
 identity. A self-parent or cycle cannot loop indefinitely. The remaining
-unrecognized root object's caster policy is still unknown.
+unrecognized root object was subsequently traced as described below.
+
+### Procedural world-object identity
+
+The parentless `flags=0xC01`, list-zero object takes the native world builder's
+procedural path. At runtime `0x8000C30C`, flag `0x800` selects `0x8000C370`;
+this branch emits tiled vertices and triangles through `0x80044FDC`, instead of
+loading the object list at `0x8000C360`. The native constructor stores its
+signed kind at record +`0x0E` (`0x80011680`); it is 13 for this object. A zero
+list pointer is therefore expected for this measured kind.
+
+All 48 producer-owned task snapshots in the stationary six-circuit by two-mode
+matrix were checked. Where this object is present, flags, list, kind and parent
+are `0xC01`, zero, 13 and -1. It occupies object 4 in time trial and object 19 in
+single race. Each such presented task has 24 ranges containing 48 triangles.
+The Circuit 1 owner map assigns 2,390 source pixels to these draws; their
+presented world transforms and native source geometry agree. The object is
+absent from the rear-view task 300 on Circuits 1, 2 and 6. No role is inferred
+for an absent object or a different kind/flag/parent/list combination.
+
+The compact producer snapshot now carries kind alongside flags, list and
+parent. HLE uses that task-owned value to classify this procedural physical
+world role; workers do not read guest RAM. This classification does not bypass
+material admission. Its measured opaque/fog material passes the existing gate;
+unsupported materials and the other unclassified draws still keep the Workload
+incomplete. Geometry, RAM, owner maps and the matrix details remain under ignored
+artifact paths. This is evidence about submitted geometry, with no offscreen
+caster-coverage claim.
+
+A fresh Circuit 1 time-trial replay completed 600/600 frames and 601 swaps.
+All four task pairs passed native/presented validation. Task 60 now has 116
+admitted ranges, 34 rejected material ranges and 318 unclassified draws, with no
+unknown object-role range. The updated baseline is byte-identical to the prior
+native image; the four owner differentials still attribute all 349,048 VI taps
+of 87,262 changed RGB pixels. The preserving supported Windows build, two
+focused CTests, 86 Python tests, scoped Ruff, documentation and whitespace checks
+passed. No production ray-query draw was added by this classification change.
 
 Capture metadata keeps indexed face ranges separate from non-indexed
 projections. Perspective/orthographic calls report their face-index start and

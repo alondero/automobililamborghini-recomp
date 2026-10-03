@@ -127,6 +127,7 @@ nonfinite height are rejected. This narrow diagnostic is not a world-light API.
 | Art bearing | `0x800A2FB8` | s16 degrees |
 | Camera heading | `0x800A2F10 + 2 * camera slot` | s16 degrees |
 | Vertical art term | `0x800A2F90` | float camera-derived screen term |
+| Native objects | `0x800B69A8 + index * 0x10C` | flags u16 +0, list u32 +8, constructor kind s16 +`0x0E`, parent s16 +`0x58`; 128 copied identities |
 
 Hooks at `0x8000102C` in `BootLoadInitialAssets` and `0x80002560` in
 `func_800030F8` begin records after native slot/list selection. `0x80035C54`

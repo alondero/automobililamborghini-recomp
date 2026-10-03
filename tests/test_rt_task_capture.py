@@ -79,6 +79,18 @@ class TaskCaptureTests(unittest.TestCase):
         with self.assertRaises(CaptureError):
             self.inspect()
 
+    def test_procedural_object_kind_is_read_from_task_owned_ram(self):
+        self.triangle_list()
+        self.commands(self.root, [(0x6400000C, 0x10020004), (1, 0xFFFFFFFF),
+                                 (0x06000000, 0x80100000), (0xB8000000, 0)])
+        address = 0x800B69A8 + 4 * 0x10C
+        for offset, fmt, value in ((0, "H", 0xC01), (8, "I", 0),
+                                   (0xE, "h", 13), (0x58, "h", -1)):
+            self.write(address + offset, fmt, value)
+        observed = self.inspect()["draws"][0]["native_object"]
+        self.assertEqual(observed, {"index": 4, "address": address, "flags": 0xC01,
+                                    "list": 0, "kind": 13, "parent": -1})
+
     def test_light_and_transform_are_captured_when_vertices_load(self):
         self.triangle_list()
         # Row-vector matrix: identity plus a fractional world translation.

@@ -43,6 +43,7 @@ struct TaskSunProbe {
         uint16_t flags = 0;
         uint32_t list = 0;
         int16_t parent = -1;
+        int16_t kind = 0; // USA native constructor discriminator, not a material.
     };
     // Compact producer-owned object table authenticates the native car-child
     // overlay and its physical-car caster ancestry. It replaces an unsafe
@@ -82,6 +83,7 @@ private:
 };
 
 bool physical_car_object(const std::vector<TaskSunProbe::ObjectIdentity>& objects, uint32_t object_id);
+bool procedural_world_object(const TaskSunProbe::ObjectIdentity& object);
 bool presented_object_id(uint32_t matrix_id, uint32_t& object_id);
 std::optional<TaskSunProbe> consume_sun_probe(uint32_t dl_address);
 

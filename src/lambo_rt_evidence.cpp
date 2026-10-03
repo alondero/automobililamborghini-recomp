@@ -313,10 +313,14 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
         for (const auto& object : objects) {
             const uint32_t flags = object.at("flags").get<uint32_t>();
             const int parent = object.at("parent").get<int>();
+            const int kind = object.at("kind").get<int>();
             if (flags > std::numeric_limits<uint16_t>::max() ||
                 parent < std::numeric_limits<int16_t>::min() ||
-                parent > std::numeric_limits<int16_t>::max()) return {};
-            object_identities.push_back({uint16_t(flags), object.at("list").get<uint32_t>(), int16_t(parent)});
+                parent > std::numeric_limits<int16_t>::max() ||
+                kind < std::numeric_limits<int16_t>::min() ||
+                kind > std::numeric_limits<int16_t>::max()) return {};
+            object_identities.push_back({uint16_t(flags), object.at("list").get<uint32_t>(),
+                int16_t(parent), int16_t(kind)});
         }
 
         // Each circuit keeps its own measured policy entry even where the
@@ -445,6 +449,7 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
                     const bool world_builder = object_id == 0 && flags == 0x601u &&
                         object.at("list").get<uint32_t>() != 0;
                     const bool physical_car = physical_car_object(object_identities, object_id);
+                    const bool procedural_world = procedural_world_object(object_identities[object_id]);
                     const bool overlay_material = count == 48 && call.otherMode.L == 0xC8104A50u &&
                         (call.colorCombiner.L & 0xFFFFFFu) == 0x11FFFFu &&
                         call.colorCombiner.H == 0xFFFFF238u && (call.geometryMode & ~0x800000u) == 0x12005u;
@@ -460,7 +465,7 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
                         ++overlay_calls;
                         continue;
                     }
-                    if (!world_builder && !physical_car) {
+                    if (!world_builder && !physical_car && !procedural_world) {
                         mark_unclassified(first, count, call.callIndex, UnclassifiedObjectRole,
                             uint32_t(projection.type));
                         continue;
@@ -522,7 +527,8 @@ void RenderEvidence::remember(uint64_t id, const std::optional<TaskSunProbe>& ta
     try {
         Json objects = Json::array();
         for (const auto& object : task->objects) {
-            objects.push_back({{"flags", object.flags}, {"list", object.list}, {"parent", object.parent}});
+            objects.push_back({{"flags", object.flags}, {"list", object.list},
+                {"parent", object.parent}, {"kind", object.kind}});
         }
         std::lock_guard lock(impl_->mutex);
         if (impl_->tasks.count(id)) throw std::runtime_error("duplicate workload mapping");

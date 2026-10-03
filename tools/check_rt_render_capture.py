@@ -45,6 +45,12 @@ def belongs_to_physical_car(obj: dict, objects: list) -> bool:
     return False
 
 
+def procedural_world_object(obj: dict) -> bool:
+    """Measured native tiled-world role; coverage still needs material proof."""
+    return (obj.get("flags") == 0xC01 and obj.get("list") == 0
+            and obj.get("parent") == -1 and obj.get("kind") == 13)
+
+
 def topology(faces: list) -> dict:
     """Diagnostic edge incidence, never a convexity/solidity admission rule.
 
@@ -395,6 +401,8 @@ def inspect(directory: Path, sequence: int, include_geometry: bool = False,
                     roles.add("overlay")
                 elif obj and belongs_to_physical_car(obj, render["native"]["objects"]):
                     roles.add("car")
+                elif obj and procedural_world_object(obj):
+                    roles.add("procedural world")
                 else:
                     roles.update(r["record_slot"] for r in draw["segment_records"])
             if len(roles) != 1:
@@ -430,7 +438,7 @@ def inspect(directory: Path, sequence: int, include_geometry: bool = False,
                 transforms = [render["world_indices"][i] for i in indices]
                 if len(set(transforms)) == 1:
                     car_parts[transforms[0]].append(gpu_world)
-            physical = role in ("car", "road", "walls", "scenery")
+            physical = role in ("car", "road", "walls", "scenery", "procedural world")
             if opaque and physical:
                 casters[role] += 1
             fog_valid = all(type(render["fog_indices"][i]) is int and 0 <= render["fog_indices"][i] <= len(render["fog_params"])
