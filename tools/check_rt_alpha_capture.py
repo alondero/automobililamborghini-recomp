@@ -14,6 +14,9 @@ from check_rt_render_capture import inspect
 
 
 def validate_alpha_results(render: dict, evidence: dict, raw: bytes) -> dict:
+    domain = evidence.get("input_domain", "reprojected_hit")
+    if domain not in ("reprojected_hit", "raster_pixel_center", "raster_pixel_center_double_uv"):
+        raise CaptureError("unsupported native alpha evidence domain")
     extent = evidence.get("target_extent")
     if (not isinstance(extent, list) or len(extent) != 2
             or any(type(value) is not int or not 0 < value <= 4096 for value in extent)
@@ -68,7 +71,7 @@ def validate_alpha_results(render: dict, evidence: dict, raw: bytes) -> dict:
     if observed != expected or any(type(evidence.get(key)) is not int or evidence[key] != value
                                    for key, value in totals.items()):
         raise CaptureError("native alpha face coverage or summary does not match GPU results")
-    return {"faces": len(observed), **totals, "mismatches": mismatches,
+    return {"faces": len(observed), **totals, "mismatches": mismatches, "input_domain": domain,
             "interior_parity": totals["tested_pixels"] > 0 and totals["disagreements"] == 0,
             "complete_face_evidence": totals["unsupported_faces"] == 0 and totals["no_interior_faces"] == 0,
             "alpha_admitted": False, "ray_query": False, "edge_pixels": False}

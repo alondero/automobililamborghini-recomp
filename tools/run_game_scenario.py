@@ -110,9 +110,9 @@ def load_scenario(path: Path) -> dict[str, Any]:
     scenario["expect"] = _dict(scenario.get("expect", {}), "scenario.expect")
     diagnostics = _dict(scenario.get("diagnostics", {}), "scenario.diagnostics")
     if set(diagnostics) - {"rt_sun_probe", "rt_task_capture", "rt_render_capture", "rt_drop_overlay", "rt_owner_buffer",
-                           "rt_native_alpha_check"}:
+                           "rt_native_alpha_check", "rt_native_alpha_exact_pixels", "rt_native_alpha_double_uv"}:
         raise ScenarioError("unsupported scenario diagnostic")
-    for key in ("rt_render_capture", "rt_drop_overlay", "rt_owner_buffer", "rt_native_alpha_check"):
+    for key in ("rt_render_capture", "rt_drop_overlay", "rt_owner_buffer", "rt_native_alpha_check", "rt_native_alpha_exact_pixels", "rt_native_alpha_double_uv"):
         if key in diagnostics and type(diagnostics[key]) is not bool:
             raise ScenarioError(f"scenario.diagnostics.{key} must be boolean")
     if diagnostics.get("rt_render_capture") and not diagnostics.get("rt_task_capture"):
@@ -123,6 +123,10 @@ def load_scenario(path: Path) -> dict[str, Any]:
         raise ScenarioError("rt_owner_buffer requires rt_render_capture")
     if diagnostics.get("rt_native_alpha_check") and not diagnostics.get("rt_render_capture"):
         raise ScenarioError("rt_native_alpha_check requires rt_render_capture")
+    if diagnostics.get("rt_native_alpha_exact_pixels") and not diagnostics.get("rt_native_alpha_check"):
+        raise ScenarioError("rt_native_alpha_exact_pixels requires rt_native_alpha_check")
+    if diagnostics.get("rt_native_alpha_double_uv") and not diagnostics.get("rt_native_alpha_exact_pixels"):
+        raise ScenarioError("rt_native_alpha_double_uv requires rt_native_alpha_exact_pixels")
     if diagnostics.get("rt_drop_overlay") and not diagnostics.get("rt_owner_buffer"):
         raise ScenarioError("rt_drop_overlay requires rt_owner_buffer for receiver-ownership proof")
     if "rt_sun_probe" in diagnostics and not isinstance(diagnostics["rt_sun_probe"], bool):
@@ -236,6 +240,10 @@ def build_environment(scenario: dict[str, Any], runtime: dict[str, Any], artifac
             environment["LAMBO_RT_EVIDENCE_DROP_OVERLAY"] = "1"
         if runtime["diagnostics"].get("rt_native_alpha_check"):
             environment["LAMBO_RT_NATIVE_ALPHA_CHECK"] = "1"
+        if runtime["diagnostics"].get("rt_native_alpha_exact_pixels"):
+            environment["LAMBO_RT_NATIVE_ALPHA_EXACT_PIXELS"] = "1"
+        if runtime["diagnostics"].get("rt_native_alpha_double_uv"):
+            environment["LAMBO_RT_NATIVE_ALPHA_DOUBLE_UV"] = "1"
 
     inputs = runtime["input"]
     if "replay" in inputs:

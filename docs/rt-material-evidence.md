@@ -439,23 +439,43 @@ to 16,384 faces, 4,096 pixels per dimension and 120 MiB of private image targets
 with additional bounded buffers. Unsupported resources/backends reject the
 diagnostic and leave native rendering available.
 
-The first real-game comparison exposed four forward-view and five rear-view
-interior disagreements absent from the synthetic fixtures. UV differences
-crossed the native sampler's 1/128 coordinate quantization boundary and changed
-survival at 1/8 alpha. Preserving homogeneous-W arithmetic alone did not fix
-them. Snapping reduced the errors but did not eliminate them. The diagnostic
-now tests fused float viewport scale/offset and nearest-even 16.8 snapping using
-captured native vertex outputs. Direct3D interpolates from snapped positions;
-its permitted conversion tolerance does not establish identical rounding
-across hardware. [Direct3D specification](https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm).
+The first real-game reconstructed-hit comparison exposed four forward-view and
+five rear-view interior disagreements absent from the synthetic fixtures. UV
+differences crossed the native sampler's 1/128 coordinate quantization boundary
+and changed survival at 1/8 alpha. Preserving homogeneous-W arithmetic alone did
+not fix them. Fused float viewport scale/offset and nearest-even 16.8 snapping
+reduced, but did not eliminate, the errors. Direct3D interpolates from snapped
+positions; its permitted conversion tolerance does not establish identical
+rounding across hardware. [Direct3D specification](https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm).
 
 On RTX 3080/D3D12 at 1708x960, all 574,658 tested interior points in the four
-Circuit 1 time-trial tasks then matched native coverage. The wider six-circuit,
-model-0, one-player time-trial/single-race matrix tested 6,296,058 points over
-7,904 face records and still found eight disagreements: one rear-view point
-per Circuit 2 mode and three forward-view points per Circuit 3 mode. Circuit 2
-includes a reconstructed pixel displacement of roughly 0.00012 pixel; Circuit 3
-retains UV/derivative rounding differences. These failures are preserved.
+Circuit 1 time-trial tasks matched native coverage. In the wider six-circuit,
+model-0, one-player time-trial/single-race matrix, the initial reconstructed-hit
+domain tested 6,296,058 points over 7,904 face records and found eight
+disagreements: one rear-view point per Circuit 2 mode and three forward-view
+points per Circuit 3 mode. Circuit 2 included a reconstructed pixel displacement
+of roughly 0.00012 pixel; Circuit 3 retained UV/derivative rounding differences.
+
+A follow-up diagnostic adds two explicitly labeled raster-sample domains. The
+pixel-center FP32 run removes Circuit 2's errors but retains Circuit 3's. A
+separate shader variant computes perspective UV interpolation and coarse UV
+derivatives in double precision at the actual raster sample center; conversion
+to float occurs before the native texture evaluator. Across all 12
+circuit/mode cases and 48 tasks, this domain tested the same 6,296,058 interior
+points with zero coverage disagreements. All 48 native images and all 48
+presented geometry/material buffer sets match their alpha-diagnostic controls
+byte-for-byte. There are still 1,330 unsupported face records and 3,352 records
+with no tested interior; those counts overlap. The ignored aggregate is
+`artifacts/rt-caster-stage/native-alpha-double-matrix.json`.
+
+This follow-up establishes native material agreement at tested raster pixel
+centers on this D3D12 device. It does not establish the UV/depth values that a
+hardware ray hit would produce, native coverage on triangle edges, unsupported
+face behavior, or another backend. The captured output vertex data and selected
+raster pixels validate this diagnostic input domain; they are not ray-query
+results. No alpha range is admitted and all game Workloads remain native. The
+older failed reconstructed-hit results remain in
+`artifacts/rt-caster-stage/native-alpha-matrix.json` for comparison.
 
 All 48 baseline/diagnostic pairs have identical generated geometry/material
 buffers. Native swapchain bytes match in 47 initial pairs. The first Circuit 1
@@ -476,9 +496,11 @@ disagreements. Host checks authenticate complete result-face identity, extents,
 counters, shader filenames and the presented vertices' clip W. Passing interior
 parity alone does not authorize alpha ranges or replacement.
 
-The preserving supported build, all 49 project CTests and 97 Python tests pass,
-with scoped Ruff, documentation and whitespace checks. Strict comparison passes
-the Circuit 1 interior evidence and rejects the measured Circuit 2 failure.
+The preserving supported build, all 49 project CTests and 98 Python tests pass,
+with scoped Ruff, documentation and whitespace checks. The original
+reconstructed-hit strict comparison passes Circuit 1 and rejects the measured
+Circuit 2 failure; the raster-pixel double-UV domain has zero interior
+disagreements across its measured matrix.
 The twelve-patch pinned replay matches all 39 changed/new RT64 files byte-for-byte.
 All 150 preserved RecompFrontend files remain byte-identical. Generated game/RSP
 code, native shader bytecode, captures and ROM-derived data remain ignored.
@@ -667,17 +689,30 @@ race on Circuits 1-6 in forward/rear views. Workload admission now fails in all
 12 circuit/mode cases. The latest owner/material matrix has zero unclassified
 draws; procedural world identity and explicit screen/backdrop/HUD exclusions are
 authenticated. Alpha and blended car-child ranges still fail admission. Patch
-0029 compares actual native material/shader bindings: 6,296,058 interior points
-across 48 circuit/mode tasks retain eight measured disagreements on Circuits
-2/3, unsupported/clipped faces and untested edges. Diagnose those failures and
-prove real ray-hit policies preserving native alpha, coverage, depth, fog and
-blend behavior. Passing a sampled interior comparison is insufficient. Keep native overlays
-for every incomplete or unsupported Workload. Only after complete presented
-caster and receiver admission, integrate a per-view AS and native-equivalent
-receiver; then add an Original-default setting, exact ready-gated suppression
-and restoration. Test game swapchain pixels, hard parity, softening,
-self-shadow bias, lifecycle, resize, failure and GPU cost. Expand supported
-vehicles, modes, players and validated backends. Keep relighting and offscreen
-caster submission deferred; do not close #278 until its requirements are
-complete. Use finish.
+0029 compares actual native material/shader bindings. The initial
+reconstructed-hit path found eight disagreements among 6,296,058 interior
+points. A separate D3D12 raster-pixel-center path using double-precision
+perspective UV/derivative interpolation now has zero disagreements across the
+same six circuits, modes 0/2, forward/rear views and 48 tasks. Its 48 native
+images and presented buffers are byte-identical to controls. This remains pixel
+center evidence, not real ray-hit proof; 1,330 face records are unsupported and
+3,352 have no tested interior, and edges remain untested. No alpha range is
+admitted. Read the exact limits and artifacts in the game alpha diagnostic
+section. The maintainer confirms cars, light records and camera views are shared
+across race modes; keep authenticating each scene/task epoch and do not infer
+coverage from that confirmation.
+
+Next, determine whether native alpha/coverage behavior can be proven at actual
+hardware ray candidates with a conservative failure bound. Preserve native
+depth, fog and receiver behavior, and fail closed for unsupported/clipped faces,
+edges, blended car children and unknown owners. Do not treat pixel-center
+parity, camera-visible geometry or one vendor as broader proof. Maintain native
+overlay output for every incomplete/unsupported view. Then continue the
+per-view acceleration structure, native receiver, ready-gated suppression and
+restoration, and Original-default setting. Test real swapchain output, hard
+parity, soft shadows, bias, scene changes, resizing, resource failure and GPU
+cost. Expand vehicles, race modes, player counts and real hardware backends.
+Relighting and offscreen caster submission remain deferred. Keep PR #279 draft
+and issue #278 open until requirements are proven. Use finish before genuinely
+completing that larger task; this checkpoint is not feature completion.
 ~~~

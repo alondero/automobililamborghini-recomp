@@ -895,8 +895,12 @@ void RenderEvidence::completed(const RT64::Workload& w, RT64::RenderWorker* work
                 std::vector<RT64::NativeAlphaVertexShaderEvidence> vertex_shaders;
                 std::vector<std::array<float, 4>> native_clip;
                 std::string error;
+                const bool exact_pixels = flag("LAMBO_RT_NATIVE_ALPHA_EXACT_PIXELS");
+                const bool double_uv = exact_pixels && flag("LAMBO_RT_NATIVE_ALPHA_DOUBLE_UV");
                 const bool measured = RT64::CheckNativeAlphaEvidence(worker, *binding.renderer,
-                    binding.framebuffer_index, w, screen_positions, draws, results, vertex_shaders, native_clip, error);
+                    binding.framebuffer_index, w, screen_positions, draws, results, vertex_shaders, native_clip, error,
+                    double_uv ? RT64::NativeAlphaEvidenceDomain::RasterPixelCenterDoubleUV :
+                        (exact_pixels ? RT64::NativeAlphaEvidenceDomain::RasterPixelCenter : RT64::NativeAlphaEvidenceDomain::ReprojectedHit));
                 if (measured) {
                     for (const auto& shader : vertex_shaders) {
                         const std::string shader_suffix = "-native-vs-" + std::to_string(shader.renderIndex) + ".dxil";
@@ -923,6 +927,7 @@ void RenderEvidence::completed(const RT64::Workload& w, RT64::RenderWorker* work
                 if (measured) write_bytes(impl_->path(sequence, clip_suffix.c_str()), native_clip.data(),
                     native_clip.size() * sizeof(native_clip[0]));
                 impl_->report["native_alpha_evidence"].push_back({{"color_address", binding.color_address},
+                    {"input_domain", double_uv ? "raster_pixel_center_double_uv" : (exact_pixels ? "raster_pixel_center" : "reprojected_hit")},
                     {"target_extent", {binding.width, binding.height}},
                     {"measured", measured}, {"error", error}, {"faces", results.size()},
                     {"tested_pixels", tested}, {"native_covered", native_covered},

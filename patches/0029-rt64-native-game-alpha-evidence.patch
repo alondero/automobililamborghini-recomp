@@ -1,21 +1,22 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index c2e3357..9634565 100644
+index c2e3357..468120a 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -24,6 +24,12 @@ function(native_material_dependencies INFILE OUTVAR)
+@@ -24,6 +24,13 @@ function(native_material_dependencies INFILE OUTVAR)
          # diagnostics and dynamically compiled library text. Keep incremental
          # builds from retaining an earlier material/coverage implementation.
          set(${OUTVAR} "${PROJECT_SOURCE_DIR}/src/shaders/NativeMaterial.hlsli" PARENT_SCOPE)
-+    elseif(shader_filename MATCHES "^NativeAlpha(EvidenceCS|InputPS|VerticesGS)\\.hlsl$")
++    elseif(shader_filename MATCHES "^NativeAlpha(EvidenceCS|EvidenceDoubleCS|InputPS|VerticesGS)\\.hlsl$")
 +        set(${OUTVAR} "${PROJECT_SOURCE_DIR}/src/shaders/NativeMaterial.hlsli"
 +            "${PROJECT_SOURCE_DIR}/src/shaders/NativeRayHit.hlsli"
++            "${PROJECT_SOURCE_DIR}/src/shaders/NativeAlphaEvidenceCS.hlsl"
 +            "${PROJECT_SOURCE_DIR}/src/shaders/TextureSampler.hlsli"
 +            "${PROJECT_SOURCE_DIR}/src/shaders/TextureDecoder.hlsli"
 +            "${PROJECT_SOURCE_DIR}/src/shared/rt64_native_alpha_evidence.h" PARENT_SCOPE)
      else()
          set(${OUTVAR} "" PARENT_SCOPE)
      endif()
-@@ -394,6 +400,7 @@ set (SOURCES
+@@ -394,6 +401,7 @@ set (SOURCES
      "${PROJECT_SOURCE_DIR}/src/render/rt64_render_target_manager.cpp"
      "${PROJECT_SOURCE_DIR}/src/render/rt64_render_worker.cpp"
      "${PROJECT_SOURCE_DIR}/src/render/rt64_sun_shadow_scene.cpp"
@@ -23,12 +24,13 @@ index c2e3357..9634565 100644
      "${PROJECT_SOURCE_DIR}/src/render/rt64_rsp_processor.cpp"
      "${PROJECT_SOURCE_DIR}/src/render/rt64_shader_common.cpp"
      "${PROJECT_SOURCE_DIR}/src/render/rt64_shader_compiler.cpp"
-@@ -544,6 +551,11 @@ build_pixel_shader(  rt64 "src/shaders/PostBlendDitherNoisePS.hlsl" "src/shaders
+@@ -544,6 +552,12 @@ build_pixel_shader(  rt64 "src/shaders/PostBlendDitherNoisePS.hlsl" "src/shaders
  build_pixel_shader(  rt64 "src/shaders/PostBlendDitherNoisePS.hlsl" "src/shaders/PostBlendDitherNoiseSubNegativePS.hlsl" "-D SUB_MODE" "-D NEGATIVE_MODE")
  build_compute_shader(rt64 "src/shaders/RSPModifyCS.hlsl")
  build_compute_shader(rt64 "src/shaders/RSPProcessCS.hlsl")
 +if(WIN32)
 +    build_shader_dxil(rt64 "src/shaders/NativeAlphaEvidenceCS.hlsl" "${DXC_CS_OPTS}")
++    build_shader_dxil(rt64 "src/shaders/NativeAlphaEvidenceDoubleCS.hlsl" "${DXC_CS_OPTS}")
 +    build_shader_dxil(rt64 "src/shaders/NativeAlphaInputPS.hlsl" "${DXC_PS_OPTS}")
 +    build_shader_dxil(rt64 "src/shaders/NativeAlphaVerticesGS.hlsl" "${DXC_GS_OPTS}")
 +endif()
@@ -104,10 +106,10 @@ index e2237c2..a6bbe7c 100644
              struct {
 diff --git a/src/render/rt64_native_alpha_evidence.cpp b/src/render/rt64_native_alpha_evidence.cpp
 new file mode 100644
-index 0000000..9a2e1eb
+index 0000000..2239051
 --- /dev/null
 +++ b/src/render/rt64_native_alpha_evidence.cpp
-@@ -0,0 +1,333 @@
+@@ -0,0 +1,346 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 RT64 Contributors
 +#include "rt64_native_alpha_evidence.h"
@@ -121,6 +123,7 @@ index 0000000..9a2e1eb
 +#ifdef _WIN32
 +#include "contrib/plume/plume_d3d12.h"
 +#include "shaders/NativeAlphaEvidenceCS.hlsl.dxil.h"
++#include "shaders/NativeAlphaEvidenceDoubleCS.hlsl.dxil.h"
 +#include "shaders/NativeAlphaInputPS.hlsl.dxil.h"
 +#include "shaders/NativeAlphaVerticesGS.hlsl.dxil.h"
 +#endif
@@ -131,7 +134,7 @@ index 0000000..9a2e1eb
 +        const std::vector<std::array<float, 4>> &screen, const std::vector<uint32_t> &renderIndices,
 +        std::vector<interop::NativeAlphaEvidenceResult> &results,
 +        std::vector<NativeAlphaVertexShaderEvidence> &vertexShaders,
-+        std::vector<std::array<float, 4>> &nativeClip, std::string &error) {
++        std::vector<std::array<float, 4>> &nativeClip, std::string &error, NativeAlphaEvidenceDomain domain) {
 +    results.clear();
 +    vertexShaders.clear();
 +    nativeClip.clear();
@@ -144,10 +147,20 @@ index 0000000..9a2e1eb
 +        const auto require = [](bool value, const char *message) {
 +            if (!value) throw std::runtime_error(message);
 +        };
++        require(domain == NativeAlphaEvidenceDomain::ReprojectedHit || domain == NativeAlphaEvidenceDomain::RasterPixelCenter ||
++            domain == NativeAlphaEvidenceDomain::RasterPixelCenterDoubleUV,
++            "Invalid native alpha evidence domain");
 +        require(worker && worker->device && framebufferIndex < renderer.framebufferCount &&
 +            framebufferIndex < renderer.framebufferVector.size(), "Invalid native alpha evidence binding");
-+        require(dynamic_cast<plume::D3D12Device *>(worker->device) != nullptr,
++        const auto *nativeDevice = dynamic_cast<plume::D3D12Device *>(worker->device);
++        require(nativeDevice != nullptr,
 +            "Native alpha evidence requires the D3D12 diagnostic backend");
++        const bool doubleUV = domain == NativeAlphaEvidenceDomain::RasterPixelCenterDoubleUV;
++        if (doubleUV) {
++            D3D12_FEATURE_DATA_D3D12_OPTIONS options{};
++            require(SUCCEEDED(nativeDevice->d3d->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options, sizeof(options))) &&
++                options.DoublePrecisionFloatShaderOps, "Native alpha double UV interpolation unsupported");
++        }
 +        require(worker->device->getCapabilities().geometryShader, "Native alpha vertex tracing unsupported");
 +        const auto &fb = renderer.framebufferVector[framebufferIndex];
 +        const auto *storage = fb.renderTargetDrawCall.fbStorage;
@@ -186,6 +199,7 @@ index 0000000..9a2e1eb
 +                p.renderIndex = renderIndex;
 +                p.faceStart = face;
 +                p.resultIndex = uint32_t(params.size());
++                p.inputDomain = uint32_t(domain);
 +                p.screenScale = call.triangles.screenScale;
 +                p.screenOffset = call.triangles.screenOffset;
 +                p.viewport = {fb.viewport.x, fb.viewport.y, fb.viewport.width, fb.viewport.height};
@@ -279,7 +293,8 @@ index 0000000..9a2e1eb
 +        layoutBuilder.addPushConstant(0, 4, sizeof(interop::NativeAlphaEvidenceParams), RenderShaderStageFlag::GEOMETRY | RenderShaderStageFlag::COMPUTE);
 +        layoutBuilder.end();
 +        auto layout = layoutBuilder.create(device);
-+        auto shader = device->createShader(NativeAlphaEvidenceCSBlobDXIL, sizeof(NativeAlphaEvidenceCSBlobDXIL),
++        auto shader = device->createShader(doubleUV ? NativeAlphaEvidenceDoubleCSBlobDXIL : NativeAlphaEvidenceCSBlobDXIL,
++            doubleUV ? sizeof(NativeAlphaEvidenceDoubleCSBlobDXIL) : sizeof(NativeAlphaEvidenceCSBlobDXIL),
 +            "CSMain", RenderShaderFormat::DXIL);
 +        require(framebuffer && set && layout && shader, "Native alpha pipeline bindings unavailable");
 +        auto pipeline = device->createComputePipeline(RenderComputePipelineDesc(layout.get(), shader.get(), 8, 8, 1));
@@ -443,10 +458,10 @@ index 0000000..9a2e1eb
 +}
 diff --git a/src/render/rt64_native_alpha_evidence.h b/src/render/rt64_native_alpha_evidence.h
 new file mode 100644
-index 0000000..e59bfc2
+index 0000000..f38a959
 --- /dev/null
 +++ b/src/render/rt64_native_alpha_evidence.h
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,33 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 RT64 Contributors
 +#pragma once
@@ -459,6 +474,7 @@ index 0000000..e59bfc2
 +struct RenderWorker;
 +struct FramebufferRenderer;
 +struct Workload;
++enum class NativeAlphaEvidenceDomain : uint32_t { ReprojectedHit = 0, RasterPixelCenter = 1, RasterPixelCenterDoubleUV = 2 };
 +
 +struct NativeAlphaVertexShaderEvidence {
 +    uint32_t renderIndex = 0;
@@ -476,7 +492,8 @@ index 0000000..e59bfc2
 +    const std::vector<std::array<float, 4>> &screen, const std::vector<uint32_t> &renderIndices,
 +    std::vector<interop::NativeAlphaEvidenceResult> &results,
 +    std::vector<NativeAlphaVertexShaderEvidence> &vertexShaders,
-+    std::vector<std::array<float, 4>> &nativeClip, std::string &error);
++    std::vector<std::array<float, 4>> &nativeClip, std::string &error,
++    NativeAlphaEvidenceDomain domain = NativeAlphaEvidenceDomain::ReprojectedHit);
 +}
 diff --git a/src/render/rt64_raster_shader.cpp b/src/render/rt64_raster_shader.cpp
 index 857a02a..39d3418 100644
@@ -569,10 +586,10 @@ index c585c9d..d6b7b27 100644
          // Called after a successful swap and its GPU fence, before image reuse.
 diff --git a/src/shaders/NativeAlphaEvidenceCS.hlsl b/src/shaders/NativeAlphaEvidenceCS.hlsl
 new file mode 100644
-index 0000000..226e9b8
+index 0000000..181f90e
 --- /dev/null
 +++ b/src/shaders/NativeAlphaEvidenceCS.hlsl
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,92 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 RT64 Contributors
 +#define NATIVE_HIT_D3D12_SNAP_PROBE
@@ -614,7 +631,7 @@ index 0000000..226e9b8
 +    NativeHitAttributes centerAttributes;
 +    if (!NativeRayCoverageInputsSupported(rp, shade) ||
 +        !NativeRayHitAttributes(rp, float3(1.0f/3, 1.0f/3, 1.0f/3), screen, uv, shade,
-+            Params.viewport, Params.screenScale, Params.screenOffset, clip, centerAttributes)) {
++            Params.viewport, Params.screenScale, Params.screenOffset, clip, 0, false, centerAttributes)) {
 +        if (all(id.xy == 0)) InterlockedAdd(Results[Params.resultIndex].unsupported, 1);
 +        return;
 +    }
@@ -629,7 +646,8 @@ index 0000000..226e9b8
 +    worldBary /= dot(worldBary, 1.0f);
 +    NativeHitAttributes attributes;
 +    if (!NativeRayHitAttributes(rp, worldBary, screen, uv, shade,
-+        Params.viewport, Params.screenScale, Params.screenOffset, clip, attributes)) {
++        Params.viewport, Params.screenScale, Params.screenOffset, clip, float2(pixel) + 0.5f,
++        Params.inputDomain != 0, attributes)) {
 +        InterlockedAdd(Results[Params.resultIndex].unsupported, 1);
 +        return;
 +    }
@@ -664,6 +682,16 @@ index 0000000..226e9b8
 +        }
 +    }
 +}
+diff --git a/src/shaders/NativeAlphaEvidenceDoubleCS.hlsl b/src/shaders/NativeAlphaEvidenceDoubleCS.hlsl
+new file mode 100644
+index 0000000..259a7dc
+--- /dev/null
++++ b/src/shaders/NativeAlphaEvidenceDoubleCS.hlsl
+@@ -0,0 +1,4 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#define NATIVE_HIT_D3D12_DOUBLE_UV
++#include "NativeAlphaEvidenceCS.hlsl"
 diff --git a/src/shaders/NativeAlphaInputPS.hlsl b/src/shaders/NativeAlphaInputPS.hlsl
 new file mode 100644
 index 0000000..6435508
@@ -721,10 +749,10 @@ index 0000000..8164b13
 +    }
 +}
 diff --git a/src/shaders/NativeRayHit.hlsli b/src/shaders/NativeRayHit.hlsli
-index 7f3c1b8..0e7078f 100644
+index 7f3c1b8..6d4c4ec 100644
 --- a/src/shaders/NativeRayHit.hlsli
 +++ b/src/shaders/NativeRayHit.hlsli
-@@ -42,6 +42,13 @@ float3 NativeScreenBarycentric(float2 pixel, float2 a, float2 b, float2 c, float
+@@ -42,6 +42,31 @@ float3 NativeScreenBarycentric(float2 pixel, float2 a, float2 b, float2 c, float
      return float3(1 - y - z, y, z);
  }
  
@@ -735,20 +763,38 @@ index 7f3c1b8..0e7078f 100644
 +}
 +#endif
 +
++#if defined(NATIVE_HIT_D3D12_DOUBLE_UV)
++bool NativeHitDoubleUV(float2 pixel, float2 positions[3], float3 w, float2 uv[3], out float2 result) {
++    double2 b = double2(positions[1]) - double2(positions[0]);
++    double2 c = double2(positions[2]) - double2(positions[0]);
++    double2 delta = double2(pixel) - double2(positions[0]);
++    double determinant = b.x * c.y - b.y * c.x;
++    if (determinant == 0.0) { result = 0; return false; }
++    double y = (delta.x * c.y - delta.y * c.x) / determinant;
++    double z = (b.x * delta.y - b.y * delta.x) / determinant;
++    double3 weights = double3(1.0 - y - z, y, z) / double3(w);
++    double divisor = weights.x + weights.y + weights.z;
++    if (divisor <= 1e-8) { result = 0; return false; }
++    result = float2((weights.x * double2(uv[0]) + weights.y * double2(uv[1]) +
++        weights.z * double2(uv[2])) / divisor);
++    return all(isfinite(result));
++}
++#endif
++
  // Reconstruct the generated raster attributes at a world-space triangle hit.
  // Input positions are RSPProcessCS output, not guest vertices or live transforms.
  // viewport and scale/offset are the exact displayed draw's RasterVS values.
-@@ -51,6 +58,9 @@ float3 NativeScreenBarycentric(float2 pixel, float2 a, float2 b, float2 c, float
+@@ -51,6 +76,9 @@ float3 NativeScreenBarycentric(float2 pixel, float2 a, float2 b, float2 c, float
  bool NativeRayHitAttributes(RenderParams rp, float3 worldBarycentric,
      float4 screen[3], float2 uv[3], float4 shade[3],
      float4 viewport, float2 screenScale, float2 screenOffset,
 +#if defined(NATIVE_HIT_D3D12_SNAP_PROBE)
-+    float4 nativeClip[3],
++    float4 nativeClip[3], float2 rasterSample, bool useRasterSample,
 +#endif
      out NativeHitAttributes attributes)
  {
      attributes = (NativeHitAttributes)0;
-@@ -60,14 +70,26 @@ bool NativeRayHitAttributes(RenderParams rp, float3 worldBarycentric,
+@@ -60,14 +88,26 @@ bool NativeRayHitAttributes(RenderParams rp, float3 worldBarycentric,
          !all(isfinite(screenScale)) || !all(isfinite(screenOffset)) ||
          any(FbParams.resolution <= 0)) return false;
      float2 pixel[3];
@@ -775,10 +821,15 @@ index 7f3c1b8..0e7078f 100644
      }
      float determinant = NativeCross2(pixel[1] - pixel[0], pixel[2] - pixel[0]);
      if (!isfinite(determinant) || abs(determinant) < 1e-8f) return false;
-@@ -80,6 +102,18 @@ bool NativeRayHitAttributes(RenderParams rp, float3 worldBarycentric,
+@@ -80,6 +120,23 @@ bool NativeRayHitAttributes(RenderParams rp, float3 worldBarycentric,
      float3 screenBarycentric = worldBarycentric * w / hitW;
      float2 hitPixel = screenBarycentric.x * pixel[0] + screenBarycentric.y * pixel[1] +
          screenBarycentric.z * pixel[2];
++#if defined(NATIVE_HIT_D3D12_SNAP_PROBE)
++    // Native-pixel evidence isolates interpolation from hit reprojection.
++    // This override cannot authenticate a ray hit or authorize admission.
++    if (useRasterSample) hitPixel = rasterSample;
++#endif
 +    float3 attributeWeights = worldBarycentric;
 +#if defined(NATIVE_HIT_D3D12_SNAP_PROBE)
 +    // Diagnostic hypothesis only: D3D raster interpolation setup uses snapped
@@ -794,12 +845,20 @@ index 7f3c1b8..0e7078f 100644
      float2 quad = floor(hitPixel / 2) * 2 + 0.5f;
      float3 weights[3];
      weights[0] = NativeScreenBarycentric(quad, pixel[0], pixel[1], pixel[2], determinant) / w;
-@@ -92,10 +126,10 @@ bool NativeRayHitAttributes(RenderParams rp, float3 worldBarycentric,
+@@ -91,11 +148,18 @@ bool NativeRayHitAttributes(RenderParams rp, float3 worldBarycentric,
+         if (!isfinite(divisor) || divisor <= 1e-8f) return false;
          weights[j] /= divisor;
          quadUV[j] = weights[j].x * uv[0] + weights[j].y * uv[1] + weights[j].z * uv[2];
++#if defined(NATIVE_HIT_D3D12_DOUBLE_UV)
++        float2 location = quad + (j == 1 ? float2(1, 0) : (j == 2 ? float2(0, 1) : 0));
++        if (!NativeHitDoubleUV(location, pixel, w, uv, quadUV[j])) return false;
++#endif
      }
 -    attributes.uv = worldBarycentric.x * uv[0] + worldBarycentric.y * uv[1] + worldBarycentric.z * uv[2];
 +    attributes.uv = attributeWeights.x * uv[0] + attributeWeights.y * uv[1] + attributeWeights.z * uv[2];
++#if defined(NATIVE_HIT_D3D12_DOUBLE_UV)
++    if (!NativeHitDoubleUV(hitPixel, pixel, w, uv, attributes.uv)) return false;
++#endif
      attributes.dx = quadUV[1] - quadUV[0];
      attributes.dy = quadUV[2] - quadUV[0];
 -    attributes.shade = worldBarycentric.x * shade[0] + worldBarycentric.y * shade[1] + worldBarycentric.z * shade[2];
@@ -809,7 +868,7 @@ index 7f3c1b8..0e7078f 100644
          float3(screen[0].z, screen[1].z, screen[2].z)), 1 / hitW);
 diff --git a/src/shared/rt64_native_alpha_evidence.h b/src/shared/rt64_native_alpha_evidence.h
 new file mode 100644
-index 0000000..b0d75b4
+index 0000000..46c87ea
 --- /dev/null
 +++ b/src/shared/rt64_native_alpha_evidence.h
 @@ -0,0 +1,25 @@
@@ -821,7 +880,7 @@ index 0000000..b0d75b4
 +namespace interop {
 +#endif
 +struct NativeAlphaEvidenceParams {
-+    uint renderIndex, faceStart, resultIndex, reserved;
++    uint renderIndex, faceStart, resultIndex, inputDomain;
 +    float2 screenScale, screenOffset;
 +    float4 viewport;
 +    int4 testRect;

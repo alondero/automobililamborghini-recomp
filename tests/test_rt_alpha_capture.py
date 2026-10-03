@@ -51,6 +51,17 @@ class NativeAlphaCaptureTests(unittest.TestCase):
                 with self.assertRaises(CaptureError):
                     validate_alpha_results(self.render, evidence, self.raw(records))
 
+    def test_native_pixel_domain_cannot_be_misrepresented_as_ray_evidence(self):
+        for domain in ("raster_pixel_center", "raster_pixel_center_double_uv"):
+            self.evidence["input_domain"] = domain
+            result = validate_alpha_results(self.render, self.evidence, self.raw())
+            self.assertEqual(result["input_domain"], domain)
+            self.assertFalse(result["ray_query"])
+            self.assertFalse(result["alpha_admitted"])
+        self.evidence["input_domain"] = "authenticated_ray_hit"
+        with self.assertRaises(CaptureError):
+            validate_alpha_results(self.render, self.evidence, self.raw())
+
     def test_gpu_disagreement_requires_a_bounded_pixel_and_matching_counts(self):
         self.records[0][4:8] = [7, 1, 0, 19]
         self.evidence.update(evaluated_covered=15, disagreements=1)

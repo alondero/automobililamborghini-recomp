@@ -39,9 +39,12 @@ Game texture/attribute bindings and admission are still pending. See
 
 [Patch 0029](../patches/0029-rt64-native-game-alpha-evidence.patch) tests actual
 game bindings and selected native vertex outputs in isolated D3D12 triangle
-passes. The six-circuit/mode matrix still finds eight disagreements among
-6,296,058 tested interior points. Edge pixels, unsupported inputs and real game
-ray candidates remain unproved; the diagnostic grants no admission. See
+passes. The initial reconstructed-hit comparison found eight disagreements among
+6,296,058 tested interior points. A follow-up exact-raster-pixel comparison
+using double-precision UV interpolation removes those interior disagreements in
+all 12 circuit/mode cases. This still does not prove real ray-hit or edge
+coverage: 1,330 face records are unsupported and 3,352 have no interior sample.
+The diagnostic grants no admission. See
 [game alpha evidence](rt-material-evidence.md#native-game-alpha-diagnostic).
 
 [Patch 0021](../patches/0021-rt64-sun-shadow-groundwork.patch) adds:
