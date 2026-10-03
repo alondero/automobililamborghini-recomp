@@ -41,6 +41,7 @@ significant single-space lines from `git diff --check`;
 | 0026 | RT64 | Extracts native texture/combiner/alpha/coverage evaluation into a shared shader helper, with explicit UV derivatives and unchanged native raster arithmetic. Adds the helper to raster shader build dependencies. All 48 fresh game images match the preceding native build byte-for-byte; 30 synthetic hardware material cases pass. Ray-hit resource/attribute integration is still required and alpha admission remains closed. |
 | 0027 | RT64 | Adds generated-attribute reconstruction and explicit native-alpha candidate coverage to the shadow helper. Unsupported input invalidates coverage instead of becoming a solid caster. Thirty synthetic candidate cases agree with native RasterVS/RasterPS ownership; three uncertain shade-alpha/subpixel-LOD paths remain unsupported. Game alpha ranges are still rejected. |
 | 0028 | Plume inside RT64 | D3D12 graphics/compute pipeline factories return null when native PSO creation fails. A wrapper with no native handle cannot count as ready. Real failure injection returns null for both factories, then native raster/query submissions still pass. |
+| 0029 | RT64 | Opt-in D3D12 game alpha evidence borrows matching native descriptors and selected vertex shaders after the Workload fence. Isolated native owner passes and actual pre-clipping vertex outputs expose coverage disagreements; all game alpha admission remains closed. Raw draws retain zero face start and native rendering remains available. |
 
 ## Application matrix
 
@@ -60,7 +61,7 @@ still references the conditional full RT path; its
 does not implement this angular-query kernel. This local groundwork is not an
 upstream-supported feature or dependency upgrade. No upstream issue was opened.
 
-Patches **0022/0023/0024/0025/0026/0027/0028** are applied idempotently by CMake on all supported build
+Patches **0022/0023/0024/0025/0026/0027/0028/0029** are applied idempotently by CMake on all supported build
 paths. Readback is an explicit D3D12 developer diagnostic; normal rendering has
 no observer or capture GPU allocations. The observer registers before queues
 start and is cleared after they join. Its scoped raster activation prevents
@@ -148,9 +149,20 @@ valid raster and ray submissions pass. Only the two expected validation IDs are
 filtered during injection; the outer probe still rejects other errors. This
 does not validate game fallback on resource failure. No upstream issue was opened.
 
+Patch 0029 captures actual generated UVs, uploaded material bindings, selected
+native vertex bytecode and vertex outputs for the opt-in D3D12 alpha comparison.
+The six-circuit/mode probe still finds eight interior disagreements and grants
+no alpha or overlay-replacement admission. This local diagnostic is absent from
+the upstream revision verified above. Its geometry shader only records outputs
+in private targets; the coverage reference uses the original native pipeline.
+The normal raster path releases temporary vertex shaders as before. The clean
+pinned replay matches all 39 modified/new files from twelve RT64 patches.
+See [measured game evidence](../docs/rt-material-evidence.md#native-game-alpha-diagnostic).
+No upstream issue was opened.
+
 For an initialized Windows checkout with local dependency edits, use
 `./build.ps1 -PreserveSubmodules`. It verifies recursive dependency pins and
-skips checkout/clean operations. Like CMake, it recognizes 0027 or 0025 before
+skips checkout/clean operations. Like CMake, it recognizes 0029, 0027 or 0025 before
 revisiting earlier RT64 patches whose contexts have changed. The continuation
 replayed the nine Windows RT64 patches in a separate clean pinned worktree:
 all 31 modified/new files matched the active patched dependency byte-for-byte.
@@ -158,9 +170,9 @@ No patch content or dependency pin changed in that continuation.
 
 | Build path | Applies |
 | --- | --- |
-| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0028 in CMake. |
-| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0028 in CMake. |
-| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0028 in CMake. |
+| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0029 in CMake. |
+| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0029 in CMake. |
+| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0029 in CMake. |
 
 If a patch no longer applies to its pinned submodule, stop and update the
 patch or pin as a deliberate change. Do not reset a developer's unrelated

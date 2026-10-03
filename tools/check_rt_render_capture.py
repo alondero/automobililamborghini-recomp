@@ -357,6 +357,67 @@ def validate_pair(render: dict, present: dict, world: bytes, swap: bytes) -> lis
     return points
 
 
+def validate_generated_material_inputs(render: dict, uv_bytes: bytes,
+                                       buffers: dict[str, bytes]) -> dict:
+    """Validate captured native bindings without admitting alpha casters.
+
+    The raster render index selects RenderIndices; its instance index selects
+    RenderParams. Those identities need not have the same numeric value.
+    """
+    vertices = len(render["world_indices"])
+    if (render.get("generated_uv_bytes") != vertices * 8 or len(uv_bytes) != vertices * 8
+            or render.get("generated_uv_layout") != "float2,RSPProcessCS,presented"):
+        raise CaptureError("invalid generated UV extent or provenance")
+    uv = list(struct.iter_unpack("<2f", uv_bytes))
+    if any(not all(math.isfinite(x) for x in point) for point in uv):
+        raise CaptureError("non-finite generated UV")
+    layouts = {"render-params": 20, "rdp-tiles": 64, "gpu-tiles": 52}
+    records = render.get("native_material_buffers")
+    if (not isinstance(records, list) or len(records) != len(layouts)
+            or any(not isinstance(record, dict) for record in records)):
+        raise CaptureError("incomplete native material buffers")
+    extents = {}
+    sequence = render["native"]["sequence"]
+    for record in records:
+        name = record.get("name")
+        count = record.get("count")
+        if (name not in layouts or name in extents or type(count) is not int
+                or not 0 < count <= 128 * 1024 * 1024 // layouts[name]
+                or record.get("stride") != layouts[name]
+                or record.get("bytes") != count * layouts[name]
+                or record.get("file") != f"task-{sequence}-{name}.bin"
+                or len(buffers.get(name, b"")) != record["bytes"]):
+            raise CaptureError("invalid native material buffer extent or identity")
+        extents[name] = count
+    calls = {call["call"]: call for call in render["calls"]}
+    for draw in render["raster"]:
+        identity = draw.get("native_indices")
+        call = calls.get(draw["call"])
+        if call is None or not isinstance(identity, dict):
+            raise CaptureError("raster draw lacks native material binding identity")
+        if any(type(identity.get(key)) is not int or not 0 <= identity[key] <= 0xFFFFFFFF
+               for key in ("instance_index", "face_start", "tile_start", "tile_count", "highlight_color")):
+            raise CaptureError("invalid native RenderIndices value")
+        instance = identity["instance_index"]
+        material = call["material"]
+        if (instance != draw["call"] or instance >= extents["render-params"]
+                or identity["tile_start"] != material["tile_start"]
+                or identity["tile_count"] != material["tile_count"]
+                or identity["face_start"] != (call["first"] if draw["indexed"] else 0)):
+            raise CaptureError("native material binding does not match game call")
+        for name in ("rdp-tiles", "gpu-tiles"):
+            if (identity["tile_start"] > extents[name]
+                    or identity["tile_count"] > extents[name] - identity["tile_start"]):
+                raise CaptureError("native tile binding exceeds uploaded buffer")
+        cc_l, cc_h, om_l, om_h, flags = struct.unpack_from("<5I", buffers["render-params"], instance * 20)
+        if (cc_l & 0xFFFFFF != material["combine_w0"] & 0xFFFFFF
+                or cc_h != material["combine_w1"] or om_l != call["shader_other_lo"]
+                or om_h != call["shader_other_hi"] or flags != call["shader_flags"]):
+            raise CaptureError("uploaded native render parameters differ from selected shader")
+    return {"uv_vertices": len(uv), "buffer_counts": extents,
+            "raster_bindings": len(render["raster"]), "alpha_admitted": False}
+
+
 def inspect(directory: Path, sequence: int, include_geometry: bool = False,
             require_overlay: bool = True) -> dict:
     native_path = directory / "rt-tasks" / f"task-{sequence}.json"
@@ -382,6 +443,12 @@ def inspect(directory: Path, sequence: int, include_geometry: bool = False,
     if len(shade_bytes) != len(points) * 16:
         raise CaptureError("invalid GPU shade extent")
     shade = list(struct.iter_unpack("<4f", shade_bytes))
+    generated_inputs = None
+    if "generated_uv_bytes" in render or "native_material_buffers" in render:
+        generated_inputs = validate_generated_material_inputs(render,
+            prefix.with_name(prefix.name + "-uv.bin").read_bytes(),
+            {name: prefix.with_name(prefix.name + f"-{name}.bin").read_bytes()
+             for name in ("render-params", "rdp-tiles", "gpu-tiles")})
     if any(render["native"][key] != meta[key] for key in ("epoch", "sequence", "root", "phase", "circuit", "players")):
         raise CaptureError("native task/workload mismatch")
     for key in ("race_mode", "model_cursors"):
@@ -507,6 +574,8 @@ def inspect(directory: Path, sequence: int, include_geometry: bool = False,
             "unsupported_overlay_projection_faces": unsupported_overlay_projection,
             "replacement_coverage": "not established by this geometry report; use the raster-owner differential for visible receiver ownership; production replacement remains unimplemented",
             "caster_policy": "authenticated submitted opaque physical triangles; no offscreen completion or solid proxy"}
+    if generated_inputs is not None:
+        result["generated_material_inputs"] = generated_inputs
     if include_geometry:
         result["road_screen"] = road_screen
         result["overlay_screen"] = overlay_screen

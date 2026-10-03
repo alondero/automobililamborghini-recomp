@@ -37,6 +37,13 @@ Missing evaluators report invalid coverage and never turn cutouts into solids.
 Game texture/attribute bindings and admission are still pending. See
 [candidate evidence](rt-material-evidence.md#native-material-at-ray-candidates).
 
+[Patch 0029](../patches/0029-rt64-native-game-alpha-evidence.patch) tests actual
+game bindings and selected native vertex outputs in isolated D3D12 triangle
+passes. The six-circuit/mode matrix still finds eight disagreements among
+6,296,058 tested interior points. Edge pixels, unsupported inputs and real game
+ray candidates remain unproved; the diagnostic grants no admission. See
+[game alpha evidence](rt-material-evidence.md#native-game-alpha-diagnostic).
+
 [Patch 0021](../patches/0021-rt64-sun-shadow-groundwork.patch) adds:
 
 - `SunShadowScene`: shadow-only BLAS/TLAS over caller-supplied presented float4

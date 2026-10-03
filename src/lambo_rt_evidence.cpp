@@ -17,6 +17,7 @@
 #include "contrib/json/json.hpp"
 #include "hle/rt64_workload.h"
 #include "render/rt64_render_worker.h"
+#include "render/rt64_native_alpha_evidence.h"
 #include "shared/rt64_blender.h"
 #include "lambo_log.h"
 #include "lambo_rt_material.h"
@@ -204,6 +205,10 @@ struct RenderEvidence::Impl {
         const plume::RenderTexture* texture = nullptr;
         bool complete = false;
     };
+    struct PendingMaterial {
+        uint32_t color_address = 0, framebuffer_index = 0, width = 0, height = 0;
+        const RT64::FramebufferRenderer* renderer = nullptr;
+    };
     std::filesystem::path directory;
     bool drop_overlay = false;
     std::mutex mutex;
@@ -216,6 +221,7 @@ struct RenderEvidence::Impl {
     Json report;
     bool capturing = false;
     std::vector<PendingOwner> ownerTextures;
+    std::vector<PendingMaterial> materialBindings;
 
     std::filesystem::path path(uint64_t sequence, const char* suffix) const {
         return directory / ("task-" + std::to_string(sequence) + suffix);
@@ -524,6 +530,9 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
 bool RenderEvidence::ownerBufferEnabled() const noexcept {
     return enabled() && flag("LAMBO_RT_OWNER_BUFFER");
 }
+bool RenderEvidence::nativeAlphaEvidenceEnabled() const noexcept {
+    return enabled() && flag("LAMBO_RT_NATIVE_ALPHA_CHECK");
+}
 
 void RenderEvidence::ownerBufferIncomplete(uint32_t color_address, const char* reason,
         uint32_t identity) noexcept {
@@ -559,6 +568,7 @@ void RenderEvidence::begin(const RT64::Workload& w, float weight) noexcept {
     impl_->capturing = false;
     impl_->current = nullptr;
     impl_->ownerTextures.clear();
+    impl_->materialBindings.clear();
     try {
         Json native;
         {
@@ -697,7 +707,8 @@ void RenderEvidence::begin(const RT64::Workload& w, float weight) noexcept {
 bool RenderEvidence::raster(const RT64::RasterEvidenceRange& range) noexcept {
     if (!impl_->capturing) return true;
     try {
-        const auto [call, first, count, draw_index, indexed, test_z, scale, offset, scissor, resolution, viewport] = range;
+        const auto [call, first, count, draw_index, indexed, test_z, scale, offset, scissor, resolution, viewport,
+            native_face_start, tile_start, tile_count, highlight_color, native_uber] = range;
         const RT64::DrawCall* desc = nullptr;
         for (uint32_t f = 0; f < impl_->current->fbPairCount && desc == nullptr; ++f) {
             const auto& fb = impl_->current->fbPairs[f];
@@ -719,7 +730,10 @@ bool RenderEvidence::raster(const RT64::RasterEvidenceRange& range) noexcept {
             {"screen_scale", {scale[0], scale[1]}}, {"screen_offset", {offset[0], offset[1]}},
             {"scissor", {scissor.left, scissor.top, scissor.right, scissor.bottom}},
             {"resolution", {resolution[0], resolution[1]}},
-            {"viewport", {viewport.x, viewport.y, viewport.width, viewport.height}}});
+            {"viewport", {viewport.x, viewport.y, viewport.width, viewport.height}},
+            {"native_indices", {{"instance_index", call}, {"face_start", native_face_start},
+                {"tile_start", tile_start}, {"tile_count", tile_count}, {"highlight_color", highlight_color}}},
+            {"native_pipeline", native_uber ? "uber" : "specialized"}});
         return !omit;
     } catch (const std::exception& e) {
         impl_->capturing = false;
@@ -770,6 +784,21 @@ void RenderEvidence::ownerBufferRendered(uint32_t color_address, uint32_t width,
     }
 }
 
+void RenderEvidence::nativeMaterialBindings(uint32_t color_address, uint32_t width, uint32_t height,
+        const RT64::FramebufferRenderer* renderer, uint32_t framebuffer_index) noexcept {
+    if (!impl_->capturing || renderer == nullptr || !flag("LAMBO_RT_NATIVE_ALPHA_CHECK")) return;
+    try {
+        const auto duplicate = std::find_if(impl_->materialBindings.begin(), impl_->materialBindings.end(),
+            [color_address](const Impl::PendingMaterial& binding) { return binding.color_address == color_address; });
+        require(duplicate == impl_->materialBindings.end(), "native alpha framebuffer identity reused");
+        impl_->materialBindings.push_back({color_address, framebuffer_index, width, height, renderer});
+    } catch (const std::exception& e) {
+        impl_->materialBindings.clear();
+        impl_->capturing = false;
+        LAMBO_LOG_INFO("rt-evidence", "native material bindings rejected: %s\n", e.what());
+    }
+}
+
 void RenderEvidence::completed(const RT64::Workload& w, RT64::RenderWorker* worker) noexcept {
     if (!impl_->capturing || impl_->current != &w) return;
     impl_->capturing = false;
@@ -785,11 +814,39 @@ void RenderEvidence::completed(const RT64::Workload& w, RT64::RenderWorker* work
         const auto& shaded = w.outputBuffers.shadedColBuffer;
         require(bytes <= shaded.computedSize && bytes <= shaded.allocatedSize, "GPU shaded colors unavailable");
         const auto shade_bytes = read_buffer(worker, shaded.buffer.get(), bytes, RenderBarrierStage::GRAPHICS);
+        // RSPProcessCS generates these coordinates for the displayed pose.
+        // Guest UVs alone miss native texture generation and interpolation.
+        const auto& uv = w.outputBuffers.genTexCoordBuffer;
+        const size_t uv_bytes = size_t(w.drawData.vertexCount()) * 8;
+        require(uv_bytes <= uv.computedSize && uv_bytes <= uv.allocatedSize,
+            "GPU generated texture coordinates unavailable");
+        const auto texture_coordinates = read_buffer(worker, uv.buffer.get(), uv_bytes, RenderBarrierStage::GRAPHICS);
         const size_t index_bytes = w.drawData.faceIndices.size() * sizeof(uint32_t);
         require(index_bytes <= w.drawBuffers.faceIndicesBuffer.allocatedSize, "GPU index capacity mismatch");
         const auto faces = read_buffer(worker, w.drawBuffers.faceIndicesBuffer.get(), index_bytes, RenderBarrierStage::GRAPHICS);
         require(std::memcmp(faces.data(), w.drawData.faceIndices.data(), index_bytes) == 0, "GPU/CPU indices differ");
         const uint64_t sequence = impl_->report["native"]["sequence"];
+        // Capture the uploaded native values, not an inferred texture policy or
+        // a live guest asset. Indices identify the descriptor selected by each
+        // real raster draw; texture contents remain separately owned by RT64.
+        impl_->report["native_material_buffers"] = Json::array();
+        const auto capture_material_buffer = [&](const char* name, const RT64::BufferPair& buffer,
+                size_t count, size_t stride) {
+            require(count != 0 && count <= capture_budget / stride, "invalid native material buffer extent");
+            const size_t size = count * stride;
+            require(size <= buffer.allocatedSize, "native material buffer capacity mismatch");
+            const auto data = read_buffer(worker, buffer.get(), size, RenderBarrierStage::GRAPHICS);
+            const std::string suffix = std::string("-") + name + ".bin";
+            write_bytes(impl_->path(sequence, suffix.c_str()), data.data(), data.size());
+            impl_->report["native_material_buffers"].push_back({{"name", name}, {"count", count},
+                {"stride", stride}, {"bytes", size}, {"file", "task-" + std::to_string(sequence) + suffix}});
+        };
+        capture_material_buffer("render-params", w.drawBuffers.renderParamsBuffer,
+            w.drawData.renderParams.size(), sizeof(interop::RenderParams));
+        capture_material_buffer("rdp-tiles", w.drawBuffers.rdpTilesBuffer,
+            w.drawData.rdpTiles.size(), sizeof(interop::RDPTile));
+        capture_material_buffer("gpu-tiles", w.drawBuffers.gpuTilesBuffer,
+            w.drawData.gpuTiles.size(), sizeof(interop::GPUTile));
         uint64_t owner_bytes_total = 0;
         for (uint32_t index = 0; index < impl_->ownerTextures.size(); ++index) {
             const auto& owner = impl_->ownerTextures[index];
@@ -806,7 +863,78 @@ void RenderEvidence::completed(const RT64::Workload& w, RT64::RenderWorker* work
         write_bytes(impl_->path(sequence, "-world.bin"), world.data(), world.size());
         write_bytes(impl_->path(sequence, "-screen.bin"), screen_bytes.data(), screen_bytes.size());
         write_bytes(impl_->path(sequence, "-shade.bin"), shade_bytes.data(), shade_bytes.size());
+        write_bytes(impl_->path(sequence, "-uv.bin"), texture_coordinates.data(), texture_coordinates.size());
         impl_->report["world_bytes"] = bytes;
+        impl_->report["generated_uv_bytes"] = uv_bytes;
+        impl_->report["generated_uv_layout"] = "float2,RSPProcessCS,presented";
+        if (flag("LAMBO_RT_NATIVE_ALPHA_CHECK")) {
+            impl_->report["native_alpha_evidence"] = Json::array();
+            std::vector<std::array<float, 4>> screen_positions(w.drawData.vertexCount());
+            std::memcpy(screen_positions.data(), screen_bytes.data(), screen_bytes.size());
+            std::set<uint32_t> cutout_calls;
+            if (w.sunShadow) {
+                for (const auto& range : w.sunShadow->rejected) {
+                    if (range.rejection == RejectCoverageAlphaOrBlending) cutout_calls.insert(range.draw);
+                }
+            }
+            for (size_t binding_index = 0; binding_index < impl_->materialBindings.size(); ++binding_index) {
+                const auto& binding = impl_->materialBindings[binding_index];
+                std::set<uint32_t> framebuffer_calls;
+                for (const auto& call : impl_->report["calls"]) {
+                    if (call["color_address"] == binding.color_address)
+                        framebuffer_calls.insert(call["call"].get<uint32_t>());
+                }
+                std::vector<uint32_t> draws;
+                for (const auto& draw : impl_->report["raster"]) {
+                    if (draw["indexed"] == true && draw["test_z"] == false &&
+                        draw["omitted"] == false && framebuffer_calls.count(draw["call"].get<uint32_t>()) &&
+                        cutout_calls.count(draw["call"].get<uint32_t>())) draws.push_back(draw["draw_index"].get<uint32_t>());
+                }
+                if (draws.empty()) continue;
+                std::vector<interop::NativeAlphaEvidenceResult> results;
+                std::vector<RT64::NativeAlphaVertexShaderEvidence> vertex_shaders;
+                std::vector<std::array<float, 4>> native_clip;
+                std::string error;
+                const bool measured = RT64::CheckNativeAlphaEvidence(worker, *binding.renderer,
+                    binding.framebuffer_index, w, screen_positions, draws, results, vertex_shaders, native_clip, error);
+                if (measured) {
+                    for (const auto& shader : vertex_shaders) {
+                        const std::string shader_suffix = "-native-vs-" + std::to_string(shader.renderIndex) + ".dxil";
+                        write_bytes(impl_->path(sequence, shader_suffix.c_str()), shader.dxil.data(), shader.dxil.size());
+                        impl_->report["native_alpha_vertex_shaders"].push_back({{"draw_index", shader.renderIndex},
+                            {"bytes", shader.dxil.size()},
+                            {"file", "task-" + std::to_string(sequence) + shader_suffix}});
+                    }
+                }
+                uint64_t tested = 0, native_covered = 0, evaluated_covered = 0, disagreements = 0;
+                size_t unsupported = 0, no_interior = 0;
+                for (const auto& result : results) {
+                    tested += result.tested;
+                    native_covered += result.nativeCovered;
+                    evaluated_covered += result.evaluatedCovered;
+                    disagreements += result.disagreements;
+                    unsupported += result.unsupported != 0;
+                    no_interior += result.tested == 0;
+                }
+                const std::string suffix = "-alpha-evidence-" + std::to_string(binding_index) + ".bin";
+                if (measured) write_bytes(impl_->path(sequence, suffix.c_str()), results.data(),
+                    results.size() * sizeof(results[0]));
+                const std::string clip_suffix = "-native-clip-" + std::to_string(binding_index) + ".bin";
+                if (measured) write_bytes(impl_->path(sequence, clip_suffix.c_str()), native_clip.data(),
+                    native_clip.size() * sizeof(native_clip[0]));
+                impl_->report["native_alpha_evidence"].push_back({{"color_address", binding.color_address},
+                    {"target_extent", {binding.width, binding.height}},
+                    {"measured", measured}, {"error", error}, {"faces", results.size()},
+                    {"tested_pixels", tested}, {"native_covered", native_covered},
+                    {"evaluated_covered", evaluated_covered}, {"disagreements", disagreements},
+                    {"unsupported_faces", unsupported}, {"no_interior_faces", no_interior},
+                    {"file", measured ? Json("task-" + std::to_string(sequence) + suffix) : Json(nullptr)},
+                    {"stride", sizeof(interop::NativeAlphaEvidenceResult)},
+                    {"native_clip_file", measured ? Json("task-" + std::to_string(sequence) + clip_suffix) : Json(nullptr)},
+                    {"native_clip_bytes", native_clip.size() * sizeof(native_clip[0])},
+                    {"ray_query", false}, {"edge_pixels", false}, {"alpha_admitted", false}});
+            }
+        }
         impl_->report["gpu_indices_equal"] = true;
         write_json(impl_->path(sequence, "-render.json"), impl_->report);
         std::lock_guard lock(impl_->mutex);
@@ -814,6 +942,7 @@ void RenderEvidence::completed(const RT64::Workload& w, RT64::RenderWorker* work
         impl_->rendered_tasks.insert(w.workloadId);
     } catch (const std::exception& e) { LAMBO_LOG_INFO("rt-evidence", "completion rejected: %s\n", e.what()); }
     impl_->ownerTextures.clear();
+    impl_->materialBindings.clear();
 }
 
 void RenderEvidence::presented(const RT64::PresentationEvidence& presentation, RT64::RenderWorker* worker) noexcept {

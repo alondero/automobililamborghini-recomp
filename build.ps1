@@ -235,7 +235,8 @@ try {
     # This guard is needed when dependency files are explicitly preserved.
     $Rt64SeriesApplied = $false
     if ($PreserveSubmodules) {
-        foreach ($GuardPatch in @('0027-rt64-native-ray-candidate-coverage.patch',
+        foreach ($GuardPatch in @('0029-rt64-native-game-alpha-evidence.patch',
+                                 '0027-rt64-native-ray-candidate-coverage.patch',
                                  '0025-rt64-workload-shadow-metadata.patch')) {
             $Rt64Guard = Join-Path $RepoRoot "patches/$GuardPatch"
             & git.exe -C lib/rt64 apply --reverse --check $Rt64Guard 2>&1 | Out-Null

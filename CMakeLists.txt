@@ -36,9 +36,17 @@ include(cmake/Frontend.cmake)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0023-plume-texture-readback.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0028-plume-d3d12-pipeline-failure.patch)
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0027-rt64-native-ray-candidate-coverage.patch"
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0029-rt64-native-game-alpha-evidence.patch"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
-    RESULT_VARIABLE rt64_candidate_patch_applied OUTPUT_QUIET ERROR_QUIET)
+    RESULT_VARIABLE rt64_native_alpha_patch_applied OUTPUT_QUIET ERROR_QUIET)
+if(rt64_native_alpha_patch_applied EQUAL 0)
+    set(rt64_candidate_patch_applied 0)
+else()
+    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0027-rt64-native-ray-candidate-coverage.patch"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
+        RESULT_VARIABLE rt64_candidate_patch_applied OUTPUT_QUIET ERROR_QUIET)
+endif()
 if(NOT rt64_candidate_patch_applied EQUAL 0)
     execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
         "${CMAKE_CURRENT_SOURCE_DIR}/patches/0025-rt64-workload-shadow-metadata.patch"
@@ -52,7 +60,10 @@ if(NOT rt64_candidate_patch_applied EQUAL 0)
     lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0025-rt64-workload-shadow-metadata.patch)
     lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0026-rt64-native-material-evaluation.patch)
 endif()
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0027-rt64-native-ray-candidate-coverage.patch)
+if(NOT rt64_native_alpha_patch_applied EQUAL 0)
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0027-rt64-native-ray-candidate-coverage.patch)
+endif()
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0029-rt64-native-game-alpha-evidence.patch)
 
 # --- RT64 renderer boundary; see patches/README.md ---
 # recomp/lib/rt64 is a pinned git submodule; RT64 is always compiled in and is the
@@ -456,6 +467,10 @@ if(BUILD_TESTING)
         add_test(NAME lambo_rt_task_capture
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rt_task_capture.py
+        )
+        add_test(NAME lambo_rt_alpha_capture
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rt_alpha_capture.py
         )
         add_test(NAME lambo_prompt_back_action
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}

@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from check_rt_overlay_capture import filter_taps, inside
 from check_rt_render_capture import (area, belongs_to_physical_car, non_caster_reason, opaque_coverage, procedural_world_object, receiver_material, validate_overlay_count,
                                      screen_face, topology, uncovered_area, validate_draw_metadata, validate_pair,
-                                     validate_shadow_admission)
+                                     validate_shadow_admission, validate_generated_material_inputs)
 from inspect_rt_task import CaptureError
 
 
@@ -20,6 +20,76 @@ def material() -> dict:
             "force_blend": False, "z_compare": True, "z_update": True, "z_mode": 0, "z_source": 0,
             "other_lo": 0xC8112230, "other_hi": 0x18ACFF, "combine_w0": 0xFC26A004,
             "combine_w1": 0x1FFC93F8, "standard_fog": True, "fog_rgba": [.2, .3, .4, 1]}
+
+
+class GeneratedMaterialInputsTests(unittest.TestCase):
+    def setUp(self):
+        m = dict(material(), tile_start=1, tile_count=1)
+        self.render = {"native": {"sequence": 60}, "world_indices": [0],
+                       "generated_uv_bytes": 8,
+                       "generated_uv_layout": "float2,RSPProcessCS,presented",
+                       "calls": [{"call": 7, "first": 12, "material": m,
+                                  "shader_other_lo": m["other_lo"], "shader_other_hi": m["other_hi"],
+                                  "shader_flags": 0}],
+                       "raster": [{"call": 7, "draw_index": 2, "indexed": True,
+                                   "native_indices": {"instance_index": 7, "face_start": 12,
+                                                      "tile_start": 1, "tile_count": 1,
+                                                      "highlight_color": 0}}]}
+        self.uv = struct.pack("<2f", .25, .5)
+        self.buffers = {"render-params": bytes(7 * 20) + struct.pack("<5I", m["combine_w0"] & 0xFFFFFF,
+                        m["combine_w1"], m["other_lo"], m["other_hi"], 0),
+                        "rdp-tiles": bytes(2 * 64), "gpu-tiles": bytes(2 * 52)}
+        self.render["native_material_buffers"] = [
+            {"name": name, "count": len(data) // stride, "stride": stride,
+             "bytes": len(data), "file": f"task-60-{name}.bin"}
+            for (name, data), stride in zip(self.buffers.items(), (20, 64, 52))]
+
+    def test_selected_render_index_and_instance_index_stay_distinct(self):
+        proof = validate_generated_material_inputs(self.render, self.uv, self.buffers)
+        self.assertEqual(proof["raster_bindings"], 1)
+        self.assertFalse(proof["alpha_admitted"])
+        self.render["raster"][0]["native_indices"]["instance_index"] = 2
+        with self.assertRaises(CaptureError):
+            validate_generated_material_inputs(self.render, self.uv, self.buffers)
+
+    def test_wrong_uploaded_shader_and_tile_ranges_are_rejected(self):
+        for change in ("params", "tile_range", "face_start", "instance", "missing_identity"):
+            with self.subTest(change=change):
+                render, buffers = copy.deepcopy(self.render), dict(self.buffers)
+                identity = render["raster"][0]["native_indices"]
+                if change == "params": buffers["render-params"] = bytes(8 * 20)
+                elif change == "tile_range":
+                    identity["tile_count"] = 2
+                    render["calls"][0]["material"]["tile_count"] = 2
+                elif change == "face_start": identity["face_start"] = 13
+                elif change == "instance": identity["instance_index"] = -1
+                else: render["raster"][0].pop("native_indices")
+                with self.assertRaises(CaptureError):
+                    validate_generated_material_inputs(render, self.uv, buffers)
+
+    def test_raw_vertex_draw_has_no_native_face_extent(self):
+        draw = self.render["raster"][0]
+        draw["indexed"] = False
+        draw["native_indices"]["face_start"] = 0
+        validate_generated_material_inputs(self.render, self.uv, self.buffers)
+        draw["native_indices"]["face_start"] = 12
+        with self.assertRaises(CaptureError):
+            validate_generated_material_inputs(self.render, self.uv, self.buffers)
+
+    def test_incomplete_extents_and_nonfinite_generated_uv_are_rejected(self):
+        for change in ("short", "missing", "duplicate", "filename", "count", "layout", "nan"):
+            with self.subTest(change=change):
+                render, buffers, uv = copy.deepcopy(self.render), dict(self.buffers), self.uv
+                records = render["native_material_buffers"]
+                if change == "short": buffers["gpu-tiles"] = buffers["gpu-tiles"][:-1]
+                elif change == "missing": records.pop()
+                elif change == "duplicate": records[2] = records[1]
+                elif change == "filename": records[0]["file"] = "../task-60-render-params.bin"
+                elif change == "count": records[0]["count"] = -1
+                elif change == "layout": render["generated_uv_layout"] = "guest"
+                else: uv = struct.pack("<2f", math.nan, 0)
+                with self.assertRaises(CaptureError):
+                    validate_generated_material_inputs(render, uv, buffers)
 
 
 class MaterialTests(unittest.TestCase):

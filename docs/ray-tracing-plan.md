@@ -14,6 +14,11 @@ Automobili Lamborghini: Recompiled. RaceWave46 is a peer implementation to
 learn from; its courses, RAM addresses and lighting policy are not Lamborghini
 inputs.
 
+The latest [native game alpha diagnostic](rt-material-evidence.md#native-game-alpha-diagnostic)
+tests actual game resources across the six-circuit/mode matrix. Eight measured
+interior disagreements remain; clipping/edge and real ray-hit coverage are
+also unproved. Synthetic material parity cannot authorize game admission.
+
 ## Recommendation and scope
 
 Add optional sun-angle soft shadows over the existing native raster output.

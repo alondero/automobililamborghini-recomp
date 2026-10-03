@@ -19,10 +19,13 @@ public:
     void begin(const RT64::Workload&, float weight) noexcept override;
     bool raster(const RT64::RasterEvidenceRange&) noexcept override;
     bool ownerBufferEnabled() const noexcept override;
+    bool nativeAlphaEvidenceEnabled() const noexcept override;
     void ownerBufferIncomplete(uint32_t color_address, const char* reason,
         uint32_t identity) noexcept override;
     void ownerBufferRendered(uint32_t color_address, uint32_t width, uint32_t height,
         const plume::RenderTexture* owner_texture, bool complete) noexcept override;
+    void nativeMaterialBindings(uint32_t color_address, uint32_t width, uint32_t height,
+        const RT64::FramebufferRenderer* renderer, uint32_t framebuffer_index) noexcept override;
     void completed(const RT64::Workload&, RT64::RenderWorker*) noexcept override;
     void presented(const RT64::PresentationEvidence&, RT64::RenderWorker*) noexcept override;
 private:

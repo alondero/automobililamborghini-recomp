@@ -206,6 +206,8 @@ class ScenarioRunnerTests(unittest.TestCase):
 
     def test_render_diagnostic_dependencies_fail_before_launch(self) -> None:
         for diagnostics, expect in (({"rt_render_capture": True}, {}),
+                                    ({"rt_native_alpha_check": True}, {}),
+                                    ({"rt_native_alpha_check": "1"}, {}),
                                     ({"rt_drop_overlay": True}, {}),
                                     ({"rt_owner_buffer": True}, {}),
                                     ({"rt_render_capture": True, "rt_drop_overlay": True}, {}),

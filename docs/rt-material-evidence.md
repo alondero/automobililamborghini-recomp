@@ -413,6 +413,76 @@ the probe. Evidence is `artifacts/rt-caster-stage/pipeline-failure-gpu.log`.
 This proves the factory signal and continued device use, not a game overlay
 restoration path or device-loss recovery.
 
+### Native game alpha diagnostic
+
+Patch 0029 adds an opt-in D3D12 comparison over actual presented cutout triangles.
+`diagnostics.rt_native_alpha_check` requires render capture and enables
+`LAMBO_RT_NATIVE_ALPHA_CHECK`. After the matching Workload fence, the observer
+borrows the displayed framebuffer's native descriptors, generated attributes,
+indices, selected shaders, viewport and scissor while the worker and texture
+cache remain exclusively owned. Workers read no guest RAM.
+
+Each triangle is isolated into private color/depth targets. The unchanged
+native owner pipeline supplies the clipping, culling, material discard and
+depth reference. A separate attribute pass uses the selected vertex shader
+and a geometry shader to capture its actual outputs before clipping. Compute
+evaluates the shared material helper at reconstructed interior points. Pixels
+within one pixel of an edge are excluded. This does not authenticate ray
+intersection precision, edge coverage, blended car children or view readiness.
+
+Captures retain generated float2 UVs, uploaded render/tile parameters, distinct
+render-index and instance-index identity, selected native vertex bytecode,
+pre-clipping outputs, counters and a bounded first-disagreement record. Raw
+vertex draws retain zero native face start. GPU work is fenced before local
+resources are destroyed, including exception paths. Each framebuffer is limited
+to 16,384 faces, 4,096 pixels per dimension and 120 MiB of private image targets,
+with additional bounded buffers. Unsupported resources/backends reject the
+diagnostic and leave native rendering available.
+
+The first real-game comparison exposed four forward-view and five rear-view
+interior disagreements absent from the synthetic fixtures. UV differences
+crossed the native sampler's 1/128 coordinate quantization boundary and changed
+survival at 1/8 alpha. Preserving homogeneous-W arithmetic alone did not fix
+them. Snapping reduced the errors but did not eliminate them. The diagnostic
+now tests fused float viewport scale/offset and nearest-even 16.8 snapping using
+captured native vertex outputs. Direct3D interpolates from snapped positions;
+its permitted conversion tolerance does not establish identical rounding
+across hardware. [Direct3D specification](https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm).
+
+On RTX 3080/D3D12 at 1708x960, all 574,658 tested interior points in the four
+Circuit 1 time-trial tasks then matched native coverage. The wider six-circuit,
+model-0, one-player time-trial/single-race matrix tested 6,296,058 points over
+7,904 face records and still found eight disagreements: one rear-view point
+per Circuit 2 mode and three forward-view points per Circuit 3 mode. Circuit 2
+includes a reconstructed pixel displacement of roughly 0.00012 pixel; Circuit 3
+retains UV/derivative rounding differences. These failures are preserved.
+
+All 48 baseline/diagnostic pairs have identical generated geometry/material
+buffers. Native swapchain bytes match in 47 initial pairs. The first Circuit 1
+time-trial task differs by four bytes/four RGB pixels while the two runs select
+different native pipelines during asynchronous compilation. A repeated
+native-only control selects the same shader kinds as the diagnostic and matches
+all four diagnostic task images byte-for-byte; it also reproduces the original
+control's four-pixel difference. The first control pair does not pass byte
+identity. The 1,330 unsupported face records and 3,352 records with no tested
+interior are explicit partial evidence; counts overlap. No edge pixel or real
+game ray candidate is authenticated. Every report retains
+`alpha_admitted=false`, and all game Workloads remain native. Ignored evidence
+is `artifacts/rt-caster-stage/native-alpha-matrix.json`; the repeated control is
+`rt-native-alpha-control-repeat-c1-m0-42o91vr0`.
+
+`tools/check_rt_alpha_capture.py --require-interior-parity` rejects measured
+disagreements. Host checks authenticate complete result-face identity, extents,
+counters, shader filenames and the presented vertices' clip W. Passing interior
+parity alone does not authorize alpha ranges or replacement.
+
+The preserving supported build, all 49 project CTests and 97 Python tests pass,
+with scoped Ruff, documentation and whitespace checks. Strict comparison passes
+the Circuit 1 interior evidence and rejects the measured Circuit 2 failure.
+The twelve-patch pinned replay matches all 39 changed/new RT64 files byte-for-byte.
+All 150 preserved RecompFrontend files remain byte-identical. Generated game/RSP
+code, native shader bytecode, captures and ROM-derived data remain ignored.
+
 ## Ownership and diagnostic failures
 
 `LAMBO_RT_RENDER_CAPTURE_DIR` requires the existing sunlight probe and native
@@ -594,13 +664,14 @@ modes; the diagnostic authenticates player modes 0-3 against each task's key.
 Race mode/model selectors and player count now invalidate pending scene epochs.
 The D3D12 owner-map proof passes for model 0, one-player time trial and single
 race on Circuits 1-6 in forward/rear views. Workload admission now fails in all
-12 circuit/mode cases. The evidence records 334 world-builder ranges rejected
-for textured coverage-times-alpha, 12 car-child ranges rejected for their
-combiner/depth/fog/blend behavior, and 3,924 unclassified draws: 912 rectangle
-projections, 2,724 transform-sentinel ranges, and 288 parentless objects with
-unknown roles. First prove ray-hit policies that preserve native texture-alpha,
-coverage, depth, fog and blend behavior, and classify or conservatively retain
-the unclassified draws without omitting required casters. Keep native overlays
+12 circuit/mode cases. The latest owner/material matrix has zero unclassified
+draws; procedural world identity and explicit screen/backdrop/HUD exclusions are
+authenticated. Alpha and blended car-child ranges still fail admission. Patch
+0029 compares actual native material/shader bindings: 6,296,058 interior points
+across 48 circuit/mode tasks retain eight measured disagreements on Circuits
+2/3, unsupported/clipped faces and untested edges. Diagnose those failures and
+prove real ray-hit policies preserving native alpha, coverage, depth, fog and
+blend behavior. Passing a sampled interior comparison is insufficient. Keep native overlays
 for every incomplete or unsupported Workload. Only after complete presented
 caster and receiver admission, integrate a per-view AS and native-equivalent
 receiver; then add an Original-default setting, exact ready-gated suppression

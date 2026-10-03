@@ -248,6 +248,11 @@ game pixels. The later [overlay-owner captures](rt-material-evidence.md) compare
 the native swapchain before/after diagnostic omission across their documented
 matrix.
 The USA ROM hash and dependency pins remain those in [rt-shadows.md](rt-shadows.md).
+The later [native game alpha diagnostic](rt-material-evidence.md#native-game-alpha-diagnostic)
+borrows matching Workload-owned GPU attributes and native material/shader
+bindings after the fence. It captures actual pre-clipping vertex outputs with
+no worker RAM reads. Its remaining measured coverage disagreements do not
+change light authentication or authorize native overlay suppression.
 The supported build regenerated ignored game/RSP output; none was hand-edited
 or committed. No dependency patch or player setting changed in this milestone.
 
