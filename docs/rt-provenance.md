@@ -1,13 +1,14 @@
-# Circuit 1 RT input evidence
+# Native RT input evidence across measured circuits
 
-Status: experimental diagnostics, measured on Windows on 2026-10-02 after
-PR #277 (baseline `e2a44ab`). Native light and car-overlay provenance are
-established for the sampled Circuit 1 tasks. The subsequent
-[presented-material milestone](rt-material-evidence.md) authenticates opaque
-surface candidates and the overlay differential. **Visible receiver ownership
-and ready replacement coverage remain unproved. Workload and raster receiver
-integration are not implemented.** Relighting and offscreen submission remain follow-on
-phases in the [plan](ray-tracing-plan.md).
+Status: experimental diagnostics, measured on Windows through 2026-10-03 after
+PR #277 (baseline `e2a44ab`). Circuit 1 establishes the camera/model/light
+separation below. A separate 21-case task snapshot matrix measures key
+direction and per-circuit light colors; the
+[presented-material evidence](rt-material-evidence.md) now proves visible
+receiver ownership for the sampled one-player cases on all six circuits.
+**No production Workload, raster receiver or overlay replacement is connected.**
+Relighting and offscreen submission remain follow-on phases in the
+[plan](ray-tracing-plan.md).
 
 ## World light and camera independence
 
@@ -50,6 +51,33 @@ observations do not establish every car orientation, FOV, circuit or game mode.
 The first light can have full RGB `(241,254,153)` or a dim car copy
 `(155,163,98)` without changing direction. Phase 1 will attenuate native output;
 it will not introduce a second diffuse-light calculation.
+
+### Cross-circuit task snapshots
+
+The 2026-10-03 light matrix contains 21 complete task records: one-player time
+trial on all six circuits; one- and two-player single race on all six; and
+three-player single race on Circuits 1–3. Every authenticated car-key record in
+those cases has direction `(-11,55,-101)`. The measured Circuit 1 unit vector is
+not being promoted to a universal hard-coded policy: each circuit must select
+its own task-authenticated native key and fall back if it is missing or differs
+from its measured policy.
+
+| Circuit | Time-trial 1P key RGB | Single-race 1P key RGB in sampled task |
+| --- | --- | --- |
+| 1 | `(155,163,98)` | `(155,163,98)` |
+| 2 | `(119,125,75)` | `(119,125,75)` |
+| 3 | `(241,254,153)` | `(241,254,153)` |
+| 4 | `(155,163,98)` | `(155,163,98)` |
+| 5 | `(129,129,135)` | `(129,129,135)` |
+| 6 | `(152,161,97)` | `(148,156,94)`, `(149,157,94)`, `(152,161,97)` or `(153,162,97)` across copied car records |
+
+These are sampled light-record colors, not direct/ambient terms or new lighting
+policy. The unchanged direction across circuits does not establish camera
+independence outside the Circuit 1 stationary/two-view tests. Three-player
+records authenticate direction only; presented ownership is incomplete or
+missing in those captures. Four-player emitter snapshots failed strict
+completeness. Other car models, other race modes, menus and every camera state
+remain unmeasured.
 
 ## Exact overlay provenance and material counterexample
 
@@ -95,8 +123,9 @@ selection. It **cannot admit geometry**. This native-only milestone left materia
 coverage, matching presented ranges and an overlay differential as prerequisites.
 It publishes no receiver/caster list and removes no draw. The subsequent
 [presented evidence](rt-material-evidence.md)
-supersedes that native-only gate status; visible receiver ownership and ready
-replacement coverage still prevent phase 1 integration.
+supersedes that native-only gate status and passes visible receiver ownership
+for its measured matrix. Production replacement remains unimplemented and
+unsupported tasks stay native.
 
 ## Capture and offline bridge contract
 
@@ -174,7 +203,10 @@ Fresh producer-owned runs were `rt-stationary-camera-1zy1qkey`,
 `rt-stationary-two-views-oywpvbbv` and `rt-sun-provenance-d60zgu4l`.
 Each passed 600/600 verified guest input frames, 601 native swaps and four
 complete task captures. Stationary-series comparisons passed for one and two
-players. These prove task consumption and native observations, not RT pixels.
+players. These prove task consumption and native observations, not ray-traced
+game pixels. The later [overlay-owner captures](rt-material-evidence.md) compare
+the native swapchain before/after diagnostic omission across their documented
+matrix.
 The USA ROM hash and dependency pins remain those in [rt-shadows.md](rt-shadows.md).
 The supported build regenerated ignored game/RSP output; none was hand-edited
 or committed. No dependency patch or player setting changed in this milestone.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 #include "lambo_rt_shadows.h"
 #include "rhi/rt64_render_hooks.h"
 
@@ -16,6 +17,11 @@ public:
     void processed(uint64_t first, uint64_t last);
     void begin(const RT64::Workload&, float weight) noexcept override;
     bool raster(const RT64::RasterEvidenceRange&) noexcept override;
+    bool ownerBufferEnabled() const noexcept override;
+    void ownerBufferIncomplete(uint32_t color_address, const char* reason,
+        uint32_t identity) noexcept override;
+    void ownerBufferRendered(uint32_t color_address, uint32_t width, uint32_t height,
+        const plume::RenderTexture* owner_texture, bool complete) noexcept override;
     void completed(const RT64::Workload&, RT64::RenderWorker*) noexcept override;
     void presented(const RT64::PresentationEvidence&, RT64::RenderWorker*) noexcept override;
 private:

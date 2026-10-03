@@ -1,12 +1,14 @@
 # Sunlight ray-query groundwork
 
-Status: experimental developer groundwork, measured on Windows on 2026-10-02.
-The GPU builder and angular-shadow kernel run on hardware. **In-game ray-traced
-shadows are not enabled.** The later [Circuit 1 evidence](rt-provenance.md)
-establishes native world-key direction, stationary camera independence and
-car-overlay provenance. Road/caster eligibility and native overlay replacement
-coverage in the [implementation plan](ray-tracing-plan.md) remain open.
-There is no player shadow setting or new backend selection behavior.
+Status: experimental developer groundwork, measured on Windows through
+2026-10-03. The GPU builder and angular-shadow kernel run on hardware. The
+[owner-map evidence](rt-material-evidence.md) proves native overlay attribution
+and visible eligible receiver ownership for model 0, one-player time trial and
+single race across all six circuits, in forward and rear views. **In-game
+ray-traced shadows are not enabled.** Workload light/admission values, a runtime
+shadow scene, receiver shader, opt-in setting and production fallback are still
+absent. Unsupported scenes remain native. Relighting and offscreen caster
+submission remain deferred.
 
 ## Delivered boundary
 
@@ -82,16 +84,20 @@ a zero-based viewport ID.
 The caller at `0x800053C4..0x800053F0` invokes the flare only with fewer than two
 players and skips city circuit index 4. The flare hook alone cannot prove a
 shared light for two-player views or city scenery. The camera epilogue hook now
-captures camera inputs even when the flare is skipped; only Circuit 1 one/two-player
-light captures have been measured. Missing records stay missing on task reuse.
+captures camera inputs even when the flare is skipped. The later task matrix
+measures key direction and per-circuit color across all six circuits and up to
+three players, but stationary camera independence remains specifically proved
+on Circuit 1. Missing records stay missing on task reuse.
 
 Material lead `C8104A50` is emitted by `func_800165FC` at `0x80015B38`. That
 function has an iterative draw path and two frame-rendering call sites. Its
 signature and the software renderer's shadow comment do not establish which
 RT64 draws are native car shadows. [Task captures](rt-provenance.md#exact-overlay-provenance-and-material-counterexample)
 now distinguish that trail emitter from the car-parented overlay and falsify
-render-mode-only identity. No draw was suppressed. Receiver/caster eligibility
-and overlay replacement coverage still need proof before using the kernel.
+render-mode-only identity. The [owner-map differential](rt-material-evidence.md)
+now attributes every affected tap to the exact overlay and a supported receiver
+for its sampled one-player matrix. No production draw is suppressed; the
+Workload, receiver path and failure restoration remain unimplemented.
 
 ## Guest bridge contract
 
@@ -193,20 +199,23 @@ remaining third-party compression stress tests are not validation of this featur
 
 ## Remaining gates
 
-1. Turn the measured Circuit 1 native key into a reviewed world-light policy;
-   verify remaining FOV/mode/circuit behavior. Fixed-car camera and two-view
-   diagnostics passed. No peer course parameters enter this policy.
-2. Prove road/fog receiver coverage and opaque car/scenery admission in actual
-   RT64 presented draws. [Presented material evidence](rt-material-evidence.md)
-   now authenticates opaque surface candidates and the exact overlay swapchain
-   differential. Visible receiver ownership and ready replacement coverage
-   remain open before integration or production suppression.
+1. Carry the measured native key into a task-owned, per-circuit world-light
+   policy. The 21-case snapshot matrix covers all six circuits and up to three
+   players in the listed time-trial/single-race cases. Camera independence is
+   directly proved on Circuit 1 only; other player counts, car models, modes and
+   cameras still need verification before admission.
+2. The [presented material and owner-map evidence](rt-material-evidence.md)
+   passes visible receiver ownership for all overlay-affected taps in the
+   measured six-circuit, one-player, model-0 time-trial/single-race matrix.
+   Preserve this exact draw/face mapping in a production Workload and receiver
+   path; runtime replacement readiness and restoration are not implemented.
 3. Copy physical-light/settings and admitted draws into the matching Workload;
    add receiver vertex/pixel pipelines, descriptors, presented-geometry barriers,
    readiness/resource failure handling and budgets.
-4. Add Original/default and opt-in settings with a usable pipeline. Validate game
-   swapchain pixels, fallback, task/load/resize transitions, timings and missing
-   offscreen casters. This prerequisite milestone does not meet these game gates.
+4. Add Original/default and opt-in settings with a usable pipeline. Then validate
+   actual ray-traced game swapchain pixels, fallback, task/load/resize/resource
+   transitions, timings, vehicle/player/mode coverage and missing offscreen
+   casters. This diagnostic milestone does not meet these game gates.
 
 Relighting, offscreen caster submission and wider scenes/backends remain the
 [follow-on phases](ray-tracing-plan.md#follow-on-phases).

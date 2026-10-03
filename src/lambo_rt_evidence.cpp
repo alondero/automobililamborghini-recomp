@@ -1,6 +1,7 @@
 #define HLSL_CPU
 #include "lambo_rt_evidence.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -67,6 +68,39 @@ std::vector<uint8_t> read_buffer(RT64::RenderWorker* worker, const RenderBuffer*
     return result;
 }
 
+std::vector<uint8_t> read_owner_texture(RT64::RenderWorker* worker, const plume::RenderTexture* source,
+        uint32_t width, uint32_t height) {
+    require(source && width && height && width <= 4096 && height <= 4096, "invalid owner texture extent");
+    const uint32_t row_bytes = width * 8;
+    const uint32_t row_pitch = (row_bytes + 255) & ~255u;
+    const size_t padded_size = size_t(row_pitch) * height;
+    require(padded_size <= capture_budget, "owner texture exceeds capture byte budget");
+    auto target = worker->device->createBuffer(RenderBufferDesc::ReadbackBuffer(padded_size));
+    require(bool(target), "owner readback allocation failed");
+    auto* list = worker->commandList.get();
+    list->begin();
+    list->barriers(RenderBarrierStage::COPY,
+        RenderTextureBarrier(const_cast<plume::RenderTexture*>(source), RenderTextureLayout::COPY_SOURCE));
+    list->copyTextureRegion(RenderTextureCopyLocation::PlacedFootprint(target.get(), RenderFormat::R32G32_UINT,
+        width, height, 1, row_pitch / 8), RenderTextureCopyLocation::Subresource(source));
+    list->barriers(RenderBarrierStage::GRAPHICS,
+        RenderTextureBarrier(const_cast<plume::RenderTexture*>(source), RenderTextureLayout::COLOR_WRITE));
+    list->end();
+    worker->execute();
+    worker->wait();
+    RenderRange range(0, padded_size);
+    const void* mapped = target->map(0, &range);
+    require(mapped != nullptr, "owner readback map failed");
+    std::vector<uint8_t> result(size_t(row_bytes) * height);
+    for (uint32_t y = 0; y < height; ++y) {
+        std::memcpy(result.data() + size_t(y) * row_bytes,
+            static_cast<const uint8_t*>(mapped) + size_t(y) * row_pitch, row_bytes);
+    }
+    RenderRange no_write(0, 0);
+    target->unmap(0, &no_write);
+    return result;
+}
+
 Json material(const RT64::DrawCall& call) {
     const auto& om = call.otherMode;
     const auto& cc = call.colorCombiner;
@@ -92,6 +126,11 @@ Json material(const RT64::DrawCall& call) {
 }
 
 struct RenderEvidence::Impl {
+    struct PendingOwner {
+        uint32_t color_address = 0, width = 0, height = 0;
+        const plume::RenderTexture* texture = nullptr;
+        bool complete = false;
+    };
     std::filesystem::path directory;
     bool drop_overlay = false;
     std::mutex mutex;
@@ -103,6 +142,7 @@ struct RenderEvidence::Impl {
     const RT64::Workload* current = nullptr; // borrowed on the workload thread only
     Json report;
     bool capturing = false;
+    std::vector<PendingOwner> ownerTextures;
 
     std::filesystem::path path(uint64_t sequence, const char* suffix) const {
         return directory / ("task-" + std::to_string(sequence) + suffix);
@@ -119,9 +159,10 @@ struct RenderEvidence::Impl {
     }
 
     bool overlay(uint32_t first, uint32_t count, const RT64::DrawCall& call) const {
-        // Circuit 1 USA identity from func_80013328 and native task evidence.
-        // This is a differential experiment, never production suppression.
-        if (report["native"]["circuit"] != 0 || report["native"]["players"] != 1 ||
+        // The USA car-child identity is measured from func_80013328. Each
+        // circuit/mode still needs its own differential before any support
+        // claim; this capture path never controls production suppression.
+        if (report["native"]["players"] != 1 ||
             count != 48 || call.otherMode.L != 0xC8104A50u ||
             (call.colorCombiner.L & 0xFFFFFFu) != 0x11FFFFu || call.colorCombiner.H != 0xFFFFF238u ||
             (call.geometryMode & ~0x800000u) != 0x12005u) return false;
@@ -154,6 +195,21 @@ RenderEvidence::RenderEvidence() : impl_(std::make_unique<Impl>()) {
 }
 RenderEvidence::~RenderEvidence() = default;
 bool RenderEvidence::enabled() const { return !impl_->directory.empty(); }
+
+bool RenderEvidence::ownerBufferEnabled() const noexcept {
+    return enabled() && flag("LAMBO_RT_OWNER_BUFFER");
+}
+
+void RenderEvidence::ownerBufferIncomplete(uint32_t color_address, const char* reason,
+        uint32_t identity) noexcept {
+    if (!impl_->capturing || reason == nullptr) return;
+    try {
+        impl_->report["owner_incomplete_reasons"].push_back({{"color_address", color_address},
+            {"reason", reason}, {"identity", identity}});
+    } catch (const std::exception& e) {
+        LAMBO_LOG_INFO("rt-evidence", "owner reason rejected: %s\n", e.what());
+    }
+}
 
 void RenderEvidence::remember(uint64_t id, const std::optional<TaskSunProbe>& task) {
     if (!enabled() || !task || !task->native_ram || !task->emitters_complete) return;
@@ -217,9 +273,11 @@ void RenderEvidence::begin(const RT64::Workload& w, float weight) noexcept {
         for (const auto& f : d.rspFog) fog.push_back({f.mul, f.offset});
         impl_->report = {{"schema", 1}, {"native", native}, {"workload", w.workloadId}, {"weight", weight},
             {"drop_overlay", impl_->drop_overlay}, {"calls", calls}, {"raster", Json::array()},
+            {"owner_buffers", Json::array()}, {"owner_incomplete_reasons", Json::array()},
             {"indices", d.faceIndices}, {"world_indices", d.worldIndices}, {"world_groups", groups},
             {"world_addresses", d.worldTransformPhysicalAddresses}, {"local_positions", d.posFloats},
             {"normal_color_bytes", d.normColBytes}, {"fog_indices", d.fogIndices}, {"fog_params", fog}, {"light_counts", d.lightCounts}};
+        impl_->ownerTextures.clear();
         impl_->current = &w;
         impl_->capturing = true;
     } catch (const std::exception& e) { LAMBO_LOG_INFO("rt-evidence", "begin rejected: %s\n", e.what()); }
@@ -228,7 +286,7 @@ void RenderEvidence::begin(const RT64::Workload& w, float weight) noexcept {
 bool RenderEvidence::raster(const RT64::RasterEvidenceRange& range) noexcept {
     if (!impl_->capturing) return true;
     try {
-        const auto [call, first, count, indexed, test_z, scale, offset, scissor, resolution, viewport] = range;
+        const auto [call, first, count, draw_index, indexed, test_z, scale, offset, scissor, resolution, viewport] = range;
         const RT64::DrawCall* desc = nullptr;
         for (uint32_t f = 0; f < impl_->current->fbPairCount; ++f) {
             const auto& fb = impl_->current->fbPairs[f];
@@ -242,7 +300,7 @@ bool RenderEvidence::raster(const RT64::RasterEvidenceRange& range) noexcept {
         require(desc != nullptr, "raster call has no workload identity");
         const bool overlay = indexed && !test_z && impl_->overlay(first, count, *desc);
         const bool omit = impl_->drop_overlay && overlay;
-        impl_->report["raster"].push_back({{"call", call}, {"first", first}, {"count", count},
+        impl_->report["raster"].push_back({{"call", call}, {"first", first}, {"count", count}, {"draw_index", draw_index},
             {"indexed", indexed}, {"test_z", test_z}, {"overlay", overlay}, {"omitted", omit},
             {"screen_scale", {scale[0], scale[1]}}, {"screen_offset", {offset[0], offset[1]}},
             {"scissor", {scissor.left, scissor.top, scissor.right, scissor.bottom}},
@@ -254,6 +312,46 @@ bool RenderEvidence::raster(const RT64::RasterEvidenceRange& range) noexcept {
         impl_->current = nullptr;
         LAMBO_LOG_INFO("rt-evidence", "raster rejected: %s\n", e.what());
         return true;
+    }
+}
+
+void RenderEvidence::ownerBufferRendered(uint32_t color_address, uint32_t width, uint32_t height,
+        const plume::RenderTexture* owner_texture, bool complete) noexcept {
+    if (!impl_->capturing || owner_texture == nullptr) return;
+    try {
+        bool referenced = false;
+        for (const auto& call : impl_->report["calls"]) {
+            if (call["color_address"].get<uint32_t>() == color_address) {
+                referenced = true;
+                break;
+            }
+        }
+        if (!referenced) return;
+        if (!complete) {
+            const bool has_reason = std::any_of(impl_->report["owner_incomplete_reasons"].begin(),
+                impl_->report["owner_incomplete_reasons"].end(), [color_address](const Json& reason) {
+                    return reason.value("color_address", 0u) == color_address;
+                });
+            if (!has_reason) ownerBufferIncomplete(color_address, "framebuffer_incomplete_unspecified", 0);
+        }
+        auto found = std::find_if(impl_->ownerTextures.begin(), impl_->ownerTextures.end(),
+            [color_address](const Impl::PendingOwner& item) { return item.color_address == color_address; });
+        if (found == impl_->ownerTextures.end()) {
+            impl_->ownerTextures.push_back({color_address, width, height, owner_texture, complete});
+        }
+        else {
+            if (found->texture != owner_texture || found->width != width || found->height != height) {
+                found->complete = false;
+                ownerBufferIncomplete(color_address, "owner_target_reused", 0);
+            }
+            found->color_address = color_address;
+            found->width = width;
+            found->height = height;
+            found->texture = owner_texture;
+            found->complete = found->complete && complete;
+        }
+    } catch (const std::exception& e) {
+        LAMBO_LOG_INFO("rt-evidence", "owner target rejected: %s\n", e.what());
     }
 }
 
@@ -277,6 +375,19 @@ void RenderEvidence::completed(const RT64::Workload& w, RT64::RenderWorker* work
         const auto faces = read_buffer(worker, w.drawBuffers.faceIndicesBuffer.get(), index_bytes, RenderBarrierStage::GRAPHICS);
         require(std::memcmp(faces.data(), w.drawData.faceIndices.data(), index_bytes) == 0, "GPU/CPU indices differ");
         const uint64_t sequence = impl_->report["native"]["sequence"];
+        uint64_t owner_bytes_total = 0;
+        for (uint32_t index = 0; index < impl_->ownerTextures.size(); ++index) {
+            const auto& owner = impl_->ownerTextures[index];
+            const auto owner_bytes = read_owner_texture(worker, owner.texture, owner.width, owner.height);
+            owner_bytes_total += owner_bytes.size();
+            require(owner_bytes_total <= capture_budget, "owner maps exceed capture byte budget");
+            const std::string suffix = "-owner-" + std::to_string(index) + ".rg32ui";
+            write_bytes(impl_->path(sequence, suffix.c_str()), owner_bytes.data(), owner_bytes.size());
+            impl_->report["owner_buffers"].push_back({{"color_address", owner.color_address},
+                {"width", owner.width}, {"height", owner.height}, {"row_bytes", owner.width * 8},
+                {"file", "task-" + std::to_string(sequence) + suffix}, {"complete", owner.complete},
+                {"layout", "draw_index_plus_one,primitive_id"}});
+        }
         write_bytes(impl_->path(sequence, "-world.bin"), world.data(), world.size());
         write_bytes(impl_->path(sequence, "-screen.bin"), screen_bytes.data(), screen_bytes.size());
         write_bytes(impl_->path(sequence, "-shade.bin"), shade_bytes.data(), shade_bytes.size());

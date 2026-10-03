@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "name": "rt-overlay-differential",
+  "name": "rt-overlay-owner-native",
   "headless": false,
   "warp": "1:1:0:1",
   "warp_mode": 0,
@@ -9,8 +9,7 @@
     "rt_sun_probe": true,
     "rt_task_capture": true,
     "rt_render_capture": true,
-    "rt_owner_buffer": true,
-    "rt_drop_overlay": true
+    "rt_owner_buffer": true
   },
   "input": {
     "replay": "../recordings/rt-stationary-camera.jsonl",

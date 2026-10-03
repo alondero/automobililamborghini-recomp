@@ -29,6 +29,22 @@ def face_key(group: int, combine: int, geometry: int, points: list) -> tuple:
     return group, combine, geometry, tuple(sorted(tuple(p) for p in points))
 
 
+def belongs_to_physical_car(obj: dict, objects: list) -> bool:
+    """Resolve captured child parts through their bounded native parent chain."""
+    index = obj.get("index")
+    visited = set()
+    while type(index) is int and 0 <= index < len(objects) and index not in visited:
+        visited.add(index)
+        current = objects[index]
+        if current["flags"] & 8:
+            return True
+        parent = current.get("parent")
+        if type(parent) is not int or parent < 0:
+            return False
+        index = parent
+    return False
+
+
 def topology(faces: list) -> dict:
     """Diagnostic edge incidence, never a convexity/solidity admission rule.
 
@@ -71,6 +87,13 @@ def receiver_material(call: dict) -> bool:
             and not call["shader_flags"] & ((1 << 29) | (3 << 30) | 1)
             and len(m["fog_rgba"]) == 4
             and all(math.isfinite(v) and 0 <= v <= 1 for v in m["fog_rgba"]))
+
+
+def validate_overlay_count(overlay_faces: int, require_overlay: bool = True) -> None:
+    # Time trial has one authenticated player shadow. Single race can submit
+    # the same 16-triangle native child for several visible car parents.
+    if require_overlay and (overlay_faces == 0 or overlay_faces % 16 != 0):
+        raise CaptureError(f"native shadow children did not form complete 16-triangle groups: {overlay_faces} triangles")
 
 
 def area(poly: list) -> float:
@@ -200,7 +223,8 @@ def validate_pair(render: dict, present: dict, world: bytes, swap: bytes) -> lis
     return points
 
 
-def inspect(directory: Path, sequence: int, include_geometry: bool = False) -> dict:
+def inspect(directory: Path, sequence: int, include_geometry: bool = False,
+            require_overlay: bool = True) -> dict:
     native_path = directory / "rt-tasks" / f"task-{sequence}.json"
     meta = json.loads(native_path.read_text(encoding="utf-8"))
     native = TaskInspector(native_path.with_suffix(".bin").read_bytes(), meta).inspect()
@@ -283,7 +307,7 @@ def inspect(directory: Path, sequence: int, include_geometry: bool = False) -> d
                 obj = draw.get("native_object")
                 if submitted["overlay"]:
                     roles.add("overlay")
-                elif obj and obj["flags"] & 8:
+                elif obj and belongs_to_physical_car(obj, render["native"]["objects"]):
                     roles.add("car")
                 else:
                     roles.update(r["record_slot"] for r in draw["segment_records"])
@@ -333,8 +357,7 @@ def inspect(directory: Path, sequence: int, include_geometry: bool = False) -> d
                 if viewport_matches:
                     road_screen.append(projected)
                     road_source.append(source_projected)
-    if overlay_faces != 16:
-        raise CaptureError(f"exact 16-triangle overlay did not reach raster submission: {dict(counts)}")
+    validate_overlay_count(overlay_faces, require_overlay)
     result = {"sequence": sequence, "workload": render["workload"], "present": present["present"],
             "counts": dict(counts), "native_gpu_max_world_error": matched_error,
             "caster_candidate_triangles": dict(casters), "receiver_candidate_triangles": dict(receivers),
@@ -342,7 +365,7 @@ def inspect(directory: Path, sequence: int, include_geometry: bool = False) -> d
             "car_parts_topology": {str(g): topology(faces) for g, faces in car_parts.items()},
             "overlay_projection_uncovered_area": sum(uncovered_area(f, road_screen) for f in overlay_screen),
             "unsupported_overlay_projection_faces": unsupported_overlay_projection,
-            "replacement_coverage": "unproved; screen footprints do not prove visible receiver ownership or replacement readiness",
+            "replacement_coverage": "not established by this geometry report; use the raster-owner differential for visible receiver ownership; production replacement remains unimplemented",
             "caster_policy": "authenticated submitted opaque physical triangles; no offscreen completion or solid proxy"}
     if include_geometry:
         result["road_screen"] = road_screen
@@ -359,9 +382,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--allow-missing-overlay", action="store_true",
+                        help="analyze presented materials without claiming the C1 native overlay identity")
     args = parser.parse_args()
     try:
-        result = [inspect(args.run, n) for n in (60, 300, 420, 540)]
+        result = [inspect(args.run, n, require_overlay=not args.allow_missing_overlay) for n in (60, 300, 420, 540)]
         text = json.dumps(result, indent=2) + "\n"
         if args.output:
             args.output.write_text(text, encoding="utf-8")

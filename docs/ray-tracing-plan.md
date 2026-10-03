@@ -1,14 +1,14 @@
 # Optional ray-traced shadows: implementation plan
 
-Status: source-backed proposal, reviewed on 2026-10-02. The subsequent
-[groundwork milestone](rt-shadows.md) implements task-owned art diagnostics and
-a hardware-tested AS/angular-shadow kernel. In-game shadows remain gated;
-the planning review itself performed no GPU validation. The subsequent
-[Circuit 1 provenance work](rt-provenance.md) measured stationary one/two-view
-native world light and car-overlay records. [Presented material evidence](rt-material-evidence.md)
-authenticates opaque surface candidates and the overlay differential; visible
-receiver ownership and ready replacement coverage remain open before integration.
-The target is
+Status: planning review from 2026-10-02, with evidence updated through
+2026-10-03. The [groundwork milestone](rt-shadows.md) implements task-owned art
+diagnostics and a hardware-tested AS/angular-shadow kernel. The
+[owner-map evidence](rt-material-evidence.md) now closes the visible-receiver
+evidence gate for model 0, one-player time trial and single race on all six
+circuits, including forward/rear views. **Production integration and ready
+replacement coverage remain incomplete:** no Workload light/admission snapshot,
+runtime shadow AS, receiver shader, user setting or suppression/fallback path
+exists. The planning review itself performed no GPU validation. The target is
 Automobili Lamborghini: Recompiled. RaceWave46 is a peer implementation to
 learn from; its courses, RAM addresses and lighting policy are not Lamborghini
 inputs.
@@ -16,12 +16,12 @@ inputs.
 ## Recommendation and scope
 
 Add optional sun-angle soft shadows over the existing native raster output.
-Start with one proven one-player race scene on Circuit 1 (circuit index 0),
-using the submitted cars and opaque scenery as casters and an explicitly
-supported road material as receiver. This is a provisional scene choice:
-native sun provenance, draw identity and shadow-overlay replacement must be
-proved before enabling it. Use Circuit 5 (index 4, the city track) later to
-stress geometry coverage, rather than assuming it has suitable sunlight.
+The first measured production candidate is vehicle model 0, one-player time
+trial and single race across Circuits 1–6 on validated Windows D3D12 hardware.
+Each circuit must use its own task-authenticated native key and material policy;
+do not hard-code Circuit 1's record as a universal light. Other vehicles,
+player counts, modes and backends remain native until their light, owner and
+receiver paths are measured.
 
 Own the acceleration structure as a shadow resource from the start. Lamborghini
 does not need RaceWave46's dependency on ray-traced water to add this effect.
@@ -355,7 +355,18 @@ excluding supported Dolphin Free Ride. It is peer test evidence, not a
 Lamborghini defect, implementation task or GPU regression. No duplicate report
 is needed.
 
-For this documentation change, the repository's required checks passed:
+Those statements describe the original 2026-10-02 planning session. The later
+2026-10-03 evidence now includes a 21-case native-light matrix, 18 complete
+presented-material/owner cases for one/two players, and 12 one-player overlay
+owner differentials (six circuits by two modes). All 48 overlay differential
+tasks have complete owner maps: 1,092,611 RGB pixels changed, 4,370,444 VI taps
+were checked, and no changed sample had an unknown/unsupported before/after
+owner. This does not implement or validate the production receiver path,
+settings, actual RT game pixels, softness, lifecycle or performance. Detailed
+scope and unsupported cases are in [material evidence](rt-material-evidence.md)
+and [native provenance](rt-provenance.md).
+
+For the original documentation change, the repository's required checks passed:
 documentation validation covered 45 Markdown files, the Python host suite ran
 47 tests, and Git found no whitespace errors. Exact commands:
 
@@ -368,23 +379,21 @@ git diff --check
 ## Next-session prompt
 
 ~~~text
-Implement the first bounded ray-tracing milestone in Automobili Lamborghini:
-Recompiled, using docs/ray-tracing-plan.md. RaceWave46 is peer source only.
-Read CLAUDE.md, CONTRIBUTING.md, BUILDING.md and the patch inventory, verify
-the current commit/dependencies, and complete phase 0 first: prove native sun
-provenance, task ownership, Circuit 1 receivers/casters and original car-shadow
-draw identity from the supported USA ROM and reproducible captures.
-
-Then add opt-in shadow-only D3D12 inline ray queries over presented RT64
-geometry, with camera-independent lighting and angular soft-shadow sampling.
-Keep native material/fog/alpha/depth behavior, restore original shadows on every
-fallback, and keep game policy in the port with reusable renderer changes in a
-reviewable patch. Validate using production GPU probes and real RT64 swapchain
-captures; CPU/headless tests alone do not prove RT output. Keep relighting,
-offscreen caster expansion and wider backend/multiplayer support for follow-ons.
-If a provenance or overlay gate cannot be proved, deliver the measured finding
-and bounded GPU groundwork without claiming a working game enhancement.
-Use finish when done.
+Continue PR #279 and issue #278 from the current branch. Read CLAUDE.md,
+CONTRIBUTING.md, patches/README.md, docs/rt-provenance.md,
+docs/rt-material-evidence.md, docs/rt-shadows.md and this plan. Do not redo the
+completed D3D12 owner-map proof for model 0, one-player time trial/single race,
+Circuits 1–6, forward/rear views. Finish the production integration in stages:
+per-circuit task-owned native light policy; scene epoch/task/light and
+authenticated draw/face values copied into RT64 Workload; shadow AS from
+admitted presented geometry; native-material/fog/depth-preserving receiver
+path; ready-gated exact overlay suppression with unconditional native fallback;
+and an opt-in setting whose default is Original. Then test real game swapchain
+pixels, hard parity, softening, self-shadow bias, scene transitions, resize,
+resource failures and GPU cost. Expand coverage across all supported vehicles,
+circuits, race modes and player counts; keep unvalidated backends/scenes native.
+Keep relighting and offscreen caster submission deferred. Do not close #278
+until its proof and integration requirements are complete. Use finish.
 ~~~
 
 [peer-light]: https://github.com/DomazinUS/RaceWave46/blob/5c34f3711426978107707a8f06af9c2af4ee5401/lib/rt64/src/common/rt64_wr64_rt_shadow.h

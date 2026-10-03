@@ -9,7 +9,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from check_rt_overlay_capture import filter_taps, inside
-from check_rt_render_capture import (area, opaque_coverage, receiver_material,
+from check_rt_render_capture import (area, belongs_to_physical_car, opaque_coverage, receiver_material, validate_overlay_count,
                                      screen_face, topology, uncovered_area, validate_pair)
 from inspect_rt_task import CaptureError
 
@@ -22,6 +22,24 @@ def material() -> dict:
 
 
 class MaterialTests(unittest.TestCase):
+    def test_physical_car_components_follow_authenticated_parent_chain(self):
+        objects = [{"flags": 0x9, "parent": -1}, {"flags": 0x26, "parent": 0}]
+        self.assertTrue(belongs_to_physical_car({"index": 0}, objects))
+        self.assertTrue(belongs_to_physical_car({"index": 1}, objects))
+        self.assertFalse(belongs_to_physical_car({"index": 2}, objects))
+        objects.extend([{"flags": 0, "parent": 3}, {"flags": 0, "parent": 2}])
+        self.assertFalse(belongs_to_physical_car({"index": 2}, objects))
+
+    def test_generic_material_capture_does_not_claim_a_c1_overlay(self):
+        validate_overlay_count(0, require_overlay=False)
+        with self.assertRaises(CaptureError):
+            validate_overlay_count(0)
+        validate_overlay_count(16)
+        validate_overlay_count(32)
+        validate_overlay_count(96)
+        with self.assertRaises(CaptureError):
+            validate_overlay_count(17)
+
     def test_cutout_blend_and_depth_paths_are_excluded(self):
         self.assertTrue(opaque_coverage(material()))
         for field, value in (("alpha_compare", 1), ("coverage_times_alpha", True),

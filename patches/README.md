@@ -36,6 +36,7 @@ significant single-space lines from `git diff --check`;
 | 0021 | RT64 | Shadow-only AS resources, shared parameter ABI and angular-query/fog kernel. Applied by CMake. Developer groundwork only; game receivers remain gated. Upstream comparison and hardware probe evidence are below. |
 | 0022 | RT64 | Opt-in queue-owned material/raster evidence and fenced GPU/present observation. Thread-local raster scope excludes HLE's framebuffer renderer. Port-owned capture policy; no sunlight Workload fields or production receiver integration. |
 | 0023 | Plume inside RT64 | D3D12 texture-to-buffer readback selects source sample positions when destination is a placed-footprint buffer, avoiding a null texture dereference. ROM-free 7x3 padded-row GPU regression. |
+| 0024 | RT64 | Optional D3D12 owner-output pipelines mirror native raster clipping, material/discard and depth behavior, including the generic ubershader fallback, into an R32G32_UINT diagnostic target with cloned depth. On RTX 3080 captures, enabling the diagnostic leaves the actual swapchain byte-identical. It is evidence instrumentation only; it does not implement shadow replacement. |
 
 ## Application matrix
 
@@ -55,12 +56,15 @@ still references the conditional full RT path; its
 does not implement this angular-query kernel. This local groundwork is not an
 upstream-supported feature or dependency upgrade. No upstream issue was opened.
 
-Patches **0022/0023** are applied idempotently by CMake on all supported build
+Patches **0022/0023/0024** are applied idempotently by CMake on all supported build
 paths. Readback is an explicit D3D12 developer diagnostic; normal rendering has
 no observer or capture GPU allocations. The observer registers before queues
 start and is cleared after they join. Its scoped raster activation prevents
 HLE calls from entering queue-owned mutable capture state. Ownership, current
 measurements and remaining gates are in [presented evidence](../docs/rt-material-evidence.md).
+The owner map authenticates the exact draw that won native depth and the
+post-omission visible receiver at each VI filtering tap in the measured
+one-player matrix; the production Workload/receiver path remains unimplemented.
 
 Compared on 2026-10-02 with RT64
 `43373749dac9bbc1b653e6a02aed40a9e1783bed`: its
@@ -75,9 +79,9 @@ support claims; no upstream issue was opened.
 
 | Build path | Applies |
 | --- | --- |
-| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0023 in CMake. |
-| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0023 in CMake. |
-| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0023 in CMake. |
+| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0024 in CMake. |
+| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0024 in CMake. |
+| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0024 in CMake. |
 
 If a patch no longer applies to its pinned submodule, stop and update the
 patch or pin as a deliberate change. Do not reset a developer's unrelated

@@ -145,6 +145,18 @@ class ScenarioRunnerTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 2)
         self.assertIn("alternative bootstraps", completed.stderr)
 
+    def test_warp_accepts_supported_vehicle_range(self) -> None:
+        completed, _ = self.run_scenario({"schema": 1, "name": "vehicle-23", "warp": "1:1:23:1"})
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("PASS vehicle-23", completed.stdout)
+
+        path = self.scenario_dir / "unsupported-vehicle.json"
+        path.write_text(json.dumps({"schema": 1, "name": "vehicle-24", "warp": "1:1:24:1"}), encoding="utf-8")
+        rejected = subprocess.run([sys.executable, str(RUNNER), str(path), "--exe", str(self.fake)],
+                                  cwd=self.root, capture_output=True, text=True, timeout=10)
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("car must be a supported model 0-23", rejected.stderr)
+
     def test_sun_probe_is_explicit_and_missing_output_fails(self) -> None:
         scenario = {"schema": 1, "name": "sun-probe", "headless": False,
                     "diagnostics": {"rt_sun_probe": True}, "expect": {"sun_probe": True}}
@@ -195,6 +207,8 @@ class ScenarioRunnerTests(unittest.TestCase):
     def test_render_diagnostic_dependencies_fail_before_launch(self) -> None:
         for diagnostics, expect in (({"rt_render_capture": True}, {}),
                                     ({"rt_drop_overlay": True}, {}),
+                                    ({"rt_owner_buffer": True}, {}),
+                                    ({"rt_render_capture": True, "rt_drop_overlay": True}, {}),
                                     ({"rt_sun_probe": True}, {"rt_render_captures": [60]}),
                                     ({}, {"rt_render_captures": [True]})):
             with self.subTest(diagnostics=diagnostics, expect=expect):
@@ -204,6 +218,18 @@ class ScenarioRunnerTests(unittest.TestCase):
                 completed = subprocess.run([sys.executable, str(RUNNER), str(path), "--exe", str(self.fake)],
                                            cwd=self.root, capture_output=True, text=True, timeout=10)
                 self.assertEqual(completed.returncode, 2)
+
+    def test_overlay_capture_requires_and_enables_owner_buffer(self) -> None:
+        scenario = {"schema": 1, "name": "overlay-owner", "headless": False,
+                    "diagnostics": {"rt_sun_probe": True, "rt_task_capture": True,
+                                    "rt_render_capture": True, "rt_owner_buffer": True,
+                                    "rt_drop_overlay": True},
+                    "expect": {"sun_probe": True, "rt_render_captures": [60]}}
+        completed, artifact = self.run_scenario(scenario)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("RT rendered task 60 capture rejected", completed.stdout)
+        environment = json.loads((artifact / "harness-environment.json").read_text())
+        self.assertEqual(environment["LAMBO_RT_OWNER_BUFFER"], "1")
 
 
 if __name__ == "__main__":

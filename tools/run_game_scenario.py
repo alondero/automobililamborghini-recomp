@@ -55,8 +55,8 @@ def _warp(value: Any) -> str:
     circuit, laps, car, players = values
     if not 1 <= circuit <= 6 or not 1 <= laps <= 30:
         raise ScenarioError("scenario.warp circuit must be 1-6 and laps must be 1-30")
-    if car != 0:
-        raise ScenarioError("scenario.warp currently supports runtime-verified car 0")
+    if not 0 <= car <= 23:
+        raise ScenarioError("scenario.warp car must be a supported model 0-23")
     if not 1 <= players <= 4 or (players >= 3 and circuit > 3):
         raise ScenarioError("scenario.warp has an unsupported player/track combination")
     return text
@@ -109,15 +109,19 @@ def load_scenario(path: Path) -> dict[str, Any]:
 
     scenario["expect"] = _dict(scenario.get("expect", {}), "scenario.expect")
     diagnostics = _dict(scenario.get("diagnostics", {}), "scenario.diagnostics")
-    if set(diagnostics) - {"rt_sun_probe", "rt_task_capture", "rt_render_capture", "rt_drop_overlay"}:
+    if set(diagnostics) - {"rt_sun_probe", "rt_task_capture", "rt_render_capture", "rt_drop_overlay", "rt_owner_buffer"}:
         raise ScenarioError("unsupported scenario diagnostic")
-    for key in ("rt_render_capture", "rt_drop_overlay"):
+    for key in ("rt_render_capture", "rt_drop_overlay", "rt_owner_buffer"):
         if key in diagnostics and type(diagnostics[key]) is not bool:
             raise ScenarioError(f"scenario.diagnostics.{key} must be boolean")
     if diagnostics.get("rt_render_capture") and not diagnostics.get("rt_task_capture"):
         raise ScenarioError("rt_render_capture requires rt_task_capture")
     if diagnostics.get("rt_drop_overlay") and not diagnostics.get("rt_render_capture"):
         raise ScenarioError("rt_drop_overlay requires rt_render_capture")
+    if diagnostics.get("rt_owner_buffer") and not diagnostics.get("rt_render_capture"):
+        raise ScenarioError("rt_owner_buffer requires rt_render_capture")
+    if diagnostics.get("rt_drop_overlay") and not diagnostics.get("rt_owner_buffer"):
+        raise ScenarioError("rt_drop_overlay requires rt_owner_buffer for receiver-ownership proof")
     if "rt_sun_probe" in diagnostics and not isinstance(diagnostics["rt_sun_probe"], bool):
         raise ScenarioError("scenario.diagnostics.rt_sun_probe must be boolean")
     if diagnostics.get("rt_sun_probe") and scenario.get("headless", True):
@@ -223,6 +227,8 @@ def build_environment(scenario: dict[str, Any], runtime: dict[str, Any], artifac
     if runtime.get("diagnostics", {}).get("rt_render_capture"):
         runtime["diagnostics"]["render_capture_path"] = str(artifact / "rt-render")
         environment["LAMBO_RT_RENDER_CAPTURE_DIR"] = str(artifact / "rt-render")
+        if runtime["diagnostics"].get("rt_owner_buffer"):
+            environment["LAMBO_RT_OWNER_BUFFER"] = "1"
         if runtime["diagnostics"].get("rt_drop_overlay"):
             environment["LAMBO_RT_EVIDENCE_DROP_OVERLAY"] = "1"
 
@@ -372,7 +378,8 @@ def evaluate(scenario: dict[str, Any], result: dict[str, Any], returncode: int |
     for sequence in expected.get("rt_render_captures", []):
         try:
             directory = Path(scenario["diagnostics"]["render_capture_path"]).parent
-            inspect_render_capture(directory, sequence)
+            inspect_render_capture(directory, sequence,
+                                   require_overlay=bool(scenario["diagnostics"].get("rt_drop_overlay")))
         except (CaptureError, OSError, ValueError, KeyError, TypeError, IndexError) as error:
             failures.append(f"RT rendered task {sequence} capture rejected: {error}")
     return failures

@@ -1,11 +1,12 @@
-# Presented Circuit 1 material evidence
+# Presented material and receiver-ownership evidence
 
-Status: diagnostic milestone after PR #279 (`d9c6f82`), measured on Windows
-on 2026-10-02. Native opaque surface candidates and presented indexed ranges
-are authenticated. The exact overlay has a reproducible swapchain differential.
-**Visible receiver ownership and ready RT replacement coverage remain unproved.
-Workload sunlight fields and raster receiver integration stay gated.** Relighting
-and offscreen submission remain follow-on phases.
+Status: diagnostic milestone after PR #279 (`bd05651`), measured on Windows
+on 2026-10-03. The D3D12 raster-owner diagnostic proves visible receiver
+ownership for every overlay-affected filter tap in the measured one-player
+scenes. **Production shadow replacement is still unimplemented:** no shadow
+Workload value, scene acceleration structure, receiver shader, user setting or
+native-overlay suppression path is connected. Unsupported cases remain native.
+Relighting and offscreen caster submission remain follow-on phases.
 
 Read [native provenance](rt-provenance.md), [GPU groundwork](rt-shadows.md)
 and the [plan](ray-tracing-plan.md) with this page.
@@ -65,45 +66,67 @@ explain the body result. Convexity is not a ray-query admission prerequisite;
 edge incidence is diagnostic, not proof of holes or a disqualification rule.
 No runtime AS is constructed from the report.
 
-## Overlay differential and the remaining gate
+## Overlay differential and owner-map proof
 
 Correct the earlier prose: the flat child uses **`FC11FFFF/FFFFF238`**, not
-`FC127FFF/FFFFF238`. Existing immutable dumps and HLE agree. The latter occurs
-on physical car/wall materials. Diagnostic omission also requires Circuit 1,
-one view, 48 original indices, `C8104A50`, geometry `0x12005`, one native
-car-object group, child flags `0x42`, list `0x8013D3C8` and a physical-car parent.
-Offline matching authenticates producer/emitter and corners. The trail sharing
-`C8104A50` keeps its different combiner/group and is never omitted.
+`FC127FFF/FFFFF238`. Existing immutable dumps and HLE agree. The diagnostic
+identifies the exact child by authenticated emitter, object/parent, transform
+and material state; it does not filter by render mode. Its suppression predicate
+remains evidence-only code.
 
-The baseline and native repeat have identical draw inputs, GPU world/screen/
-shade bytes and every presented BGRA byte. Omission changes only the overlay
-range. Captures include actual VI viewport, video/texture extents, scissor and
-filtering. The checker handles nearest, linear and pinned PixelAntialiasing
-UV warp/clamp with nonzero sampler taps.
+The measured matrix is Circuit 1 through 6, vehicle model 0, one player, time
+trial and single race. Each of the 12 scene/mode combinations was captured at
+tasks 60, 300, 420 and 540 in a plain baseline, owner-enabled native repeat and
+exact-overlay omission run. Each scenario consumed 600/600 replay frames and
+made 601 swaps. The single-race captures use one human player with native race
+opponents.
 
-| Task | RGB pixels changed by omission | Inclusive pixel bounds |
-| --- | --- | --- |
-| 60 | 22958 | (601,536) to (1039,668) |
-| 300 | 18388 | (546,533) to (984,679) |
-| 420 | 22958 | (601,536) to (1039,668) |
-| 540 | 22958 | (601,536) to (1039,668) |
+The owner pipeline is a second D3D12 raster pass into an `R32G32_UINT` target
+with cloned depth. It mirrors the displayed pass's clipping, draw selection,
+shader/material/discard and depth decisions. The no-owner baseline and
+owner-enabled repeat are byte-identical on the real swapchain for every task.
+The repeat's owner ID must identify the exact native overlay for each changed
+swapchain pixel. After omission, every nonzero nearest/linear/PixelAA VI tap of
+every changed pixel must map to an indexed presented primitive admitted for
+opaque coverage and the measured fog-safe receiver path. Unknown, raw, test-Z,
+overlay, unowned, wrong-material and unsupported-fog owners fail closed. No
+changed-pixel tap had one of those owners, and every omission owner target was
+complete.
 
-Every changed pixel has a contributing tap in the exact overlay footprint.
-Every contributing overlay tap lies in admitted road footprints; projected
-uncovered area is zero. Homogeneous clipping matters: rejecting whole
-near-plane-crossing triangles falsely removes foreground road. The checker
-includes RasterVS clipping, RasterPS's F3D far bound, scissor and culling.
-Empty clipped polygons cover nothing.
+Across the 48 task/view captures, omission changed **1,092,611 RGB pixels** and
+the checker validated **4,370,444 VI taps**. It found zero changed pixels
+without an overlay-owned tap in the native repeat and zero unsupported receiver
+taps after omission. These are repeated per-frame pixel counts, not unique
+screen locations. The visible-receiver evidence gate passes for this sampled
+matrix. The diagnostic does not build a shadow scene or change player rendering.
 
-These are **screen-footprint and native pixel-differential proofs**. The union
-does not establish the visible receiver primitive after native depth, raster
-edge/sample coverage or later draws. It cannot establish ready shadow AS,
-receiver shader or failure restoration: those do not exist yet. The checker
-always reports replacement coverage unproved. Next, establish eligible visible
-receiver ownership with a GPU material/depth diagnostic while preserving exact
-draw/face identity. Only then proceed to Workload/raster integration. Production
-suppression must also require that view's valid light, scene, coverage and
-pipeline readiness, restoring native output on every fallback.
+Projected polygons are retained only as diagnostics. Two affected pixels
+(Circuit 6, rear task 300 in time trial and single race) fall outside the old
+projected overlay polygon, while their native owner IDs still identify the
+overlay and every post-omission filter tap resolves to an admitted receiver.
+This confirms projected footprints cannot decide this gate. Actual owner IDs
+identify the draw before omission and the visible primitive after omission; the
+checker then maps actual VI filtering taps to the presented texture.
+
+The exact child has 16 triangles in the Circuit 1 task. Other scenes can submit
+multiple exact children, so identity is checked per child rather than assuming
+one overlay per view. The trail sharing `C8104A50` keeps its different
+combiner/group and is never omitted.
+
+All six circuits and both measured modes have a valid light/material/overlay
+record for this model and player count. This is bounded evidence only: no other
+car model, two-to-four-player receiver-owner matrix, menu, other race mode,
+offscreen caster, HDR, MSAA, interpolated presentation, or non-D3D12 backend has
+passed. A sampled owner map is not runtime replacement readiness; unsupported,
+pending and failed cases must continue to use native output.
+
+The earlier candidate inventory authenticates submitted opaque surfaces, not
+production admission. The owner proof removes the visible-receiver *evidence*
+gate; it does not by itself authorize production suppression. Integration must
+carry task light and exact draw/face metadata into Workload, build the shadow
+scene from admitted presented geometry, and restore native output on every
+unsupported, pending or failed path. No such Workload field, receiver shader,
+setting or production fallback is implemented yet.
 
 ## Ownership and diagnostic failures
 
@@ -157,9 +180,10 @@ python tools/check_rt_overlay_capture.py artifacts/game-scenarios/<baseline> art
 python -m unittest discover tests -p test_rt_render_capture.py
 ~~~
 
-Final captures: `rt-presented-materials-bvni54cp`,
-`rt-presented-materials-ww1woxe3`, `rt-overlay-differential-y8zk3d4s`.
-Each verified 600/600 input frames, 601 swaps and four native/rendered pairs.
+Final Circuit 1 presented-material captures: `rt-presented-materials-bvni54cp`,
+`rt-presented-materials-ww1woxe3`, `rt-overlay-differential-y8zk3d4s`. Cross-circuit
+owner proofs are summarized in ignored `artifacts/rt-light-matrix/*overlay-proof.json`.
+Each scenario verified 600/600 input frames, 601 swaps and four native/rendered pairs.
 Hardware: RTX 3080, Windows driver 32.0.16.1088, D3D12. The extended ROM-free GPU
 probe passed 9189 checks with debug layer enabled and no errors. It exercises
 the existing AS/query kernel and texture readback, not a game receiver. No RT
@@ -178,12 +202,20 @@ ran. Default headless `harness-smoke-rir310dn` and capture-disabled windowed
 ## Next-session prompt
 
 ~~~text
-Continue PR #279 and issue #278. Read docs/rt-material-evidence.md,
-docs/rt-provenance.md, docs/rt-shadows.md and docs/ray-tracing-plan.md.
-Presented opaque surface candidates and the exact overlay differential are
-established. Prove visible eligible receiver ownership and replacement coverage;
-projected unions alone are insufficient. Preserve exact draw/face mapping and
-failure restoration. Only then add the matching Workload sunlight/admission
-snapshot and raster receiver path. Keep relighting/offscreen submission deferred.
-Use finish.
+Continue PR #279 and issue #278 from the current branch. Read CLAUDE.md,
+CONTRIBUTING.md, patches/README.md, docs/rt-provenance.md,
+docs/rt-material-evidence.md, docs/rt-shadows.md and docs/ray-tracing-plan.md.
+The D3D12 owner-map gate passes for model 0, one-player time trial and single
+race on all six circuits, with forward/rear views and exact overlay pixel
+attribution. Implement the production path in stages: use a measured
+per-circuit task-owned world-light policy (do not hard-code Circuit 1 as
+universal), carry scene epoch/task/light plus authenticated draw/face metadata
+into RT64 Workload, build shadow AS from admitted presented geometry, preserve
+native material/fog/depth behavior in a ready-gated receiver path, then add the
+opt-in Original-default setting and native fallback. Validate actual game
+swapchain pixels, hard parity, softness, self-shadow bias, transitions, resize,
+resource failure and GPU cost. Keep unsupported vehicles, player counts, modes
+and backends native until measured; keep relighting and offscreen caster
+submission deferred. Do not close #278 until integration and expanded coverage
+requirements are complete. Use finish.
 ~~~

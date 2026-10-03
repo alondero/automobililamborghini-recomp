@@ -1,0 +1,260 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -498,6 +498,7 @@
+ 
+ build_pixel_shader(  rt64 "src/shaders/RasterPS.hlsl" "src/shaders/RasterPSDynamic.hlsl" "-D DYNAMIC_RENDER_PARAMS")
+ build_pixel_shader(  rt64 "src/shaders/RasterPS.hlsl" "src/shaders/RasterPSDynamicMS.hlsl" "-D DYNAMIC_RENDER_PARAMS" "-D MULTISAMPLING")
++build_shader_dxil(   rt64 "src/shaders/RasterPS.hlsl" "${DXC_PS_OPTS}" "src/shaders/RasterPSOwner.hlsl" "-D DYNAMIC_RENDER_PARAMS" "-D OWNER_BUFFER")
+ build_pixel_shader_spec_constants(rt64 "src/shaders/RasterPS.hlsl" "src/shaders/RasterPSSpecConstant.hlsl" "-D SPEC_CONSTANT_RENDER_PARAMS")
+ build_pixel_shader_spec_constants(rt64 "src/shaders/RasterPS.hlsl" "src/shaders/RasterPSSpecConstantMS.hlsl" "-D SPEC_CONSTANT_RENDER_PARAMS" "-D MULTISAMPLING")
+ build_pixel_shader_spec_constants(rt64 "src/shaders/RasterPS.hlsl" "src/shaders/RasterPSSpecConstantFlat.hlsl" "-D SPEC_CONSTANT_RENDER_PARAMS" "-D VERTEX_FLAT_COLOR")
+--- a/src/shaders/RasterPS.hlsl
++++ b/src/shaders/RasterPS.hlsl
+@@ -290,8 +290,13 @@
+ #if defined(DYNAMIC_RENDER_PARAMS)
+     , bool isFrontFace : SV_IsFrontFace
+ #endif
++#if defined(OWNER_BUFFER)
++    , in uint primitiveID : SV_PrimitiveID
++    , out uint2 pixelOwner : SV_TARGET0
++#else
+     , [[vk::location(0)]] [[vk::index(0)]] out float4 pixelColor : SV_TARGET0
+     , [[vk::location(0)]] [[vk::index(1)]] out float4 pixelAlpha : SV_TARGET1
++#endif
+ )
+ {
+ #if !defined(DYNAMIC_RENDER_PARAMS)
+@@ -307,7 +312,11 @@
+         discard;
+     }
+ 
++#if defined(OWNER_BUFFER)
++    pixelOwner = uint2(gConstants.renderIndex + 1, primitiveID);
++#else
+     pixelColor = resultColor;
+     pixelAlpha = resultAlpha;
+-}
+-#endif
+\ No newline at end of file
++#endif
++}
++#endif
+--- a/src/render/rt64_raster_shader.cpp
++++ b/src/render/rt64_raster_shader.cpp
+@@ -22,6 +22,7 @@
+ #ifdef _WIN32
+ #   include "shaders/RasterPSLibrary.hlsl.dxil.h"
+ #   include "shaders/RasterPSLibraryMS.hlsl.dxil.h"
++#   include "shaders/RasterPSOwner.hlsl.dxil.h"
+ #   include "shaders/RasterVSLibrary.hlsl.dxil.h"
+ #   include "shaders/RasterPSDynamic.hlsl.dxil.h"
+ #   include "shaders/RasterPSDynamicMS.hlsl.dxil.h"
+@@ -369,7 +370,7 @@
+ 
+         // Alpha blending is performed by using dual source blending. The blending factor will be in the secondary output.
+         RenderBlendDesc &targetBlend = pipelineDesc.renderTargetBlend[0];
+-        if (c.alphaBlend) {
++        if (c.alphaBlend && !c.ownerBuffer) {
+             targetBlend.blendEnabled = true;
+             targetBlend.srcBlend = RenderBlend::SRC1_ALPHA;
+             targetBlend.dstBlend = RenderBlend::INV_SRC1_ALPHA;
+@@ -377,7 +378,7 @@
+         }
+ 
+         // Emulating coverage wrap requires turning the alpha blending into an additive mode.
+-        if (c.cvgAdd) {
++        if (c.cvgAdd && !c.ownerBuffer) {
+             targetBlend.blendEnabled = true;
+             targetBlend.dstBlendAlpha = RenderBlend::ONE;
+         }
+@@ -481,6 +482,11 @@
+ 
+         vertexShader = device->createShader(VSBlob, VSBlobSize, "VSMain", shaderFormat);
+         pixelShader = device->createShader(PSBlob, PSBlobSize, "PSMain", shaderFormat);
++        const bool ownerSupported = shaderFormat == RenderShaderFormat::DXIL && !useMSAA;
++        if (ownerSupported) {
++            ownerPixelShader = device->createShader(RasterPSOwnerBlobDXIL,
++                uint32_t(std::size(RasterPSOwnerBlobDXIL)), "PSMain", shaderFormat);
++        }
+ 
+         FramebufferRendererDescriptorCommonSet descriptorCommonSet(shaderLibrary->samplerLibrary, device->getCapabilities().raytracing);
+         FramebufferRendererDescriptorTextureSet descriptorTextureSet;
+@@ -496,7 +502,8 @@
+         pipelineLayout = layoutBuilder.create(device);
+ 
+         // Generate all possible combinations of pipeline creations and assign them to each thread. Skip the ones that are invalid.
+-        uint32_t pipelineCount = uint32_t(std::size(pipelines));
++        constexpr uint32_t PipelineStateCount = 8;
++        uint32_t pipelineCount = PipelineStateCount;
+         pipelineThreadCreations.clear();
+         pipelineThreadCreations.resize(std::min(threadCount, pipelineCount));
+ 
+@@ -518,6 +525,12 @@
+             creation.cvgAdd = i & (1 << 2);
+ 
+             pipelineThreadCreations[threadIndex].emplace_back(creation);
++            if (ownerSupported) {
++                PipelineCreation ownerCreation = creation;
++                ownerCreation.pixelShader = ownerPixelShader.get();
++                ownerCreation.ownerBuffer = true;
++                pipelineThreadCreations[threadIndex].emplace_back(ownerCreation);
++            }
+             threadIndex = (threadIndex + 1) % threadCount;
+         }
+ 
+@@ -608,7 +621,8 @@
+         }
+ 
+         for (const PipelineCreation &creation : pipelineThreadCreations[threadIndex]) {
+-            uint32_t pipelineIndex = pipelineStateIndex(creation.zCmp, creation.zUpd, creation.cvgAdd);
++            uint32_t pipelineIndex = pipelineStateIndex(creation.zCmp, creation.zUpd, creation.cvgAdd) +
++                (creation.ownerBuffer ? 8 : 0);
+ 
+             if (pipelineIndex == 0) {
+                 firstPipelineMutex.lock();
+@@ -632,6 +646,7 @@
+             pipelineThreadCreations.clear();
+             vertexShader.reset();
+             pixelShader.reset();
++            ownerPixelShader.reset();
+             pipelinesCreated = true;
+         }
+     }
+@@ -646,4 +661,8 @@
+     const RenderPipeline *RasterShaderUber::getPipeline(bool zCmp, bool zUpd, bool cvgAdd) const {
+         return pipelines[pipelineStateIndex(zCmp, zUpd, cvgAdd)].get();
+     }
++
++    const RenderPipeline *RasterShaderUber::getOwnerPipeline(bool zCmp, bool zUpd, bool cvgAdd) const {
++        return pipelines[pipelineStateIndex(zCmp, zUpd, cvgAdd) + 8].get();
++    }
+ };
+--- a/src/render/rt64_raster_shader.h
++++ b/src/render/rt64_raster_shader.h
+@@ -81,7 +81,7 @@
+         static const uint64_t RasterVSLibraryHash;
+         static const uint64_t RasterPSLibraryHash;
+ 
+-        std::unique_ptr<RenderPipeline> pipelines[8];
++        std::unique_ptr<RenderPipeline> pipelines[16];
+         std::unique_ptr<RenderPipeline> postBlendDitherNoiseAddPipeline;
+         std::unique_ptr<RenderPipeline> postBlendDitherNoiseSubPipeline;
+         std::unique_ptr<RenderPipeline> postBlendDitherNoiseSubNegativePipeline;
+@@ -93,6 +93,7 @@
+         std::vector<std::unique_ptr<std::thread>> pipelineThreads;
+         std::unique_ptr<RenderShader> vertexShader;
+         std::unique_ptr<RenderShader> pixelShader;
++        std::unique_ptr<RenderShader> ownerPixelShader;
+ 
+         RasterShaderUber(RenderDevice *device, RenderShaderFormat shaderFormat, const RenderMultisampling &multisampling, const ShaderLibrary *shaderLibrary, uint32_t threadCount);
+         ~RasterShaderUber();
+@@ -100,5 +101,6 @@
+         void waitForPipelineCreation();
+         uint32_t pipelineStateIndex(bool zCmp, bool zUpd, bool cvgAdd) const;
+         const RenderPipeline *getPipeline(bool zCmp, bool zUpd, bool cvgAdd) const;
++        const RenderPipeline *getOwnerPipeline(bool zCmp, bool zUpd, bool cvgAdd) const;
+     };
+ };
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -1792,7 +1792,10 @@
+                                 !copyMode && call.shaderDesc.otherMode.zCmp() && (call.shaderDesc.otherMode.zMode() != ZMODE_DEC),
+                                 !copyMode && call.shaderDesc.otherMode.zUpd(),
+                                 (call.shaderDesc.otherMode.cvgDst() == CVG_DST_WRAP) || (call.shaderDesc.otherMode.cvgDst() == CVG_DST_SAVE));
+-                            triangles.ownerPipeline = nullptr;
++                            triangles.ownerPipeline = rasterShaderUber->getOwnerPipeline(
++                                !copyMode && call.shaderDesc.otherMode.zCmp() && (call.shaderDesc.otherMode.zMode() != ZMODE_DEC),
++                                !copyMode && call.shaderDesc.otherMode.zUpd(),
++                                (call.shaderDesc.otherMode.cvgDst() == CVG_DST_WRAP) || (call.shaderDesc.otherMode.cvgDst() == CVG_DST_SAVE));
+                         }
+                         
+                         triangles.faceCount = call.callDesc.triangleCount;
+--- a/src/render/rt64_framebuffer_renderer.h
++++ b/src/render/rt64_framebuffer_renderer.h
+@@ -117,6 +117,21 @@
+             std::unique_ptr<RenderBuffer> paramsBuffer;
+             std::unique_ptr<FramebufferRendererDescriptorFramebufferSet> descRealFbSet;
+             std::unique_ptr<FramebufferRendererDescriptorFramebufferSet> descDummyFbSet;
++            std::unique_ptr<RenderTexture> evidenceOwnerTexture;
++            std::unique_ptr<RenderTextureView> evidenceOwnerTextureView;
++            std::unique_ptr<RenderTexture> evidenceOwnerDepthTexture;
++            std::unique_ptr<RenderTextureView> evidenceOwnerDepthTextureView;
++            std::unique_ptr<RenderFramebuffer> evidenceOwnerDepthWrite;
++            std::unique_ptr<RenderFramebuffer> evidenceOwnerDepthRead;
++            std::unique_ptr<FramebufferRendererDescriptorFramebufferSet> evidenceOwnerRealFbSet;
++            std::unique_ptr<FramebufferRendererDescriptorFramebufferSet> evidenceOwnerDummyFbSet;
++            uint32_t evidenceOwnerAddress = 0;
++            uint32_t evidenceOwnerWidth = 0;
++            uint32_t evidenceOwnerHeight = 0;
++            uint32_t evidenceOwnerDepthWidth = 0;
++            uint32_t evidenceOwnerDepthHeight = 0;
++            bool evidenceOwnerDepthReadOnly = false;
++            bool evidenceOwnerComplete = false;
+             std::set<RenderTarget *> transitionRenderTargetSet;
+             RenderTargetDrawCall renderTargetDrawCall;
+             RenderViewport viewport;
+@@ -166,7 +181,7 @@
+         void updateShaderViews(RenderWorker *worker, const DrawBuffers *drawBuffers, const OutputBuffers *outputBuffers, bool raytracingEnabled);
+         void submitRSPSmoothNormalCompute(RenderWorker *worker, const OutputBuffers *outputBuffers);
+         bool submitDepthAccess(RenderWorker *worker, RenderFramebufferStorage *fbStorage, bool readOnly, bool &depthState);
+-        void submitRasterScene(RenderWorker *worker, const Framebuffer &framebuffer, RenderFramebufferStorage *fbStorage, const RasterScene &rasterScene, bool &depthState);
++        void submitRasterScene(RenderWorker *worker, Framebuffer &framebuffer, RenderFramebufferStorage *fbStorage, const RasterScene &rasterScene, bool &depthState);
+         void addFramebuffer(const DrawParams &p);
+         void endFramebuffers(RenderWorker *worker, const DrawBuffers *drawBuffers, const OutputBuffers *outputBuffers, bool rtEnabled);
+         void recordSetup(RenderWorker *worker, std::vector<BufferUploader *> bufferUploaders, RSPProcessor *rspProcessor, VertexProcessor *vertexProcessor, const OutputBuffers *outputBuffers, bool rtEnabled);
+--- a/src/render/rt64_framebuffer_renderer_call.h
++++ b/src/render/rt64_framebuffer_renderer_call.h
+@@ -33,6 +33,7 @@
+             struct {
+                 ShaderDescription shaderDesc;
+                 const RenderPipeline *pipeline;
++                const RenderPipeline *ownerPipeline;
+                 interop::float2 screenScale;
+                 interop::float2 screenOffset;
+                 RenderRect scissor;
+@@ -61,4 +62,4 @@
+ 
+         ~InstanceDrawCall() { }
+     };
+-};
+\ No newline at end of file
++};
+diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -919,4 +919,13 @@ namespace RT64 {
+                 ElapsedTimer workloadTimer;
+                 workloadProfiler.start();
+                 threadConfigurationUpdate(workload.viFbSize, workloadConfig);
++
++                // Evidence must describe the native task pose, not an
++                // interpolated mixture. Keep frame matching enabled, but pace
++                // this opt-in diagnostic at the game's detected VI rate so the
++                // current Workload is submitted with weight 1 on every mode.
++                if (GetRenderEvidenceObserver() != nullptr && workload.viOriginalRate > 0) {
++                    workloadConfig.targetRate = workload.viOriginalRate;
++                }
++
+                 // FIXME: This is a very hacky way to find out if we need to advance the frame if the workload was paused for the first time.
+--- a/src/rhi/rt64_render_hooks.h
++++ b/src/rhi/rt64_render_hooks.h
+@@ -15,6 +15,7 @@
+     struct RenderWorker;
+     struct RasterEvidenceRange {
+         uint32_t callIndex, firstIndex, indexCount;
++        uint32_t renderIndex;
+         bool indexed, testZ;
+         float scale[2], offset[2];
+         RenderRect scissor;
+@@ -42,6 +43,11 @@
+         virtual ~RenderEvidenceObserver() = default;
+         virtual void begin(const Workload &workload, float weight) noexcept = 0;
+         virtual bool raster(const RasterEvidenceRange &range) noexcept = 0;
++        virtual bool ownerBufferEnabled() const noexcept { return false; }
++        virtual void ownerBufferIncomplete(uint32_t colorAddress, const char *reason,
++                uint32_t identity) noexcept { }
++        virtual void ownerBufferRendered(uint32_t colorAddress, uint32_t width,
++            uint32_t height, const RenderTexture *ownerTexture, bool complete) noexcept { }
+         // The workload GPU fence has completed; the worker is still exclusive.
+         virtual void completed(const Workload &workload, RenderWorker *worker) noexcept = 0;
+         // Called after a successful swap and its GPU fence, before image reuse.
