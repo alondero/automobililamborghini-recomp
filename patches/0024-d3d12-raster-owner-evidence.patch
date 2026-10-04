@@ -464,15 +464,20 @@ index 721a01e..857a02a 100644
              targetBlend.blendEnabled = true;
              targetBlend.dstBlendAlpha = RenderBlend::ONE;
          }
-@@ -443,6 +482,11 @@ namespace RT64 {
+@@ -443,6 +482,16 @@ namespace RT64 {
  
          vertexShader = device->createShader(VSBlob, VSBlobSize, "VSMain", shaderFormat);
          pixelShader = device->createShader(PSBlob, PSBlobSize, "PSMain", shaderFormat);
++#   ifdef _WIN32
 +        const bool ownerSupported = shaderFormat == RenderShaderFormat::DXIL && !useMSAA;
 +        if (ownerSupported) {
 +            ownerPixelShader = device->createShader(RasterPSOwnerBlobDXIL,
 +                uint32_t(std::size(RasterPSOwnerBlobDXIL)), "PSMain", shaderFormat);
 +        }
++#   else
++        // DXIL shader blobs are only generated on Windows; keep the owner path dead elsewhere.
++        const bool ownerSupported = false;
++#   endif
  
          FramebufferRendererDescriptorCommonSet descriptorCommonSet(shaderLibrary->samplerLibrary, device->getCapabilities().raytracing);
          FramebufferRendererDescriptorTextureSet descriptorTextureSet;
