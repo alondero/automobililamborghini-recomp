@@ -60,13 +60,23 @@ def only_inconclusive(report: dict) -> bool:
     return bool(failures) and all(": inconclusive, " in failure for failure in failures)
 
 
-def check(runs: dict, kind: str, report: Path, png_dir: Path) -> bool:
+def checker_error(completed: subprocess.CompletedProcess, report: Path) -> str | None:
+    """Return why the checker died, if it exited non-zero without writing a report."""
+    if completed.returncode == 0 or report.is_file():
+        return None
+    lines = completed.stderr.strip().splitlines()
+    return lines[-1] if lines else f"checker exited {completed.returncode} without a report"
+
+
+def check(runs: dict, kind: str, report: Path, png_dir: Path) -> tuple[bool, str | None]:
+    report.unlink(missing_ok=True)
     command = [sys.executable, str(ROOT / "tools" / "check_rt_shadow_capture.py"),
                runs["native"]["artifact"], runs["omitted"]["artifact"], runs[kind]["artifact"],
                "--output", str(report), "--png-dir", str(png_dir)]
     if kind == "soft":
         command.append("--soft")
-    return subprocess.run(command, cwd=ROOT, capture_output=True, text=True).returncode == 0
+    completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+    return completed.returncode == 0, checker_error(completed, report)
 
 
 def main() -> int:
@@ -78,7 +88,7 @@ def main() -> int:
     parser.add_argument("--softness", type=float, default=0.5)
     parser.add_argument("--rays", type=int, default=8, choices=(4, 8, 16))
     parser.add_argument("--sweep", action="store_true",
-                        help="developer sweep: let unvalidated models and race modes reach the production path")
+                        help="developer sweep: let unvalidated race modes reach the production path")
     parser.add_argument("--hpfb", choices=("Auto", "On", "Off"),
                         help="pin the high-precision colour buffer in every run")
     parser.add_argument("--timeout", type=int, default=180)
@@ -108,7 +118,7 @@ def main() -> int:
                             continue
                         report = args.output.parent / f"matrix-{label}-{kind}.json"
                         png = args.output.parent / "png" / f"{label}-{kind}"
-                        passed = check(runs, kind, report, png)
+                        passed, error = check(runs, kind, report, png)
                         retried = False
                         if not passed and report.is_file() and only_inconclusive(json.loads(report.read_text())):
                             # RT64 was still compiling pipelines: rerun the trace once.
@@ -116,10 +126,13 @@ def main() -> int:
                             ok, artifact, line = run(scenario_dir / f"{label}-{kind}.json", args.timeout)
                             runs[kind] = {"passed": ok, "artifact": artifact, "result": line, "retry": True}
                             print(f"{label} {kind} retry: {line}", flush=True)
-                            passed = bool(artifact) and check(runs, kind, report, png)
+                            passed, error = check(runs, kind, report, png) if artifact else (False, None)
                         checks[kind] = {"passed": passed, "report": str(report), "retried": retried}
+                        if error:
+                            checks[kind]["checker_error"] = error
                         failed |= not passed
-                        print(f"{label} {kind} check: {'PASS' if passed else 'FAIL'}", flush=True)
+                        verdict = f"CHECKER ERROR: {error}" if error else ("PASS" if passed else "FAIL")
+                        print(f"{label} {kind} check: {verdict}", flush=True)
                 summary.append({"circuit": circuit, "mode": mode, "car": car, "runs": runs, "checks": checks})
                 args.output.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     return 1 if failed else 0

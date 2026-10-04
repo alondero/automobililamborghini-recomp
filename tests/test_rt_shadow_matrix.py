@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from run_rt_shadow_matrix import BASES, only_inconclusive, variant  # noqa: E402
+from run_rt_shadow_matrix import BASES, checker_error, only_inconclusive, variant  # noqa: E402
 
 
 class MatrixVariantTests(unittest.TestCase):
@@ -36,12 +38,24 @@ class MatrixVariantTests(unittest.TestCase):
         self.assertNotIn("rt_owner_buffer", omitted)
         self.assertTrue(variant("omitted", 1, 0, 0.5, 8)["diagnostics"]["rt_owner_buffer"])
 
-
     def test_only_shader_warmup_failures_are_retried(self) -> None:
         self.assertTrue(only_inconclusive({"failures": ["task 300: inconclusive, traced drew 4 draws with ubershaders"]}))
         self.assertFalse(only_inconclusive({"failures": []}))
         self.assertFalse(only_inconclusive({"failures": ["task 300: inconclusive, traced drew 4 draws with ubershaders",
                                                          "task 420: replacement not ready"]}))
+
+    def test_checker_crash_is_reported_not_counted_as_a_shadow_failure(self) -> None:
+        # A checker that dies (here: numpy missing) writes no report; its own error must surface.
+        crashed = subprocess.CompletedProcess([], 1, "", "Traceback ...\nModuleNotFoundError: No module named 'numpy'\n")
+        with tempfile.TemporaryDirectory() as temp:
+            report = Path(temp) / "report.json"
+            self.assertEqual(checker_error(crashed, report), "ModuleNotFoundError: No module named 'numpy'")
+            report.write_text("{}", encoding="utf-8")
+            self.assertIsNone(checker_error(crashed, report))
+            report.unlink()
+            self.assertIsNone(checker_error(subprocess.CompletedProcess([], 0, "", ""), report))
+            self.assertEqual(checker_error(subprocess.CompletedProcess([], 2, "", ""), report),
+                             "checker exited 2 without a report")
 
 
 if __name__ == "__main__":
