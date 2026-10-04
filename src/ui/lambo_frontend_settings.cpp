@@ -347,3 +347,4 @@ void create_frontend_settings() {
     debug.update_option_description("rt_shadow_softness",
         "Pre-alpha: expect bugs and lighting issues. Size of the sun. 0 gives hard shadow edges.");
 }
+}
