@@ -94,11 +94,27 @@ std::atomic<double> g_camera_fov_add{0.0};
 // authored behaviour (byte-for-byte no-op); only func_800427D4 consults it.
 std::atomic<double> g_menu_stick_sensitivity{1.0};
 
+// Ray-traced sun shadows (see lambo_config.h). Original is the default.
+std::atomic_bool g_rt_shadows{false};
+std::atomic<int> g_rt_shadow_rays{8};
+std::atomic<double> g_rt_shadow_softness{0.5};
+
+int snap_shadow_rays(int rays) {
+    if (rays <= 6) return 4;
+    if (rays <= 12) return 8;
+    return 16;
+}
+
+double clamp_shadow_softness(double degrees) {
+    if (!(degrees > 0.0)) return 0.0;
+    return degrees > 5.0 ? 5.0 : degrees;
+}
+
 // This plain snapshot is written before game/render threads start and read by
 // hot hooks; any later write would race those readers. Environment overrides are
 // launch options while the JSON-backed atomics below them remain live.
 struct EnvironmentOverrides {
-    std::optional<bool> fog_match, sky_match, no_lod;
+    std::optional<bool> fog_match, sky_match, no_lod, rt_shadows;
     std::optional<double> fog_scale, draw_distance, camera_distance,
                           camera_height, camera_fov, menu_stick;
 } g_environment;
@@ -118,6 +134,7 @@ void capture_environment_overrides() {
         .fog_match = environment_bool("LAMBO_FOG_MATCH_1P"),
         .sky_match = environment_bool("LAMBO_SKY_MATCH_1P"),
         .no_lod = environment_bool("LAMBO_NO_LOD"),
+        .rt_shadows = environment_bool("LAMBO_RT_SHADOWS"),
         .fog_scale = environment_number("LAMBO_FOG_SCALE"),
         .draw_distance = environment_number("LAMBO_DRAW_DISTANCE"),
         .camera_distance = environment_number("LAMBO_CAMERA_DISTANCE_SCALE"),
@@ -201,6 +218,9 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"camera_height_scale", g_camera_height_scale.load()},
         {"camera_fov_add", g_camera_fov_add.load()},
         {"menu_stick_sensitivity", g_menu_stick_sensitivity.load()},
+        {"rt_shadows", g_rt_shadows.load()},
+        {"rt_shadow_rays", g_rt_shadow_rays.load()},
+        {"rt_shadow_softness", g_rt_shadow_softness.load()},
         {"show_launcher", g_show_launcher.load()},
     });
     return result;
@@ -242,6 +262,9 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     double camera_fov_add = g_camera_fov_add.load();
     double menu_stick_sensitivity = g_menu_stick_sensitivity.load();
     bool show_launcher = g_show_launcher.load();
+    bool rt_shadows = g_rt_shadows.load();
+    int rt_shadow_rays = g_rt_shadow_rays.load();
+    double rt_shadow_softness = g_rt_shadow_softness.load();
     from_or_default(j, "widescreen_fog_match", widescreen_fog_match);
     from_or_default(j, "widescreen_sky_match", widescreen_sky_match);
     from_or_default(j, "no_lod", no_lod);
@@ -256,6 +279,9 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "camera_fov_add", camera_fov_add);
     from_or_default(j, "menu_stick_sensitivity", menu_stick_sensitivity);
     from_or_default(j, "show_launcher", show_launcher);
+    from_or_default(j, "rt_shadows", rt_shadows);
+    from_or_default(j, "rt_shadow_rays", rt_shadow_rays);
+    from_or_default(j, "rt_shadow_softness", rt_shadow_softness);
     g_widescreen_fog_match.store(widescreen_fog_match);
     g_widescreen_sky_match.store(widescreen_sky_match);
     g_no_lod.store(no_lod);
@@ -270,6 +296,9 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     g_camera_fov_add.store(camera_fov_add);
     g_menu_stick_sensitivity.store(menu_stick_sensitivity);
     g_show_launcher.store(show_launcher);
+    g_rt_shadows.store(rt_shadows);
+    g_rt_shadow_rays.store(snap_shadow_rays(rt_shadow_rays));
+    g_rt_shadow_softness.store(clamp_shadow_softness(rt_shadow_softness));
     // Sanity-bound the size read from the file: below the N64 framebuffer is
     // useless, above 8K is a typo -- either way the window could not be created
     // and the port would run permanently headless, so reset to defaults instead.
@@ -679,6 +708,34 @@ double draw_distance(int circuit) {
     if (s < 0.1) s = 0.1;
     if (s > 100.0) s = 100.0;
     return s;
+}
+
+bool rt_shadows() {
+    if (g_environment.rt_shadows) return *g_environment.rt_shadows;
+    return g_rt_shadows.load();
+}
+
+void set_rt_shadows(bool enabled) {
+    g_rt_shadows.store(enabled);
+    save_graphics_updates({{"rt_shadows", enabled}});
+}
+
+int rt_shadow_rays() {
+    return g_rt_shadow_rays.load();
+}
+
+void set_rt_shadow_rays(int rays) {
+    g_rt_shadow_rays.store(snap_shadow_rays(rays));
+    save_graphics_updates({{"rt_shadow_rays", g_rt_shadow_rays.load()}});
+}
+
+double rt_shadow_softness() {
+    return g_rt_shadow_softness.load();
+}
+
+void set_rt_shadow_softness(double degrees) {
+    g_rt_shadow_softness.store(clamp_shadow_softness(degrees));
+    save_graphics_updates({{"rt_shadow_softness", g_rt_shadow_softness.load()}});
 }
 
 double global_draw_distance() {

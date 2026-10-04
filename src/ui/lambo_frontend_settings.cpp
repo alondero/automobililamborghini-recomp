@@ -171,6 +171,9 @@ void refresh_frontend_settings() {
     sync_value(enhancements, "camera_distance", port::camera_distance_scale());
     sync_value(enhancements, "camera_height", port::camera_height_scale());
     sync_value(enhancements, "camera_fov", port::camera_fov_add());
+    sync_value(enhancements, "rt_shadows", port::rt_shadows());
+    sync_value(enhancements, "rt_shadow_rays", uint32_t(port::rt_shadow_rays()));
+    sync_value(enhancements, "rt_shadow_softness", port::rt_shadow_softness());
     auto& general = recompui::config::get_general_config();
     // Refreshed only while the option is clean, so a Championship save can
     // appear in the page without replacing a text edit still being typed.
@@ -230,7 +233,7 @@ void create_frontend_settings() {
         window_preset_options,
         window_preset_from_size(port::window_size().width, port::window_size().height));
     graphics.add_enum_option("performance_preset", "Graphics preset",
-        "Low hardware stages 2x original resolution, supersampling Off (1x), no anti-aliasing, original frame rate and standard colour precision. This extra low-hardware choice replaces saved X2/X3/X4 supersampling; Auto resolution ignores supersampling. Apply also restores stock track geometry, draw distance and multiplayer fog/sky, replacing those saved choices. Discard cancels the preset. Other options can still be adjusted before Apply.",
+        "Low hardware stages 2x original resolution, supersampling Off (1x), no anti-aliasing, original frame rate and standard colour precision. This extra low-hardware choice replaces saved X2/X3/X4 supersampling; Auto resolution ignores supersampling. Apply also restores stock track geometry, draw distance, multiplayer fog/sky and original shadows, replacing those saved choices. Discard cancels the preset. Other options can still be adjusted before Apply.",
         {{kKeepGraphicsChoices, "Keep", "Keep current choices"},
          {kLowHardwarePreset, "LowHardware", "Low hardware"}}, kKeepGraphicsChoices);
     // Stage the extra 1x supersampling choice with the renderer fields. The
@@ -258,6 +261,7 @@ void create_frontend_settings() {
             lambo::config::set_global_draw_distance(1.0);
             lambo::config::set_widescreen_fog_match(false);
             lambo::config::set_widescreen_sky_match(false);
+            lambo::config::set_rt_shadows(false);
         }
         // The window-size picker resolves at Apply time. Custom (or an unknown
         // value) keeps the live size, so a discarded pick or an unrelated save
@@ -293,6 +297,20 @@ void create_frontend_settings() {
     number(enhancements, "camera_height", "Camera height", port::camera_height_scale(), .2, 3, .05, port::set_camera_height_scale);
     number(enhancements, "camera_fov", "Additional field of view (degrees)", port::camera_fov_add(), -20, 60, 1, port::set_camera_fov_add);
     number(enhancements, "menu_stick_sensitivity", "Menu stick sensitivity", port::menu_stick_sensitivity(), 1.0, 2.5, 0.1, port::set_menu_stick_sensitivity);
+    boolean(enhancements, "rt_shadows", "Ray-traced shadows (experimental)", port::rt_shadows(), port::set_rt_shadows);
+    enhancements.update_option_description("rt_shadows",
+        "Replaces the car's shadow with sunlight shadows from the car and solid scenery. "
+        "Needs DirectX 12 and a graphics card with ray tracing. "
+        "Works in one-player races. Other scenes keep the original shadow.");
+    enhancements.add_enum_option("rt_shadow_rays", "Shadow quality",
+        "Rays per pixel for soft shadow edges. More rays look smoother and cost more.",
+        {{4, "Rays4", "Low (4 rays)"}, {8, "Rays8", "Medium (8 rays)"}, {16, "Rays16", "High (16 rays)"}},
+        uint32_t(port::rt_shadow_rays()));
+    enhancements.add_option_change_callback("rt_shadow_rays", [](ConfigValueVariant value, ConfigValueVariant, OptionChangeContext context) {
+        if (context == OptionChangeContext::Permanent) lambo::config::set_rt_shadow_rays(int(std::get<uint32_t>(value)));
+    });
+    number(enhancements, "rt_shadow_softness", "Shadow softness (degrees)", port::rt_shadow_softness(), 0, 5, .25, port::set_rt_shadow_softness);
+    enhancements.update_option_description("rt_shadow_softness", "Size of the sun. 0 gives hard shadow edges.");
 
     // Tabs appear in registration order. Keep Driving beside Controls and
     // complete each config before registering the next (references invalidate).

@@ -27,7 +27,10 @@ Proven route to a 1P arcade race from attract (wait ~2.5s between presses, longe
 after the pak message): enter, enter, x (ONE PLAYER), x (ARCADE), x (BASIC SERIES),
 x (car SELECT), x (name DONE), x (pak message OK) -> race loads in ~10 s.
 """
-import ctypes, ctypes.wintypes as wt, sys, time
+import ctypes
+import ctypes.wintypes as wt
+import sys
+import time
 
 user32 = ctypes.windll.user32
 gdi32 = ctypes.windll.gdi32
@@ -49,7 +52,7 @@ def find_window():
     # SDL_app, while editors/browsers can contain the repo name in their title; either
     # predicate alone can silently send input and screenshots to the wrong window.
     hwnds = []
-    def cb(h, l):
+    def cb(h, lparam):
         cls = ctypes.create_unicode_buffer(256)
         user32.GetClassNameW(h, cls, 256)
         if cls.value == 'SDL_app' and user32.IsWindowVisible(h):

@@ -15,6 +15,9 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from inspect_rt_task import CaptureError, TaskInspector
+from check_rt_render_capture import inspect as inspect_render_capture
+
 
 SCHEMA_VERSION = 1
 DEFAULT_TIMEOUT_SECONDS = 90.0
@@ -52,8 +55,8 @@ def _warp(value: Any) -> str:
     circuit, laps, car, players = values
     if not 1 <= circuit <= 6 or not 1 <= laps <= 30:
         raise ScenarioError("scenario.warp circuit must be 1-6 and laps must be 1-30")
-    if car != 0:
-        raise ScenarioError("scenario.warp currently supports runtime-verified car 0")
+    if not 0 <= car <= 23:
+        raise ScenarioError("scenario.warp car index must be in the valid range 0-23")
     if not 1 <= players <= 4 or (players >= 3 and circuit > 3):
         raise ScenarioError("scenario.warp has an unsupported player/track combination")
     return text
@@ -75,8 +78,10 @@ def load_scenario(path: Path) -> dict[str, Any]:
     scenario["name"] = name.strip()
     if "warp" in scenario:
         scenario["warp"] = _warp(scenario["warp"])
-    if "warp_mode" in scenario and scenario["warp_mode"] not in (0, 2):
-        raise ScenarioError("scenario.warp_mode must be 0 (time trial) or 2 (single race)")
+    # Player race modes at 0x800CE6B4: 0 time trial, 1 menu Arcade, 2 single
+    # race (the warp default), 3 unidentified. Mode 4 is attract.
+    if "warp_mode" in scenario and (type(scenario["warp_mode"]) is not int or scenario["warp_mode"] not in range(4)):
+        raise ScenarioError("scenario.warp_mode must be a player race mode 0-3 (0 time trial, 2 single race)")
     if "warp" in scenario and "state_load" in scenario:
         raise ScenarioError("scenario.warp and scenario.state_load are alternative bootstraps")
 
@@ -105,15 +110,64 @@ def load_scenario(path: Path) -> dict[str, Any]:
         scenario["capture"] = capture
 
     scenario["expect"] = _dict(scenario.get("expect", {}), "scenario.expect")
+    graphics = _dict(scenario.get("graphics", {}), "scenario.graphics")
+    if set(graphics) - {"rt_shadows", "rt_shadow_rays", "rt_shadow_softness", "msaa_option",
+                         "hpfb_option"}:
+        raise ScenarioError("unsupported scenario graphics setting")
+    if "rt_shadows" in graphics and type(graphics["rt_shadows"]) is not bool:
+        raise ScenarioError("scenario.graphics.rt_shadows must be boolean")
+    if "rt_shadow_rays" in graphics and graphics["rt_shadow_rays"] not in (4, 8, 16):
+        raise ScenarioError("scenario.graphics.rt_shadow_rays must be 4, 8 or 16")
+    softness = graphics.get("rt_shadow_softness", 0)
+    if type(softness) not in (int, float) or not 0 <= softness <= 5:
+        raise ScenarioError("scenario.graphics.rt_shadow_softness must be 0 through 5 degrees")
+    if graphics.get("msaa_option", "None") not in ("None", "MSAA2X", "MSAA4X", "MSAA8X"):
+        raise ScenarioError("scenario.graphics.msaa_option must be None, MSAA2X, MSAA4X or MSAA8X")
+    if graphics.get("hpfb_option", "Auto") not in ("Auto", "On", "Off"):
+        raise ScenarioError("scenario.graphics.hpfb_option must be Auto, On or Off")
+    scenario["graphics"] = graphics
+    developer = _dict(scenario.get("developer_env", {}), "scenario.developer_env")
+    if set(developer) - {"LAMBO_RT_SHADOW_FAULT", "LAMBO_TEST_RESIZE", "LAMBO_RT_SHADOW_SWEEP"}:
+        raise ScenarioError("unsupported scenario developer variable")
+    if any(type(value) is not str for value in developer.values()):
+        raise ScenarioError("scenario.developer_env values must be a string")
+    scenario["developer_env"] = developer
     diagnostics = _dict(scenario.get("diagnostics", {}), "scenario.diagnostics")
-    if set(diagnostics) - {"rt_sun_probe"}:
-        raise ScenarioError("scenario.diagnostics supports only rt_sun_probe")
+    if set(diagnostics) - {"rt_sun_probe", "rt_task_capture", "rt_render_capture", "rt_drop_overlay", "rt_owner_buffer",
+                           "rt_native_alpha_check", "rt_native_alpha_exact_pixels", "rt_native_alpha_double_uv"}:
+        raise ScenarioError("unsupported scenario diagnostic")
+    for key in ("rt_render_capture", "rt_drop_overlay", "rt_owner_buffer", "rt_native_alpha_check", "rt_native_alpha_exact_pixels", "rt_native_alpha_double_uv"):
+        if key in diagnostics and type(diagnostics[key]) is not bool:
+            raise ScenarioError(f"scenario.diagnostics.{key} must be boolean")
+    if diagnostics.get("rt_render_capture") and not diagnostics.get("rt_task_capture"):
+        raise ScenarioError("rt_render_capture requires rt_task_capture")
+    if diagnostics.get("rt_drop_overlay") and not diagnostics.get("rt_render_capture"):
+        raise ScenarioError("rt_drop_overlay requires rt_render_capture")
+    if diagnostics.get("rt_owner_buffer") and not diagnostics.get("rt_render_capture"):
+        raise ScenarioError("rt_owner_buffer requires rt_render_capture")
+    if diagnostics.get("rt_native_alpha_check") and not diagnostics.get("rt_render_capture"):
+        raise ScenarioError("rt_native_alpha_check requires rt_render_capture")
+    if diagnostics.get("rt_native_alpha_exact_pixels") and not diagnostics.get("rt_native_alpha_check"):
+        raise ScenarioError("rt_native_alpha_exact_pixels requires rt_native_alpha_check")
+    if diagnostics.get("rt_native_alpha_double_uv") and not diagnostics.get("rt_native_alpha_exact_pixels"):
+        raise ScenarioError("rt_native_alpha_double_uv requires rt_native_alpha_exact_pixels")
     if "rt_sun_probe" in diagnostics and not isinstance(diagnostics["rt_sun_probe"], bool):
         raise ScenarioError("scenario.diagnostics.rt_sun_probe must be boolean")
     if diagnostics.get("rt_sun_probe") and scenario.get("headless", True):
         raise ScenarioError("rt_sun_probe needs a windowed RT64 consumer")
+    if "rt_task_capture" in diagnostics and not isinstance(diagnostics["rt_task_capture"], bool):
+        raise ScenarioError("scenario.diagnostics.rt_task_capture must be boolean")
+    if diagnostics.get("rt_task_capture") and not diagnostics.get("rt_sun_probe"):
+        raise ScenarioError("rt_task_capture requires rt_sun_probe")
     if "sun_probe" in scenario["expect"] and not isinstance(scenario["expect"]["sun_probe"], bool):
         raise ScenarioError("scenario.expect.sun_probe must be boolean")
+    for key, diagnostic in (("rt_task_captures", "rt_task_capture"), ("rt_render_captures", "rt_render_capture")):
+        if key in scenario["expect"]:
+            captures = scenario["expect"][key]
+            if not isinstance(captures, list) or not captures or any(type(n) is not int or n <= 0 for n in captures):
+                raise ScenarioError(f"scenario.expect.{key} must be a nonempty list of positive task sequences")
+            if not diagnostics.get(diagnostic):
+                raise ScenarioError(f"{key} requires {diagnostic}")
     scenario["diagnostics"] = diagnostics
     return scenario
 
@@ -164,6 +218,10 @@ def stage_fixtures(scenario: dict[str, Any], artifact: Path) -> dict[str, Any]:
         runtime["state_load"] = stage(scenario["state_load"], "state-load")
     if "replay" in scenario["input"]:
         runtime["input"]["replay"] = stage(scenario["input"]["replay"], "input-replay")
+    # Seeds only allowlisted keys; the game merges its defaults over them.
+    if scenario["graphics"]:
+        (artifact / "graphics.json").write_text(json.dumps(scenario["graphics"], indent=4) + "\n",
+                                                encoding="utf-8")
     (artifact / "fixtures.json").write_text(
         json.dumps({"schema": SCHEMA_VERSION, "fixtures": fixtures}, indent=2) + "\n",
         encoding="utf-8",
@@ -188,6 +246,7 @@ def build_environment(scenario: dict[str, Any], runtime: dict[str, Any], artifac
         "LOCALAPPDATA": str(artifact / "user-config"),
         "XDG_CONFIG_HOME": str(artifact / "user-config"),
     })
+    environment.update(scenario.get("developer_env", {}))
     if "warp" in runtime:
         environment["LAMBO_WARP"] = runtime["warp"]
     if "warp_mode" in runtime:
@@ -196,6 +255,26 @@ def build_environment(scenario: dict[str, Any], runtime: dict[str, Any], artifac
         environment["LAMBO_STATE_LOAD"] = runtime["state_load"]
     if runtime.get("diagnostics", {}).get("rt_sun_probe"):
         environment["LAMBO_RT_SUN_PROBE"] = "1"
+    if runtime.get("diagnostics", {}).get("rt_task_capture"):
+        runtime["diagnostics"]["task_capture_path"] = str(artifact / "rt-tasks")
+        environment["LAMBO_RT_CAPTURE_DIR"] = runtime["diagnostics"]["task_capture_path"]
+    if runtime.get("diagnostics", {}).get("rt_render_capture"):
+        runtime["diagnostics"]["render_capture_path"] = str(artifact / "rt-render")
+        environment["LAMBO_RT_RENDER_CAPTURE_DIR"] = str(artifact / "rt-render")
+        if "msaa_option" in scenario.get("graphics", {}):
+            environment["LAMBO_RT_CAPTURE_KEEP_MSAA"] = "1"
+        if "hpfb_option" in scenario.get("graphics", {}):
+            environment["LAMBO_RT_CAPTURE_KEEP_COLOR"] = "1"
+        if runtime["diagnostics"].get("rt_owner_buffer"):
+            environment["LAMBO_RT_OWNER_BUFFER"] = "1"
+        if runtime["diagnostics"].get("rt_drop_overlay"):
+            environment["LAMBO_RT_EVIDENCE_DROP_OVERLAY"] = "1"
+        if runtime["diagnostics"].get("rt_native_alpha_check"):
+            environment["LAMBO_RT_NATIVE_ALPHA_CHECK"] = "1"
+        if runtime["diagnostics"].get("rt_native_alpha_exact_pixels"):
+            environment["LAMBO_RT_NATIVE_ALPHA_EXACT_PIXELS"] = "1"
+        if runtime["diagnostics"].get("rt_native_alpha_double_uv"):
+            environment["LAMBO_RT_NATIVE_ALPHA_DOUBLE_UV"] = "1"
 
     inputs = runtime["input"]
     if "replay" in inputs:
@@ -331,6 +410,22 @@ def evaluate(scenario: dict[str, Any], result: dict[str, Any], returncode: int |
         path = Path(capture.get("run_path", ""))
         if not path.is_file() or path.stat().st_size == 0:
             failures.append(f"capture was not written: {path}")
+    for sequence in expected.get("rt_task_captures", []):
+        capture = Path(scenario["diagnostics"]["task_capture_path"]) / f"task-{sequence}.json"
+        try:
+            metadata = json.loads(capture.read_text(encoding="utf-8"))
+            if metadata["sequence"] != sequence:
+                raise CaptureError("task sequence differs from filename")
+            TaskInspector(capture.with_suffix(".bin").read_bytes(), metadata).inspect()
+        except (CaptureError, OSError, ValueError, KeyError, TypeError) as error:
+            failures.append(f"RT task {sequence} capture rejected: {error}")
+    for sequence in expected.get("rt_render_captures", []):
+        try:
+            directory = Path(scenario["diagnostics"]["render_capture_path"]).parent
+            inspect_render_capture(directory, sequence,
+                                   require_overlay=bool(scenario["diagnostics"].get("rt_drop_overlay")))
+        except (CaptureError, OSError, ValueError, KeyError, TypeError, IndexError) as error:
+            failures.append(f"RT rendered task {sequence} capture rejected: {error}")
     return failures
 
 

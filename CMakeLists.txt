@@ -33,7 +33,50 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(N64MR ${CMAKE_CURRENT_SOURCE_DIR}/lib/N64ModernRuntime)
 include(cmake/Frontend.cmake)
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0021-rt64-sun-shadow-groundwork.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0023-plume-texture-readback.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0028-plume-d3d12-pipeline-failure.patch)
+# Later RT64 patches change earlier patches' context. Recognize the newest
+# applied patch first, then replay only what is missing.
+execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0030-rt64-sun-shadow-receiver.patch"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
+    RESULT_VARIABLE rt64_sun_shadow_receiver_patch_applied OUTPUT_QUIET ERROR_QUIET)
+if(rt64_sun_shadow_receiver_patch_applied EQUAL 0)
+    set(rt64_native_alpha_patch_applied 0)
+else()
+    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0029-rt64-native-game-alpha-evidence.patch"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
+        RESULT_VARIABLE rt64_native_alpha_patch_applied OUTPUT_QUIET ERROR_QUIET)
+endif()
+if(rt64_native_alpha_patch_applied EQUAL 0)
+    set(rt64_candidate_patch_applied 0)
+else()
+    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0027-rt64-native-ray-candidate-coverage.patch"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
+        RESULT_VARIABLE rt64_candidate_patch_applied OUTPUT_QUIET ERROR_QUIET)
+endif()
+if(NOT rt64_candidate_patch_applied EQUAL 0)
+    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0025-rt64-workload-shadow-metadata.patch"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
+        RESULT_VARIABLE rt64_shadow_metadata_patch_applied OUTPUT_QUIET ERROR_QUIET)
+    if(NOT rt64_shadow_metadata_patch_applied EQUAL 0)
+        lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0021-rt64-sun-shadow-groundwork.patch)
+        lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0022-rt64-render-evidence-hooks.patch)
+        lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0024-d3d12-raster-owner-evidence.patch)
+    endif()
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0025-rt64-workload-shadow-metadata.patch)
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0026-rt64-native-material-evaluation.patch)
+endif()
+if(NOT rt64_native_alpha_patch_applied EQUAL 0)
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0027-rt64-native-ray-candidate-coverage.patch)
+endif()
+if(NOT rt64_sun_shadow_receiver_patch_applied EQUAL 0)
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0029-rt64-native-game-alpha-evidence.patch)
+endif()
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0030-rt64-sun-shadow-receiver.patch)
 
 # --- RT64 renderer boundary; see patches/README.md ---
 # recomp/lib/rt64 is a pinned git submodule; RT64 is always compiled in and is the
@@ -60,6 +103,24 @@ if(BUILD_TESTING)
     target_include_directories(lambo_rt_sun_tests PRIVATE src lib/rt64/src)
     target_link_libraries(lambo_rt_sun_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_rt_sun_tasks COMMAND lambo_rt_sun_tests)
+    add_executable(lambo_rt_material_tests tests/test_rt_material.cpp)
+    target_include_directories(lambo_rt_material_tests PRIVATE src)
+    add_test(NAME lambo_rt_material_policy COMMAND lambo_rt_material_tests)
+    add_executable(lambo_rt_admission_tests tests/test_rt_admission.cpp
+        src/lambo_rt_admission.cpp src/lambo_rt_shadows.cpp src/lambo_log.cpp)
+    target_include_directories(lambo_rt_admission_tests PRIVATE src lib/rt64/src)
+    target_link_libraries(lambo_rt_admission_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_rt_admission_policy COMMAND lambo_rt_admission_tests)
+    add_executable(lambo_rt_binding_tests tests/test_rt_binding.cpp)
+    target_include_directories(lambo_rt_binding_tests PRIVATE src)
+    add_test(NAME lambo_rt_workload_binding COMMAND lambo_rt_binding_tests)
+
+    add_executable(lambo_rt_evidence_scope_tests tests/test_rt_evidence_scope.cpp
+        lib/rt64/src/rhi/rt64_render_hooks.cpp)
+    target_include_directories(lambo_rt_evidence_scope_tests PRIVATE
+        lib/rt64/src lib/rt64/src/contrib/plume)
+    target_link_libraries(lambo_rt_evidence_scope_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_rt_evidence_scope COMMAND lambo_rt_evidence_scope_tests)
 
     # Links the production lambo_mods.cpp against test fakes for the runtime
     # mod API (tests/fakes); production builds use the submodule headers.
@@ -424,6 +485,14 @@ if(BUILD_TESTING)
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_game_scenario.py
         )
+        add_test(NAME lambo_rt_task_capture
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rt_task_capture.py
+        )
+        add_test(NAME lambo_rt_alpha_capture
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rt_alpha_capture.py
+        )
         add_test(NAME lambo_prompt_back_action
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 -m tests.test_prompt_back_action
@@ -768,7 +837,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     endif()
 
     # RT64 renderer: default presenter; see the RT64 block above.
-    target_sources(lamborghini_modern PRIVATE src/rt64_renderer.cpp)
+    target_sources(lamborghini_modern PRIVATE src/rt64_renderer.cpp src/lambo_rt_evidence.cpp
+    src/lambo_rt_presented.cpp src/lambo_rt_admission.cpp src/lambo_rt_production.cpp)
     # rt64's build_pixel_shader/build_vertex_shader read ${DXC} and the DXC_*_OPTS
     # variables from the CALLER's scope (CMake evaluates unreferenced variables at call
     # time). Those variables are set inside rt64/CMakeLists.txt's own project() scope, so

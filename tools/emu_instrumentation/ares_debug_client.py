@@ -30,7 +30,6 @@ ares-specific register addresses (verified via RCP scan 2026-04-21):
 """
 
 import socket
-import time
 
 
 class AresDebugClient:
@@ -88,7 +87,7 @@ class AresDebugClient:
             if c == b"#":
                 break
             buf += c
-        checksum = self.sock.recv(2).decode("ascii")
+        self.sock.recv(2)  # Consume the two checksum characters; not verified.
         # ACK after full packet received
         self.sock.sendall(b"+")
         return buf.decode("ascii")

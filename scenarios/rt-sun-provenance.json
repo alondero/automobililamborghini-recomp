@@ -5,7 +5,10 @@
   "warp": "1:1:0:1",
   "warp_mode": 0,
   "max_vis": 2400,
-  "diagnostics": { "rt_sun_probe": true },
+  "diagnostics": {
+    "rt_sun_probe": true,
+    "rt_task_capture": true
+  },
   "input": {
     "replay": "../recordings/sky-turning-smoke.jsonl",
     "start_state": 8,
@@ -18,6 +21,12 @@
     "min_swaps": 60,
     "min_abs_player_speed": 10,
     "presentation_mode": "PresentEarly",
-    "sun_probe": true
+    "sun_probe": true,
+    "rt_task_captures": [
+      60,
+      300,
+      420,
+      540
+    ]
   }
 }

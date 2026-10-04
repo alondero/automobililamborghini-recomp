@@ -79,10 +79,16 @@ status line before relying on a historical measurement.
 ## Reference pages
 
 - [Ray-tracing plan](ray-tracing-plan.md) compares RaceWave46's custom renderer
-  with this port and proposes optional sunlight shadows.
-- [Sunlight groundwork](rt-shadows.md) records native art provenance, the
-  implemented AS/angular-shadow kernel and GPU probes. In-game shadows remain
-  gated on world-light and material/overlay identity.
+  with this port and records the original plan for optional sunlight shadows.
+- [Ray-traced shadows](rt-shadows.md) records the opt-in production path, the
+  validated circuits, modes and cars, the native fallback rules, GPU cost and
+  the unsupported scenes and backends.
+- [Circuit 1 RT provenance](rt-provenance.md) records stationary one/two-view
+  light checks, exact native overlay records, material counterexamples and the
+  remaining receiver/caster gate.
+- [Presented RT material evidence](rt-material-evidence.md) records fenced GPU
+  geometry/material admission, the production caster/receiver policy, native
+  overlay contrast and exact overlay pixel differences.
 
 - [Mod support comparison](mod-support-research.md) records the Banjo and
   Donkey Kong runtime, frontend, and authoring patterns used by this integration.

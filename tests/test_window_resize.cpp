@@ -187,6 +187,19 @@ int main() {
         expect(leaving.resize, "the size was dropped on the frame that left fullscreen");
     }
 
+    // Developer resize schedule used by lifecycle captures.
+    {
+        using lambo::window_resize::parse_scheduled_resize;
+        const auto scheduled = parse_scheduled_resize("300:1280x720");
+        expect(scheduled && scheduled->frame == 300 && scheduled->width == 1280 && scheduled->height == 720,
+               "scheduled resize did not parse");
+        for (const char* bad : {"", "300", "300:1280", "x:1280x720", "300:0x720", "300:1280x720junk",
+                                "-1:1280x720", "300:99999x720"}) {
+            expect(!parse_scheduled_resize(bad), "malformed scheduled resize accepted");
+        }
+        expect(!parse_scheduled_resize(nullptr), "absent schedule accepted");
+    }
+
     if (failures == 0) std::cout << "window resize reconciliation: all checks passed\n";
     return failures == 0 ? 0 : 1;
 }

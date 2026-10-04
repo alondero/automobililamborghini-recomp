@@ -713,6 +713,61 @@ func = "func_80036854"
 before_vram = 0x80035C54
 text = "{ extern void lambo_rt_probe_sun_art(uint8_t*); lambo_rt_probe_sun_art(rdram); }"
 
+# Capture after each camera calculation even when the flare is not submitted
+# (two-player/city views). Emitter spans are diagnostic PC/cursor provenance,
+# never runtime caster/receiver admission. Layout/lifetime: docs/rt-shadows.md.
+[[patches.hook]]
+func = "func_80032450"
+before_vram = 0x80035C40
+text = "{ extern void lambo_rt_probe_sun_art(uint8_t*); lambo_rt_probe_sun_art(rdram); }"
+
+# Copy native records before osSendMesg publishes the completed task. The task
+# reuse fence does not protect mutable object/segment globals from later frames.
+[[patches.hook]]
+func = "func_80006018"
+before_vram = 0x80005728
+text = "{ extern void lambo_rt_probe_task_publish(uint8_t*); lambo_rt_probe_task_publish(rdram); }"
+
+[[patches.hook]]
+func = "func_8000A6C0"
+before_vram = 0x80009AC0
+text = "{ extern void lambo_rt_probe_emitter_begin(uint8_t*, unsigned int); lambo_rt_probe_emitter_begin(rdram, 0x80009AC0u); }"
+
+[[patches.hook]]
+func = "func_8000A6C0"
+before_vram = 0x8000E440
+text = "{ extern void lambo_rt_probe_emitter_end(uint8_t*, unsigned int); lambo_rt_probe_emitter_end(rdram, 0x80009AC0u); }"
+
+[[patches.hook]]
+func = "func_800102D8"
+before_vram = 0x8000F6D8
+text = "{ extern void lambo_rt_probe_emitter_begin(uint8_t*, unsigned int); lambo_rt_probe_emitter_begin(rdram, 0x8000F6D8u); }"
+
+[[patches.hook]]
+func = "func_800102D8"
+before_vram = 0x800102C4
+text = "{ extern void lambo_rt_probe_emitter_end(uint8_t*, unsigned int); lambo_rt_probe_emitter_end(rdram, 0x8000F6D8u); }"
+
+[[patches.hook]]
+func = "func_800165FC"
+before_vram = 0x800159FC
+text = "{ extern void lambo_rt_probe_emitter_begin(uint8_t*, unsigned int); lambo_rt_probe_emitter_begin(rdram, 0x800159FCu); }"
+
+[[patches.hook]]
+func = "func_800165FC"
+before_vram = 0x800164B4
+text = "{ extern void lambo_rt_probe_emitter_end(uint8_t*, unsigned int); lambo_rt_probe_emitter_end(rdram, 0x800159FCu); }"
+
+[[patches.hook]]
+func = "func_8000F068"
+before_vram = 0x8000E468
+text = "{ extern void lambo_rt_probe_emitter_begin(uint8_t*, unsigned int); lambo_rt_probe_emitter_begin(rdram, 0x8000E468u); }"
+
+[[patches.hook]]
+func = "func_8000F068"
+before_vram = 0x8000F6C4
+text = "{ extern void lambo_rt_probe_emitter_end(uint8_t*, unsigned int); lambo_rt_probe_emitter_end(rdram, 0x8000E468u); }"
+
 # Issue #40 — widescreen lens flare. The sun flare emitter func_80036854 draws a chain of
 # 10 translucent "ghost" texrects. Under ar_option Expand RT64 squishes each small untagged
 # texrect into the central 4:3 band (invRatioScale = 1/aspectRatioScale) and collapses its

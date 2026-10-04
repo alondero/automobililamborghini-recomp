@@ -85,15 +85,17 @@ A scenario can select these fields:
 ```
 
 `warp` uses the existing `circuit:laps:car:players` syntax. `warp_mode: 0` is
-time trial; omit it for the normal single-race mode (`2`). Relative replay and
+time trial; omit it for the normal single-race mode (`2`). Modes 1 and 3 are
+the other player race modes; the menu's Arcade race measured as mode 1. Relative replay and
 save-state paths resolve beside the scenario file. Capture paths are always
 relative to that invocation's unique artifact directory, so concurrent runs
 cannot consume or overwrite each other's evidence. The runner clears inherited
 input/warp/state variables and redirects graphics config and Controller Pak
 storage into the same isolated directory. It also runs from copied replay/save
 fixtures, so changing the source file during a run cannot change its evidence.
-The scenario wrapper currently accepts only runtime-verified car `0`; measure
-another car-select value before widening that validation.
+The scenario wrapper accepts the native warp's supported car models `0` through
+`23`. A valid selector is not evidence that every model has passed a renderer
+or ray-tracing capture; feature coverage must still name the measured models.
 The developer warp also accepts 1–2 laps for short tests even though the normal
 single-race menu starts at 3; this is an explicit harness extension, not a claim
 about menu options.
@@ -150,6 +152,20 @@ The windowed `scenarios/rt-sun-provenance.json` enables
 an explicit managed diagnostic: inherited LAMBO variables are still cleared.
 The runner verifies a provenance log was emitted; it does not infer a physical
 sun or validate hardware shadow pixels. See [sunlight findings](rt-shadows.md).
+
+`scenarios/rt-presented-materials.json` and `rt-overlay-differential.json` add
+`diagnostics.rt_task_capture` and `rt_render_capture`, requiring both native
+`expect.rt_task_captures` and fenced `expect.rt_render_captures`. Missing or
+rejected rendered evidence fails even if replay and swaps succeed. The latter
+scenario enables diagnostic `rt_drop_overlay`; it is not production suppression.
+That differential scenario also requires `diagnostics.rt_owner_buffer`, which
+adds a D3D12 integer owner target and mirrored depth pass beside native raster
+draws. The baseline and owner-enabled native repeat must have byte-identical
+swapchain output before overlay omission is checked. Unsupported diagnostic
+draws or targets invalidate owner completeness and keep the replacement gate
+closed.
+See [presented evidence](rt-material-evidence.md) for the settings, ownership,
+pixel comparison and open replacement gate.
 
 Playback replaces physical, held, and pulsed port-0 sources after it starts.
 Before it starts, normal inputs still work so menus can be navigated. The UI

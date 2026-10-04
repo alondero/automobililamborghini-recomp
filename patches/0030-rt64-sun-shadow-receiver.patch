@@ -1,0 +1,1016 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 468120a..c3ed6b9 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -31,6 +31,13 @@ function(native_material_dependencies INFILE OUTVAR)
+             "${PROJECT_SOURCE_DIR}/src/shaders/TextureSampler.hlsli"
+             "${PROJECT_SOURCE_DIR}/src/shaders/TextureDecoder.hlsli"
+             "${PROJECT_SOURCE_DIR}/src/shared/rt64_native_alpha_evidence.h" PARENT_SCOPE)
++    elseif(shader_filename MATCHES "^SunShadowReceiver(PS|PSMS|VS)\.hlsl$")
++        # The receiver reuses RasterVS positions and the shared ray-query kernel.
++        set(${OUTVAR} "${PROJECT_SOURCE_DIR}/src/shaders/RasterVS.hlsl"
++            "${PROJECT_SOURCE_DIR}/src/shaders/SunShadow.hlsli"
++            "${PROJECT_SOURCE_DIR}/src/shaders/Depth.hlsli"
++            "${PROJECT_SOURCE_DIR}/src/shared/rt64_sun_shadow.h"
++            "${PROJECT_SOURCE_DIR}/src/shared/rt64_sun_shadow_receiver.h" PARENT_SCOPE)
+     else()
+         set(${OUTVAR} "" PARENT_SCOPE)
+     endif()
+@@ -125,6 +132,9 @@ set (DXC_DXIL_OPTS "-Wno-ignored-attributes")
+ set (DXC_SPV_OPTS "-spirv" "-fspv-target-env=vulkan1.0" "-fvk-use-dx-layout")
+ set (DXC_LB_OPTS "${DXC_COMMON_OPTS}" "-D" "LIBRARY" "-T" "lib_6_3")
+ set (DXC_PS_OPTS "${DXC_COMMON_OPTS}" "-E" "PSMain" "-T ps_6_3")
++# Inline ray queries need Shader Model 6.5; only the shadow receiver uses it.
++set (DXC_PS65_OPTS "${DXC_COMMON_OPTS}" "-E" "PSMain" "-T ps_6_5")
++set (DXC_VS_DXIL_OPTS "${DXC_COMMON_OPTS}" "-E" "VSMain" "-T vs_6_3")
+ set (DXC_VS_OPTS "${DXC_COMMON_OPTS}" "-E" "VSMain" "-T vs_6_3" "-fvk-invert-y")
+ set (DXC_CS_OPTS "${DXC_COMMON_OPTS}" "-E" "CSMain" "-T cs_6_3")
+ set (DXC_GS_OPTS "${DXC_COMMON_OPTS}" "-E" "GSMain" "-T gs_6_3")
+@@ -401,6 +411,7 @@ set (SOURCES
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_render_target_manager.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_render_worker.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_sun_shadow_scene.cpp"
++    "${PROJECT_SOURCE_DIR}/src/render/rt64_sun_shadow_pass.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_native_alpha_evidence.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_rsp_processor.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_shader_common.cpp"
+@@ -557,6 +568,12 @@ if(WIN32)
+     build_shader_dxil(rt64 "src/shaders/NativeAlphaEvidenceDoubleCS.hlsl" "${DXC_CS_OPTS}")
+     build_shader_dxil(rt64 "src/shaders/NativeAlphaInputPS.hlsl" "${DXC_PS_OPTS}")
+     build_shader_dxil(rt64 "src/shaders/NativeAlphaVerticesGS.hlsl" "${DXC_GS_OPTS}")
++    build_shader_dxil(rt64 "src/shaders/SunShadowReceiverVS.hlsl" "${DXC_VS_DXIL_OPTS}")
++    build_shader_dxil(rt64 "src/shaders/SunShadowReceiverPS.hlsl" "${DXC_PS65_OPTS}")
++    build_shader_dxil(rt64 "src/shaders/SunShadowReceiverPS.hlsl" "${DXC_PS65_OPTS}" "src/shaders/SunShadowReceiverPSMS.hlsl" "-D MULTISAMPLING")
++    build_shader_dxil(rt64 "src/shaders/SunShadowCompositeVS.hlsl" "${DXC_VS_DXIL_OPTS}")
++    build_shader_dxil(rt64 "src/shaders/SunShadowCompositePS.hlsl" "${DXC_PS_OPTS}")
++    build_shader_dxil(rt64 "src/shaders/SunShadowCompositePS.hlsl" "${DXC_PS_OPTS}" "src/shaders/SunShadowCompositePSMS.hlsl" "-D MULTISAMPLING")
+ endif()
+ build_compute_shader(rt64 "src/shaders/RSPWorldCS.hlsl")
+ build_compute_shader(rt64 "src/shaders/RSPSmoothNormalCS.hlsl")
+diff --git a/src/hle/rt64_state.cpp b/src/hle/rt64_state.cpp
+index d249a97..4da36e2 100644
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -17,6 +17,7 @@
+ #include "common/rt64_tmem_hasher.h"
+ #include "preset/rt64_preset_draw_call.h"
+ #include "preset/rt64_preset_light.h"
++#include "rhi/rt64_render_hooks.h"
+ 
+ #include "rt64_application.h"
+ #include "rt64_interpreter.h"
+@@ -2629,6 +2630,11 @@ namespace RT64 {
+ 
+     void State::advanceWorkload(Workload &workload, bool paused) {
+         workload.workloadId = ++workloadId;
++        // A paused re-submission repeats an old Workload; no new task owns it.
++        SunShadowProvider *shadowProvider = paused ? nullptr : GetSunShadowProvider();
++        if (shadowProvider != nullptr) {
++            shadowProvider->workloadPublished(workload.workloadId);
++        }
+         workload.presentId = presentId;
+         workload.debuggerCamera = debuggerInspector.camera;
+         workload.debuggerRenderer = debuggerInspector.renderer;
+diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
+index 7e1c0cb..3ddb08e 100644
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -374,8 +374,19 @@ namespace RT64 {
+             Workload &workload = workloads[curFrame.workloads[w]];
+             RenderEvidenceObserver *evidence = GetRenderEvidenceObserver();
+             ScopedRenderEvidence evidenceScope(evidence);
++            SunShadowProvider *shadowProvider = GetSunShadowProvider();
++            std::shared_ptr<const SunShadowWorkload> productionShadow;
++            if (shadowProvider != nullptr) {
++                productionShadow = shadowProvider->sunShadow(workload);
++                workload.sunShadow = productionShadow;
++            }
++
+             if (evidence != nullptr) {
+-                workload.sunShadow = evidence->sunShadow(workload);
++                // Diagnostics observe the production value when one exists.
++                if (productionShadow == nullptr) {
++                    workload.sunShadow = evidence->sunShadow(workload);
++                }
++
+                 evidence->begin(workload, curFrameWeight);
+             }
+ 
+@@ -704,12 +715,16 @@ namespace RT64 {
+             }
+ #       endif
+ 
++            // Decided before recording so a replacement is all or nothing.
++            framebufferRenderer->planSunShadow(ext.workloadGraphicsWorker, workload, processWorldVertices);
++
+             workerMutex.lock();
+             ext.workloadGraphicsWorker->commandList->begin();
+             ext.workloadGraphicsWorker->commandList->resetQueryPool(queryPool.get(), 0, 2);
+             ext.workloadGraphicsWorker->commandList->writeTimestamp(queryPool.get(), 0);
+             framebufferRenderer->endFramebuffers(ext.workloadGraphicsWorker, &workload.drawBuffers, &workload.outputBuffers, workloadConfig.raytracingEnabled);
+             framebufferRenderer->recordSetup(ext.workloadGraphicsWorker, bufferUploaders, processRSP ? rspProcessor.get() : nullptr, processWorldVertices ? vertexProcessor.get() : nullptr, &workload.outputBuffers, workloadConfig.raytracingEnabled);
++            framebufferRenderer->recordSunShadowBuild(ext.workloadGraphicsWorker);
+             
+             // Record all framebuffer pairs.
+             uint32_t framebufferIndex = 0;
+@@ -850,6 +865,11 @@ namespace RT64 {
+             ext.workloadGraphicsWorker->execute();
+             ext.workloadGraphicsWorker->wait();
+             if (evidence != nullptr) evidence->completed(workload, ext.workloadGraphicsWorker);
++            const SunShadowFrameResult shadowResult = framebufferRenderer->finishSunShadow();
++            if ((shadowProvider != nullptr) && shadowResult.requested) {
++                shadowProvider->sunShadowResult(shadowResult);
++            }
++
+             workerMutex.unlock();
+ 
+             // Update the GPU profiler with the results from the timestamps of the frame.
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+index bd2ca49..100757c 100644
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -536,7 +536,12 @@ namespace RT64 {
+             switchToGraphicsPipeline();
+         }
+         
+-        for (uint32_t i : rasterScene.instanceIndices) {
++        // Only the exact native scene of this framebuffer may be replaced, never
++        // an interleaved or diagnostic copy.
++        const bool sunShadowActive = (sunShadowPass != nullptr) && sunShadowPass->active(rasterScene) &&
++            (framebuffer.renderTargetDrawCall.fbStorage == fbStorage);
++        for (size_t position = 0; position < rasterScene.instanceIndices.size(); position++) {
++            const uint32_t i = rasterScene.instanceIndices[position];
+             const InstanceDrawCall &drawCall = instanceDrawCallVector[i];
+             switch (drawCall.type) {
+             case InstanceDrawCall::Type::IndexedTriangles: 
+@@ -544,6 +549,18 @@ namespace RT64 {
+             case InstanceDrawCall::Type::RegularRect: {
+                 assert(fbStorage->colorTarget != nullptr);
+ 
++                // A ready plan replaces every native overlay of this view at once;
++                // the ray traced receivers composite where the last one was drawn.
++                if (sunShadowActive && sunShadowPass->overlayAt(position)) {
++                    if (sunShadowPass->replaceAt(position)) {
++                        sunShadowPass->recordReplacement(worker, *this, uint32_t(&framebuffer - framebufferVector.data()), fbStorage, depthState);
++                        switchToGraphicsPipeline();
++                        worker->commandList->setFramebuffer(depthState ? fbStorage->colorWriteDepthRead.get() : fbStorage->colorDepthWrite.get());
++                    }
++
++                    break;
++                }
++
+                 const bool typeDifferent = (drawCall.type != previousCallType);
+                 const bool testZDifferent = (drawCall.type == InstanceDrawCall::Type::IndexedTriangles) && (drawCall.triangles.vertexTestZ != previousVertexTestZ);
+                 if (typeDifferent || testZDifferent) {
+@@ -1406,6 +1423,28 @@ namespace RT64 {
+         }
+     }
+ 
++    void FramebufferRenderer::planSunShadow(RenderWorker *worker, const Workload &workload, bool worldCurrent) {
++        if (sunShadowPass == nullptr) {
++            if (workload.sunShadow == nullptr) {
++                return;
++            }
++
++            sunShadowPass = std::make_unique<SunShadowPass>();
++        }
++
++        sunShadowPass->plan(worker, *this, workload, worldCurrent);
++    }
++
++    void FramebufferRenderer::recordSunShadowBuild(RenderWorker *worker) {
++        if (sunShadowPass != nullptr) {
++            sunShadowPass->recordBuild(worker->commandList.get());
++        }
++    }
++
++    SunShadowFrameResult FramebufferRenderer::finishSunShadow() {
++        return (sunShadowPass != nullptr) ? sunShadowPass->finish() : SunShadowFrameResult();
++    }
++
+     void FramebufferRenderer::waitForUploaders() {
+         shaderUploader->wait();
+ 
+diff --git a/src/render/rt64_framebuffer_renderer.h b/src/render/rt64_framebuffer_renderer.h
+index bc35c2f..8272f4a 100644
+--- a/src/render/rt64_framebuffer_renderer.h
++++ b/src/render/rt64_framebuffer_renderer.h
+@@ -23,6 +23,7 @@
+ #include "rt64_raster_shader_cache.h"
+ #include "rt64_render_target.h"
+ #include "rt64_rsp_processor.h"
++#include "rt64_sun_shadow_pass.h"
+ #include "rt64_vertex_processor.h"
+ 
+ #if RT_ENABLED
+@@ -188,6 +189,11 @@ namespace RT64 {
+         void recordFramebuffer(RenderWorker *worker, uint32_t framebufferIndex);
+         void waitForUploaders();
+         void advanceFrame(bool rtEnabled);
++        // Optional sunlight replacement; see rt64_sun_shadow_pass.h.
++        void planSunShadow(RenderWorker *worker, const Workload &workload, bool worldCurrent);
++        void recordSunShadowBuild(RenderWorker *worker);
++        SunShadowFrameResult finishSunShadow();
++        std::unique_ptr<SunShadowPass> sunShadowPass;
+ 
+ #   if RT_ENABLED
+         void resetRaytracing(RaytracingShaderCache *rtShaderCache, const RenderTexture *blueNoiseTexture);
+diff --git a/src/render/rt64_sun_shadow_pass.cpp b/src/render/rt64_sun_shadow_pass.cpp
+new file mode 100644
+index 0000000..99af1e5
+--- /dev/null
++++ b/src/render/rt64_sun_shadow_pass.cpp
+@@ -0,0 +1,439 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#include "rt64_sun_shadow_pass.h"
++
++#include <algorithm>
++
++#include "hle/rt64_workload.h"
++#include "rt64_framebuffer_renderer.h"
++#include "rt64_render_target_manager.h"
++#include "rt64_render_worker.h"
++#include "shared/rt64_raster_params.h"
++#include "shared/rt64_sun_shadow_receiver.h"
++#ifdef _WIN32
++#include "contrib/plume/plume_d3d12.h"
++#include "shaders/SunShadowCompositePS.hlsl.dxil.h"
++#include "shaders/SunShadowCompositePSMS.hlsl.dxil.h"
++#include "shaders/SunShadowCompositeVS.hlsl.dxil.h"
++#include "shaders/SunShadowReceiverPS.hlsl.dxil.h"
++#include "shaders/SunShadowReceiverPSMS.hlsl.dxil.h"
++#include "shaders/SunShadowReceiverVS.hlsl.dxil.h"
++#endif
++
++namespace RT64 {
++    namespace {
++        constexpr RenderFormat ShadowTargetFormat = RenderFormat::R16G16B16A16_FLOAT;
++        constexpr uint32_t MaxTargetDimension = 4096;
++        const RenderBufferStructuredView Float4View(16), UintView(4);
++
++        uint32_t compositeKey(RenderFormat format, uint32_t sampleCount) {
++            return (uint32_t(format) << 8) | sampleCount;
++        }
++    }
++
++    SunShadowPass::SunShadowPass() { }
++
++    SunShadowPass::~SunShadowPass() { }
++
++    bool SunShadowPass::reject(const char *reason) {
++        ready_ = false;
++        raster_ = nullptr;
++        overlayPositions_.clear();
++        receiverInstances_.clear();
++        replacementPosition_ = SIZE_MAX;
++        result_.ready = false;
++        result_.reason = reason;
++        return false;
++    }
++
++    bool SunShadowPass::ensureDevice(RenderWorker *worker) {
++        if (support_ == Support::Supported) return true;
++        if (support_ == Support::Unsupported) return false;
++        support_ = Support::Unsupported;
++#   ifndef _WIN32
++        supportReason_ = "ray-query shadows require the validated D3D12 backend";
++        return false;
++#   else
++        auto *native = dynamic_cast<plume::D3D12Device *>(worker->device);
++        if (native == nullptr) {
++            supportReason_ = "ray-query shadows require the validated D3D12 backend";
++            return false;
++        }
++        D3D12_FEATURE_DATA_D3D12_OPTIONS5 options5{};
++        D3D12_FEATURE_DATA_SHADER_MODEL model{D3D_SHADER_MODEL_6_5};
++        if (FAILED(native->d3d->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &options5, sizeof(options5))) ||
++            options5.RaytracingTier < D3D12_RAYTRACING_TIER_1_1 ||
++            FAILED(native->d3d->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &model, sizeof(model))) ||
++            model.HighestShaderModel < D3D_SHADER_MODEL_6_5 || !worker->device->getCapabilities().raytracing) {
++            supportReason_ = "device lacks DXR 1.1 inline ray queries or Shader Model 6.5";
++            return false;
++        }
++        auto *device = worker->device;
++        receiverVS_ = device->createShader(SunShadowReceiverVSBlobDXIL, sizeof(SunShadowReceiverVSBlobDXIL), "VSMain", RenderShaderFormat::DXIL);
++        receiverPS_ = device->createShader(SunShadowReceiverPSBlobDXIL, sizeof(SunShadowReceiverPSBlobDXIL), "PSMain", RenderShaderFormat::DXIL);
++        receiverPSMS_ = device->createShader(SunShadowReceiverPSMSBlobDXIL, sizeof(SunShadowReceiverPSMSBlobDXIL), "PSMain", RenderShaderFormat::DXIL);
++        compositeVS_ = device->createShader(SunShadowCompositeVSBlobDXIL, sizeof(SunShadowCompositeVSBlobDXIL), "VSMain", RenderShaderFormat::DXIL);
++        compositePS_ = device->createShader(SunShadowCompositePSBlobDXIL, sizeof(SunShadowCompositePSBlobDXIL), "PSMain", RenderShaderFormat::DXIL);
++        compositePSMS_ = device->createShader(SunShadowCompositePSMSBlobDXIL, sizeof(SunShadowCompositePSMSBlobDXIL), "PSMain", RenderShaderFormat::DXIL);
++        if (!receiverVS_ || !receiverPS_ || !receiverPSMS_ || !compositeVS_ || !compositePS_ || !compositePSMS_) {
++            supportReason_ = "shadow shader creation failed";
++            return false;
++        }
++
++        receiverBuilder_.begin();
++        worldBinding_ = receiverBuilder_.addStructuredBuffer(0);
++        facesBinding_ = receiverBuilder_.addStructuredBuffer(1);
++        sceneBinding_ = receiverBuilder_.addAccelerationStructure(2);
++        geometryBinding_ = receiverBuilder_.addStructuredBuffer(3);
++        receiverBuilder_.end();
++        receiverSet_ = receiverBuilder_.create(device);
++
++        compositeBuilder_.begin();
++        shadowBinding_ = compositeBuilder_.addTexture(0);
++        nativeBinding_ = compositeBuilder_.addTexture(1);
++        compositeBuilder_.end();
++        compositeSet_ = compositeBuilder_.create(device);
++
++        RenderPipelineLayoutBuilder compositeLayout;
++        compositeLayout.begin();
++        compositeLayout.addDescriptorSet(compositeBuilder_);
++        compositeLayout.end();
++        compositeLayout_ = compositeLayout.create(device);
++        // AS build and receiver/composite GPU time, read after the Workload fence.
++        timestamps_ = device->createQueryPool(4);
++        if (!receiverSet_ || !compositeSet_ || !compositeLayout_ || !timestamps_) {
++            supportReason_ = "shadow descriptor creation failed";
++            return false;
++        }
++        support_ = Support::Supported;
++        supportReason_ = "";
++        return true;
++#   endif
++    }
++
++    bool SunShadowPass::ensureCompositePipeline(RenderDevice *device, RenderFormat format, const RenderMultisampling &multisampling) {
++        const uint32_t key = compositeKey(format, multisampling.sampleCount);
++        if (compositePipelines_.count(key) != 0) return compositePipelines_[key] != nullptr;
++        RenderGraphicsPipelineDesc desc;
++        desc.pipelineLayout = compositeLayout_.get();
++        desc.vertexShader = compositeVS_.get();
++        desc.pixelShader = multisampling.sampleCount > 1 ? compositePSMS_.get() : compositePS_.get();
++        desc.renderTargetCount = 1;
++        desc.renderTargetFormat[0] = format;
++        // The shader clamps against a native copy; destination alpha (native
++        // coverage for VI filtering) is never written.
++        RenderBlendDesc blend = RenderBlendDesc::Copy();
++        blend.renderTargetWriteMask = uint8_t(RenderColorWriteEnable::RED) | uint8_t(RenderColorWriteEnable::GREEN) |
++            uint8_t(RenderColorWriteEnable::BLUE);
++        desc.renderTargetBlend[0] = blend;
++        desc.depthTargetFormat = RenderFormat::D32_FLOAT;
++        desc.multisampling = multisampling;
++        compositePipelines_[key] = device->createGraphicsPipeline(desc);
++        return compositePipelines_[key] != nullptr;
++    }
++
++    bool SunShadowPass::ensureTarget(RenderDevice *device, uint32_t width, uint32_t height, RenderFormat nativeFormat,
++        const RenderMultisampling &multisampling)
++    {
++        if (target_ && nativeCopy_ && targetWidth_ == width && targetHeight_ == height &&
++            nativeFormat_ == nativeFormat && nativeSamples_ == multisampling.sampleCount) return true;
++        targetFramebuffer_.reset();
++        target_.reset();
++        nativeCopy_.reset();
++        targetWidth_ = targetHeight_ = 0;
++        target_ = device->createTexture(RenderTextureDesc::ColorTarget(width, height, ShadowTargetFormat));
++        nativeCopy_ = device->createTexture(RenderTextureDesc::ColorTarget(width, height, nativeFormat, multisampling));
++        if (!target_ || !nativeCopy_) {
++            target_.reset();
++            nativeCopy_.reset();
++            return false;
++        }
++        const RenderTexture *attachment = target_.get();
++        targetFramebuffer_ = device->createFramebuffer(RenderFramebufferDesc(&attachment, 1));
++        if (!targetFramebuffer_) {
++            target_.reset();
++            nativeCopy_.reset();
++            return false;
++        }
++        targetWidth_ = width;
++        targetHeight_ = height;
++        nativeFormat_ = nativeFormat;
++        nativeSamples_ = multisampling.sampleCount;
++        compositeSet_->setTexture(shadowBinding_, target_.get(), RenderTextureLayout::SHADER_READ);
++        compositeSet_->setTexture(nativeBinding_, nativeCopy_.get(), RenderTextureLayout::SHADER_READ);
++        return true;
++    }
++
++    void SunShadowPass::plan(RenderWorker *worker, FramebufferRenderer &renderer, const Workload &workload, bool worldCurrent) {
++        reject("");
++        result_ = {};
++        result_.workloadId = workload.workloadId;
++        const SunShadowWorkload *shadow = workload.sunShadow.get();
++        // A capture-only Workload carries zero strength and never replaces.
++        if (shadow == nullptr || !(shadow->params.strength > 0.0f)) {
++            reject("not requested");
++            // Disabled mode keeps no AS or shadow target; shaders stay cached.
++            release();
++            return;
++        }
++        result_.requested = true;
++        result_.sceneEpoch = shadow->sceneEpoch;
++        result_.taskSequence = shadow->taskSequence;
++        if (!shadow->authenticated || !shadow->complete) { reject("incomplete scene admission"); return; }
++        if (!validSunShadowParams(shadow->params)) { reject("invalid light parameters"); return; }
++        if (!ensureDevice(worker)) { reject(supportReason_); return; }
++        const uint32_t vertexCount = workload.drawData.vertexCount();
++        const auto &world = workload.outputBuffers.worldPosBuffer;
++        if (!worldCurrent || vertexCount == 0 || world.buffer == nullptr || world.computedSize < uint64_t(vertexCount) * 16) {
++            reject("presented world positions unavailable");
++            return;
++        }
++
++        // Every admitted native overlay must be presented exactly once, all in
++        // one framebuffer raster scene; otherwise this view stays native.
++        std::vector<bool> found(shadow->overlays.size(), false);
++        for (uint32_t f = 0; f < renderer.framebufferCount; ++f) {
++            const auto &drawCall = renderer.framebufferVector[f].renderTargetDrawCall;
++            for (const RasterScene &scene : drawCall.rasterScenes) {
++                for (size_t k = 0; k < scene.instanceIndices.size(); ++k) {
++                    const uint32_t i = scene.instanceIndices[k];
++                    const InstanceDrawCall &call = renderer.instanceDrawCallVector[i];
++                    if (call.type != InstanceDrawCall::Type::IndexedTriangles || call.triangles.vertexTestZ) continue;
++                    const uint32_t draw = renderer.renderIndicesVector[i].instanceIndex;
++                    for (size_t o = 0; o < shadow->overlays.size(); ++o) {
++                        const auto &overlay = shadow->overlays[o];
++                        if (overlay.draw != draw || overlay.faceStart != call.triangles.indexStart ||
++                            overlay.indexCount != call.triangles.faceCount * 3) continue;
++                        if (found[o]) { reject("native overlay presented twice"); return; }
++                        if (raster_ != nullptr && raster_ != &scene) { reject("native overlays span views"); return; }
++                        found[o] = true;
++                        raster_ = &scene;
++                        framebufferIndex_ = f;
++                        overlayPositions_.push_back(k);
++                    }
++                }
++            }
++        }
++        if (overlayPositions_.empty() || std::find(found.begin(), found.end(), false) != found.end()) {
++            reject("native overlay not presented");
++            return;
++        }
++        replacementPosition_ = *std::max_element(overlayPositions_.begin(), overlayPositions_.end());
++
++        // Receivers drawn before the replacement point, as native overlays are.
++        for (size_t k = 0; k < replacementPosition_; ++k) {
++            const uint32_t i = raster_->instanceIndices[k];
++            const InstanceDrawCall &call = renderer.instanceDrawCallVector[i];
++            if (call.type != InstanceDrawCall::Type::IndexedTriangles || call.triangles.vertexTestZ ||
++                call.triangles.scissor.isEmpty()) continue;
++            const uint32_t draw = renderer.renderIndicesVector[i].instanceIndex;
++            for (const auto &receiver : shadow->receivers) {
++                if (receiver.draw == draw && receiver.faceStart == call.triangles.indexStart &&
++                    receiver.indexCount == call.triangles.faceCount * 3) {
++                    receiverInstances_.push_back(i);
++                    break;
++                }
++            }
++        }
++        if (receiverInstances_.empty()) { reject("no visible receiver draw"); return; }
++
++        const auto &framebuffer = renderer.framebufferVector[framebufferIndex_];
++        const RenderFramebufferStorage *storage = framebuffer.renderTargetDrawCall.fbStorage;
++        if (storage == nullptr || storage->colorTarget == nullptr || storage->depthTarget == nullptr) {
++            reject("view has no color/depth target");
++            return;
++        }
++        // The composite pipeline and native copy follow the target's colour
++        // format, so the high-precision UNORM target needs no separate path.
++        const RenderTarget &color = *storage->colorTarget;
++        if (color.multisampling.sampleCount != storage->depthTarget->multisampling.sampleCount ||
++            storage->depthTarget->format != RenderFormat::D32_FLOAT) {
++            reject("mismatched sample count or depth format");
++            return;
++        }
++        multisampled_ = color.multisampling.sampleCount > 1;
++        if (color.width == 0 || color.height == 0 || color.width > MaxTargetDimension || color.height > MaxTargetDimension) {
++            reject("view exceeds the shadow target budget");
++            return;
++        }
++        auto *device = worker->device;
++        if (!receiverLayout_) {
++            // One layout for both variants: pipelines keep the root signature they were created with.
++            RenderPipelineLayoutBuilder layout;
++            layout.begin(false, true);
++            layout.addDescriptorSet(*renderer.descCommonSet);
++            layout.addDescriptorSet(*renderer.descTextureSet);
++            layout.addDescriptorSet(*renderer.descTextureSet);
++            layout.addDescriptorSet(*framebuffer.descRealFbSet);
++            layout.addDescriptorSet(receiverBuilder_);
++            layout.addPushConstant(0, 0, sizeof(interop::RasterParams), RenderShaderStageFlag::VERTEX | RenderShaderStageFlag::PIXEL);
++            layout.addPushConstant(0, 5, sizeof(interop::SunShadowReceiverParams), RenderShaderStageFlag::PIXEL);
++            layout.addPushConstant(1, 5, sizeof(SunShadowParams), RenderShaderStageFlag::PIXEL);
++            layout.end();
++            receiverLayout_ = layout.create(device);
++        }
++        auto &receiverPipeline = receiverPipelines_[multisampled_ ? 1 : 0];
++        if (!receiverPipeline) {
++            const RenderInputElement elements[] = {
++                RenderInputElement("POSITION", 0, 0, RenderFormat::R32G32B32A32_FLOAT, 0, 0),
++                RenderInputElement("TEXCOORD", 0, 1, RenderFormat::R32G32_FLOAT, 1, 0),
++                RenderInputElement("COLOR", 0, 2, RenderFormat::R32G32B32A32_FLOAT, 2, 0)
++            };
++            RenderGraphicsPipelineDesc desc;
++            desc.pipelineLayout = receiverLayout_.get();
++            desc.vertexShader = receiverVS_.get();
++            desc.pixelShader = multisampled_ ? receiverPSMS_.get() : receiverPS_.get();
++            desc.renderTargetCount = 1;
++            desc.renderTargetFormat[0] = ShadowTargetFormat;
++            desc.renderTargetBlend[0] = RenderBlendDesc::Copy();
++            desc.inputSlots = renderer.vertexInputSlots.data();
++            desc.inputSlotsCount = uint32_t(renderer.vertexInputSlots.size());
++            desc.inputElements = elements;
++            desc.inputElementsCount = 3;
++            if (receiverLayout_) receiverPipeline = device->createGraphicsPipeline(desc);
++            if (!receiverPipeline) {
++                support_ = Support::Unsupported;
++                supportReason_ = "receiver pipeline creation failed";
++                reject(supportReason_);
++                return;
++            }
++        }
++        if (!ensureCompositePipeline(device, color.format, color.multisampling)) { reject("composite pipeline creation failed"); return; }
++        if (!ensureTarget(device, color.width, color.height, color.format, color.multisampling)) {
++            reject("shadow target allocation failed");
++            return;
++        }
++
++        ++presentation_;
++        const auto &faces = workload.drawBuffers.faceIndicesBuffer;
++        if (!shadowScene_.prepare(device, {world.buffer.get(), world.allocatedSize},
++            {faces.defaultBuffer.get(), faces.allocatedSize}, vertexCount, workload.drawData.faceIndices,
++            shadow->geometry, presentation_)) {
++            reject("acceleration structure preparation failed");
++            return;
++        }
++        // The helper skips invalid ranges; a complete admission must keep them all.
++        if (shadowScene_.stats().rejected != 0) {
++            shadowScene_.invalidate();
++            reject("acceleration structure rejected an admitted caster range");
++            return;
++        }
++        receiverSet_->setBuffer(worldBinding_, world.buffer.get(), world.allocatedSize, &Float4View);
++        receiverSet_->setBuffer(facesBinding_, faces.defaultBuffer.get(), faces.allocatedSize, &UintView);
++        params_ = shadow->params;
++        ready_ = true;
++        result_.reason = "pending acceleration structure build";
++        result_.casterRanges = shadowScene_.stats().admitted;
++        result_.receiverDraws = uint32_t(receiverInstances_.size());
++        result_.triangles = shadowScene_.stats().triangles;
++        result_.asBytes = shadowScene_.stats().asBytes;
++        result_.scratchBytes = shadowScene_.stats().scratchBytes;
++    }
++
++    void SunShadowPass::recordBuild(RenderCommandList *commands) {
++        if (!ready_) return;
++        commands->resetQueryPool(timestamps_.get(), 0, 4);
++        commands->writeTimestamp(timestamps_.get(), 0);
++        if (!shadowScene_.recordBuild(commands)) { reject("acceleration structure build failed"); return; }
++        commands->writeTimestamp(timestamps_.get(), 1);
++        receiverSet_->setAccelerationStructure(sceneBinding_, shadowScene_.accelerationStructure(presentation_));
++        receiverSet_->setBuffer(geometryBinding_, shadowScene_.metadata(presentation_), shadowScene_.metadataBytes(),
++            &Float4View);
++        result_.reason = "";
++    }
++
++    bool SunShadowPass::overlayAt(size_t position) const {
++        return std::find(overlayPositions_.begin(), overlayPositions_.end(), position) != overlayPositions_.end();
++    }
++
++    void SunShadowPass::recordReplacement(RenderWorker *worker, FramebufferRenderer &renderer, uint32_t framebufferIndex,
++        RenderFramebufferStorage *fbStorage, bool &depthState)
++    {
++        auto *commands = worker->commandList.get();
++        auto &framebuffer = renderer.framebufferVector[framebufferIndex];
++        commands->writeTimestamp(timestamps_.get(), 2);
++        renderer.submitDepthAccess(worker, fbStorage, true, depthState);
++        commands->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(target_.get(), RenderTextureLayout::COLOR_WRITE));
++        commands->setFramebuffer(targetFramebuffer_.get());
++        commands->clearColor(0, RenderColor(0.0f, 0.0f, 0.0f, 1.0f));
++        commands->setGraphicsPipelineLayout(receiverLayout_.get());
++        commands->setGraphicsDescriptorSet(renderer.descCommonSet->get(), 0);
++        commands->setGraphicsDescriptorSet(renderer.descTextureSet->get(), 1);
++        commands->setGraphicsDescriptorSet(renderer.descTextureSet->get(), 2);
++        commands->setGraphicsDescriptorSet(framebuffer.descRealFbSet->get(), 3);
++        commands->setGraphicsDescriptorSet(receiverSet_.get(), 4);
++        commands->setPipeline(receiverPipelines_[multisampled_ ? 1 : 0].get());
++        commands->setViewports(framebuffer.viewport);
++        commands->setVertexBuffers(0, renderer.indexedVertexViews.data(), uint32_t(renderer.indexedVertexViews.size()), renderer.vertexInputSlots.data());
++        commands->setIndexBuffer(&renderer.indexBufferView);
++        commands->setGraphicsPushConstants(2, &params_);
++        for (uint32_t i : receiverInstances_) {
++            const auto &triangles = renderer.instanceDrawCallVector[i].triangles;
++            commands->setScissors(triangles.scissor);
++            interop::RasterParams raster{};
++            raster.renderIndex = i;
++            raster.screenScale = triangles.screenScale;
++            raster.screenOffset = triangles.screenOffset;
++            commands->setGraphicsPushConstants(0, &raster);
++            interop::SunShadowReceiverParams receiver{};
++            receiver.draw = renderer.renderIndicesVector[i].instanceIndex;
++            receiver.faceStart = triangles.indexStart;
++            commands->setGraphicsPushConstants(1, &receiver);
++            commands->drawIndexedInstanced(triangles.faceCount * 3, 1, triangles.indexStart, 0, 0);
++        }
++
++        // Snapshot the native color so the composite can clamp against it.
++        RenderTexture *nativeColor = fbStorage->colorTarget->texture.get();
++        commands->barriers(RenderBarrierStage::COPY, {
++            RenderTextureBarrier(nativeColor, RenderTextureLayout::COPY_SOURCE),
++            RenderTextureBarrier(nativeCopy_.get(), RenderTextureLayout::COPY_DEST)
++        });
++        commands->copyTexture(nativeCopy_.get(), nativeColor);
++        commands->barriers(RenderBarrierStage::GRAPHICS, {
++            RenderTextureBarrier(nativeColor, RenderTextureLayout::COLOR_WRITE),
++            RenderTextureBarrier(nativeCopy_.get(), RenderTextureLayout::SHADER_READ),
++            RenderTextureBarrier(target_.get(), RenderTextureLayout::SHADER_READ)
++        });
++        commands->setFramebuffer(fbStorage->colorWriteDepthRead.get());
++        commands->setGraphicsPipelineLayout(compositeLayout_.get());
++        commands->setGraphicsDescriptorSet(compositeSet_.get(), 0);
++        commands->setPipeline(compositePipelines_[compositeKey(fbStorage->colorTarget->format,
++            fbStorage->colorTarget->multisampling.sampleCount)].get());
++        const RenderViewport viewport(0.0f, 0.0f, float(targetWidth_), float(targetHeight_));
++        commands->setViewports(viewport);
++        commands->setScissors(RenderRect(0, 0, int32_t(targetWidth_), int32_t(targetHeight_)));
++        commands->drawInstanced(3, 1, 0, 0);
++        commands->writeTimestamp(timestamps_.get(), 3);
++        result_.overlaysReplaced = uint32_t(overlayPositions_.size());
++    }
++
++    SunShadowFrameResult SunShadowPass::finish() {
++        SunShadowFrameResult result = result_;
++        if (ready_ && result.overlaysReplaced == 0) {
++            result.reason = "replacement point not recorded";
++        }
++        result.ready = ready_ && result.overlaysReplaced != 0;
++        if (result.ready) {
++            // Timestamps are nanoseconds; the Workload fence has completed.
++            timestamps_->queryResults();
++            const uint64_t *ticks = timestamps_->getResults();
++            result.buildMicroseconds = double(ticks[1] - ticks[0]) / 1000.0;
++            result.receiverMicroseconds = double(ticks[3] - ticks[2]) / 1000.0;
++        }
++        ready_ = false;
++        raster_ = nullptr;
++        overlayPositions_.clear();
++        receiverInstances_.clear();
++        replacementPosition_ = SIZE_MAX;
++        result_ = {};
++        return result;
++    }
++
++    void SunShadowPass::release() {
++        shadowScene_ = SunShadowScene();
++        targetFramebuffer_.reset();
++        target_.reset();
++        nativeCopy_.reset();
++        targetWidth_ = targetHeight_ = 0;
++    }
++};
+diff --git a/src/render/rt64_sun_shadow_pass.h b/src/render/rt64_sun_shadow_pass.h
+new file mode 100644
+index 0000000..5221e41
+--- /dev/null
++++ b/src/render/rt64_sun_shadow_pass.h
+@@ -0,0 +1,91 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#pragma once
++
++#include <memory>
++#include <unordered_map>
++#include <vector>
++
++#include "common/rt64_plume.h"
++#include "rhi/rt64_render_hooks.h"
++#include "rt64_sun_shadow_scene.h"
++
++namespace RT64 {
++    struct FramebufferRenderer;
++    struct RasterScene;
++    struct RenderFramebufferStorage;
++    struct RenderWorker;
++    struct Workload;
++
++    // Optional sunlight replacement for one Workload render on its queue
++    // thread. The Workload's caller-admitted metadata selects casters,
++    // receivers and the exact native overlay draws. Replacement is all or
++    // nothing: plan() decides before any command is recorded, and every
++    // failed, pending or unsupported gate keeps the native command stream.
++    //
++    // Lifetime: the queue fences each Workload before the next plan(), which
++    // satisfies SunShadowScene's rebuild/destruction contract. One plan covers
++    // exactly one framebuffer raster scene, so views never share a receiver.
++    class SunShadowPass {
++    public:
++        SunShadowPass();
++        ~SunShadowPass();
++
++        // A null, capture-only (strength 0) or incomplete value keeps native output.
++        // worldCurrent: RSPWorld computed this render's presented positions.
++        void plan(RenderWorker *worker, FramebufferRenderer &renderer, const Workload &workload, bool worldCurrent);
++        void recordBuild(RenderCommandList *commands);
++        bool active(const RasterScene &scene) const { return ready_ && &scene == raster_; }
++        bool overlayAt(size_t position) const;
++        bool replaceAt(size_t position) const { return position == replacementPosition_; }
++        // Records receiver visibility and the single composite into the
++        // current color target. Leaves the depth target in DEPTH_READ.
++        void recordReplacement(RenderWorker *worker, FramebufferRenderer &renderer, uint32_t framebufferIndex,
++            RenderFramebufferStorage *fbStorage, bool &depthState);
++        // After the Workload fence. Clears per-Workload state.
++        SunShadowFrameResult finish();
++        // Frees GPU resources while the feature is unused (after a fence).
++        void release();
++
++    private:
++        bool ensureDevice(RenderWorker *worker);
++        bool ensureCompositePipeline(RenderDevice *device, RenderFormat format, const RenderMultisampling &multisampling);
++        bool ensureTarget(RenderDevice *device, uint32_t width, uint32_t height, RenderFormat nativeFormat,
++            const RenderMultisampling &multisampling);
++        bool reject(const char *reason);
++
++        enum class Support { Unknown, Supported, Unsupported };
++        Support support_ = Support::Unknown;
++        const char *supportReason_ = "";
++        std::unique_ptr<RenderShader> receiverVS_, receiverPS_, receiverPSMS_, compositeVS_, compositePS_, compositePSMS_;
++        // Builders own the descriptor ranges that their set descriptions reference.
++        RenderDescriptorSetBuilder receiverBuilder_, compositeBuilder_;
++        std::unique_ptr<RenderDescriptorSet> receiverSet_, compositeSet_;
++        uint32_t worldBinding_ = 0, facesBinding_ = 0, sceneBinding_ = 0, geometryBinding_ = 0, shadowBinding_ = 0;
++        uint32_t nativeBinding_ = 0;
++        std::unique_ptr<RenderPipelineLayout> receiverLayout_, compositeLayout_;
++        // Index 1 reads multisampled native depth with RT64's averaged decal rule.
++        std::unique_ptr<RenderPipeline> receiverPipelines_[2];
++        std::unique_ptr<RenderQueryPool> timestamps_;
++        bool multisampled_ = false;
++        std::unordered_map<uint32_t, std::unique_ptr<RenderPipeline>> compositePipelines_;
++        std::unique_ptr<RenderTexture> target_;
++        std::unique_ptr<RenderFramebuffer> targetFramebuffer_;
++        // Copy of the native color target read by the clamped composite.
++        std::unique_ptr<RenderTexture> nativeCopy_;
++        RenderFormat nativeFormat_ = RenderFormat::UNKNOWN;
++        uint32_t nativeSamples_ = 0;
++        uint32_t targetWidth_ = 0, targetHeight_ = 0;
++
++        SunShadowScene shadowScene_;
++        uint64_t presentation_ = 0;
++        bool ready_ = false;
++        const RasterScene *raster_ = nullptr;
++        uint32_t framebufferIndex_ = 0;
++        std::vector<size_t> overlayPositions_;
++        size_t replacementPosition_ = SIZE_MAX;
++        std::vector<uint32_t> receiverInstances_;
++        SunShadowParams params_;
++        SunShadowFrameResult result_;
++    };
++};
+diff --git a/src/rhi/rt64_render_hooks.cpp b/src/rhi/rt64_render_hooks.cpp
+index 4735d3e..a0ae3e3 100644
+--- a/src/rhi/rt64_render_hooks.cpp
++++ b/src/rhi/rt64_render_hooks.cpp
+@@ -24,6 +24,14 @@ namespace RT64 {
+         activeEvidence = previous;
+     }
+ 
++    static std::atomic<SunShadowProvider *> sunShadowProvider{nullptr};
++    SunShadowProvider *GetSunShadowProvider() {
++        return sunShadowProvider.load(std::memory_order_acquire);
++    }
++    void SetSunShadowProvider(SunShadowProvider *provider) {
++        sunShadowProvider.store(provider, std::memory_order_release);
++    }
++
+     static RenderHookInit *init = nullptr;
+     static RenderHookDraw *draw = nullptr;
+     static RenderHookDeinit *deinit = nullptr;
+diff --git a/src/rhi/rt64_render_hooks.h b/src/rhi/rt64_render_hooks.h
+index d6b7b27..704972e 100644
+--- a/src/rhi/rt64_render_hooks.h
++++ b/src/rhi/rt64_render_hooks.h
+@@ -84,6 +84,35 @@ namespace RT64 {
+         RenderEvidenceObserver *previous;
+     };
+ 
++    // Outcome of one Workload's optional sunlight replacement, reported after
++    // its GPU fence. `ready` means the native overlay was replaced by the ray
++    // traced receiver pass; every other path drew the native overlay.
++    struct SunShadowFrameResult {
++        uint64_t workloadId = 0, sceneEpoch = 0, taskSequence = 0;
++        bool requested = false, ready = false;
++        const char *reason = ""; // Static string naming the first failed gate.
++        uint32_t casterRanges = 0, receiverDraws = 0, overlaysReplaced = 0;
++        uint64_t triangles = 0, asBytes = 0, scratchBytes = 0;
++        // GPU time of the AS build and of the receiver pass plus composite.
++        double buildMicroseconds = 0, receiverMicroseconds = 0;
++    };
++
++    // Production seam for game-specific shadow admission. The provider owns
++    // policy and task identity; RT64 owns resources and the ready gate. Set it
++    // before queue threads start and clear it after they join. sunShadow runs
++    // on the queue thread before RSP processing; values are task-owned and the
++    // provider must not read guest RAM there. workloadPublished runs on the
++    // HLE thread when a Workload is numbered, before any queue thread can see
++    // it, so the provider can bind task identity to the id actually assigned.
++    struct SunShadowProvider {
++        virtual ~SunShadowProvider() = default;
++        virtual void workloadPublished(uint64_t workloadId) noexcept { }
++        virtual std::shared_ptr<const SunShadowWorkload> sunShadow(const Workload &workload) noexcept = 0;
++        virtual void sunShadowResult(const SunShadowFrameResult &result) noexcept { }
++    };
++    SunShadowProvider *GetSunShadowProvider();
++    void SetSunShadowProvider(SunShadowProvider *provider);
++
+     RenderHookInit *GetRenderHookInit();
+     RenderHookDraw *GetRenderHookDraw();
+     RenderHookDeinit *GetRenderHookDeinit();
+diff --git a/src/shaders/SunShadowCompositePS.hlsl b/src/shaders/SunShadowCompositePS.hlsl
+new file mode 100644
+index 0000000..03e109f
+--- /dev/null
++++ b/src/shaders/SunShadowCompositePS.hlsl
+@@ -0,0 +1,27 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++//
++// Applies the receiver target once: C = T * C_native + (1 - T) * C_fog.
++// C_native is a copy of the color target taken just before this pass. The
++// result is clamped to C_native so a shadow can never brighten a pixel, even
++// where a translucent draw already covers the receiver. The pipeline writes
++// RGB only, keeping native coverage alpha for VI filtering; T = 1 writes the
++// native value back unchanged. The MSAA variant runs per sample.
++
++Texture2D<float4> gShadow : register(t0, space0);
++
++#if defined(MULTISAMPLING)
++Texture2DMS<float4> gNative : register(t1, space0);
++
++float4 PSMain(in float4 position : SV_POSITION, in uint sampleIndex : SV_SampleIndex) : SV_TARGET0 {
++    const float4 native = gNative.Load(int2(floor(position.xy)), sampleIndex);
++#else
++Texture2D<float4> gNative : register(t1, space0);
++
++float4 PSMain(in float4 position : SV_POSITION) : SV_TARGET0 {
++    const float4 native = gNative.Load(int3(floor(position.xy), 0));
++#endif
++    const float4 shadow = gShadow.Load(int3(floor(position.xy), 0));
++    const float3 shadowed = native.rgb * shadow.a + shadow.rgb * (1.0f - shadow.a);
++    return float4(min(native.rgb, shadowed), native.a);
++}
+diff --git a/src/shaders/SunShadowCompositeVS.hlsl b/src/shaders/SunShadowCompositeVS.hlsl
+new file mode 100644
+index 0000000..af020b0
+--- /dev/null
++++ b/src/shaders/SunShadowCompositeVS.hlsl
+@@ -0,0 +1,7 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++
++void VSMain(in uint vertexIndex : SV_VertexID, out float4 oPosition : SV_POSITION) {
++    const float2 uv = float2((vertexIndex << 1) & 2, vertexIndex & 2);
++    oPosition = float4(uv * float2(2.0f, -2.0f) + float2(-1.0f, 1.0f), 0.0f, 1.0f);
++}
+diff --git a/src/shaders/SunShadowReceiverPS.hlsl b/src/shaders/SunShadowReceiverPS.hlsl
+new file mode 100644
+index 0000000..0681353
+--- /dev/null
++++ b/src/shaders/SunShadowReceiverPS.hlsl
+@@ -0,0 +1,87 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++//
++// Shader Model 6.5 receiver pass for admitted opaque standard-fog surfaces.
++// It never changes native color directly: it writes the fog contribution and
++// shadow transmission to a private target that one composite applies once.
++
++#include "shared/rt64_other_mode.h"
++#include "shared/rt64_raster_params.h"
++#include "shared/rt64_render_flags.h"
++#include "shared/rt64_sun_shadow_receiver.h"
++
++#include "Depth.hlsli"
++#include "FbRendererCommon.hlsli"
++#include "SunShadow.hlsli"
++
++[[vk::push_constant]] ConstantBuffer<RasterParams> gConstants : register(b0, space0);
++ConstantBuffer<SunShadowReceiverParams> gReceiver : register(b0, space5);
++ConstantBuffer<SunShadowParams> gSunParams : register(b1, space5);
++#if defined(MULTISAMPLING)
++// RT64's multisample decal rule: compare with the pixel's averaged depth.
++Texture2DMS<float> gBackgroundDepth : register(t2, space3);
++
++float surfaceDepthAt(int2 pixel, uint sampleCount) {
++    float depth = 0.0f;
++    for (uint s = 0; s < sampleCount; s++) {
++        depth += gBackgroundDepth.Load(pixel, s);
++    }
++    return depth / float(sampleCount);
++}
++#else
++Texture2D<float> gBackgroundDepth : register(t2, space3);
++
++float surfaceDepthAt(int2 pixel, uint sampleCount) {
++    return gBackgroundDepth.Load(int3(pixel, 0));
++}
++#endif
++StructuredBuffer<float4> gShadowWorldPos : register(t0, space4);
++StructuredBuffer<uint> gShadowFaceIndices : register(t1, space4);
++RaytracingAccelerationStructure gShadowScene : register(t2, space4);
++StructuredBuffer<uint4> gShadowGeometry : register(t3, space4);
++
++float4 PSMain(
++    in float4 vertexPosition : SV_POSITION
++    , in float4 vertexShade : COLOR0
++    , in float3 vertexWorld : TEXCOORD1
++    , in uint primitiveIndex : SV_PrimitiveID
++    , in bool isFrontFace : SV_IsFrontFace
++) : SV_TARGET0
++{
++    const uint instanceIndex = instanceRenderIndices[gConstants.renderIndex].instanceIndex;
++    const RenderParams rp = DynamicRenderParams[instanceIndex];
++    const OtherMode otherMode = { rp.omL, rp.omH };
++    // Derivatives before any discard, as in RasterPS's decal path.
++    const float dz = (abs(ddx(vertexPosition.z)) + abs(ddy(vertexPosition.z))) * FbParams.resolutionScale.y;
++
++    // Native ubershader culling and F3D manual depth clipping (RasterPS).
++    if ((otherMode.cycleType() != G_CYC_COPY) && renderFlagCulling(rp.flags) && isFrontFace) discard;
++    const bool depthClampNear = renderFlagNoN(rp.flags);
++    const float MaxDepth = 1022.0f / 1024.0f;
++    if (depthClampNear) {
++        if (vertexPosition.z > MaxDepth) discard;
++    }
++    else if ((vertexPosition.z < 0.0f) || (vertexPosition.z > MaxDepth)) discard;
++
++    // Visible-surface test with RT64's decal coplanarity semantics: the
++    // receiver must be the surface that the native depth pass kept.
++    const float surfaceDepth = surfaceDepthAt(int2(floor(vertexPosition.xy)), 1U << renderFlagSampleCount(rp.flags));
++    const float tolerance = max(CoplanarDepthTolerance(surfaceDepth), dz);
++    const float pixelDepth = depthClampNear ? max(vertexPosition.z, 0.0f) : vertexPosition.z;
++    if (abs(pixelDepth - surfaceDepth) > tolerance) discard;
++
++    // Geometric normal of the presented triangle; bias only, no relighting.
++    const uint face = gReceiver.faceStart + 3 * primitiveIndex;
++    const float3 a = gShadowWorldPos[gShadowFaceIndices[face]].xyz;
++    const float3 b = gShadowWorldPos[gShadowFaceIndices[face + 1]].xyz;
++    const float3 c = gShadowWorldPos[gShadowFaceIndices[face + 2]].xyz;
++    bool coverageValid;
++    float visibility = SunShadowVisibility(gShadowScene, gShadowGeometry, vertexWorld,
++        cross(b - a, c - a), gReceiver.draw, face, gSunParams, coverageValid);
++    if (!coverageValid) visibility = 1.0f;
++    const float transmission = 1.0f - saturate(gSunParams.strength) * (1.0f - saturate(visibility));
++
++    // Standard fog: native = (1 - a) * surface + a * fog, a = shade alpha.
++    const float3 fogContribution = instanceRDPParams[instanceIndex].fogColor.rgb * saturate(vertexShade.a);
++    return float4(fogContribution, transmission);
++}
+diff --git a/src/shaders/SunShadowReceiverVS.hlsl b/src/shaders/SunShadowReceiverVS.hlsl
+new file mode 100644
+index 0000000..66d9624
+--- /dev/null
++++ b/src/shaders/SunShadowReceiverVS.hlsl
+@@ -0,0 +1,27 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++//
++// Re-rasterizes an admitted receiver with the ubershader's own RasterVS
++// position code, adding the presented world position of each vertex.
++
++#include "RasterVS.hlsl"
++
++StructuredBuffer<float4> gShadowWorldPos : register(t0, space4);
++
++void VSMain(
++    in float4 iPosition : POSITION
++    , in float2 iUV : TEXCOORD
++    , in float4 iColor : COLOR
++    , in uint vertexIndex : SV_VertexID
++    , out float4 oPosition : SV_POSITION
++    , out float4 oShade : COLOR0
++    , out float3 oWorld : TEXCOORD1
++)
++{
++    const uint instanceIndex = instanceRenderIndices[gConstants.renderIndex].instanceIndex;
++    float2 uv;
++    float4 smoothColor, flatColor;
++    RasterVS(DynamicRenderParams[instanceIndex], iPosition, iUV, iColor, oPosition, uv, smoothColor, flatColor);
++    oShade = iColor;
++    oWorld = gShadowWorldPos[vertexIndex].xyz;
++}
+diff --git a/src/shared/rt64_sun_shadow_receiver.h b/src/shared/rt64_sun_shadow_receiver.h
+new file mode 100644
+index 0000000..de03802
+--- /dev/null
++++ b/src/shared/rt64_sun_shadow_receiver.h
+@@ -0,0 +1,20 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#pragma once
++
++#include "shared/rt64_hlsl.h"
++
++#ifdef HLSL_CPU
++namespace interop {
++#endif
++    // Per receiver draw: its native call identity and the first index of its
++    // original face range, matching SunShadowScene metadata for exact
++    // originating-face exclusion.
++    struct SunShadowReceiverParams {
++        uint draw;
++        uint faceStart;
++        uint2 padding;
++    };
++#ifdef HLSL_CPU
++};
++#endif

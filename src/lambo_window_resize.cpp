@@ -1,5 +1,7 @@
 #include "lambo_window_resize.h"
 
+#include <cstdio>
+
 namespace lambo::window_resize {
 
 void Reconciler::seed(int width, int height) {
@@ -48,6 +50,18 @@ Plan Reconciler::plan(bool want_fullscreen, int requested_width, int requested_h
 Reconciler& reconciler() {
     static Reconciler instance;
     return instance;
+}
+
+std::optional<ScheduledResize> parse_scheduled_resize(const char* text) {
+    if (text == nullptr) return std::nullopt;
+    unsigned long long frame = 0;
+    int width = 0, height = 0, consumed = 0;
+    if (text[0] < '0' || text[0] > '9' ||
+        std::sscanf(text, "%llu:%dx%d%n", &frame, &width, &height, &consumed) != 3 ||
+        text[consumed] != '\0') return std::nullopt;
+    // Same bounds graphics.json applies to window_width/window_height.
+    if (width < 320 || width > 7680 || height < 240 || height > 4320) return std::nullopt;
+    return ScheduledResize{frame, width, height};
 }
 
 } // namespace lambo::window_resize

@@ -470,6 +470,18 @@ static void update_gfx_stub(void* /*gfx_data*/) {
         // window as it is now, rather than as it will be, would be consumed by a
         // window that had just gone fullscreen and never applied at all.
         if (g_sdl_window != nullptr) {
+            // Developer lifecycle test: one live resize at a replay frame.
+            static const auto scheduled_resize =
+                lambo::window_resize::parse_scheduled_resize(std::getenv("LAMBO_TEST_RESIZE"));
+            static bool scheduled_resize_requested = false;
+            if (scheduled_resize && !scheduled_resize_requested &&
+                lambo::replay_runtime::status().frames_consumed >= scheduled_resize->frame) {
+                scheduled_resize_requested = true;
+                LAMBO_LOG("config", "scheduled resize to %dx%d at replay frame %llu\n",
+                          scheduled_resize->width, scheduled_resize->height,
+                          lambo::replay_runtime::status().frames_consumed);
+                lambo::config::set_window_size({scheduled_resize->width, scheduled_resize->height});
+            }
             const uint32_t window_flags = SDL_GetWindowFlags(g_sdl_window);
             const lambo::window_resize::WindowState window_state{
                 /*fullscreen=*/(window_flags & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0,

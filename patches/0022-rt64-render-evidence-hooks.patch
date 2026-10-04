@@ -1,0 +1,256 @@
+--- a/src/rhi/rt64_render_hooks.h
++++ b/src/rhi/rt64_render_hooks.h
+@@ -11,6 +11,57 @@
+     using RenderHookDraw = void(RenderCommandList *list, RenderFramebuffer *swapChainFramebuffer);
+     using RenderHookDeinit = void();
+ 
++    struct Workload;
++    struct RenderWorker;
++    struct RasterEvidenceRange {
++        uint32_t callIndex, firstIndex, indexCount;
++        bool indexed, testZ;
++        float scale[2], offset[2];
++        RenderRect scissor;
++        float resolution[2];
++        RenderViewport viewport;
++    };
++    struct PresentationEvidence {
++        uint64_t workloadId = 0, presentId = 0;
++        uint32_t frameIndex = 0, frameCount = 0, width = 0, height = 0, colorAddress = 0;
++        const RenderTexture *image = nullptr;
++        RenderViewport viViewport;
++        RenderRect viScissor;
++        float videoResolution[2] = {};
++        uint32_t textureWidth = 0, textureHeight = 0, filtering = 0;
++        bool nativeColorImage = false;
++    };
++
++    // Developer-only observation at queue-owned boundaries. Register before
++    // creating queue threads; unregister after they join. begin's Workload may
++    // be borrowed on that queue thread until matching completed returns. GPU
++    // objects are callback-local. Do not re-enter queues, throw, or read RAM.
++    // An observer may omit a raster range for a controlled diagnostic only.
++    // No observer means the original command stream and no readback allocation.
++    struct RenderEvidenceObserver {
++        virtual ~RenderEvidenceObserver() = default;
++        virtual void begin(const Workload &workload, float weight) noexcept = 0;
++        virtual bool raster(const RasterEvidenceRange &range) noexcept = 0;
++        // The workload GPU fence has completed; the worker is still exclusive.
++        virtual void completed(const Workload &workload, RenderWorker *worker) noexcept = 0;
++        // Called after a successful swap and its GPU fence, before image reuse.
++        virtual void presented(const PresentationEvidence &presentation, RenderWorker *worker) noexcept = 0;
++    };
++    RenderEvidenceObserver *GetRenderEvidenceObserver();
++    void SetRenderEvidenceObserver(RenderEvidenceObserver *observer);
++
++    // FramebufferRenderer is also used by HLE. Only the queue-owned render
++    // scope may observe/omit ranges; an HLE draw must not enter that observer.
++    RenderEvidenceObserver *GetActiveRenderEvidenceObserver();
++    struct ScopedRenderEvidence {
++        explicit ScopedRenderEvidence(RenderEvidenceObserver *observer);
++        ~ScopedRenderEvidence();
++        ScopedRenderEvidence(const ScopedRenderEvidence &) = delete;
++        ScopedRenderEvidence &operator=(const ScopedRenderEvidence &) = delete;
++    private:
++        RenderEvidenceObserver *previous;
++    };
++
+     RenderHookInit *GetRenderHookInit();
+     RenderHookDraw *GetRenderHookDraw();
+     RenderHookDeinit *GetRenderHookDeinit();
+--- a/src/rhi/rt64_render_hooks.cpp
++++ b/src/rhi/rt64_render_hooks.cpp
+@@ -3,8 +3,27 @@
+ //
+ 
+ #include "rt64_render_hooks.h"
++#include <atomic>
+ 
+ namespace RT64 {
++    static std::atomic<RenderEvidenceObserver *> evidence{nullptr};
++    static thread_local RenderEvidenceObserver *activeEvidence = nullptr;
++    RenderEvidenceObserver *GetRenderEvidenceObserver() {
++        return evidence.load(std::memory_order_acquire);
++    }
++    void SetRenderEvidenceObserver(RenderEvidenceObserver *observer) {
++        evidence.store(observer, std::memory_order_release);
++    }
++    RenderEvidenceObserver *GetActiveRenderEvidenceObserver() {
++        return activeEvidence;
++    }
++    ScopedRenderEvidence::ScopedRenderEvidence(RenderEvidenceObserver *observer) : previous(activeEvidence) {
++        activeEvidence = observer;
++    }
++    ScopedRenderEvidence::~ScopedRenderEvidence() {
++        activeEvidence = previous;
++    }
++
+     static RenderHookInit *init = nullptr;
+     static RenderHookDraw *draw = nullptr;
+     static RenderHookDeinit *deinit = nullptr;
+@@ -26,4 +45,4 @@
+         draw = draw_;
+         deinit = deinit_;
+     }
+-};
+\ No newline at end of file
++};
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -2,6 +2,7 @@
+ // RT64
+ //
+ 
++#include "rhi/rt64_render_hooks.h"
+ #include "rt64_workload_queue.h"
+ 
+ #include "common/rt64_thread.h"
+@@ -371,6 +372,9 @@
+ 
+         for (uint32_t w = 0; w < curFrame.workloads.size(); w++) {
+             Workload &workload = workloads[curFrame.workloads[w]];
++            RenderEvidenceObserver *evidence = GetRenderEvidenceObserver();
++            ScopedRenderEvidence evidenceScope(evidence);
++            if (evidence != nullptr) evidence->begin(workload, curFrameWeight);
+ 
+             // There's no guarantee the RSP was processed if framebuffers were not rendered.
+             const bool processRSP = true;
+@@ -842,6 +846,7 @@
+             framebufferRenderer->waitForUploaders();
+             ext.workloadGraphicsWorker->execute();
+             ext.workloadGraphicsWorker->wait();
++            if (evidence != nullptr) evidence->completed(workload, ext.workloadGraphicsWorker);
+             workerMutex.unlock();
+ 
+             // Update the GPU profiler with the results from the timestamps of the frame.
+@@ -1221,4 +1226,4 @@
+             }
+         }
+     }
+-};
+\ No newline at end of file
++};
+--- a/src/hle/rt64_present_queue.cpp
++++ b/src/hle/rt64_present_queue.cpp
+@@ -115,6 +115,7 @@
+         }
+ 
+         RenderTarget *colorTarget = nullptr;
++        bool nativeColorImage = false;
+         int32_t framesToPresent = 1;
+         bool lockedWorkloadMutex = false;
+         InterpolatedFrameCounters &frameCounters = ext.sharedResources->interpolatedFrames[ext.sharedResources->interpolatedFramesIndex];
+@@ -155,6 +156,7 @@
+             }
+             
+             if ((presentFb != nullptr) && (viFb != nullptr)) {
++                nativeColorImage = !presentFb->isLastWriteDifferent(Framebuffer::Type::Color);
+                 for (uint32_t colorAddress : ext.sharedResources->colorImageAddressVector) {
+                     Framebuffer *colorFb = fbManager.find(colorAddress);
+                     if (colorFb == nullptr) {
+@@ -267,6 +269,7 @@
+         }
+         
+         for (int32_t i = 0; i < framesToPresent; i++) {
++            PresentationEvidence evidencePresentation;
+             uint32_t frameCountersNextPresented = 0;
+             if ((framesToPresent > 1) && (usingMSAA || (i > 0))) {
+                 // Stall until the interpolated color target is available.
+@@ -346,6 +349,20 @@
+                 if (renderParams.texture != nullptr) {
+                     commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(renderParams.texture, RenderTextureLayout::SHADER_READ));
+                     viRenderer->render(renderParams);
++                    if (GetRenderEvidenceObserver() != nullptr) {
++                        evidencePresentation.colorAddress = colorTarget->addressForName;
++                        evidencePresentation.nativeColorImage = nativeColorImage;
++                        evidencePresentation.textureWidth = renderParams.textureWidth;
++                        evidencePresentation.textureHeight = renderParams.textureHeight;
++                        evidencePresentation.filtering = uint32_t(renderParams.filtering);
++                        hlslpp::float2 videoSize = hlslpp::float2(renderParams.vi->fbSize()) *
++                            renderParams.resolutionScale / float(renderParams.downsamplingScale);
++                        evidencePresentation.videoResolution[0] = videoSize.x;
++                        evidencePresentation.videoResolution[1] = videoSize.y;
++                        VIRenderer::getViewportAndScissor(ext.swapChain, *renderParams.vi,
++                            renderParams.resolutionScale, renderParams.downsamplingScale, renderParams.removeBlackBorders,
++                            evidencePresentation.viViewport, evidencePresentation.viScissor);
++                    }
+                 }
+ 
+                 RenderHookDraw *drawHook = GetRenderHookDraw();
+@@ -401,6 +418,17 @@
+                 RenderCommandSemaphore *waitSemaphore = drawSemaphores[swapChainIndex].get();
+                 presentTimestamp = Timer::current();
+                 swapChainValid = ext.swapChain->present(swapChainIndex, &waitSemaphore, 1);
++                RenderEvidenceObserver *evidence = GetRenderEvidenceObserver();
++                if (swapChainValid && (evidence != nullptr)) {
++                    evidencePresentation.workloadId = present.workloadId;
++                    evidencePresentation.presentId = present.presentId;
++                    evidencePresentation.frameIndex = i;
++                    evidencePresentation.frameCount = framesToPresent;
++                    evidencePresentation.width = ext.swapChain->getWidth();
++                    evidencePresentation.height = ext.swapChain->getHeight();
++                    evidencePresentation.image = ext.swapChain->getTexture(swapChainIndex);
++                    evidence->presented(evidencePresentation, ext.presentGraphicsWorker);
++                }
+                 presentProfiler.logAndRestart();
+             }
+         }
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -2,6 +2,7 @@
+ // RT64
+ //
+ 
++#include "rhi/rt64_render_hooks.h"
+ #include "rt64_framebuffer_renderer.h"
+ 
+ #include "../include/rt64_extended_gbi.h"
+@@ -577,6 +578,15 @@
+                 rasterParams.screenOffset = triangles.screenOffset;
+                 worker->commandList->setGraphicsPushConstants(0, &rasterParams);
+ 
++                RenderEvidenceObserver *evidence = GetActiveRenderEvidenceObserver();
++                if (evidence != nullptr) {
++                    RasterEvidenceRange range{renderIndicesVector[i].instanceIndex, triangles.indexStart,
++                        triangles.faceCount * 3, drawCall.type == InstanceDrawCall::Type::IndexedTriangles,
++                        triangles.vertexTestZ, {triangles.screenScale.x, triangles.screenScale.y},
++                        {triangles.screenOffset.x, triangles.screenOffset.y}, triangles.scissor,
++                        {framebuffer.evidenceParams.resolution.x, framebuffer.evidenceParams.resolution.y}, framebuffer.viewport};
++                    if (!evidence->raster(range)) continue;
++                }
+                 drawCallTriangles(drawCall);
+ 
+                 // Simulate dither noise.
+@@ -1338,6 +1348,7 @@
+         Framebuffer &framebuffer = framebufferVector[framebufferCount - 1];
+         void *paramBufferBytes = framebuffer.paramsBuffer->map();
+         memcpy(paramBufferBytes, &fbParams, sizeof(interop::FramebufferParams));
++        framebuffer.evidenceParams = fbParams;
+         framebuffer.paramsBuffer->unmap();
+ 
+         RenderTexture *backgroundColorTexture = (p.fbStorage->colorTarget != nullptr) ? p.fbStorage->colorTarget->getResolvedTexture() : dummyColorTarget.get();
+--- a/src/render/rt64_framebuffer_renderer.h
++++ b/src/render/rt64_framebuffer_renderer.h
+@@ -12,6 +12,7 @@
+ #include "hle/rt64_workload.h"
+ #include "preset/rt64_preset_scene.h"
+ #include "shared/rt64_frame_params.h"
++#include "shared/rt64_framebuffer_params.h"
+ #include "shared/rt64_gpu_tile.h"
+ #include "shared/rt64_render_indices.h"
+ #include "shared/rt64_render_params.h"
+@@ -112,6 +113,7 @@
+ #   endif
+ 
+         struct Framebuffer {
++            interop::FramebufferParams evidenceParams;
+             std::unique_ptr<RenderBuffer> paramsBuffer;
+             std::unique_ptr<FramebufferRendererDescriptorFramebufferSet> descRealFbSet;
+             std::unique_ptr<FramebufferRendererDescriptorFramebufferSet> descDummyFbSet;
+@@ -179,4 +181,4 @@
+         void setRaytracingConfig(const RaytracingConfiguration &rtConfig, bool resolutionChanged);
+ #   endif
+     };
+-};
+\ No newline at end of file
++};

@@ -102,6 +102,9 @@ The port adds these keys:
 | camera_height_scale | 1.0 | Chase-camera height multiplier. |
 | camera_fov_add | 0 | Extra field-of-view degrees. |
 | show_launcher | false | Show the launcher instead of booting directly into the game. |
+| rt_shadows | false | Ray-traced sunlight shadows (experimental). Off keeps the original car shadow. |
+| rt_shadow_rays | 8 | Shadow quality: 4, 8 or 16 rays per pixel. |
+| rt_shadow_softness | 0.5 | Size of the sun in degrees. 0 gives hard shadow edges; the maximum is 5. |
 
 Camera distance, height, and FOV settings apply during player race countdowns
 and driving, so the configured framing is already in place before GO.
@@ -122,7 +125,8 @@ Known bounds are intentionally small and practical: window size is 320..7680
 by 240..4320; fog scale is clamped to 0..8; positive draw distance is clamped
 to 0.1..100, while zero or a negative value means unlimited; camera distance
 and height scales are clamped to 0.2..3; and the added camera FOV is clamped
-to -20..60 degrees; menu stick sensitivity is clamped to 1..2.5. The per-circuit
+to -20..60 degrees; menu stick sensitivity is clamped to 1..2.5; shadow rays
+snap to 4, 8 or 16 and shadow softness is clamped to 0..5 degrees. The per-circuit
 arrays have six entries. Other enum names
 and shared-runtime fields should be changed through the frontend unless a
 developer is testing a specific JSON value.
@@ -154,6 +158,7 @@ LAMBO_CAMERA_DISTANCE_SCALE
 LAMBO_CAMERA_HEIGHT_SCALE
 LAMBO_CAMERA_FOV_ADD
 LAMBO_MENU_STICK_SENSITIVITY
+LAMBO_RT_SHADOWS
 LAMBO_CONTROLLER_PAK_FILE
 LAMBO_PLAYER_CONFIG
 ~~~
@@ -176,6 +181,11 @@ most useful ones are:
 | `LAMBO_PAK_TRACE`, `LAMBO_INPUT_PROBE`, `LAMBO_CAR_TRACE` | Trace guest bridges. |
 | `LAMBO_FAKE_GPU` | Reproduce a graphics-driver advisory without changing the device. |
 | `LAMBO_CRASH_TEST`, `LAMBO_THREAD_TRACE` | Exercise crash and thread diagnostics. |
+| `LAMBO_RT_SHADOW_FAULT=as` | Corrupt one ray-traced shadow caster range to prove the native-shadow fallback. |
+| `LAMBO_RT_CAPTURE_KEEP_MSAA` | Keep the configured anti-aliasing during RT swapchain capture. |
+| `LAMBO_RT_CAPTURE_KEEP_COLOR` | Keep the configured high-precision colour setting during RT swapchain capture. |
+| `LAMBO_RT_SHADOW_SWEEP=1` | Let any one-player race mode, on any circuit, reach ray-traced shadows for a validation sweep. |
+| `LAMBO_TEST_RESIZE=<frame>:<W>x<H>` | Resize the window once at an input-replay frame. |
 
 These variables are for developers. They are not a stable player settings
 contract and may change with the harness.
