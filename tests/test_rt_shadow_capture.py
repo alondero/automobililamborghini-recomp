@@ -110,8 +110,9 @@ class ShadowCaptureTests(unittest.TestCase):
 
         brighter = shadowed.copy()
         brighter[3, 3] = 255
-        warmup_only = self.scene("warmup", {60: brighter, 300: shadowed}, ready)
-        self.assertEqual(self.run_checker(native, unshadowed, warmup_only).returncode, 0)
+        # The first sampled task gets no exemption: brightening there fails too.
+        first = self.scene("first", {60: brighter, 300: shadowed}, ready)
+        self.assertIn("task 60: 1 RT pixels brighter than unshadowed", self.run_checker(native, unshadowed, first).stdout)
         steady = self.scene("steady", {60: shadowed, 300: brighter}, ready)
         completed = self.run_checker(native, unshadowed, steady)
         self.assertIn("task 300: 1 RT pixels brighter than unshadowed", completed.stdout)
@@ -126,11 +127,14 @@ class ShadowCaptureTests(unittest.TestCase):
                  '[x] [rt-shadow] workload=301 task=300 epoch=3 ready=1 reason=""\n')
         brighter = shadowed.copy()
         brighter[3, 3] = 210
-        traced = self.scene("uber", {60: shadowed, 300: brighter}, ready)
+        traced = self.scene("uber", {60: brighter, 300: brighter}, ready)
         render = {"raster": [{"native_pipeline": "uber"}, {"native_pipeline": "specialized"}]}
-        (traced / "rt-render" / "task-300-render.json").write_text(json.dumps(render), encoding="utf-8")
+        for sequence in (60, 300):
+            (traced / "rt-render" / f"task-{sequence}-render.json").write_text(json.dumps(render), encoding="utf-8")
         completed = self.run_checker(native, unshadowed, traced)
         self.assertNotEqual(completed.returncode, 0)
+        # Task 60 is inconclusive like any other task, so the matrix reruns the case.
+        self.assertIn("task 60: inconclusive, traced drew 1 draws with ubershaders", completed.stdout)
         self.assertIn("task 300: inconclusive, traced drew 1 draws with ubershaders", completed.stdout)
         self.assertNotIn("brighter than unshadowed", completed.stdout)
         report = json.loads(completed.stdout.splitlines()[1])

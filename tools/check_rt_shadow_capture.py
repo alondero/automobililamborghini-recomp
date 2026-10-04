@@ -98,10 +98,6 @@ def main() -> int:
     parser.add_argument("traced", type=Path, help="ray-traced shadow run directory")
     parser.add_argument("--sequences", type=int, nargs="+", default=[60, 300, 420, 540])
     parser.add_argument("--core-tolerance", type=float, default=0.03)
-    # Native shaders still compile asynchronously at the first sampled task;
-    # independent runs can draw a few distant pixels with different pipelines.
-    parser.add_argument("--warmup-sequences", type=int, nargs="*", default=[60],
-                        help="tasks whose brightening is reported, not failed")
     parser.add_argument("--soft", action="store_true", help="soft shadows: skip the hard core check")
     parser.add_argument("--expect-native", action="store_true",
                         help="fallback proof: every task must be not ready and match the native baseline exactly")
@@ -144,12 +140,13 @@ def main() -> int:
             continue
         if not result["production"] or not result["production"]["ready"]:
             failures.append(f"task {sequence}: replacement not ready")
-        result["warmup"] = sequence in args.warmup_sequences
+        # Pipelines still compiling draw with ubershaders, which can differ by a
+        # few levels anywhere on screen: such a task proves nothing either way.
         uber = {name: count for name, count in result["ubershader_draws"].items() if count}
-        if uber and not result["warmup"]:
+        if uber:
             for name, count in uber.items():
                 failures.append(f"task {sequence}: inconclusive, {name} drew {count} draws with ubershaders")
-        elif traced["brighter_pixels"] and not result["warmup"]:
+        elif traced["brighter_pixels"]:
             failures.append(f"task {sequence}: {traced['brighter_pixels']} RT pixels brighter than unshadowed")
         # The native overlay can lighten very dark pixels at its soft edge, so
         # its own brighter pixels are reported, not treated as a mismatch.
