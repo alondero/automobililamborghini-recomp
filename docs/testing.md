@@ -139,6 +139,13 @@ On Android, additionally check both landscape orientations, background/resume,
 opening settings while tilted, a phone without sensors, braking, and finishing
 a race. These hardware checks are not replaced by host tests.
 
+The game-boot check boots GameActivity on the device and fails when the game
+process dies during startup. It needs the debug APK with a staged ROM:
+
+~~~powershell
+adb shell am instrument -w -e gameboot 1 io.github.alondero.lamborghinirecomp.test/io.github.alondero.lamborghinirecomp.DriverImportInstrumentation
+~~~
+
 `lambo_prompt_back_action` checks the settings quit confirmation's controller
 contract in the build input: the prompt must answer the Back action, that action
 must be the mapped Back rather than a fixed button, and the affirmative quit
