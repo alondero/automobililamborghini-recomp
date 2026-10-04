@@ -37,6 +37,9 @@ SCRIPT_REFERENCE = re.compile(
     r"(?<![\w./-])((?:tools|scripts|tests)/[\w./-]+\.(?:py|ps1|sh|bat|cmd))"
     r"|(?<![\w./-])((?:build\.sh|build\.ps1))"
 )
+SOURCE_DOC_REFERENCE = re.compile(r"(?<![\w/.-])(docs/[\w./-]+\.md)#([\w-]+)")
+SOURCE_DIRECTORIES = ("src", "tools", "tests", "scripts", "cmake")
+SOURCE_SUFFIXES = {".c", ".cpp", ".h", ".hpp", ".py", ".ps1", ".sh", ".cmake", ".toml", ".json"}
 TEST_TOKENS = (
     "ctest",
     "run_game_scenario.py",
@@ -121,6 +124,29 @@ def check_links(errors: list[str]) -> None:
                         )
 
 
+def source_files() -> list[Path]:
+    return sorted(
+        path
+        for directory in SOURCE_DIRECTORIES
+        for path in (ROOT / directory).rglob("*")
+        if path.is_file() and path.suffix in SOURCE_SUFFIXES
+    )
+
+
+def check_source_doc_anchors(errors: list[str], paths: list[Path] | None = None, root: Path = ROOT) -> None:
+    """Code comments cite docs/<page>.md#<heading>; check_links only reads Markdown."""
+    for path in source_files() if paths is None else paths:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for line_number, line in enumerate(text.splitlines(), 1):
+            for match in SOURCE_DOC_REFERENCE.finditer(line):
+                page, fragment = match.groups()
+                label = f"{path.relative_to(root).as_posix()}:{line_number}"
+                if not (root / page).is_file():
+                    errors.append(f"{label}: broken documentation link: {page}")
+                elif fragment.lower() not in local_anchors(root / page):
+                    errors.append(f"{label}: broken documentation anchor: {page}#{fragment}")
+
+
 def check_scripts(errors: list[str]) -> None:
     for path in MARKDOWN:
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -185,6 +211,7 @@ def check_test_documentation(errors: list[str]) -> None:
 def main() -> int:
     errors: list[str] = []
     check_links(errors)
+    check_source_doc_anchors(errors)
     check_scripts(errors)
     check_forbidden_text(errors)
     check_test_documentation(errors)

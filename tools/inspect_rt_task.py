@@ -14,7 +14,7 @@ import struct
 from pathlib import Path
 
 # USA producer-owned signed halfwords, read through the word-swapped snapshot.
-# Layout, timing and fail-closed behavior: docs/rt-shadows.md#guest-bridge-contract.
+# Layout, timing and fail-closed behavior: docs/rt-shadows.md#native-provenance-and-producer-boundary.
 SCENE_SELECTOR_FIELDS = (("phase", 0x800CE6AC), ("circuit", 0x800CE794),
                          ("players", 0x800CE6A4), ("race_mode", 0x800CE6B4))
 MODEL_CURSOR_ADDRESS = 0x800CE7E8
