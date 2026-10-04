@@ -190,27 +190,23 @@ int main() {
             require(!admit(g, stats) && stats.gate == ShadowGate::UnsupportedScene, message);
         };
         gated([](ShadowTask& t) { t.players = 2; }, "two players admitted");
-        gated([](ShadowTask& t) { t.model_cursors[0] = 23; }, "unvalidated player model admitted");
-        gated([](ShadowTask& t) { t.model_cursors[0] = 15; }, "unswept player model admitted");
-        require(validated_player_models.size() == 15, "validated model list changed");
-        for (int16_t model = 0; model < 15; ++model) {
-            require(std::find(validated_player_models.begin(), validated_player_models.end(), model) !=
-                validated_player_models.end(), "swept player model missing from the validated list");
-        }
+        // Every model selector 0-23 passed hard parity on Circuit 1 time trial.
         gated([](ShadowTask& t) { t.model_cursors[0] = 24; }, "out-of-range player model admitted");
-        for (int16_t model : validated_player_models) {
+        gated([](ShadowTask& t) { t.model_cursors[0] = -1; }, "negative player model admitted");
+        for (int16_t model = 0; model <= 23; ++model) {
             Scene validated = measured_scene();
             validated.task.model_cursors[0] = model;
             require(admit(validated, stats) != nullptr, "validated player model gated");
         }
         {
-            // Developer validation sweeps may exercise any in-range model or player race mode.
+            // Developer validation sweeps may exercise any player race mode.
             Scene sweep = measured_scene();
-            sweep.task.model_cursors[0] = 23;
+            sweep.task.circuit = 3;
             sweep.task.race_mode = 3;
             ShadowSettings any = {native_overlay_strength, 0, 8};
             any.validation_sweep = true;
-            require(admit(sweep, stats, any) != nullptr, "validation sweep could not reach model 23, mode 3");
+            require(!admit(sweep, stats), "mode 3 admitted on an unmeasured circuit");
+            require(admit(sweep, stats, any) != nullptr, "validation sweep could not reach mode 3 on circuit 4");
             sweep.task.model_cursors[0] = 24;
             require(!admit(sweep, stats, any), "validation sweep admitted an out-of-range model");
             sweep.task.model_cursors[0] = 0;

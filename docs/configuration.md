@@ -184,7 +184,7 @@ most useful ones are:
 | `LAMBO_RT_SHADOW_FAULT=as` | Corrupt one ray-traced shadow caster range to prove the native-shadow fallback. |
 | `LAMBO_RT_CAPTURE_KEEP_MSAA` | Keep the configured anti-aliasing during RT swapchain capture. |
 | `LAMBO_RT_CAPTURE_KEEP_COLOR` | Keep the configured high-precision colour setting during RT swapchain capture. |
-| `LAMBO_RT_SHADOW_SWEEP=1` | Let any player car and one-player race mode reach ray-traced shadows for a validation sweep. |
+| `LAMBO_RT_SHADOW_SWEEP=1` | Let any one-player race mode, on any circuit, reach ray-traced shadows for a validation sweep. |
 | `LAMBO_TEST_RESIZE=<frame>:<W>x<H>` | Resize the window once at an input-replay frame. |
 
 These variables are for developers. They are not a stable player settings

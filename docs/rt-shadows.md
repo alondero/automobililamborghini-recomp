@@ -29,8 +29,8 @@ Ray-traced shadows need all of these. Anything else keeps the native shadow.
 - One player, race state 8, in a player race mode on a validated circuit:
   time trial (mode 0) and single race (mode 2) on all six circuits; menu
   Arcade (mode 1) and mode 3 on Circuit 1 only.
-- A validated player-one car: 0 to 14. Car 0 passed the full matrix; cars
-  1 to 14 passed on Circuit 1 time trial. Cars 15 to 23 are not yet measured.
+- Any player-one car. Car 0 passed the full matrix; cars 1 to 23 passed on
+  Circuit 1 time trial.
 - The task's own lit-car key light matches the measured world key.
 - Every presented draw is classified: caster, receiver, measured non-caster or
   the native overlay. One unclassified or rejected draw keeps the frame native.
@@ -107,7 +107,9 @@ rerun once. Ubershader output can differ by a few levels anywhere on screen.
 | Circuits 1-6, time trial and single race, car 0 | high precision | 24/24 pass; all 364 draws per task flagged high precision; hard p1 within 0.0061. |
 | Menu Arcade race (mode 1), Circuit 1, car 0, menu replay | standard | Hard and soft pass at all four tasks, with skid marks on screen; p1 within 0.0045. |
 | Warped modes 1 and 3, Circuit 1, six repeats each | standard | All hard checks pass. 10 of 12 soft checks pass; the two failures drew 16-493 ubershader draws per task. |
-| Cars 1-14, Circuit 1 time trial, hard | standard | 14/14 pass; player-one model selector matched each request; p1 within 0.0045. |
+| Cars 1-23, Circuit 1 time trial, hard | standard | 23/23 pass; player-one model selector matched each request; p1 within 0.0045. |
+| Car 23 after admitting every car, no sweep flag, hard | standard | Pass; every logged task ready with no gate line; p1 within 0.0045. |
+| Final build regression: circuits 1-6, time trial and single race, car 0 | standard | 24/24 pass after three ubershader reruns; hard p1 within 0.0074. |
 
 The matrix tool (`tools/run_rt_shadow_matrix.py`) also checks the native
 fallback and lifecycle on the final build:
@@ -117,7 +119,7 @@ fallback and lifecycle on the final build:
 | `rt-shadows-fault` (`LAMBO_RT_SHADOW_FAULT=as`) | Every task not ready ("acceleration structure rejected an admitted caster range"); all four sampled frames identical to a fresh native baseline (`--expect-native`). |
 | `rt-shadows-resize` (1280x720 at replay frame 350) | Swapchain changes from 1600x900 to 1280x720; every logged task stays ready. |
 | `rt-shadows-msaa` (MSAA 2x) | Every logged task ready. |
-| `rt-shadows-menu-to-race` (default settings) | Earlier builds stayed native: high-precision receivers were rejected, then mode 1 and trail decals blocked admission. With the sweep flag, the final policy is ready on every logged race task. A default-settings run on the final build has not been repeated. |
+| `rt-shadows-menu-to-race` (default settings, no developer flags) | All 53 logged race tasks ready, with no gate or incomplete-admission line. Earlier builds stayed native: high-precision receivers were rejected, then mode 1 and trail decals blocked admission. |
 
 Warping into modes 1 and 3 always loads Circuit 1, whatever circuit is
 requested. Modes 1 and 3 on other circuits stay native until they are
@@ -133,10 +135,24 @@ car 0, excluding each run's first 120-sample window:
 | Hard (0 degrees) | 0.49 ms (0.42-0.54) | 0.32 ms (0.24-0.81) | 1.06 ms |
 | Soft (0.5 degrees) | 0.43 ms (0.36-0.48) | 1.93 ms (1.22-2.56) | 3.22 ms |
 
-MSAA 2x hard measured 0.35-0.37 ms for the receiver pass. Other resolutions,
-4 and 16 rays, and a second GPU vendor are not yet measured. One resize run
-showed both build and receiver times rising after the window shrank, so
-these numbers depend on more than resolution.
+Receiver and composite p50 by resolution and quality, one run each of
+`rt-shadows-hard` (Circuit 1 time trial, car 0) after
+`LAMBO_TEST_RESIZE`, first window excluded:
+
+| Swapchain | Hard, 8 rays | Soft, 4 rays | Soft, 8 rays | Soft, 16 rays |
+| --- | --- | --- | --- | --- |
+| 1600x900 | 0.27 ms | 0.97 ms | 2.16 ms | 3.98 ms |
+| 1920x1080 | 0.47 ms | 1.91 ms | 2.37 ms | 5.80 ms |
+| 2560x1440 | 0.84 ms | 3.07 ms | 4.91 ms | 6.71 ms |
+| 3840x2160 | 2.01 ms | 5.05 ms | 6.34 ms | 10.80 ms |
+
+The acceleration-structure build stayed between 0.30 and 0.70 ms in every
+run; it depends on scene triangles, not resolution. The menu Arcade race
+(2,139 shadow triangles against 1,403) measured about 3.1 ms receiver p50
+with default soft settings at 1600x900. MSAA 2x hard measured 0.35-0.37 ms
+in the earlier matrix and 1.0-1.5 ms on the final build. Run-to-run spread is
+large on this one machine, so treat these as an order of magnitude. A second
+GPU vendor is not yet measured.
 
 ## Logging
 
@@ -167,7 +183,7 @@ python tools/run_rt_shadow_matrix.py --hpfb On
 The matrix writes reports and change maps under ignored `artifacts/`. For a
 fault proof, pass the native and omitted runs plus the fault run to
 `tools/check_rt_shadow_capture.py --expect-native`. `--sweep` (or
-`LAMBO_RT_SHADOW_SWEEP=1`) lets unvalidated cars and race modes reach the
+`LAMBO_RT_SHADOW_SWEEP=1`) lets unvalidated race modes reach the
 ray-traced path for measurement; it is never a player setting.
 
 ## Native provenance and producer boundary
@@ -201,8 +217,8 @@ consumes it; see [sky ownership](sky-panorama.md).
 
 ## Not covered
 
-- Cars outside the validated list, two to four players, and modes 1 and 3 on
-  Circuits 2-6.
+- Cars 1 to 23 on circuits other than Circuit 1, two to four players, and
+  modes 1 and 3 on Circuits 2-6.
 - Vulkan, Metal and Android. Only D3D12 has been run.
 - A second GPU vendor.
 - Relighting and casters outside the camera view remain

@@ -54,16 +54,15 @@ struct ShadowSettings {
     float strength = 0; // 0 keeps a capture-only Workload from attenuating.
     float angular_radius = 0; // Radians, 0 through 5 degrees.
     uint32_t samples = 8;
-    // Developer validation sweeps only: admit any in-range player model and
-    // player race mode so the scene can be measured before it joins the
-    // validated lists below.
+    // Developer validation sweeps only: admit any player race mode on any
+    // circuit so the scene can be measured before it joins the validated
+    // table below.
     bool validation_sweep = false;
 };
 
-// Player-one model selectors (0-23) whose scenes passed hard-shadow parity:
-// 0 across the circuit/mode matrix, 1-14 on Circuit 1 time trial.
-// Evidence: docs/rt-shadows.md#validation. Other models keep native shadows.
-inline constexpr std::array<int16_t, 15> validated_player_models{{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}};
+// Every player-one model selector passed hard-shadow parity: 0 across the
+// circuit/mode matrix, 1-23 on Circuit 1 time trial. docs/rt-shadows.md#validation.
+inline constexpr int16_t last_player_model = 23;
 
 // Race modes (0x800CE6B4) whose one-player scenes passed the same parity, as
 // a bit mask of zero-based circuits: 0 = time trial and 2 = single race on all

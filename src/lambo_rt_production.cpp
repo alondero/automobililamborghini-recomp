@@ -30,7 +30,7 @@ bool inject_as_fault() {
     return enabled;
 }
 
-// Developer validation sweep: lets an unvalidated player model or race mode
+// Developer validation sweep: lets an unvalidated race mode and circuit pair
 // reach the production path so its scene can be measured. Never a player setting.
 bool validation_sweep() {
     static const bool enabled = [] {

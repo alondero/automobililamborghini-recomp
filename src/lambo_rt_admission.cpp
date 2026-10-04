@@ -38,12 +38,10 @@ std::shared_ptr<RT64::SunShadowWorkload> admit_sun_shadow(const ShadowTask& task
         const ShadowSettings& settings, AdmissionStats& stats) {
     stats = {};
     // Player modes 0-3 share the car/light/view path; mode 4 is attract
-    // (docs/camera-sequences.md). One player only; models and modes must be
-    // validated unless a developer sweep is measuring them.
+    // (docs/camera-sequences.md). One player only; modes must be validated
+    // for the circuit unless a developer sweep is measuring them.
     const int16_t model = task.model_cursors[0];
-    const bool validated_model = std::find(validated_player_models.begin(), validated_player_models.end(), model) !=
-        validated_player_models.end();
-    const bool model_admitted = model >= 0 && model <= 23 && (validated_model || settings.validation_sweep);
+    const bool model_admitted = model >= 0 && model <= last_player_model;
     const bool mode_admitted = task.race_mode >= 0 && task.race_mode <= 3 &&
         (validated_race_mode(task.race_mode, task.circuit) || settings.validation_sweep);
     if (task.circuit < 0 || task.circuit >= 6 || task.phase != 8 || task.players != 1 ||
