@@ -26,6 +26,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PATCHES_DIR = ROOT / "patches"
+RT64_DIR = ROOT / "lib" / "rt64"
 
 # Script-applied rt64 patches per platform, in application order.
 SCRIPT_SERIES = {
@@ -43,6 +44,9 @@ def resolve_patch(number):
     return matches[0]
 
 
+@unittest.skipUnless(
+    (ROOT / "lib" / "rt64" / ".git").exists(), "lib/rt64 submodule not initialized"
+)
 class PatchCompositionTests(unittest.TestCase):
     def replay(self, platform):
         """Apply a platform's full rt64 order in a throwaway worktree."""
@@ -52,10 +56,11 @@ class PatchCompositionTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory(prefix="lambo-patch-compose-")
         self.addCleanup(tmp.cleanup)
         tree = Path(tmp.name) / "rt64"
-        self.git("-C", "lib/rt64", "worktree", "add", "--detach", str(tree), sha)
+        self.git("-C", str(RT64_DIR), "worktree", "add", "--detach", str(tree), sha)
         self.addCleanup(
             subprocess.run,
-            ["git", "-C", "lib/rt64", "worktree", "remove", "--force", str(tree)],
+            ["git", "-C", str(RT64_DIR), "worktree", "remove", "--force", str(tree)],
+            cwd=ROOT,
             capture_output=True,
         )
         ordered = [resolve_patch(n) for n in SCRIPT_SERIES[platform]]
@@ -86,7 +91,9 @@ class PatchCompositionTests(unittest.TestCase):
         )
 
     def git(self, *args):
-        return subprocess.check_output(["git", *args], cwd=ROOT, stderr=subprocess.STDOUT)
+        return subprocess.check_output(
+            ["git", *args], cwd=ROOT, stderr=subprocess.STDOUT
+        )
 
     def test_windows_series_composes(self):
         self.replay("windows")
@@ -106,7 +113,7 @@ class DxilGuardTests(unittest.TestCase):
         # non-Windows builds fail with "not declared in this scope".
         patch = resolve_patch("0024")
         hunks, current = [], []
-        for line in patch.read_text().splitlines():
+        for line in patch.read_text(encoding="utf-8").splitlines():
             if line.startswith("@@ "):
                 hunks.append(current)
                 current = []
