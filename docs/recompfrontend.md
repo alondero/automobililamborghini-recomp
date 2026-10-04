@@ -101,7 +101,7 @@ more to leave them onto Quit.
 | Driving | Analog/digital throttle and brake (source axis/direction, deadzone, saturation) plus default-off Android gyro steering, steering range/deadzone/inversion, and auto-accelerate | Framework `driving-controls.json`, Apply/Discard |
 | Cheats | Session-only cheat toggles; see [Cheats](cheats.md) | Not saved; reset on each launch |
 | Mods | Package installation, enable/disable, ordering, per-mod settings, and texture packs | Runtime `mods.json` and `mod_config/` |
-| Debug | Developer overlay | Existing `graphics.json`, immediate save, restart for effect |
+| Debug | Pre-alpha ray-traced shadows (off by default) with shadow quality and softness, and the developer overlay | Existing `graphics.json`, immediate save, restart for the overlay |
 
 API, the Debug tab's developer overlay and the texture dump path require
 restart. Window size is not one of them: applying a size resizes the window

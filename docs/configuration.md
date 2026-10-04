@@ -60,10 +60,11 @@ The preset stages its choices. Discard cancels them all. You can adjust the
 renderer options before Apply. Apply saves and replaces four Enhancements
 settings: Full track geometry is turned off, Draw distance is set to 1.0,
 Match multiplayer fog to single player is turned off, and Show sky in 3-4 player
-races is turned off. Restore earlier choices manually in Enhancements. After
-Apply, the selector returns to Keep current choices. Window size, controller
-settings, camera settings and texture packs are kept. Launch-time environment
-overrides still take priority.
+races is turned off. It also turns off ray-traced shadows, which are a Debug tab
+option. Restore the four Enhancements choices in Enhancements, and ray-traced
+shadows in Debug. After Apply, the selector returns to Keep current choices.
+Window size, controller settings, camera settings and texture packs are kept.
+Launch-time environment overrides still take priority.
 
 The standard renderer fields are written by the shared runtime schema:
 
@@ -102,9 +103,9 @@ The port adds these keys:
 | camera_height_scale | 1.0 | Chase-camera height multiplier. |
 | camera_fov_add | 0 | Extra field-of-view degrees. |
 | show_launcher | false | Show the launcher instead of booting directly into the game. |
-| rt_shadows | false | Ray-traced sunlight shadows (experimental). Off keeps the original car shadow. |
-| rt_shadow_rays | 8 | Shadow quality: 4, 8 or 16 rays per pixel. |
-| rt_shadow_softness | 0.5 | Size of the sun in degrees. 0 gives hard shadow edges; the maximum is 5. |
+| rt_shadows | false | Ray-traced sunlight shadows, pre-alpha. Set on the Debug tab. Expect bugs and lighting issues. Off keeps the original car shadow. |
+| rt_shadow_rays | 8 | Shadow quality on the Debug tab: 4, 8 or 16 rays per pixel. |
+| rt_shadow_softness | 0.5 | Shadow softness on the Debug tab, in degrees. 0 gives hard shadow edges; the maximum is 5. |
 
 Camera distance, height, and FOV settings apply during player race countdowns
 and driving, so the configured framing is already in place before GO.

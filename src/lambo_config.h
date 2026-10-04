@@ -211,8 +211,9 @@ double draw_distance(int circuit);
 double global_draw_distance();
 void set_global_draw_distance(double scale);
 
-// Optional ray-traced sun shadows (docs/rt-shadows.md). Off = Original native
-// shadows, the default. When on, a scene replaces the native car overlay only
+// Optional ray-traced sun shadows (docs/rt-shadows.md). Pre-alpha and on the
+// Debug tab: expect bugs and lighting issues. Off = Original native shadows,
+// the default. When on, a scene replaces the native car overlay only
 // after its light, receiver coverage and GPU resources are ready; everything
 // else, including unsupported scenes and devices, stays native. Settings apply
 // to tasks produced afterwards; queued tasks keep their own snapshot.
