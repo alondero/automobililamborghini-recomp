@@ -67,9 +67,9 @@ inline uint32_t receiver_material_rejection(const ShadowMaterial& material) {
     if (material.otherL != 0xC8112078u && material.otherL != 0xC8112230u) rejection |= RejectOtherMode;
     if (((material.otherH >> 20) & 3u) != 1u) rejection |= RejectDepthCompareMode;
     if (!material.standardFog) rejection |= RejectFogCycle;
-    // RenderFlags::usesHDR (bit 29) is unvalidated. MSAA sample counts (bits
-    // 30-31) use the receiver's averaged-depth variant.
-    if ((material.shaderFlags & (1u << 29)) != 0) rejection |= RejectShaderFlags;
+    // RenderFlags::usesHDR (bit 29) selects the 16-bit UNORM high-precision
+    // target, which the receiver and composite follow; MSAA sample counts
+    // (bits 30-31) use the receiver's averaged-depth variant.
     for (float component : material.fog) {
         if (!std::isfinite(component) || component < 0 || component > 1) rejection |= RejectFogColor;
     }
@@ -82,6 +82,7 @@ enum NonCasterShadowDraw : uint32_t {
     NonCasterBackdrop = 2,
     NonCasterNativeHud = 3,
     NonCasterWorldCutout = 4,
+    NonCasterTrailDecal = 5,
 };
 
 // Measured world-builder cutouts (coverage-times-alpha, opaque depth) discard
@@ -95,6 +96,27 @@ inline uint32_t world_cutout_exclusion(const ShadowMaterial& material) {
         !material.alphaBlend && !material.forceBlend && material.zCompare && material.zUpdate &&
         material.zMode == 0 && material.zSource == 0;
     return measured ? NonCasterWorldCutout : UnknownCasterRole;
+}
+
+// Measured tyre-trail decals: untextured translucent quads the trail emitter
+// lays on the road, plus its brief four-triangle decal before each pair. Each
+// can span road segments, so it has no single transform group. Translucent
+// draws never cast, so the exact material alone classifies them. Measurement:
+// docs/rt-material-evidence.md#production-caster-policy.
+inline uint32_t trail_decal_exclusion(const ShadowMaterial& material, uint32_t geometry) {
+    struct Signature { uint32_t otherL, combineW1, geometry; };
+    static constexpr Signature measured[] = {
+        {0xC8104A50u, 0xFFFE7638u, 0x10205u}, // Laid trail quads.
+        {0xC8104B50u, 0xFFFCF238u, 0x10005u}, // Brief decal before each pair.
+    };
+    const bool translucent = material.combineW0 == 0xFCFFFFFFu && material.shaderMatches() && !material.extended &&
+        !material.coverageAlpha && material.alphaCompare == 0 && material.alphaBlend && material.forceBlend &&
+        material.zCompare && !material.zUpdate && material.zMode == 0x800u && material.zSource == 0;
+    for (const auto& signature : measured) {
+        if (translucent && material.otherL == signature.otherL && material.combineW1 == signature.combineW1 &&
+            (geometry & ~0x800000u) == signature.geometry) return NonCasterTrailDecal;
+    }
+    return UnknownCasterRole;
 }
 
 // Maintainer policy: the one measured blended car-glass layer casts as opaque

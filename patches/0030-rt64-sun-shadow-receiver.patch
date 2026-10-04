@@ -196,7 +196,7 @@ new file mode 100644
 index 0000000..988e3c5
 --- /dev/null
 +++ b/src/render/rt64_sun_shadow_pass.cpp
-@@ -0,0 +1,437 @@
+@@ -0,0 +1,439 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 RT64 Contributors
 +#include "rt64_sun_shadow_pass.h"
@@ -442,10 +442,12 @@ index 0000000..988e3c5
 +            reject("view has no color/depth target");
 +            return;
 +        }
++        // The composite pipeline and native copy follow the target's colour
++        // format, so the high-precision UNORM target needs no separate path.
 +        const RenderTarget &color = *storage->colorTarget;
 +        if (color.multisampling.sampleCount != storage->depthTarget->multisampling.sampleCount ||
-+            color.usesHDR || storage->depthTarget->format != RenderFormat::D32_FLOAT) {
-+            reject("unvalidated HDR, sample-count or depth format");
++            storage->depthTarget->format != RenderFormat::D32_FLOAT) {
++            reject("mismatched sample count or depth format");
 +            return;
 +        }
 +        multisampled_ = color.multisampling.sampleCount > 1;

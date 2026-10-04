@@ -4,6 +4,7 @@
 #include "hle/rt64_workload.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -29,14 +30,47 @@ bool inject_as_fault() {
     return enabled;
 }
 
-// Developer validation sweep: lets an unvalidated player model reach the
-// production path so its scene can be measured. Never a player setting.
-bool any_player_model() {
+// Developer validation sweep: lets an unvalidated player model or race mode
+// reach the production path so its scene can be measured. Never a player setting.
+bool validation_sweep() {
     static const bool enabled = [] {
-        const char* value = std::getenv("LAMBO_RT_SHADOW_ANY_MODEL");
+        const char* value = std::getenv("LAMBO_RT_SHADOW_SWEEP");
         return value && std::strcmp(value, "1") == 0;
     }();
     return enabled;
+}
+
+// Names the first few unclassified draws so a native-fallback log line says
+// which presented draw and native object kept the scene incomplete.
+std::string describe_unclassified(const RT64::SunShadowWorkload& result, const PresentedScene& scene,
+        const ShadowTask& task) {
+    std::string text;
+    size_t shown = 0;
+    for (const auto& range : result.unclassified) {
+        if (shown++ == 4) {
+            text += " ...";
+            break;
+        }
+        char entry[192];
+        int length = std::snprintf(entry, sizeof(entry), " r%u/p%u/n%u", range.rejection, range.projectionType,
+            range.indexCount);
+        for (const auto& draw : scene.draws) {
+            if (draw.call != range.draw) continue;
+            const uint32_t object_id = draw.matrix_id & 0xFFFFu;
+            if (object_id < task.objects.size()) {
+                const auto& object = task.objects[object_id];
+                length += std::snprintf(entry + length, sizeof(entry) - size_t(length), "/obj%u:f%X:l%08X:k%d:p%d",
+                    object_id, unsigned(object.flags), object.list, int(object.kind), int(object.parent));
+            }
+            const auto& m = draw.material;
+            std::snprintf(entry + length, sizeof(entry) - size_t(length), "/m%08X:%08X:%08X:g%X:z%X:%d%d%d%d%d",
+                m.otherL, m.combineW0, m.combineW1, draw.projection.geometry, m.zMode, int(m.alphaBlend),
+                int(m.forceBlend), int(m.coverageAlpha), int(m.zCompare), int(m.zUpdate));
+            break;
+        }
+        text += entry;
+    }
+    return text;
 }
 
 double percentile(std::vector<double> values, double fraction) {
@@ -50,7 +84,7 @@ ShadowSettings production_shadow_settings(int rays, double softness_degrees) {
     settings.strength = native_overlay_strength;
     settings.samples = uint32_t(rays);
     settings.angular_radius = float(softness_degrees * 3.14159265358979323846 / 180.0);
-    settings.any_player_model = any_player_model();
+    settings.validation_sweep = validation_sweep();
     return settings;
 }
 
@@ -84,13 +118,16 @@ std::shared_ptr<const RT64::SunShadowWorkload> SunShadowProduction::sunShadow(co
             }
             pending.admitted = true;
             if (!pending.result) {
-                LAMBO_LOG("rt-shadow", "task=%llu native: admission gate %u\n",
-                    static_cast<unsigned long long>(pending.task.sequence), uint32_t(stats.gate));
+                LAMBO_LOG("rt-shadow", "task=%llu native: admission gate %u circuit=%d phase=%d players=%d mode=%d model=%d\n",
+                    static_cast<unsigned long long>(pending.task.sequence), uint32_t(stats.gate),
+                    pending.task.circuit, pending.task.phase, pending.task.players, pending.task.race_mode,
+                    int(pending.task.model_cursors[0]));
             }
             else if (!pending.result->complete) {
-                LAMBO_LOG("rt-shadow", "task=%llu native: incomplete admission rejected=%zu unclassified=%zu overlays=%zu receivers=%zu\n",
+                LAMBO_LOG("rt-shadow", "task=%llu native: incomplete admission rejected=%zu unclassified=%zu overlays=%zu receivers=%zu%s\n",
                     static_cast<unsigned long long>(pending.task.sequence), stats.rejected, stats.unclassified,
-                    stats.overlays, pending.result->receivers.size());
+                    stats.overlays, pending.result->receivers.size(),
+                    describe_unclassified(*pending.result, scene, pending.task).c_str());
             }
         }
         return pending.result;

@@ -133,10 +133,26 @@ def receiver_material(call: dict) -> bool:
                        (0xFC327FFF, 0xFFFFF838), (0xFCFFFFFF, 0xFFFE7838)}
             and call["shader_other_lo"] == m["other_lo"]
             and call["shader_other_hi"] == m["other_hi"]
-            and not call["shader_flags"] & ((1 << 29) | 1)
+            and not call["shader_flags"] & 1
             and not m.get("geometry", 0) & F3DEX_LIGHTING
             and len(m["fog_rgba"]) == 4
             and all(math.isfinite(v) and 0 <= v <= 1 for v in m["fog_rgba"]))
+
+
+def trail_decal_reason(call: dict) -> int:
+    """Measured tyre-trail decals are explicit non-casters (reason 5)."""
+    m = call["material"]
+    signature = (m["other_lo"], m["combine_w1"], m["geometry"] & ~0x800000)
+    measured = (call.get("indexed") is True and call.get("projection_type") in (1, 2)
+                and call.get("extended_type", 0) == 0
+                and signature in {(0xC8104A50, 0xFFFE7638, 0x10205), (0xC8104B50, 0xFFFCF238, 0x10005)}
+                and m["combine_w0"] == 0xFCFFFFFF
+                and call["shader_other_lo"] == m["other_lo"]
+                and call["shader_other_hi"] & ~63 == m["other_hi"] & ~63
+                and not m["coverage_times_alpha"] and m["alpha_compare"] == 0
+                and m["alpha_blend"] and m["force_blend"] and m["z_compare"] and not m["z_update"]
+                and m["z_mode"] == 0x800 and m["z_source"] == 0)
+    return 5 if measured else 0
 
 
 def non_caster_reason(call: dict) -> int:
@@ -221,12 +237,14 @@ def validate_shadow_admission(render: dict) -> None:
                 if (call is None or any(item.get(key) != call[key] for key in ("first", "count", "projection_type"))):
                     raise CaptureError("shadow policy range differs from its presented draw")
                 if count_key == "non_casters":
-                    expected = 4 if item.get("reason") == 4 else non_caster_reason(call)
+                    expected = item.get("reason") if item.get("reason") in (4, 5) else non_caster_reason(call)
                     if expected == 4:
                         expected = world_cutout_reason(call, render)
+                    elif expected == 5:
+                        expected = trail_decal_reason(call)
                     if (type(item.get("reason")) is not int or item["reason"] == 0
                             or expected != item["reason"] or item["draw"] in seen_noncasters):
-                        raise CaptureError("shadow draw excluded without supported screen/backdrop/cutout identity")
+                        raise CaptureError("shadow draw excluded without supported screen/backdrop/cutout/trail identity")
                     seen_noncasters.add(item["draw"])
                 elif count_key == "receivers":
                     if item.get("reason") != 0 or not call["indexed"] or not receiver_material(call):

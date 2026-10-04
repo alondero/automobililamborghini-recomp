@@ -38,13 +38,16 @@ std::shared_ptr<RT64::SunShadowWorkload> admit_sun_shadow(const ShadowTask& task
         const ShadowSettings& settings, AdmissionStats& stats) {
     stats = {};
     // Player modes 0-3 share the car/light/view path; mode 4 is attract
-    // (docs/camera-sequences.md). One player only; models must be validated.
+    // (docs/camera-sequences.md). One player only; models and modes must be
+    // validated unless a developer sweep is measuring them.
     const int16_t model = task.model_cursors[0];
     const bool validated_model = std::find(validated_player_models.begin(), validated_player_models.end(), model) !=
         validated_player_models.end();
-    const bool model_admitted = model >= 0 && model <= 23 && (validated_model || settings.any_player_model);
+    const bool model_admitted = model >= 0 && model <= 23 && (validated_model || settings.validation_sweep);
+    const bool mode_admitted = task.race_mode >= 0 && task.race_mode <= 3 &&
+        (validated_race_mode(task.race_mode, task.circuit) || settings.validation_sweep);
     if (task.circuit < 0 || task.circuit >= 6 || task.phase != 8 || task.players != 1 ||
-        task.race_mode < 0 || task.race_mode > 3 || !model_admitted || !task.emitters_complete) {
+        !mode_admitted || !model_admitted || !task.emitters_complete) {
         stats.gate = ShadowGate::UnsupportedScene;
         return {};
     }
@@ -131,6 +134,11 @@ std::shared_ptr<RT64::SunShadowWorkload> admit_sun_shadow(const ShadowTask& task
         const uint32_t exclusion = non_caster_reason(draw.projection, draw.material);
         if (exclusion != 0) {
             result->nonCasters.push_back({draw.first, count, draw.call, false, exclusion, draw.projection_type});
+            continue;
+        }
+        if (trail_decal_exclusion(draw.material, draw.projection.geometry) != 0) {
+            result->nonCasters.push_back({draw.first, count, draw.call, false, NonCasterTrailDecal,
+                draw.projection_type});
             continue;
         }
         if (!draw.uniform_group) {

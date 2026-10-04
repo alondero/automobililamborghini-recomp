@@ -46,6 +46,19 @@ def write_change_map(path: Path, reference: np.ndarray, native: np.ndarray, trac
     write_png(path, out.shape[1], out.shape[0], out.tobytes())
 
 
+def ubershader_draws(render: Path, sequence: int) -> int:
+    """Draws RT64 rendered with its ubershader while specialized pipelines compile.
+
+    Ubershader and specialized output can differ by a few levels anywhere on
+    screen, so such a frame cannot be compared pixel-for-pixel with a control.
+    """
+    path = render / f"task-{sequence}-render.json"
+    if not path.is_file():
+        return 0
+    raster = json.loads(path.read_text(encoding="utf-8")).get("raster", [])
+    return sum(1 for draw in raster if draw.get("native_pipeline") == "uber")
+
+
 def production_log(run: Path) -> dict[int, dict]:
     states: dict[int, dict] = {}
     for line in (run / "stderr.log").read_text(encoding="utf-8", errors="replace").splitlines():
@@ -90,6 +103,8 @@ def main() -> int:
     parser.add_argument("--warmup-sequences", type=int, nargs="*", default=[60],
                         help="tasks whose brightening is reported, not failed")
     parser.add_argument("--soft", action="store_true", help="soft shadows: skip the hard core check")
+    parser.add_argument("--expect-native", action="store_true",
+                        help="fallback proof: every task must be not ready and match the native baseline exactly")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--png-dir", type=Path, help="write change maps and RT images here")
     args = parser.parse_args()
@@ -110,15 +125,31 @@ def main() -> int:
             write_png(args.png_dir / f"traced-{sequence}.png", traced_image.shape[1], traced_image.shape[0],
                       np.ascontiguousarray(traced_image).tobytes())
         result = {"sequence": sequence, "production": states.get(sequence), "native_overlay": native,
-                  "ray_traced": traced}
+                  "ray_traced": traced,
+                  "ubershader_draws": {name: ubershader_draws(run / "rt-render", sequence) for name, run in
+                                       (("native", args.native), ("unshadowed", args.unshadowed),
+                                        ("traced", args.traced))}}
         native_core = (native["transmission_percentiles"] or {}).get("1")
         traced_core = (traced["transmission_percentiles"] or {}).get("1")
         result["hard_core_difference"] = (None if native_core is None or traced_core is None
                                           else round(traced_core - native_core, 4))
+        if args.expect_native:
+            result["native_mismatch_pixels"] = int(np.any(traced_image != native_image, axis=2).sum())
+            if not result["production"] or result["production"]["ready"]:
+                failures.append(f"task {sequence}: replacement ready, expected native fallback")
+            if result["native_mismatch_pixels"]:
+                failures.append(f"task {sequence}: {result['native_mismatch_pixels']} pixels differ from the native baseline")
+            report["tasks"].append(result)
+            print(json.dumps(result))
+            continue
         if not result["production"] or not result["production"]["ready"]:
             failures.append(f"task {sequence}: replacement not ready")
         result["warmup"] = sequence in args.warmup_sequences
-        if traced["brighter_pixels"] and not result["warmup"]:
+        uber = {name: count for name, count in result["ubershader_draws"].items() if count}
+        if uber and not result["warmup"]:
+            for name, count in uber.items():
+                failures.append(f"task {sequence}: inconclusive, {name} drew {count} draws with ubershaders")
+        elif traced["brighter_pixels"] and not result["warmup"]:
             failures.append(f"task {sequence}: {traced['brighter_pixels']} RT pixels brighter than unshadowed")
         # The native overlay can lighten very dark pixels at its soft edge, so
         # its own brighter pixels are reported, not treated as a mismatch.

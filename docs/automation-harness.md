@@ -85,7 +85,8 @@ A scenario can select these fields:
 ```
 
 `warp` uses the existing `circuit:laps:car:players` syntax. `warp_mode: 0` is
-time trial; omit it for the normal single-race mode (`2`). Relative replay and
+time trial; omit it for the normal single-race mode (`2`). Modes 1 and 3 are
+the other player race modes; the menu's Arcade race measured as mode 1. Relative replay and
 save-state paths resolve beside the scenario file. Capture paths are always
 relative to that invocation's unique artifact directory, so concurrent runs
 cannot consume or overwrite each other's evidence. The runner clears inherited

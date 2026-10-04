@@ -10,7 +10,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from check_rt_overlay_capture import filter_taps, inside
 from check_rt_render_capture import (area, belongs_to_physical_car, non_caster_reason, opaque_coverage, procedural_world_object, receiver_material, validate_overlay_count,
-                                     world_cutout_reason, artistic_car_glass,
+                                     world_cutout_reason, artistic_car_glass, trail_decal_reason,
                                      screen_face, topology, uncovered_area, validate_draw_metadata, validate_pair,
                                      validate_shadow_admission, validate_generated_material_inputs)
 from inspect_rt_task import CaptureError
@@ -146,6 +146,29 @@ class MaterialTests(unittest.TestCase):
                 self.assertEqual(world_cutout_reason(changed, render), 0)
         self.assertEqual(world_cutout_reason(dict(call, indexed=False), render), 0)
 
+    def test_trail_decal_exclusion_requires_measured_material(self):
+        m = dict(material(), other_lo=0xC8104A50, other_hi=0x18ACFF, combine_w0=0xFCFFFFFF,
+                 combine_w1=0xFFFE7638, alpha_blend=True, force_blend=True, z_update=False, z_mode=0x800,
+                 geometry=0x810205)
+        call = {"call": 9, "first": 0, "count": 6, "indexed": True, "projection_type": 1,
+                "extended_type": 0, "material": m, "shader_other_lo": m["other_lo"],
+                "shader_other_hi": m["other_hi"], "shader_flags": 0}
+        self.assertEqual(trail_decal_reason(call), 5)
+        for field, value in (("combine_w1", 0xFFFFF238), ("z_update", True), ("alpha_blend", False),
+                             ("coverage_times_alpha", True), ("z_mode", 0), ("geometry", 0x12005)):
+            with self.subTest(field=field):
+                changed = copy.deepcopy(call)
+                changed["material"][field] = value
+                self.assertEqual(trail_decal_reason(changed), 0)
+        self.assertEqual(trail_decal_reason(dict(call, shader_other_lo=0)), 0)
+        burst = copy.deepcopy(call)
+        burst["material"].update(other_lo=0xC8104B50, combine_w1=0xFFFCF238, geometry=0x810005)
+        burst["shader_other_lo"] = 0xC8104B50
+        self.assertEqual(trail_decal_reason(burst), 5)
+        burst["material"]["geometry"] = 0x810205
+        self.assertEqual(trail_decal_reason(burst), 0)
+        self.assertEqual(trail_decal_reason(dict(call, indexed=False)), 0)
+
     def test_measured_glass_casts_but_never_receives(self):
         m = dict(material(), other_lo=0x504A50, other_hi=0x8ACFF, combine_w0=0xFC121824,
                  combine_w1=0xFF33FFFF, alpha_blend=True, force_blend=True, z_update=False,
@@ -209,9 +232,10 @@ class MaterialTests(unittest.TestCase):
                 changed = copy.deepcopy(call)
                 changed["material"][field] = value
                 self.assertFalse(receiver_material(changed))
-        for field, value in (("shader_other_lo", 0), ("shader_flags", 1 << 29), ("shader_flags", 1)):
+        for field, value in (("shader_other_lo", 0), ("shader_flags", 1)):
             self.assertFalse(receiver_material(dict(call, **{field: value})))
         self.assertTrue(receiver_material(dict(call, shader_flags=1 << 30)), "MSAA receiver rejected")
+        self.assertTrue(receiver_material(dict(call, shader_flags=1 << 29)), "high-precision receiver rejected")
 
     def test_edge_incidence_is_diagnostic_not_caster_policy(self):
         report = topology([[[0, 0, 0], [1, 0, 0], [0, 1, 0]]])

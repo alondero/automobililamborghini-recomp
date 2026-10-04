@@ -116,6 +116,47 @@ class ShadowCaptureTests(unittest.TestCase):
         completed = self.run_checker(native, unshadowed, steady)
         self.assertIn("task 300: 1 RT pixels brighter than unshadowed", completed.stdout)
 
+    def test_ubershader_frames_are_inconclusive_not_shadow_failures(self) -> None:
+        lit = np.full((4, 4, 3), 200, np.uint8)
+        shadowed = lit.copy()
+        shadowed[:2, :2] = 102
+        unshadowed = self.scene("unshadowed", {60: lit, 300: lit})
+        native = self.scene("native", {60: shadowed, 300: shadowed})
+        ready = ('[x] [rt-shadow] workload=61 task=60 epoch=3 ready=1 reason=""\n'
+                 '[x] [rt-shadow] workload=301 task=300 epoch=3 ready=1 reason=""\n')
+        brighter = shadowed.copy()
+        brighter[3, 3] = 210
+        traced = self.scene("uber", {60: shadowed, 300: brighter}, ready)
+        render = {"raster": [{"native_pipeline": "uber"}, {"native_pipeline": "specialized"}]}
+        (traced / "rt-render" / "task-300-render.json").write_text(json.dumps(render), encoding="utf-8")
+        completed = self.run_checker(native, unshadowed, traced)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("task 300: inconclusive, traced drew 1 draws with ubershaders", completed.stdout)
+        self.assertNotIn("brighter than unshadowed", completed.stdout)
+        report = json.loads(completed.stdout.splitlines()[1])
+        self.assertEqual(report["ubershader_draws"], {"native": 0, "unshadowed": 0, "traced": 1})
+
+    def test_expect_native_requires_fallback_and_identical_pixels(self) -> None:
+        lit = np.full((4, 4, 3), 200, np.uint8)
+        shadowed = lit.copy()
+        shadowed[:2, :2] = 102
+        unshadowed = self.scene("unshadowed", {60: lit, 300: lit})
+        native = self.scene("native", {60: shadowed, 300: shadowed})
+        fallback = ('[x] [rt-shadow] workload=61 task=60 epoch=3 ready=0 reason="acceleration structure failed"\n'
+                    '[x] [rt-shadow] workload=301 task=300 epoch=3 ready=0 reason="acceleration structure failed"\n')
+        restored = self.scene("restored", {60: shadowed, 300: shadowed}, fallback)
+        self.assertEqual(self.run_checker(native, unshadowed, restored, "--expect-native").returncode, 0)
+
+        ready = self.scene("ready", {60: shadowed, 300: shadowed}, fallback.replace("ready=0", "ready=1"))
+        completed = self.run_checker(native, unshadowed, ready, "--expect-native")
+        self.assertIn("task 60: replacement ready, expected native fallback", completed.stdout)
+
+        altered = shadowed.copy()
+        altered[3, 3] = 0
+        differs = self.scene("differs", {60: shadowed, 300: altered}, fallback)
+        completed = self.run_checker(native, unshadowed, differs, "--expect-native")
+        self.assertIn("task 300: 1 pixels differ from the native baseline", completed.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

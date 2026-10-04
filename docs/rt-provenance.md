@@ -187,7 +187,7 @@ game producer. Spans must stay between task +`0x1C0` and +`0x79C0`; the remainin
 arena bytes are scheduler fields, not display-list storage. Out-of-range,
 unaligned, reversed, unmatched, duplicate-pending and over-budget spans mark
 the record incomplete. At most 64 spans are retained. Task reuse, epoch and
-one-time alias consumption follow the [existing bridge](rt-shadows.md#guest-bridge-contract).
+one-time alias consumption follow the [existing bridge](rt-shadows.md#native-provenance-and-producer-boundary).
 
 `LAMBO_RT_CAPTURE_DIR` additionally writes four paired schema-2 JSON/8-MiB
 word-swapped snapshots at task sequences 60/300/420/540. The game producer

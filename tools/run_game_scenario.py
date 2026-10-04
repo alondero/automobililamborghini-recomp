@@ -78,8 +78,10 @@ def load_scenario(path: Path) -> dict[str, Any]:
     scenario["name"] = name.strip()
     if "warp" in scenario:
         scenario["warp"] = _warp(scenario["warp"])
-    if "warp_mode" in scenario and scenario["warp_mode"] not in (0, 2):
-        raise ScenarioError("scenario.warp_mode must be 0 (time trial) or 2 (single race)")
+    # Player race modes at 0x800CE6B4: 0 time trial, 1 menu Arcade, 2 single
+    # race (the warp default), 3 unidentified. Mode 4 is attract.
+    if "warp_mode" in scenario and (type(scenario["warp_mode"]) is not int or scenario["warp_mode"] not in range(4)):
+        raise ScenarioError("scenario.warp_mode must be a player race mode 0-3 (0 time trial, 2 single race)")
     if "warp" in scenario and "state_load" in scenario:
         raise ScenarioError("scenario.warp and scenario.state_load are alternative bootstraps")
 
@@ -125,7 +127,7 @@ def load_scenario(path: Path) -> dict[str, Any]:
         raise ScenarioError("scenario.graphics.hpfb_option must be Auto, On or Off")
     scenario["graphics"] = graphics
     developer = _dict(scenario.get("developer_env", {}), "scenario.developer_env")
-    if set(developer) - {"LAMBO_RT_SHADOW_FAULT", "LAMBO_TEST_RESIZE", "LAMBO_RT_SHADOW_ANY_MODEL"}:
+    if set(developer) - {"LAMBO_RT_SHADOW_FAULT", "LAMBO_TEST_RESIZE", "LAMBO_RT_SHADOW_SWEEP"}:
         raise ScenarioError("unsupported scenario developer variable")
     if any(type(value) is not str for value in developer.values()):
         raise ScenarioError("scenario.developer_env values must be a string")
@@ -149,8 +151,6 @@ def load_scenario(path: Path) -> dict[str, Any]:
         raise ScenarioError("rt_native_alpha_exact_pixels requires rt_native_alpha_check")
     if diagnostics.get("rt_native_alpha_double_uv") and not diagnostics.get("rt_native_alpha_exact_pixels"):
         raise ScenarioError("rt_native_alpha_double_uv requires rt_native_alpha_exact_pixels")
-    if diagnostics.get("rt_drop_overlay") and not diagnostics.get("rt_owner_buffer"):
-        raise ScenarioError("rt_drop_overlay requires rt_owner_buffer for receiver-ownership proof")
     if "rt_sun_probe" in diagnostics and not isinstance(diagnostics["rt_sun_probe"], bool):
         raise ScenarioError("scenario.diagnostics.rt_sun_probe must be boolean")
     if diagnostics.get("rt_sun_probe") and scenario.get("headless", True):

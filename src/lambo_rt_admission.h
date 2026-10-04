@@ -54,14 +54,27 @@ struct ShadowSettings {
     float strength = 0; // 0 keeps a capture-only Workload from attenuating.
     float angular_radius = 0; // Radians, 0 through 5 degrees.
     uint32_t samples = 8;
-    // Developer validation sweeps only: admit any in-range player model so
-    // its scene can be measured before it joins validated_player_models.
-    bool any_player_model = false;
+    // Developer validation sweeps only: admit any in-range player model and
+    // player race mode so the scene can be measured before it joins the
+    // validated lists below.
+    bool validation_sweep = false;
 };
 
-// Player-one model selectors (0-23) whose scenes passed hard-shadow parity.
+// Player-one model selectors (0-23) whose scenes passed hard-shadow parity:
+// 0 across the circuit/mode matrix, 1-14 on Circuit 1 time trial.
 // Evidence: docs/rt-shadows.md#validation. Other models keep native shadows.
-inline constexpr std::array<int16_t, 1> validated_player_models{{0}};
+inline constexpr std::array<int16_t, 15> validated_player_models{{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}};
+
+// Race modes (0x800CE6B4) whose one-player scenes passed the same parity, as
+// a bit mask of zero-based circuits: 0 = time trial and 2 = single race on all
+// six; 1 = menu Arcade and 3 (unidentified) on Circuit 1 only, because warping
+// into them always loads Circuit 1. Evidence: docs/rt-shadows.md#validation.
+inline constexpr std::array<uint8_t, 4> validated_race_mode_circuits{{0x3F, 0x01, 0x3F, 0x01}};
+
+inline bool validated_race_mode(int race_mode, int circuit) {
+    return race_mode >= 0 && race_mode < int(validated_race_mode_circuits.size()) && circuit >= 0 && circuit < 6 &&
+        (validated_race_mode_circuits[size_t(race_mode)] & (1u << circuit)) != 0;
+}
 
 // Strength is framebuffer-space attenuation; the VI's gamma runs afterwards.
 // The displayed native overlay core transmits about 0.51 on every captured

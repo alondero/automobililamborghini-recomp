@@ -1,5 +1,6 @@
 #include "lambo_rt_admission.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
@@ -126,6 +127,30 @@ int main() {
         // displayed native core of about 0.51 (docs/rt-material-evidence.md).
         require(std::abs(native_overlay_strength - 0.757f) < 1e-6f, "native contrast calibration changed");
 
+        {
+            // Tyre-trail quads span road segments, so their vertices are not one
+            // transform group; the measured decal identity still classifies them.
+            Scene trails = measured_scene();
+            ShadowMaterial trail;
+            trail.otherL = trail.shaderOtherL = 0xC8104A50u;
+            trail.otherH = trail.shaderOtherH = 0x18ACFFu;
+            trail.combineW0 = 0xFCFFFFFFu;
+            trail.combineW1 = 0xFFFE7638u;
+            trail.alphaBlend = trail.forceBlend = trail.zCompare = trail.standardFog = true;
+            trail.zMode = 0x800u;
+            PresentedDraw mark = indexed(7, 210, 6, 0, trail, 0x810205u);
+            mark.uniform_group = false;
+            trails.draws.push_back(mark);
+            auto admitted = admit(trails, stats);
+            require(admitted && admitted->complete, "tyre trail kept the scene incomplete");
+            bool listed = false;
+            for (const auto& range : admitted->nonCasters) listed |= range.draw == 7 && range.rejection == NonCasterTrailDecal;
+            require(listed, "tyre trail lost its non-caster identity");
+            trails.draws.back().material.combineW1 = 0xFFFFF238u;
+            admitted = admit(trails, stats);
+            require(admitted && !admitted->complete, "unmeasured mixed-group draw was classified");
+        }
+
         // Rectangle non-casters keep zero face extent.
         for (const auto& range : result->nonCasters) {
             if (range.draw == 6) require(range.faceStart == 0 && range.indexCount == 0, "rectangle gained a face range");
@@ -166,6 +191,12 @@ int main() {
         };
         gated([](ShadowTask& t) { t.players = 2; }, "two players admitted");
         gated([](ShadowTask& t) { t.model_cursors[0] = 23; }, "unvalidated player model admitted");
+        gated([](ShadowTask& t) { t.model_cursors[0] = 15; }, "unswept player model admitted");
+        require(validated_player_models.size() == 15, "validated model list changed");
+        for (int16_t model = 0; model < 15; ++model) {
+            require(std::find(validated_player_models.begin(), validated_player_models.end(), model) !=
+                validated_player_models.end(), "swept player model missing from the validated list");
+        }
         gated([](ShadowTask& t) { t.model_cursors[0] = 24; }, "out-of-range player model admitted");
         for (int16_t model : validated_player_models) {
             Scene validated = measured_scene();
@@ -173,15 +204,33 @@ int main() {
             require(admit(validated, stats) != nullptr, "validated player model gated");
         }
         {
-            // Developer validation sweeps may exercise any in-range model.
+            // Developer validation sweeps may exercise any in-range model or player race mode.
             Scene sweep = measured_scene();
             sweep.task.model_cursors[0] = 23;
+            sweep.task.race_mode = 3;
             ShadowSettings any = {native_overlay_strength, 0, 8};
-            any.any_player_model = true;
-            require(admit(sweep, stats, any) != nullptr, "validation sweep could not reach model 23");
+            any.validation_sweep = true;
+            require(admit(sweep, stats, any) != nullptr, "validation sweep could not reach model 23, mode 3");
             sweep.task.model_cursors[0] = 24;
             require(!admit(sweep, stats, any), "validation sweep admitted an out-of-range model");
+            sweep.task.model_cursors[0] = 0;
+            sweep.task.race_mode = 4;
+            require(!admit(sweep, stats, any), "validation sweep admitted attract mode");
         }
+        // Modes 0 and 2 passed on all six circuits; modes 1 and 3 only on
+        // Circuit 1, because warping into them always loads Circuit 1.
+        for (int circuit = 0; circuit < 6; ++circuit) {
+            for (int16_t mode = 0; mode < 4; ++mode) {
+                Scene candidate = measured_scene();
+                candidate.task.circuit = circuit;
+                candidate.task.race_mode = mode;
+                const bool expected = mode == 0 || mode == 2 || circuit == 0;
+                require(validated_race_mode(mode, circuit) == expected, "validated race mode table changed");
+                require((admit(candidate, stats) != nullptr) == expected, "race mode admission differs from table");
+            }
+        }
+        gated([](ShadowTask& t) { t.race_mode = 1; t.circuit = 1; }, "mode 1 admitted on unvalidated circuit");
+        gated([](ShadowTask& t) { t.race_mode = 3; t.circuit = 5; }, "mode 3 admitted on unvalidated circuit");
         gated([](ShadowTask& t) { t.race_mode = 4; }, "attract mode admitted");
         gated([](ShadowTask& t) { t.phase = 6; }, "menu phase admitted");
         gated([](ShadowTask& t) { t.circuit = 6; }, "unknown circuit admitted");

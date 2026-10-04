@@ -539,9 +539,31 @@ rear-view capture. Lit surfaces cast but carry receiver rejection bit 10. In
 Circuit 1 task 60, 38 of 116 former receivers were lit car ranges; the 78
 prelit road, wall and cabin ranges remain receivers.
 
-**MSAA receivers are admitted; HDR is not.** `RenderFlags` bits 30-31 hold the
-sample count; bit 29 is `usesHDR`. The receiver pass has a multisample variant
-using RT64's averaged-depth decal rule, so only HDR keeps receiver rejection.
+**MSAA and high-precision receivers are admitted.** `RenderFlags` bits 30-31
+hold the sample count. The receiver pass has a multisample variant using RT64's
+averaged-depth decal rule. Bit 29, `usesHDR`, is RT64's high-precision colour
+target (`R16G16B16A16_UNORM`, chosen by `hpfb_option` On, or Auto on a device
+that prefers it). It only widens the colour channels and the coverage range; the
+shared material code already reads that range, and the composite pipeline and
+native copy follow the target format. A full six-circuit, two-mode, hard/soft
+matrix with `hpfb_option: On` in every control and trace passed: all 364 draws
+of each sampled task carried bit 29, every sampled task was ready, no pixel was
+brightened, and hard cores stayed within 0.0061 of native. The unshadowed
+control omits the owner buffer, because that diagnostic forces standard colour.
+
+**Tyre-trail decals are explicit non-casters.** Menu Arcade races (race mode 1)
+accumulate translucent two-triangle quads that the trail emitter lays on the
+road: `OtherMode.L=0xC8104A50` (shared with the car overlay), combiner
+`FCFFFFFF/FFFE7638`, geometry mode `0x810205`, blend and force-blend on, depth
+compare without update, translucent depth mode `0x800`. Each quad can span road
+segments, so its vertices belong to several transform groups and the earlier
+gate left the scene incomplete from about task 348 onward. The count grew by two
+every 120 tasks. Translucent draws never cast, so the exact material and
+geometry signature classifies them as non-caster reason 5 without an object
+role. They draw after every receiver and before the car overlays, so the
+composite darkens them with the road just as the native overlay does. The car
+overlay keeps its own identity (combiner `…11FFFF/FFFFF238`, geometry `0x12005`,
+48 indices, car-child object).
 
 Host tests: `lambo_rt_material_policy`, `lambo_rt_admission_policy` and
 `tests/test_rt_render_capture.py`. The offline checker authenticates each

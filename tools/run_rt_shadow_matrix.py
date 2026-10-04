@@ -27,7 +27,7 @@ ARTIFACT = re.compile(r"\(artifacts=(.+)\)\s*$")
 
 
 def variant(kind: str, circuit: int, mode: int, softness: float, rays: int, car: int = 0,
-            any_model: bool = False) -> dict:
+            sweep: bool = False, hpfb: str | None = None) -> dict:
     scenario = json.loads((ROOT / "scenarios" / BASES[kind]).read_text(encoding="utf-8"))
     scenario["name"] = f"rt-shadow-matrix-c{circuit}-m{mode}-car{car}-{kind}"
     scenario["warp"] = f"{circuit}:1:{car}:1"
@@ -35,8 +35,14 @@ def variant(kind: str, circuit: int, mode: int, softness: float, rays: int, car:
     scenario["input"]["replay"] = str((ROOT / "scenarios" / scenario["input"]["replay"]).resolve())
     if kind == "soft":
         scenario["graphics"] = {"rt_shadows": True, "rt_shadow_rays": rays, "rt_shadow_softness": softness}
-    if any_model and kind in ("hard", "soft"):
-        scenario["developer_env"] = {"LAMBO_RT_SHADOW_ANY_MODEL": "1"}
+    if sweep and kind in ("hard", "soft"):
+        scenario["developer_env"] = {"LAMBO_RT_SHADOW_SWEEP": "1"}
+    if hpfb:
+        # Every control and trace must share one colour format to be compared.
+        # The owner buffer forces standard colour, so the pinned unshadowed
+        # control keeps only the overlay drop.
+        scenario.setdefault("graphics", {})["hpfb_option"] = hpfb
+        scenario.get("diagnostics", {}).pop("rt_owner_buffer", None)
     return scenario
 
 
@@ -46,6 +52,12 @@ def run(path: Path, timeout: int) -> tuple[bool, str | None, str]:
     last = (completed.stdout.strip().splitlines() or [""])[-1]
     match = ARTIFACT.search(last)
     return completed.returncode == 0, match.group(1) if match else None, last[:300]
+
+
+def only_inconclusive(report: dict) -> bool:
+    """True when every failure is an ubershader frame, not a shadow mismatch."""
+    failures = report.get("failures", [])
+    return bool(failures) and all(": inconclusive, " in failure for failure in failures)
 
 
 def check(runs: dict, kind: str, report: Path, png_dir: Path) -> bool:
@@ -65,8 +77,10 @@ def main() -> int:
     parser.add_argument("--kinds", nargs="+", default=list(BASES), choices=list(BASES))
     parser.add_argument("--softness", type=float, default=0.5)
     parser.add_argument("--rays", type=int, default=8, choices=(4, 8, 16))
-    parser.add_argument("--any-model", action="store_true",
-                        help="developer sweep: let unvalidated models reach the production path")
+    parser.add_argument("--sweep", action="store_true",
+                        help="developer sweep: let unvalidated models and race modes reach the production path")
+    parser.add_argument("--hpfb", choices=("Auto", "On", "Off"),
+                        help="pin the high-precision colour buffer in every run")
     parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts" / "rt-production" / "matrix.json")
     args = parser.parse_args()
@@ -81,7 +95,7 @@ def main() -> int:
                 runs = {}
                 for kind in args.kinds:
                     path = scenario_dir / f"{label}-{kind}.json"
-                    document = variant(kind, circuit, mode, args.softness, args.rays, car, args.any_model)
+                    document = variant(kind, circuit, mode, args.softness, args.rays, car, args.sweep, args.hpfb)
                     path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
                     passed, artifact, line = run(path, args.timeout)
                     runs[kind] = {"passed": passed, "artifact": artifact, "result": line}
@@ -93,8 +107,17 @@ def main() -> int:
                         if not runs.get(kind, {}).get("artifact"):
                             continue
                         report = args.output.parent / f"matrix-{label}-{kind}.json"
-                        passed = check(runs, kind, report, args.output.parent / "png" / f"{label}-{kind}")
-                        checks[kind] = {"passed": passed, "report": str(report)}
+                        png = args.output.parent / "png" / f"{label}-{kind}"
+                        passed = check(runs, kind, report, png)
+                        retried = False
+                        if not passed and report.is_file() and only_inconclusive(json.loads(report.read_text())):
+                            # RT64 was still compiling pipelines: rerun the trace once.
+                            retried = True
+                            ok, artifact, line = run(scenario_dir / f"{label}-{kind}.json", args.timeout)
+                            runs[kind] = {"passed": ok, "artifact": artifact, "result": line, "retry": True}
+                            print(f"{label} {kind} retry: {line}", flush=True)
+                            passed = bool(artifact) and check(runs, kind, report, png)
+                        checks[kind] = {"passed": passed, "report": str(report), "retried": retried}
                         failed |= not passed
                         print(f"{label} {kind} check: {'PASS' if passed else 'FAIL'}", flush=True)
                 summary.append({"circuit": circuit, "mode": mode, "car": car, "runs": runs, "checks": checks})

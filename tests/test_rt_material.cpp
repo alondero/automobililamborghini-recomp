@@ -40,13 +40,14 @@ int main() {
         staleShader.shaderOtherL = 0;
         require(caster_material_rejection(staleShader) & RejectShaderModeMismatch,
             "mismatched native/shader material admitted");
-        // MSAA receivers use the pass's averaged-depth variant; HDR stays unvalidated.
+        // MSAA receivers use the pass's averaged-depth variant. The high-precision
+        // (RenderFlags::usesHDR) target only widens UNORM channels and coverage.
         auto msaa = opaque;
         msaa.shaderFlags = 1u << 30; // RenderFlags::sampleCount = 1 (2x).
         require(receiver_material_rejection(msaa) == 0, "MSAA receiver rejected");
         auto hdr = opaque;
         hdr.shaderFlags = 1u << 29; // RenderFlags::usesHDR.
-        require(receiver_material_rejection(hdr) & RejectShaderFlags, "HDR receiver admitted");
+        require(receiver_material_rejection(hdr) == 0, "high-precision receiver rejected");
         opaque.shaderOtherH &= ~63u;
         require(caster_material_rejection(opaque) == 0, "unused native mode bits changed admission");
 
@@ -92,6 +93,40 @@ int main() {
             if (field == 6) other.coverageAlpha = false;
             require(world_cutout_exclusion(other) == UnknownCasterRole, "unmeasured world material excluded silently");
         }
+
+        // Measured tyre-trail decal: translucent primitive-alpha quads on the road.
+        ShadowMaterial trail;
+        trail.otherL = trail.shaderOtherL = 0xC8104A50u;
+        trail.otherH = trail.shaderOtherH = 0x18ACFFu;
+        trail.combineW0 = 0xFCFFFFFFu;
+        trail.combineW1 = 0xFFFE7638u;
+        trail.alphaBlend = trail.forceBlend = trail.zCompare = trail.standardFog = true;
+        trail.zMode = 0x800u;
+        require(trail_decal_exclusion(trail, 0x810205u) == NonCasterTrailDecal, "measured tyre trail not excluded");
+        require(caster_material_rejection(trail) != 0 && receiver_material_rejection(trail) != 0,
+            "tyre trail admitted as caster or receiver");
+        require(trail_decal_exclusion(trail, 0x12005u) == UnknownCasterRole, "car-overlay geometry taken as trail");
+        for (unsigned field = 0; field < 7; ++field) {
+            auto other = trail;
+            if (field == 0) other.combineW1 = 0xFFFFF238u; // Car-overlay combiner.
+            if (field == 1) other.zUpdate = true;
+            if (field == 2) other.alphaBlend = false;
+            if (field == 3) other.coverageAlpha = true;
+            if (field == 4) other.zMode = 0;
+            if (field == 5) other.extended = true;
+            if (field == 6) other.shaderOtherL = 0;
+            require(trail_decal_exclusion(other, 0x810205u) == UnknownCasterRole, "unmeasured translucent draw excluded");
+        }
+
+        // The emitter's brief second decal: its own render mode, combiner and geometry.
+        auto burst = trail;
+        burst.otherL = burst.shaderOtherL = 0xC8104B50u;
+        burst.combineW1 = 0xFFFCF238u;
+        require(trail_decal_exclusion(burst, 0x810005u) == NonCasterTrailDecal, "measured trail burst not excluded");
+        require(trail_decal_exclusion(burst, 0x810205u) == UnknownCasterRole, "trail signatures mixed");
+        auto mixed = trail;
+        mixed.combineW1 = 0xFFFCF238u;
+        require(trail_decal_exclusion(mixed, 0x810205u) == UnknownCasterRole, "partial trail signature excluded");
 
         // Measured car glass: blended, translucent depth mode, compare without update.
         ShadowMaterial glass;

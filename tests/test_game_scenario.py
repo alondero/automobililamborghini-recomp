@@ -183,7 +183,7 @@ class ScenarioRunnerTests(unittest.TestCase):
 
     def test_developer_env_is_allowlisted(self) -> None:
         developer = {"LAMBO_RT_SHADOW_FAULT": "as", "LAMBO_TEST_RESIZE": "300:1280x720",
-                     "LAMBO_RT_SHADOW_ANY_MODEL": "1"}
+                     "LAMBO_RT_SHADOW_SWEEP": "1"}
         completed, artifact = self.run_scenario({"schema": 1, "name": "dev", "developer_env": developer})
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         environment = json.loads((artifact / "harness-environment.json").read_text())
@@ -197,6 +197,23 @@ class ScenarioRunnerTests(unittest.TestCase):
                                       cwd=self.root, capture_output=True, text=True, timeout=10)
             self.assertEqual(rejected.returncode, 2, bad)
             self.assertIn(message, rejected.stderr)
+
+    def test_warp_mode_accepts_player_race_modes_only(self) -> None:
+        for mode in (0, 1, 2, 3):
+            with self.subTest(mode=mode):
+                completed, artifact = self.run_scenario_again({"schema": 1, "name": f"mode-{mode}", "warp": "1:1:0:1",
+                                                               "warp_mode": mode})
+                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                environment = json.loads((artifact / "harness-environment.json").read_text())
+                self.assertEqual(environment["LAMBO_WARP_MODE"], str(mode))
+        for bad in (4, -1, "1"):
+            path = self.scenario_dir / "bad-mode.json"
+            path.write_text(json.dumps({"schema": 1, "name": "bad", "warp": "1:1:0:1", "warp_mode": bad}),
+                            encoding="utf-8")
+            rejected = subprocess.run([sys.executable, str(RUNNER), str(path), "--exe", str(self.fake)],
+                                      cwd=self.root, capture_output=True, text=True, timeout=10)
+            self.assertEqual(rejected.returncode, 2, bad)
+            self.assertIn("scenario.warp_mode must be", rejected.stderr)
 
     def test_warp_accepts_car_index_range(self) -> None:
         completed, _ = self.run_scenario({"schema": 1, "name": "vehicle-23", "warp": "1:1:23:1"})
@@ -267,7 +284,6 @@ class ScenarioRunnerTests(unittest.TestCase):
                                     ({"rt_native_alpha_double_uv": "1"}, {}),
                                     ({"rt_drop_overlay": True}, {}),
                                     ({"rt_owner_buffer": True}, {}),
-                                    ({"rt_render_capture": True, "rt_drop_overlay": True}, {}),
                                     ({"rt_sun_probe": True}, {"rt_render_captures": [60]}),
                                     ({}, {"rt_render_captures": [True]})):
             with self.subTest(diagnostics=diagnostics, expect=expect):
@@ -289,6 +305,20 @@ class ScenarioRunnerTests(unittest.TestCase):
         self.assertIn("RT rendered task 60 capture rejected", completed.stdout)
         environment = json.loads((artifact / "harness-environment.json").read_text())
         self.assertEqual(environment["LAMBO_RT_OWNER_BUFFER"], "1")
+
+    def test_overlay_drop_without_owner_buffer_is_a_shadow_control(self) -> None:
+        # The owner buffer forces standard colour and no MSAA, so a pinned
+        # high-precision or MSAA unshadowed control omits it; the overlay
+        # checker still requires owner maps for any ownership proof.
+        scenario = {"schema": 1, "name": "overlay-control", "headless": False,
+                    "graphics": {"hpfb_option": "On"},
+                    "diagnostics": {"rt_sun_probe": True, "rt_task_capture": True,
+                                    "rt_render_capture": True, "rt_drop_overlay": True}}
+        _, artifact = self.run_scenario(scenario)
+        environment = json.loads((artifact / "harness-environment.json").read_text())
+        self.assertNotIn("LAMBO_RT_OWNER_BUFFER", environment)
+        self.assertEqual(environment["LAMBO_RT_EVIDENCE_DROP_OVERLAY"], "1")
+        self.assertEqual(environment["LAMBO_RT_CAPTURE_KEEP_COLOR"], "1")
 
 
 if __name__ == "__main__":
