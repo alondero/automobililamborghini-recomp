@@ -158,6 +158,9 @@ void refresh_frontend_settings() {
     auto& cheats = recompui::config::get_config("cheats");
     auto& debug = recompui::config::get_config("debug");
     sync_value(debug, "developer_mode", port::developer_mode());
+    sync_value(debug, "rt_shadows", port::rt_shadows());
+    sync_value(debug, "rt_shadow_rays", uint32_t(port::rt_shadow_rays()));
+    sync_value(debug, "rt_shadow_softness", port::rt_shadow_softness());
     for (const auto& entry : lambo::cheats::catalog)
         sync_value(cheats, entry.id, lambo::cheats::enabled(entry.cheat));
     sync_value(enhancements, "fog_match", port::widescreen_fog_match());
@@ -171,9 +174,6 @@ void refresh_frontend_settings() {
     sync_value(enhancements, "camera_distance", port::camera_distance_scale());
     sync_value(enhancements, "camera_height", port::camera_height_scale());
     sync_value(enhancements, "camera_fov", port::camera_fov_add());
-    sync_value(enhancements, "rt_shadows", port::rt_shadows());
-    sync_value(enhancements, "rt_shadow_rays", uint32_t(port::rt_shadow_rays()));
-    sync_value(enhancements, "rt_shadow_softness", port::rt_shadow_softness());
     auto& general = recompui::config::get_general_config();
     // Refreshed only while the option is clean, so a Championship save can
     // appear in the page without replacing a text edit still being typed.
@@ -256,7 +256,9 @@ void create_frontend_settings() {
         auto& page = recompui::config::get_graphics_config();
         if (std::get<uint32_t>(page.get_option_value("performance_preset")) == kLowHardwarePreset) {
             // Enhancement tabs are live. Publish these only when Graphics is
-            // applied so Discard also cancels this part of the preset.
+            // applied so Discard also cancels this part of the preset. The last
+            // one is a Debug tab option: the preset still switches ray-traced
+            // shadows off, because the low-hardware image leaves no room for them.
             lambo::config::set_no_lod(false);
             lambo::config::set_global_draw_distance(1.0);
             lambo::config::set_widescreen_fog_match(false);
@@ -297,20 +299,6 @@ void create_frontend_settings() {
     number(enhancements, "camera_height", "Camera height", port::camera_height_scale(), .2, 3, .05, port::set_camera_height_scale);
     number(enhancements, "camera_fov", "Additional field of view (degrees)", port::camera_fov_add(), -20, 60, 1, port::set_camera_fov_add);
     number(enhancements, "menu_stick_sensitivity", "Menu stick sensitivity", port::menu_stick_sensitivity(), 1.0, 2.5, 0.1, port::set_menu_stick_sensitivity);
-    boolean(enhancements, "rt_shadows", "Ray-traced shadows (experimental)", port::rt_shadows(), port::set_rt_shadows);
-    enhancements.update_option_description("rt_shadows",
-        "Replaces the car's shadow with sunlight shadows from the car and solid scenery. "
-        "Needs DirectX 12 and a graphics card with ray tracing. "
-        "Works in one-player races. Other scenes keep the original shadow.");
-    enhancements.add_enum_option("rt_shadow_rays", "Shadow quality",
-        "Rays per pixel for soft shadow edges. More rays look smoother and cost more.",
-        {{4, "Rays4", "Low (4 rays)"}, {8, "Rays8", "Medium (8 rays)"}, {16, "Rays16", "High (16 rays)"}},
-        uint32_t(port::rt_shadow_rays()));
-    enhancements.add_option_change_callback("rt_shadow_rays", [](ConfigValueVariant value, ConfigValueVariant, OptionChangeContext context) {
-        if (context == OptionChangeContext::Permanent) lambo::config::set_rt_shadow_rays(int(std::get<uint32_t>(value)));
-    });
-    number(enhancements, "rt_shadow_softness", "Shadow softness (degrees)", port::rt_shadow_softness(), 0, 5, .25, port::set_rt_shadow_softness);
-    enhancements.update_option_description("rt_shadow_softness", "Size of the sun. 0 gives hard shadow edges.");
 
     // Tabs appear in registration order. Keep Driving beside Controls and
     // complete each config before registering the next (references invalidate).
@@ -333,5 +321,29 @@ void create_frontend_settings() {
     debug.external_storage = true;
     boolean(debug, "developer_mode", "Developer mode", port::developer_mode(), port::set_developer_mode);
     debug.update_option_description("developer_mode", "RT64 developer overlay. Changes take effect after restarting the application.");
-}
+
+    // Ray-traced sun shadows are pre-alpha: expect bugs, missing or wrong
+    // shadows, and lighting that does not match the rest of the scene. They sit
+    // on the diagnostic tab rather than Enhancements so a player does not read
+    // them as a finished feature. Moving them changes no saved value: the
+    // graphics.json keys above still belong to the port.
+    boolean(debug, "rt_shadows", "Ray-traced shadows (pre-alpha)", port::rt_shadows(), port::set_rt_shadows);
+    debug.update_option_description("rt_shadows",
+        "Pre-alpha: expect bugs and lighting issues at this stage. "
+        "Replaces the car's shadow with sunlight shadows from the car and solid scenery. "
+        "Needs DirectX 12 and a graphics card with ray tracing. "
+        "Works in one-player races. Other scenes keep the original shadow.");
+    // Each row's description is read on its own, so the warning repeats here
+    // rather than relying on the toggle above.
+    debug.add_enum_option("rt_shadow_rays", "Shadow quality",
+        "Pre-alpha: expect bugs and lighting issues. "
+        "Rays per pixel for soft shadow edges. More rays look smoother and cost more.",
+        {{4, "Rays4", "Low (4 rays)"}, {8, "Rays8", "Medium (8 rays)"}, {16, "Rays16", "High (16 rays)"}},
+        uint32_t(port::rt_shadow_rays()));
+    debug.add_option_change_callback("rt_shadow_rays", [](ConfigValueVariant value, ConfigValueVariant, OptionChangeContext context) {
+        if (context == OptionChangeContext::Permanent) lambo::config::set_rt_shadow_rays(int(std::get<uint32_t>(value)));
+    });
+    number(debug, "rt_shadow_softness", "Shadow softness (degrees)", port::rt_shadow_softness(), 0, 5, .25, port::set_rt_shadow_softness);
+    debug.update_option_description("rt_shadow_softness",
+        "Pre-alpha: expect bugs and lighting issues. Size of the sun. 0 gives hard shadow edges.");
 }

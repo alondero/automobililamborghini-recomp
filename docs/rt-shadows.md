@@ -1,10 +1,13 @@
 # Ray-traced sunlight shadows
 
-Status: experimental, opt-in, off by default. Measured on Windows, D3D12, NVIDIA
-RTX 3080, through 2026-10-04. "Ray-traced shadows (experimental)" on the
-Enhancements tab replaces the native car shadow with a ray-traced sun shadow
-in validated one-player scenes. Every other scene, and every frame whose
-shadow is pending, failed or unsupported, draws the original shadow instead.
+Status: experimental, and pre-alpha. It is opt-in and off by default, and the
+user-facing setting is labelled "(pre-alpha)" because bugs and lighting issues
+are still expected. Measured on Windows, D3D12, NVIDIA RTX 3080, through
+2026-10-04. "Ray-traced shadows (pre-alpha)" on the Debug tab replaces the
+native car shadow with a ray-traced sun shadow in validated one-player scenes.
+It is a development feature, not a finished one, so it stays off the
+Enhancements tab. Every other scene, and every frame whose shadow is pending,
+failed or unsupported, draws the original shadow instead.
 
 Earlier groundwork, art provenance and material evidence live in
 [RT provenance](rt-provenance.md) and
@@ -12,6 +15,8 @@ Earlier groundwork, art provenance and material evidence live in
 is [patch 0030](../patches/0030-rt64-sun-shadow-receiver.patch).
 
 ## Player settings
+
+All three options are on the **Debug** tab, below Developer mode.
 
 | Key | Default | Effect |
 | --- | --- | --- |

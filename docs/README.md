@@ -80,9 +80,10 @@ status line before relying on a historical measurement.
 
 - [Ray-tracing plan](ray-tracing-plan.md) compares RaceWave46's custom renderer
   with this port and records the original plan for optional sunlight shadows.
-- [Ray-traced shadows](rt-shadows.md) records the opt-in production path, the
-  validated circuits, modes and cars, the native fallback rules, GPU cost and
-  the unsupported scenes and backends.
+- [Ray-traced shadows](rt-shadows.md) records the experimental, opt-in
+  production path and its pre-alpha status, the validated circuits, modes and
+  cars, the native fallback rules, GPU cost and the unsupported scenes and
+  backends.
 - [Circuit 1 RT provenance](rt-provenance.md) records stationary one/two-view
   light checks, exact native overlay records, material counterexamples and the
   remaining receiver/caster gate.

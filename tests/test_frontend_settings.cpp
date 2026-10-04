@@ -358,16 +358,30 @@ int main(int argc, char** argv) {
         // Debug tab's value through instead of writing the seeded one back.
         require(lambo::config::developer_mode(), "graphics apply reverted the debug tab value");
         auto& enhancements = recompui::config::get_config("enhancements");
-        for (const char* key : {"automatic_pit_stops", "fog_match", "sky_match", "no_lod", "draw_distance", "fog_scale", "camera_distance", "camera_height", "camera_fov", "menu_stick_sensitivity", "rt_shadows", "rt_shadow_rays", "rt_shadow_softness"})
+        for (const char* key : {"automatic_pit_stops", "fog_match", "sky_match", "no_lod", "draw_distance", "fog_scale", "camera_distance", "camera_height", "camera_fov", "menu_stick_sensitivity"})
             require(enhancements.has_option(key), "missing enhancement");
-        require(!lambo::config::rt_shadows() && !std::get<bool>(enhancements.get_option_value("rt_shadows")),
+        // Ray-traced shadows are pre-alpha, so they live on the Debug tab and
+        // must not appear in the player-facing Enhancements tab.
+        for (const char* key : {"rt_shadows", "rt_shadow_rays", "rt_shadow_softness"}) {
+            require(debug.has_option(key), "missing ray-traced shadow option on the debug tab");
+            require(!enhancements.has_option(key), "ray-traced shadow option leaked into Enhancements");
+        }
+        require(!lambo::config::rt_shadows() && !std::get<bool>(debug.get_option_value("rt_shadows")),
                 "ray-traced shadows must default to Original");
         // Admission accepts every player car, so the text must not narrow it.
-        require(enhancements.get_option("rt_shadows").description.find("first car") == std::string::npos,
+        require(debug.get_option("rt_shadows").description.find("first car") == std::string::npos,
                 "ray-traced shadow description understates the supported cars");
-        enhancements.set_option_value("rt_shadows", true);
-        enhancements.set_option_value("rt_shadow_rays", uint32_t(16));
-        enhancements.set_option_value("rt_shadow_softness", 1.25);
+        // The pre-alpha wording is the reason the setting is off Enhancements.
+        // Each row's description is shown on its own, so all three carry the
+        // bug/lighting warning rather than relying on the toggle above them.
+        require(debug.get_option("rt_shadows").name.find("pre-alpha") != std::string::npos,
+                "ray-traced shadow toggle is not labelled pre-alpha");
+        for (const char* key : {"rt_shadows", "rt_shadow_rays", "rt_shadow_softness"})
+            require(debug.get_option(key).description.find("lighting issues") != std::string::npos,
+                    "ray-traced shadow option does not warn about lighting issues");
+        debug.set_option_value("rt_shadows", true);
+        debug.set_option_value("rt_shadow_rays", uint32_t(16));
+        debug.set_option_value("rt_shadow_softness", 1.25);
         require(lambo::config::rt_shadows() && lambo::config::rt_shadow_rays() == 16 &&
                 lambo::config::rt_shadow_softness() == 1.25, "ray-traced shadow live update");
         require(!lambo::config::automatic_pit_stops(), "pit assistance defaults off");

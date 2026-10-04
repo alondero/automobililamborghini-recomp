@@ -23,6 +23,10 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) and the
   renderer behavior in a reviewable patch and compare it with upstream.
 - Player documentation uses short sentences and avoids internal terms unless
   they are needed to solve a player problem.
+- Some checked-in files mix CRLF and LF line endings; `src/lambo_config.h` is
+  one. After editing such a file, confirm the rest of it was not rewritten by
+  running `git diff --ignore-all-space --stat <file>` and expecting only your
+  own lines to differ.
 - AI tools may help draft code and reasoning. The source, tests, and reviewed
   pull request are the project record.
 

@@ -1,6 +1,8 @@
 # Optional ray-traced shadows: implementation plan
 
-Status: phase 1 is implemented as an opt-in setting (Original by default).
+Status: phase 1 is implemented as an opt-in setting (Original by default). It
+remains experimental and is labelled pre-alpha on the Debug tab rather than
+Enhancements, because bugs and lighting issues are still expected.
 The [shadow feature page](rt-shadows.md) records the production path, its
 validated scope and its limits; [material evidence](rt-material-evidence.md)
 records the caster/receiver policy and contrast calibration. This page keeps
