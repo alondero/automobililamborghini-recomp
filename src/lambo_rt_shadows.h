@@ -58,7 +58,9 @@ struct TaskSunProbe {
 // Game producer writes a slot after the native reuse fence. The HLE consumer
 // takes a value for that exact display list. Optional low-RAM snapshots happen
 // before native queue publication; renderer workers never read guest globals.
-// This seam currently records provenance only and cannot enable shadows.
+// Diagnostics read sampled values; when production shadows are enabled
+// (set_production_task_values) it is also the only source of task identity
+// for shadow admission.
 class TaskSunProbes {
 public:
     bool begin(const uint8_t* rdram, size_t size);
@@ -90,6 +92,8 @@ private:
 bool physical_car_object(const std::vector<TaskSunProbe::ObjectIdentity>& objects, uint32_t object_id);
 bool procedural_world_object(const TaskSunProbe::ObjectIdentity& object);
 bool presented_object_id(uint32_t matrix_id, uint32_t& object_id);
+// Object-table index of an admitted presented draw's matrix id.
+inline uint32_t presented_object_index(uint32_t matrix_id) { return matrix_id & 0xFFFFu; }
 std::optional<TaskSunProbe> consume_sun_probe(uint32_t dl_address);
 // Enables the producer hooks for production shadows on tasks begun afterwards.
 // Only the compact identity is copied; no RAM snapshot or logging is added.

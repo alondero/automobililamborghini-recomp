@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "shared/rt64_sun_shadow.h"
@@ -94,8 +95,13 @@ struct AdmissionStats {
     ShadowGate gate = ShadowGate::UnsupportedScene;
     size_t admitted_faces = 0, rejected = 0, unclassified = 0, overlays = 0;
     size_t world_cutouts = 0, glass_casters = 0;
-    std::array<size_t, 10> rejection_reasons{};
+    // Draws counted per set rejection bit: caster failures and admitted
+    // casters that may not receive.
+    std::array<size_t, rejection_bit_count> caster_rejection_reasons{}, receiver_rejection_reasons{};
 };
+
+// " cutouts=N glass=N caster_bits=[...] receiver_bits=[...]" for logs.
+std::string rejection_summary(const AdmissionStats& stats);
 
 // Returns null when the scene/light gate fails. A non-null result can still
 // be incomplete; only complete results may ever replace a native overlay.

@@ -174,10 +174,9 @@ struct RenderEvidence::Impl {
         // The USA car-child identity is measured from func_80013328. Each
         // circuit/mode still needs its own differential before any support
         // claim; this capture path never controls production suppression.
-        if (report["native"]["players"] != 1 ||
-            count != 48 || call.otherMode.L != 0xC8104A50u ||
-            (call.colorCombiner.L & 0xFFFFFFu) != 0x11FFFFu || call.colorCombiner.H != 0xFFFFF238u ||
-            (call.geometryMode & ~0x800000u) != 0x12005u) return false;
+        if (report["native"]["players"] != 1 || count != 48 ||
+            !native_overlay_material(call.otherMode.L, call.colorCombiner.L, call.colorCombiner.H,
+                call.geometryMode)) return false;
         const auto& indices = current->drawData.faceIndices;
         if (first > indices.size() || count > indices.size() - first) return false;
         uint32_t id = group(indices[first]);
@@ -250,10 +249,9 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
             return {};
         }
         if (!result->complete) {
-            const auto& r = stats.rejection_reasons;
-            LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload incomplete: circuit=%d faces=%zu overlays=%zu rejected=%zu unclassified=%zu reason_bits=[%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu]\n",
+            LAMBO_LOG_INFO("rt-evidence", "sun shadow Workload incomplete: circuit=%d faces=%zu overlays=%zu rejected=%zu unclassified=%zu%s\n",
                 task.circuit, stats.admitted_faces, stats.overlays, stats.rejected, stats.unclassified,
-                r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9]);
+                rejection_summary(stats).c_str());
         }
         return result;
     } catch (const std::exception& e) {

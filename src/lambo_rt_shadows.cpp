@@ -15,7 +15,7 @@ namespace lambo::rt {
 
 bool presented_object_id(uint32_t matrix_id, uint32_t& object_id) {
     if ((matrix_id & 0xFFF00000u) != 0x10000000u) return false;
-    object_id = matrix_id & 0xFFFFu;
+    object_id = presented_object_index(matrix_id);
     return true;
 }
 

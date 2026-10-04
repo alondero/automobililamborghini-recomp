@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <string>
 
 namespace lambo::rt {
 namespace {
@@ -23,15 +24,36 @@ constexpr uint32_t native_overlay_list = 0x8013D3C8u;
 bool native_overlay(const PresentedDraw& draw, uint32_t count,
         const std::vector<TaskSunProbe::ObjectIdentity>& objects, uint32_t object_id) {
     const auto& m = draw.material;
-    const bool material = count == 48 && m.otherL == 0xC8104A50u && (m.combineW0 & 0xFFFFFFu) == 0x11FFFFu &&
-        m.combineW1 == 0xFFFFF238u && (draw.projection.geometry & ~0x800000u) == 0x12005u;
+    const bool material = count == 48 &&
+        native_overlay_material(m.otherL, m.combineW0, m.combineW1, draw.projection.geometry);
     const auto& object = objects[object_id];
     if (!material || object.flags != 0x42u || object.list != native_overlay_list) return false;
     return object.parent >= 0 && size_t(object.parent) < objects.size() &&
         (objects[size_t(object.parent)].flags & 8u) != 0;
 }
 
+void tally_rejection(std::array<size_t, rejection_bit_count>& tally, uint32_t rejection) {
+    for (uint32_t bit = 0; bit < rejection_bit_count; ++bit) {
+        if (rejection & (1u << bit)) ++tally[bit];
+    }
+}
+
 } // namespace
+
+std::string rejection_summary(const AdmissionStats& stats) {
+    std::string text = " cutouts=" + std::to_string(stats.world_cutouts) +
+        " glass=" + std::to_string(stats.glass_casters);
+    const auto bits = [&text](const char* name, const auto& tally) {
+        text += std::string(" ") + name + "=[";
+        for (size_t bit = 0; bit < tally.size(); ++bit) {
+            text += (bit ? "," : "") + std::to_string(tally[bit]);
+        }
+        text += "]";
+    };
+    bits("caster_bits", stats.caster_rejection_reasons);
+    bits("receiver_bits", stats.receiver_rejection_reasons);
+    return text;
+}
 
 std::shared_ptr<RT64::SunShadowWorkload> admit_sun_shadow(const ShadowTask& task,
         const std::vector<PresentedDraw>& draws, const std::vector<PresentedLight>& lights,
@@ -57,9 +79,9 @@ std::shared_ptr<RT64::SunShadowWorkload> admit_sun_shadow(const ShadowTask& task
     // Each circuit keeps its own measured key even where the raw values match;
     // future measurements may differ. No camera or car matrix contributes.
     struct CircuitPolicy { int x, y, z; };
+    static constexpr CircuitPolicy measured_key{-11, 55, -101};
     static constexpr std::array<CircuitPolicy, 6> policies{{
-        {-11, 55, -101}, {-11, 55, -101}, {-11, 55, -101},
-        {-11, 55, -101}, {-11, 55, -101}, {-11, 55, -101}
+        measured_key, measured_key, measured_key, measured_key, measured_key, measured_key
     }};
     const CircuitPolicy policy = policies[size_t(task.circuit)];
     const float length = std::sqrt(float(policy.x * policy.x + policy.y * policy.y + policy.z * policy.z));
@@ -143,7 +165,7 @@ std::shared_ptr<RT64::SunShadowWorkload> admit_sun_shadow(const ShadowTask& task
             mark_unclassified(draw.first, count, draw.call, UnclassifiedTransformGroup, draw.projection_type);
             continue;
         }
-        const uint32_t object_id = draw.matrix_id & 0xFFFFu;
+        const uint32_t object_id = presented_object_index(draw.matrix_id);
         if (object_id >= task.objects.size()) {
             mark_unclassified(draw.first, count, draw.call, UnclassifiedObjectIdentity, draw.projection_type);
             continue;
@@ -179,9 +201,7 @@ std::shared_ptr<RT64::SunShadowWorkload> admit_sun_shadow(const ShadowTask& task
             }
             result->rejected.push_back({draw.first, count, draw.call, false, rejection, draw.projection_type});
             ++stats.rejected;
-            for (uint32_t bit = 0; bit < stats.rejection_reasons.size(); ++bit) {
-                if (rejection & (1u << bit)) ++stats.rejection_reasons[bit];
-            }
+            tally_rejection(stats.caster_rejection_reasons, rejection);
             continue;
         }
         result->geometry.push_back({draw.first, count, draw.call, true, 0, draw.projection_type});
@@ -193,6 +213,7 @@ std::shared_ptr<RT64::SunShadowWorkload> admit_sun_shadow(const ShadowTask& task
         else {
             result->receiverRejected.push_back({draw.first, count, draw.call, false, receiver_rejection,
                 draw.projection_type});
+            tally_rejection(stats.receiver_rejection_reasons, receiver_rejection);
         }
         stats.admitted_faces += count / 3;
     }

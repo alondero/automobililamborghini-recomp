@@ -14,9 +14,6 @@
 namespace lambo::rt {
 
 namespace {
-// Workloads are published in order; a few may be queued or re-rendered for
-// interpolation. Older identities can no longer match a Workload.
-constexpr uint64_t retained_workloads = 16;
 constexpr size_t cost_window = 120;
 
 // Developer fault injection for the native-restore proof. "as" adds a caster
@@ -40,6 +37,14 @@ bool validation_sweep() {
     return enabled;
 }
 
+// Appends one formatted field; output longer than a field is truncated.
+template <class... Args>
+void append_format(std::string& text, const char* format, Args... args) {
+    char field[96];
+    const int length = std::snprintf(field, sizeof(field), format, args...);
+    if (length > 0) text.append(field, std::min(size_t(length), sizeof(field) - 1));
+}
+
 // Names the first few unclassified draws so a native-fallback log line says
 // which presented draw and native object kept the scene incomplete.
 std::string describe_unclassified(const RT64::SunShadowWorkload& result, const PresentedScene& scene,
@@ -51,31 +56,35 @@ std::string describe_unclassified(const RT64::SunShadowWorkload& result, const P
             text += " ...";
             break;
         }
-        char entry[192];
-        int length = std::snprintf(entry, sizeof(entry), " r%u/p%u/n%u", range.rejection, range.projectionType,
-            range.indexCount);
+        append_format(text, " r%u/p%u/n%u", range.rejection, range.projectionType, range.indexCount);
         for (const auto& draw : scene.draws) {
             if (draw.call != range.draw) continue;
-            const uint32_t object_id = draw.matrix_id & 0xFFFFu;
+            const uint32_t object_id = presented_object_index(draw.matrix_id);
             if (object_id < task.objects.size()) {
                 const auto& object = task.objects[object_id];
-                length += std::snprintf(entry + length, sizeof(entry) - size_t(length), "/obj%u:f%X:l%08X:k%d:p%d",
-                    object_id, unsigned(object.flags), object.list, int(object.kind), int(object.parent));
+                append_format(text, "/obj%u:f%X:l%08X:k%d:p%d", object_id, unsigned(object.flags), object.list,
+                    int(object.kind), int(object.parent));
             }
             const auto& m = draw.material;
-            std::snprintf(entry + length, sizeof(entry) - size_t(length), "/m%08X:%08X:%08X:g%X:z%X:%d%d%d%d%d",
-                m.otherL, m.combineW0, m.combineW1, draw.projection.geometry, m.zMode, int(m.alphaBlend),
-                int(m.forceBlend), int(m.coverageAlpha), int(m.zCompare), int(m.zUpdate));
+            append_format(text, "/m%08X:%08X:%08X:g%X:z%X:%d%d%d%d%d", m.otherL, m.combineW0, m.combineW1,
+                draw.projection.geometry, m.zMode, int(m.alphaBlend), int(m.forceBlend), int(m.coverageAlpha),
+                int(m.zCompare), int(m.zUpdate));
             break;
         }
-        text += entry;
     }
     return text;
 }
 
-double percentile(std::vector<double> values, double fraction) {
-    std::sort(values.begin(), values.end());
-    return values[std::min(values.size() - 1, size_t(fraction * double(values.size())))];
+struct CostPercentiles { double p50 = 0, p95 = 0; };
+
+// Sorts the caller's window in place; it is cleared after each summary.
+CostPercentiles cost_percentiles(std::vector<double>& samples) {
+    if (samples.empty()) return {};
+    std::sort(samples.begin(), samples.end());
+    const auto at = [&samples](double fraction) {
+        return samples[std::min(samples.size() - 1, size_t(fraction * double(samples.size())))];
+    };
+    return {at(0.5), at(0.95)};
 }
 }
 
@@ -88,24 +97,34 @@ ShadowSettings production_shadow_settings(int rays, double softness_degrees) {
     return settings;
 }
 
-void SunShadowProduction::remember(uint64_t workload_id, const std::optional<TaskSunProbe>& task, bool enabled,
+void SunShadowProduction::remember(const std::optional<TaskSunProbe>& task, bool enabled,
         const ShadowSettings& settings) {
+    std::optional<Pending> pending;
+    if (enabled && task) {
+        pending.emplace();
+        pending->settings = settings;
+        if (!shadow_task(*task, pending->task)) pending.reset();
+    }
     std::lock_guard lock(mutex_);
-    while (!tasks_.empty() && tasks_.begin()->first + retained_workloads < workload_id) tasks_.erase(tasks_.begin());
-    tasks_.erase(workload_id);
-    if (!enabled || !task) return;
-    Pending pending;
-    if (!shadow_task(*task, pending.task)) return;
-    pending.settings = settings;
-    tasks_.emplace(workload_id, std::move(pending));
+    tasks_.stage(std::move(pending));
+}
+
+void SunShadowProduction::workloadPublished(uint64_t workload_id) noexcept {
+    std::lock_guard lock(mutex_);
+    tasks_.published(workload_id);
+}
+
+void SunShadowProduction::finish_task() {
+    std::lock_guard lock(mutex_);
+    tasks_.finish();
 }
 
 std::shared_ptr<const RT64::SunShadowWorkload> SunShadowProduction::sunShadow(const RT64::Workload& workload) noexcept {
     try {
         std::lock_guard lock(mutex_);
-        const auto found = tasks_.find(workload.workloadId);
-        if (found == tasks_.end()) return {};
-        Pending& pending = found->second;
+        Pending* found = tasks_.find(workload.workloadId);
+        if (!found) return {};
+        Pending& pending = *found;
         // Ranges do not change when a Workload is re-rendered for interpolation.
         if (!pending.admitted) {
             const auto scene = presented_scene(workload);
@@ -124,9 +143,9 @@ std::shared_ptr<const RT64::SunShadowWorkload> SunShadowProduction::sunShadow(co
                     int(pending.task.model_cursors[0]));
             }
             else if (!pending.result->complete) {
-                LAMBO_LOG("rt-shadow", "task=%llu native: incomplete admission rejected=%zu unclassified=%zu overlays=%zu receivers=%zu%s\n",
+                LAMBO_LOG("rt-shadow", "task=%llu native: incomplete admission rejected=%zu unclassified=%zu overlays=%zu receivers=%zu%s%s\n",
                     static_cast<unsigned long long>(pending.task.sequence), stats.rejected, stats.unclassified,
-                    stats.overlays, pending.result->receivers.size(),
+                    stats.overlays, pending.result->receivers.size(), rejection_summary(stats).c_str(),
                     describe_unclassified(*pending.result, scene, pending.task).c_str());
             }
         }
@@ -142,9 +161,11 @@ void SunShadowProduction::sunShadowResult(const RT64::SunShadowFrameResult& resu
         build_us_.push_back(result.buildMicroseconds);
         receiver_us_.push_back(result.receiverMicroseconds);
         if (build_us_.size() >= cost_window) {
+            const size_t samples = build_us_.size();
+            const CostPercentiles build = cost_percentiles(build_us_);
+            const CostPercentiles receiver = cost_percentiles(receiver_us_);
             LAMBO_LOG("rt-shadow", "gpu_cost samples=%zu build_us_p50=%.1f build_us_p95=%.1f receiver_us_p50=%.1f receiver_us_p95=%.1f triangles=%llu\n",
-                build_us_.size(), percentile(build_us_, 0.5), percentile(build_us_, 0.95),
-                percentile(receiver_us_, 0.5), percentile(receiver_us_, 0.95),
+                samples, build.p50, build.p95, receiver.p50, receiver.p95,
                 static_cast<unsigned long long>(result.triangles));
             build_us_.clear();
             receiver_us_.clear();
@@ -164,7 +185,7 @@ void SunShadowProduction::sunShadowResult(const RT64::SunShadowFrameResult& resu
 
 void SunShadowProduction::invalidate() {
     std::lock_guard lock(mutex_);
-    tasks_.clear();
+    tasks_.invalidate();
 }
 
 } // namespace lambo::rt

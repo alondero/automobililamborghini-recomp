@@ -109,6 +109,11 @@ int main() {
         for (const auto& range : result->receiverRejected)
             lit_rejected |= range.draw == 3 && (range.rejection & RejectVertexLighting);
         require(lit_rejected, "vertex-lit car surface was not rejected as a receiver");
+        // Every rejection bit, including receiver-only vertex lighting, must be countable.
+        static_assert(RejectVertexLighting < (1u << rejection_bit_count), "rejection tally too small");
+        require(stats.receiver_rejection_reasons[10] == 1, "vertex-lit receiver rejection was not tallied");
+        require(rejection_summary(stats).find(" cutouts=1 glass=1 ") == 0, "log summary lost policy counts");
+        require(rejection_summary(stats).find(" cutouts=1 glass=1 ") == 0, "log summary lost policy counts");
         bool body_casts = false;
         for (const auto& range : result->geometry) body_casts |= range.draw == 3 && range.opaqueSolid;
         require(body_casts, "lit car body stopped casting");

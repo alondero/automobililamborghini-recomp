@@ -22,6 +22,17 @@ enum PhysicalShadowRejection : uint32_t {
     // light-averted faces. Lit surfaces still cast.
     RejectVertexLighting = 1u << 10,
 };
+inline constexpr uint32_t rejection_bit_count = 11;
+static_assert((RejectVertexLighting >> (rejection_bit_count - 1)) == 1u, "rejection tally misses a bit");
+
+// USA native car-shadow overlay material (render mode, combiner, geometry
+// mode). The object identity check lives with the callers. Provenance:
+// docs/rt-provenance.md.
+inline bool native_overlay_material(uint32_t other_l, uint32_t combine_w0, uint32_t combine_w1,
+        uint32_t geometry) {
+    return other_l == 0xC8104A50u && (combine_w0 & 0xFFFFFFu) == 0x11FFFFu && combine_w1 == 0xFFFFF238u &&
+        (geometry & ~0x800000u) == 0x12005u;
+}
 
 // F3DEX geometry-mode bit for per-vertex lighting.
 inline constexpr uint32_t f3dex_geometry_lighting = 0x00020000u;

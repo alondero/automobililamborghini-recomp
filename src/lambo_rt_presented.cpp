@@ -1,5 +1,6 @@
 #define HLSL_CPU
 #include "lambo_rt_presented.h"
+#include "lambo_rt_shadows.h"
 
 #include "hle/rt64_workload.h"
 #include "shared/rt64_blender.h"

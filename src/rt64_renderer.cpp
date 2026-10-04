@@ -462,13 +462,14 @@ public:
         const bool rt_shadows = lambo::config::rt_shadows();
         lambo::rt::set_production_task_values(rt_shadows);
         const auto probe = lambo::rt::consume_sun_probe(task->t.data_ptr);
-        // This title emits one fullSync per graphics task. Install the immutable
-        // observation before that synchronization publishes the next workload.
+        // Diagnostics predict the next Workload id and record the actual range
+        // afterwards. Production binds to the id RT64 reports as it publishes.
         const uint64_t next_workload = app->state->workloadId + 1;
         if (RT64::GetRenderEvidenceObserver()) evidence.remember(next_workload, probe);
-        shadows.remember(next_workload, probe, rt_shadows, lambo::rt::production_shadow_settings(
+        shadows.remember(probe, rt_shadows, lambo::rt::production_shadow_settings(
             lambo::config::rt_shadow_rays(), lambo::config::rt_shadow_softness()));
         app->processDisplayLists(app->core.RDRAM, task->t.data_ptr & 0x3FFFFFF, 0, true);
+        shadows.finish_task();
         if (RT64::GetRenderEvidenceObserver()) evidence.processed(next_workload, app->state->workloadId);
         // Same sustained-pipeline heartbeat as the headless context, so RT64 runs are
         // comparable against headless logs. VI_ORIGIN/STATUS prove the present path is

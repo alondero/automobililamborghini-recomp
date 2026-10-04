@@ -43,8 +43,12 @@ Standard and high-precision colour (`hpfb_option`) and MSAA are all supported.
 1. The game producer copies the task's scene identity (phase, circuit,
    players, race mode, car selectors and the native object table) before
    publishing the task. Renderer threads never read guest RAM.
-2. HLE remembers that identity with the settings in force for the Workload
-   (`src/lambo_rt_production.cpp`).
+2. HLE stages that identity with the settings in force before it processes
+   the task. RT64 reports each Workload id as it assigns it, before any queue
+   thread can see the Workload, and the staged identity binds to the task's
+   first Workload only. A task that publishes no Workload, or a second one,
+   lends its identity to nothing, so those Workloads stay native
+   (`src/lambo_rt_production.cpp`, `src/lambo_rt_binding.h`).
 3. On the queue thread, `admit_sun_shadow` reduces the Workload's presented
    draws and lights to typed inputs and classifies every draw
    (`src/lambo_rt_admission.cpp`). Its gate is `Admitted`, `UnsupportedScene`,
@@ -97,19 +101,21 @@ native, native with the exact overlay omitted, hard (0 degrees) and soft
 - no traced pixel brighter than the omitted control;
 - for hard shadows, a darkest-pixel (p1) transmission within 0.03 of native.
 
-A task where any run drew with RT64's ubershader, while specialised
-pipelines were still compiling, is reported as inconclusive and the trace is
-rerun once. Ubershader output can differ by a few levels anywhere on screen.
+No task is exempt. A task where any run drew with RT64's ubershader, while
+specialised pipelines were still compiling, is reported as inconclusive and
+the trace is rerun once; a second inconclusive result fails. Ubershader
+output can differ by a few levels anywhere on screen. Results below were
+rechecked with this rule; earlier reports exempted task 60, which hid 13
+brightened pixels in one ubershader frame.
 
 | Scenes | Colour | Result |
 | --- | --- | --- |
-| Circuits 1-6, time trial and single race, car 0 | standard | 24/24 checks pass; hard p1 within 0.0074 of native; no brightened pixel. |
-| Circuits 1-6, time trial and single race, car 0 | high precision | 24/24 pass; all 364 draws per task flagged high precision; hard p1 within 0.0061. |
+| Circuits 1-6, time trial and single race, car 0, hard and soft | standard | 24/24 pass: 18 at first, and the six Circuit 2-4 single-race checks after a fresh rerun of those cases. Hard p1 within 0.0074; no brightened pixel. |
+| Same matrix | high precision | 24/24 pass; all 364 draws per task flagged high precision; hard p1 within 0.0061. |
 | Menu Arcade race (mode 1), Circuit 1, car 0, menu replay | standard | Hard and soft pass at all four tasks, with skid marks on screen; p1 within 0.0045. |
-| Warped modes 1 and 3, Circuit 1, six repeats each | standard | All hard checks pass. 10 of 12 soft checks pass; the two failures drew 16-493 ubershader draws per task. |
+| Warped modes 1 and 3, Circuit 1, no sweep flag, hard and soft | standard | 4/4 pass with no ubershader frame; p1 within 0.0045; no brightened pixel. |
 | Cars 1-23, Circuit 1 time trial, hard | standard | 23/23 pass; player-one model selector matched each request; p1 within 0.0045. |
 | Car 23 after admitting every car, no sweep flag, hard | standard | Pass; every logged task ready with no gate line; p1 within 0.0045. |
-| Final build regression: circuits 1-6, time trial and single race, car 0 | standard | 24/24 pass after three ubershader reruns; hard p1 within 0.0074. |
 
 The matrix tool (`tools/run_rt_shadow_matrix.py`) also checks the native
 fallback and lifecycle on the final build:
@@ -120,6 +126,12 @@ fallback and lifecycle on the final build:
 | `rt-shadows-resize` (1280x720 at replay frame 350) | Swapchain changes from 1600x900 to 1280x720; every logged task stays ready. |
 | `rt-shadows-msaa` (MSAA 2x) | Every logged task ready. |
 | `rt-shadows-menu-to-race` (default settings, no developer flags) | All 53 logged race tasks ready, with no gate or incomplete-admission line. Earlier builds stayed native: high-precision receivers were rejected, then mode 1 and trail decals blocked admission. |
+
+These lifecycle runs, the menu run and Circuit 1 time-trial parity were
+repeated after the provider began binding identity at Workload publication,
+with the same results: every logged task ready (fault: every task native and
+identical to a fresh native baseline), hard and soft p1 within 0.0045 and no
+brightened pixel.
 
 Warping into modes 1 and 3 always loads Circuit 1, whatever circuit is
 requested. Modes 1 and 3 on other circuits stay native until they are

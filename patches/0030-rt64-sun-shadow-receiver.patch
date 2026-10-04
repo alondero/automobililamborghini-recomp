@@ -47,6 +47,30 @@ index 468120a..c3ed6b9 100644
  endif()
  build_compute_shader(rt64 "src/shaders/RSPWorldCS.hlsl")
  build_compute_shader(rt64 "src/shaders/RSPSmoothNormalCS.hlsl")
+diff --git a/src/hle/rt64_state.cpp b/src/hle/rt64_state.cpp
+index d249a97..4da36e2 100644
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -17,6 +17,7 @@
+ #include "common/rt64_tmem_hasher.h"
+ #include "preset/rt64_preset_draw_call.h"
+ #include "preset/rt64_preset_light.h"
++#include "rhi/rt64_render_hooks.h"
+ 
+ #include "rt64_application.h"
+ #include "rt64_interpreter.h"
+@@ -2629,6 +2630,11 @@ namespace RT64 {
+ 
+     void State::advanceWorkload(Workload &workload, bool paused) {
+         workload.workloadId = ++workloadId;
++        // A paused re-submission repeats an old Workload; no new task owns it.
++        SunShadowProvider *shadowProvider = paused ? nullptr : GetSunShadowProvider();
++        if (shadowProvider != nullptr) {
++            shadowProvider->workloadPublished(workload.workloadId);
++        }
+         workload.presentId = presentId;
+         workload.debuggerCamera = debuggerInspector.camera;
+         workload.debuggerRenderer = debuggerInspector.renderer;
 diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
 index 7e1c0cb..3ddb08e 100644
 --- a/src/hle/rt64_workload_queue.cpp
@@ -193,7 +217,7 @@ index bc35c2f..8272f4a 100644
          void resetRaytracing(RaytracingShaderCache *rtShaderCache, const RenderTexture *blueNoiseTexture);
 diff --git a/src/render/rt64_sun_shadow_pass.cpp b/src/render/rt64_sun_shadow_pass.cpp
 new file mode 100644
-index 0000000..988e3c5
+index 0000000..99af1e5
 --- /dev/null
 +++ b/src/render/rt64_sun_shadow_pass.cpp
 @@ -0,0 +1,439 @@
@@ -753,10 +777,10 @@ index 4735d3e..a0ae3e3 100644
      static RenderHookDraw *draw = nullptr;
      static RenderHookDeinit *deinit = nullptr;
 diff --git a/src/rhi/rt64_render_hooks.h b/src/rhi/rt64_render_hooks.h
-index d6b7b27..b34e438 100644
+index d6b7b27..704972e 100644
 --- a/src/rhi/rt64_render_hooks.h
 +++ b/src/rhi/rt64_render_hooks.h
-@@ -84,6 +84,32 @@ namespace RT64 {
+@@ -84,6 +84,35 @@ namespace RT64 {
          RenderEvidenceObserver *previous;
      };
  
@@ -777,9 +801,12 @@ index d6b7b27..b34e438 100644
 +    // policy and task identity; RT64 owns resources and the ready gate. Set it
 +    // before queue threads start and clear it after they join. sunShadow runs
 +    // on the queue thread before RSP processing; values are task-owned and the
-+    // provider must not read guest RAM there.
++    // provider must not read guest RAM there. workloadPublished runs on the
++    // HLE thread when a Workload is numbered, before any queue thread can see
++    // it, so the provider can bind task identity to the id actually assigned.
 +    struct SunShadowProvider {
 +        virtual ~SunShadowProvider() = default;
++        virtual void workloadPublished(uint64_t workloadId) noexcept { }
 +        virtual std::shared_ptr<const SunShadowWorkload> sunShadow(const Workload &workload) noexcept = 0;
 +        virtual void sunShadowResult(const SunShadowFrameResult &result) noexcept { }
 +    };

@@ -111,6 +111,9 @@ if(BUILD_TESTING)
     target_include_directories(lambo_rt_admission_tests PRIVATE src lib/rt64/src)
     target_link_libraries(lambo_rt_admission_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_rt_admission_policy COMMAND lambo_rt_admission_tests)
+    add_executable(lambo_rt_binding_tests tests/test_rt_binding.cpp)
+    target_include_directories(lambo_rt_binding_tests PRIVATE src)
+    add_test(NAME lambo_rt_workload_binding COMMAND lambo_rt_binding_tests)
 
     add_executable(lambo_rt_evidence_scope_tests tests/test_rt_evidence_scope.cpp
         lib/rt64/src/rhi/rt64_render_hooks.cpp)
