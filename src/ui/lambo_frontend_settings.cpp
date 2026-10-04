@@ -301,7 +301,7 @@ void create_frontend_settings() {
     enhancements.update_option_description("rt_shadows",
         "Replaces the car's shadow with sunlight shadows from the car and solid scenery. "
         "Needs DirectX 12 and a graphics card with ray tracing. "
-        "Works in one-player races with the first car. Other scenes keep the original shadow.");
+        "Works in one-player races. Other scenes keep the original shadow.");
     enhancements.add_enum_option("rt_shadow_rays", "Shadow quality",
         "Rays per pixel for soft shadow edges. More rays look smoother and cost more.",
         {{4, "Rays4", "Low (4 rays)"}, {8, "Rays8", "Medium (8 rays)"}, {16, "Rays16", "High (16 rays)"}},

@@ -362,6 +362,9 @@ int main(int argc, char** argv) {
             require(enhancements.has_option(key), "missing enhancement");
         require(!lambo::config::rt_shadows() && !std::get<bool>(enhancements.get_option_value("rt_shadows")),
                 "ray-traced shadows must default to Original");
+        // Admission accepts every player car, so the text must not narrow it.
+        require(enhancements.get_option("rt_shadows").description.find("first car") == std::string::npos,
+                "ray-traced shadow description understates the supported cars");
         enhancements.set_option_value("rt_shadows", true);
         enhancements.set_option_value("rt_shadow_rays", uint32_t(16));
         enhancements.set_option_value("rt_shadow_softness", 1.25);

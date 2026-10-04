@@ -7,8 +7,9 @@ camera/model/light separation independently on all six circuits. A separate
 direction and per-circuit light colors; the
 [presented-material evidence](rt-material-evidence.md) now proves visible
 receiver ownership for the sampled one-player cases on all six circuits.
-Capture-only Workload metadata now exists, but **no production Workload
-consumer, raster receiver or overlay replacement is connected.**
+This page records that groundwork. The production shadow path built on it,
+with its receiver pass, overlay replacement and validated scope, is described
+in [ray-traced sunlight shadows](rt-shadows.md).
 Relighting and offscreen submission remain follow-on phases in the
 [plan](ray-tracing-plan.md).
 
