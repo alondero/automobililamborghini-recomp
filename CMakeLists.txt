@@ -16,7 +16,7 @@ cmake_minimum_required(VERSION 3.20)
 # The ROM path in lamborghini.us.toml is cwd-relative. The patch matrix is in
 # patches/README.md. RecompiledFuncs/ is regenerated from the supplied ROM.
 
-project(lamborghini_modern VERSION 0.5.0 LANGUAGES C CXX)
+project(lamborghini_modern VERSION 0.8.0 LANGUAGES C CXX)
 
 if(ANDROID)
     include(cmake/Android.cmake)
@@ -222,6 +222,10 @@ if(BUILD_TESTING)
     add_executable(lambo_rom_path_tests tests/test_rom_path.cpp)
     target_include_directories(lambo_rom_path_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME lambo_rom_path COMMAND lambo_rom_path_tests)
+
+    add_executable(lambo_launcher_menu_tests tests/test_launcher_menu.cpp)
+    target_include_directories(lambo_launcher_menu_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_test(NAME lambo_launcher_menu COMMAND lambo_launcher_menu_tests)
 
     add_executable(lambo_camera_projection_tests
         tests/test_camera_projection.cpp
@@ -725,6 +729,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_analog_brake.cpp    # host-to-guest brake bridge + race hook
         src/controls/lambo_controls.cpp
         src/ui/lambo_frontend.cpp
+        src/ui/lambo_launcher_menu.cpp
         src/ui/lambo_frontend_settings.cpp
         src/ui/lambo_frontend_input.cpp
         src/lambo_driving_assists.cpp

@@ -28,6 +28,42 @@ before multiplayer. Separate keyboard-player profiles can be configured, but pla
 start unbound to avoid overlapping keys. Device assignments are session-local; mappings and
 controller profile choices persist.
 
+## Startup launcher
+
+The port-owned paddock menu (`src/ui/lambo_launcher_menu.cpp`) places the
+POOTERMAN logo in a black rail beside five numbered actions: Start Engine,
+Settings, Mods & texture packs, Controls & players, and Quit. The rail footer
+shows the validated USA ROM and the runtime project version. The logo supplies
+the wordmark; no repeated title or port description is needed.
+
+The row buttons use the shared keyboard and controller navigation, with Start
+Engine focused on open and wrapping up/down navigation. Start Engine keeps the
+`StartupController::request_play` gate. Mods and Controls open their existing
+settings tabs; Assign players remains inside Controls. Quit posts `SDL_QUIT`
+to the host pump, using the window-close shutdown path before the game starts.
+
+The builder uses the frontend's asset resolver and queued image bytes. Builds
+and release packages already copy `assets/frontend` beside the executable, so
+`assets/frontend/lambo-fan-art.png` follows the same path as the other frontend
+assets. Missing or unreadable art falls back to the menu and status text.
+Shipping the fan art requires the maintainer's asset approval during review.
+
+An explicit viewport height gives the rail spacer room to keep the status
+footer visible. Row height lifts the framework button's single-line clamp.
+All sizing uses the frontend's density-independent units; the menu list has a
+maximum width and can shrink with the window. No RecompFrontend fork is needed.
+
+Native Windows layout is **Confirmed** in the
+[1600x900 capture](images/launcher-paddock-1600.png) and
+[2560x1440 capture](images/launcher-paddock-1440.png). Keyboard activation of
+all five destinations, game boot, and launcher Quit (exit code 0) were checked.
+Physical-controller navigation and other platforms remain **Unverified**.
+
+`lambo_launcher_menu_tests` checks the row order and destinations. The shared
+`lambo_frontend_settings_tests` covers menu bindings, player assignment, and
+configuration. Native visual and input checks are recorded in the pull request;
+physical-controller and other-platform results must be stated separately.
+
 ## The quit confirmation
 
 Selecting Quit in the settings overlay while the game is running opens a confirmation.
