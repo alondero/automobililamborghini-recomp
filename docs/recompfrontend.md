@@ -28,6 +28,64 @@ before multiplayer. Separate keyboard-player profiles can be configured, but pla
 start unbound to avoid overlapping keys. Device assignments are session-local; mappings and
 controller profile choices persist.
 
+## Startup launcher
+
+The port-owned paddock menu (`src/ui/lambo_launcher_menu.cpp`) places the
+POOTERMAN logo in a black rail beside five numbered actions: Start Engine,
+Settings, Mods & texture packs, Controls & players, and Quit. The rail footer
+shows the validated USA ROM and the runtime project version. The logo supplies
+the wordmark; no repeated title or port description is needed.
+
+The row buttons use the shared keyboard and controller navigation, with wrapping
+up/down navigation. Start Engine is focused when the launcher opens and keeps the
+`StartupController::request_play` gate. Mods and Controls open their existing
+settings tabs; Assign players remains inside Controls. Quit posts `SDL_QUIT`
+to the host pump, using the window-close shutdown path before the game starts.
+
+The builder uses the frontend's asset resolver and queued image bytes. CMake
+copies `assets/frontend` into the executable's `assets` directory. The Android
+script stages that native `assets` tree into APK assets as well; this path was
+checked in source, but an Android package was not built or played. The logo
+follows the same path as the other frontend assets. Missing or unreadable art
+falls back to the menu and status text.
+Distribution permission and the POOTERMAN credit still require maintainer
+confirmation before merging. The existing documentation image is not evidence
+of release distribution rights.
+
+An explicit viewport height gives the rail spacer room to keep the status
+footer visible. Row height lifts the framework button's single-line clamp.
+All sizing uses the frontend's density-independent units; the menu list has a
+maximum width and can shrink with the window. Focused rows scroll into view
+when the list overflows. No RecompFrontend fork is needed.
+
+Native Windows layout is **Confirmed** in the
+[1600x900 capture](images/launcher-paddock-1600.png) and
+[2560x1440 capture](images/launcher-paddock-1440.png). Keyboard activation of
+all five destinations, game boot, and launcher Quit (exit code 0) were checked.
+The [800x600 capture](images/launcher-paddock-800x600.png) shows the smaller
+landscape layout. Separately, the [600x900 capture](images/launcher-paddock-600x900.png)
+shows wrapped rows staying separate and keyboard focus scrolling Quit into view
+before activation. Both sizes were checked in the native Windows build.
+Physical-controller navigation and other platforms remain **Unverified**.
+
+`lambo_launcher_menu_tests` checks row order, copy, all destination effects,
+and both accepted and rejected Start Engine gates.
+`lambo_frontend_asset_url_tests` reproduces the Windows document-source error
+and checks valid relative icon paths, UTF-8, parent segments and POSIX paths. The shared
+`lambo_frontend_settings_tests` covers menu bindings, player assignment, and
+configuration. Native visual and input checks are recorded in the pull request;
+physical-controller and other-platform results must be stated separately.
+
+Patch 0031 normalizes the framework document source to RmlUi URL syntax. A
+Windows drive path previously produced a malformed-protocol error and the
+debugger's red `!` beacon. Forward slashes and RmlUi's `|` drive separator keep
+relative assets openable without suppressing debugger errors. The pinned
+frontend and [current upstream source](https://github.com/N64Recomp/RecompFrontend/blob/main/recompui/src/core/ui_context.cpp)
+still pass native filesystem text here (compared 2026-10-08); this is a local
+generic fix, not an upstream-supported change. Fresh native captures have no
+beacon. The supported Windows build, URL regression and settings tests passed.
+Other platform runtime checks remain unverified.
+
 ## The quit confirmation
 
 Selecting Quit in the settings overlay while the game is running opens a confirmation.
@@ -49,7 +107,7 @@ that prompt's own cancel action. The call sites are unchanged, so this table is 
 | Prompt | Confirm | Back / Cancel |
 | --- | --- | --- |
 | Quit confirmation | `ultramodern::quit()` | No-op. The game keeps running and you return to the settings. |
-| Graphics options have unapplied changes | Saves the config, and closes if the tab was closing | Discards the unapplied graphics changes. Graphics is the only tab with `requires_confirmation`; General and Sound are not. |
+| Graphics options have unapplied changes | Saves the config, and closes if the tab was closing | Discards the unapplied graphics changes. General also stages changes behind Apply/Discard. This port does not register a Sound tab. |
 | Overwrite Mods? | Installs, overwriting existing files | Aborts the installation. |
 | Error Installing Mods | Hides the prompt | Hides the prompt. The install was already cancelled when this opened. |
 | Unable to start with these mods | Hides the prompt | Hides the prompt. |
@@ -179,7 +237,8 @@ The existing launcher/ROM selection policy and audio sink are retained.
 RecompFrontend is pinned at `b1a1477c6556aeb7ed45defbfb5924f721efebc1` and
 N64ModernRuntime at `cdf5abbd5026fef5c364c676e4667c45e42b6863`. RmlUi is now the frontend's
 nested dependency, not a second direct submodule. Use recursive submodule initialization
-and the normal build scripts. CMake applies patches 0016 through 0020 idempotently and refuses
+and the normal build scripts. CMake applies the frontend patches, including
+0031, idempotently and refuses
 conflicting dependency edits. Existing scheduler/audio/VI and lazy-RDRAM patches still apply;
 the newer runtime already includes the former dummy-VI control-register fix. Patch 0018
 restores the first-game-display-list call to the port renderer's `enable_instant_present()`.

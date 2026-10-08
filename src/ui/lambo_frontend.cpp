@@ -1,5 +1,6 @@
 #include "lambo_ui.h"
 #include "lambo_frontend_input.h"
+#include "lambo_launcher_menu.h"
 #include "lambo_frontend_overlay.h"
 #include "lambo_config.h"
 #include "lambo_mods.h"
@@ -164,22 +165,35 @@ void install_render_hooks() {
             profiles::save_controls_config(lambo::config::app_config_dir() / "controls-framework.json");
         }
     }
+    // Paddock-split launcher: a brand rail beside numbered
+    // menu rows. Player assignment stays reachable through the Controls row,
+    // matching the upstream game-options menu, which opens the controls tab
+    // rather than starting assignment directly.
     recompui::register_launcher_init_callback([](recompui::LauncherMenu* menu) {
-        auto context = recompui::get_launcher_context_id();
-        auto* container = menu->get_menu_container();
-        container->set_top(35.0f, recompui::Unit::Percent);
-        container->set_display(recompui::Display::Flex);
-        container->set_flex_direction(recompui::FlexDirection::Column);
-        container->set_align_items(recompui::AlignItems::Center);
-        container->set_gap(16.0f);
-        container->set_as_navigation_container(recompui::NavigationType::Vertical);
-        auto button = [&](const char* label, std::function<void()> action) {
-            context.create_element<recompui::Button>(container, label, recompui::ButtonStyle::Primary)->add_pressed_callback(action);
+        LauncherActions actions;
+        actions.request_play = [] { return startup && startup->request_play(); };
+        actions.hide_launcher = [] { recompui::hide_all_contexts(); };
+        actions.open_settings = [](LauncherSettingsPage page) {
+            recompui::config::open();
+            switch (page) {
+            case LauncherSettingsPage::Current: break;
+            case LauncherSettingsPage::Mods:
+                recompui::config::set_tab("mods");
+                break;
+            case LauncherSettingsPage::Controls:
+                recompui::config::set_tab(recompui::config::controls::id);
+                break;
+            }
         };
-        button("Play", [] { if (startup && startup->request_play()) recompui::hide_all_contexts(); });
-        button("Mods", [] { recompui::config::open(); recompui::config::set_tab("mods"); });
-        button("Settings", [] { recompui::config::open(); });
-        button("Assign 1-4 players", [] { recompinput::playerassignment::start(); });
+        actions.request_quit = [] {
+            // The SDL pump in main.cpp turns SDL_QUIT into request_exit()
+            // plus the deterministic exit sequence, exactly like closing
+            // the window.
+            SDL_Event quit{};
+            quit.type = SDL_QUIT;
+            SDL_PushEvent(&quit);
+        };
+        build_paddock_launcher(menu, actions);
     });
     RT64::SetRenderHooks(initialize, render, deinitialize);
 }
