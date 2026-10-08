@@ -36,6 +36,8 @@ enum class LauncherSettingsPage { Current, Mods, Controls };
 
 // Host effects are supplied by the frontend adapter. Keep routing and the
 // successful-Play gate here so tests exercise the same policy as the buttons.
+// All four callbacks are required; the adapter fills them before registering
+// the buttons. Missing callbacks are a programming error, not disabled actions.
 struct LauncherActions {
     std::function<bool()> request_play;
     std::function<void()> hide_launcher;

@@ -36,9 +36,8 @@ Settings, Mods & texture packs, Controls & players, and Quit. The rail footer
 shows the validated USA ROM and the runtime project version. The logo supplies
 the wordmark; no repeated title or port description is needed.
 
-The row buttons use the shared keyboard and controller navigation, with Start
-Engine selected on the first keyboard navigation and wrapping up/down navigation.
-Start Engine keeps the
+The row buttons use the shared keyboard and controller navigation, with wrapping
+up/down navigation. Start Engine is focused when the launcher opens and keeps the
 `StartupController::request_play` gate. Mods and Controls open their existing
 settings tabs; Assign players remains inside Controls. Quit posts `SDL_QUIT`
 to the host pump, using the window-close shutdown path before the game starts.
@@ -63,8 +62,10 @@ Native Windows layout is **Confirmed** in the
 [1600x900 capture](images/launcher-paddock-1600.png) and
 [2560x1440 capture](images/launcher-paddock-1440.png). Keyboard activation of
 all five destinations, game boot, and launcher Quit (exit code 0) were checked.
-The 800x600 launcher layout was also checked; at 600x900, wrapped rows stay
-separate and keyboard focus scrolls Quit into view before activation.
+The [800x600 capture](images/launcher-paddock-800x600.png) shows the smaller
+landscape layout. Separately, the [600x900 capture](images/launcher-paddock-600x900.png)
+shows wrapped rows staying separate and keyboard focus scrolling Quit into view
+before activation. Both sizes were checked in the native Windows build.
 Physical-controller navigation and other platforms remain **Unverified**.
 
 `lambo_launcher_menu_tests` checks row order, copy, all destination effects,
@@ -106,7 +107,7 @@ that prompt's own cancel action. The call sites are unchanged, so this table is 
 | Prompt | Confirm | Back / Cancel |
 | --- | --- | --- |
 | Quit confirmation | `ultramodern::quit()` | No-op. The game keeps running and you return to the settings. |
-| Graphics options have unapplied changes | Saves the config, and closes if the tab was closing | Discards the unapplied graphics changes. Graphics is the only tab with `requires_confirmation`; General does not. This port does not register a Sound tab. |
+| Graphics options have unapplied changes | Saves the config, and closes if the tab was closing | Discards the unapplied graphics changes. General also stages changes behind Apply/Discard. This port does not register a Sound tab. |
 | Overwrite Mods? | Installs, overwriting existing files | Aborts the installation. |
 | Error Installing Mods | Hides the prompt | Hides the prompt. The install was already cancelled when this opened. |
 | Unable to start with these mods | Hides the prompt | Hides the prompt. |

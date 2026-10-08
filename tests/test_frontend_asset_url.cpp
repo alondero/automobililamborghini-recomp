@@ -20,6 +20,9 @@ int main() {
         if (!ok) { std::fprintf(stderr, "FAIL: %s\n", message); ++failures; }
     };
     const std::filesystem::path windows(u8"F:/Native port/\u00e9/assets/");
+    // This reproduction pins the current RmlUi diagnostic, not our URL helper.
+    // Revisit it if an upstream upgrade accepts native paths or stops logging
+    // this error; the normalized-path checks below remain the fix's contract.
     Rml::URL malformed("F:\\Native port\\assets\\");
     check(system.errors > 0, "native Windows source reproduces the debugger error");
     system.errors = 0;
