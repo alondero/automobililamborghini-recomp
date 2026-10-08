@@ -165,36 +165,33 @@ void install_render_hooks() {
             profiles::save_controls_config(lambo::config::app_config_dir() / "controls-framework.json");
         }
     }
-    // Paddock-split launcher (prototype D): a brand rail beside numbered
+    // Paddock-split launcher: a brand rail beside numbered
     // menu rows. Player assignment stays reachable through the Controls row,
     // matching the upstream game-options menu, which opens the controls tab
     // rather than starting assignment directly.
     recompui::register_launcher_init_callback([](recompui::LauncherMenu* menu) {
         LauncherActions actions;
-        actions.activate = [](PaddockTarget target) {
-            switch (target) {
-            case PaddockTarget::Play:
-                if (startup && startup->request_play()) recompui::hide_all_contexts();
-                break;
-            case PaddockTarget::Settings: recompui::config::open(); break;
-            case PaddockTarget::Mods:
-                recompui::config::open();
+        actions.request_play = [] { return startup && startup->request_play(); };
+        actions.hide_launcher = [] { recompui::hide_all_contexts(); };
+        actions.open_settings = [](LauncherSettingsPage page) {
+            recompui::config::open();
+            switch (page) {
+            case LauncherSettingsPage::Current: break;
+            case LauncherSettingsPage::Mods:
                 recompui::config::set_tab("mods");
                 break;
-            case PaddockTarget::Controls:
-                recompui::config::open();
+            case LauncherSettingsPage::Controls:
                 recompui::config::set_tab(recompui::config::controls::id);
                 break;
-            case PaddockTarget::Quit: {
-                // The SDL pump in main.cpp turns SDL_QUIT into request_exit()
-                // plus the deterministic exit sequence, exactly like closing
-                // the window.
-                SDL_Event quit{};
-                quit.type = SDL_QUIT;
-                SDL_PushEvent(&quit);
-                break;
             }
-            }
+        };
+        actions.request_quit = [] {
+            // The SDL pump in main.cpp turns SDL_QUIT into request_exit()
+            // plus the deterministic exit sequence, exactly like closing
+            // the window.
+            SDL_Event quit{};
+            quit.type = SDL_QUIT;
+            SDL_PushEvent(&quit);
         };
         build_paddock_launcher(menu, actions);
     });

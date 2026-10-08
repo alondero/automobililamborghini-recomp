@@ -27,6 +27,26 @@ constexpr recompui::Color kLine{43, 48, 56, 255};
 // menu and status text remain usable instead of showing a broken image.
 constexpr char kFanArtSrc[] = "lambo-fan-art.png";
 
+// Keyboard/controller focus must reveal a row even when a narrow window
+// wraps its description and makes the menu taller than the viewport.
+class LauncherRowButton : public recompui::Button {
+protected:
+    void process_event(const recompui::Event& event) override {
+        Button::process_event(event);
+        if (event.type == recompui::EventType::Focus &&
+            std::get<recompui::EventFocus>(event.variant).active) {
+            scroll_into_view(false);
+        }
+    }
+public:
+    LauncherRowButton(recompui::ResourceId id, recompui::Element* parent)
+        : Button(id, parent, "", recompui::ButtonStyle::Basic, recompui::ButtonSize::Small) {
+        // Let wrapped titles/descriptions determine height, rather than
+        // overlapping the next row when a narrow list needs more lines.
+        remove_property(Rml::PropertyId::MaxHeight);
+    }
+};
+
 } // namespace
 
 void build_paddock_launcher(recompui::LauncherMenu* menu, const LauncherActions& actions) {
@@ -110,7 +130,7 @@ void build_paddock_launcher(recompui::LauncherMenu* menu, const LauncherActions&
     menu_panel->set_padding(64.0f);
     menu_panel->set_overflow_y(Overflow::Auto);
 
-    // The prototype keeps the list next to the rail. Cap its width on wide
+    // Keep the list next to the rail. Cap its width on wide
     // displays while allowing it to shrink with the available menu space.
     Element* list = context.create_element<Element>(menu_panel);
     list->set_display(Display::Flex);
@@ -130,12 +150,11 @@ void build_paddock_launcher(recompui::LauncherMenu* menu, const LauncherActions&
     const auto rows = paddock_rows();
     for (size_t i = 0; i < rows.size(); ++i) {
         const PaddockRow& row = rows[i];
-        Button* entry = context.create_element<Button>(list, "", ButtonStyle::Basic, ButtonSize::Small);
+        Button* entry = context.create_element<LauncherRowButton>(list);
         // Button clamps its own height to one line; rows carry a title plus a
         // description, so lift the clamp instead of overflowing the next row.
         entry->set_height_auto();
         entry->set_min_height(120.0f);
-        entry->set_max_height(180.0f);
         entry->set_flex_shrink(0.0f);
         entry->set_width(100.0f, Unit::Percent);
         entry->set_display(Display::Flex);
@@ -163,11 +182,9 @@ void build_paddock_launcher(recompui::LauncherMenu* menu, const LauncherActions&
             entry->set_border_bottom_width(1.0f);
             entry->set_border_bottom_color(kLine);
         }
-        if (actions.activate) {
-            entry->add_pressed_callback([activate = actions.activate, target = row.target] {
-                activate(target);
-            });
-        }
+        entry->add_pressed_callback([actions, target = row.target] {
+            activate_launcher(target, actions);
+        });
 
         Label* number = context.create_element<Label>(entry, row.number, LabelStyle::Small);
         number->set_color(kGiallo);

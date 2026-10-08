@@ -911,6 +911,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     endif()
     target_link_libraries(lamborghini_modern PRIVATE recompui recompinput)
     if(BUILD_TESTING)
+        add_executable(lambo_frontend_asset_url_tests tests/test_frontend_asset_url.cpp)
+        target_include_directories(lambo_frontend_asset_url_tests PRIVATE
+            lib/RecompFrontend/recompui/src)
+        target_link_libraries(lambo_frontend_asset_url_tests PRIVATE RmlUi::Core)
+        add_test(NAME lambo_frontend_asset_url COMMAND lambo_frontend_asset_url_tests)
+
         add_executable(lambo_frontend_settings_tests
             tests/test_frontend_settings.cpp src/ui/lambo_frontend_settings.cpp
             src/lambo_cheats.cpp

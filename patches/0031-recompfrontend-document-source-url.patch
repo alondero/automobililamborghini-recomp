@@ -1,0 +1,46 @@
+diff --git a/recompui/src/core/ui_context.cpp b/recompui/src/core/ui_context.cpp
+index e99229a..55bf22f 100644
+--- a/recompui/src/core/ui_context.cpp
++++ b/recompui/src/core/ui_context.cpp
+@@ -10,6 +10,7 @@
+ #include "ultramodern/error_handling.hpp"
+ #include "recompui.h"
+ #include "ui_context.h"
++#include "ui_document_source.h"
+ #include "elements/ui_element.h"
+ #include "elements/ui_document.h"
+ #include "data/base_rcss.h"
+@@ -283,8 +284,7 @@ recompui::ContextId recompui::create_context() {
+     ret.open();
+ 
+     Rml::DocumentHeader header = Rml::DocumentHeader();
+-    std::u8string asset_path_u8 = file::get_asset_path("").u8string();
+-    header.source = reinterpret_cast<const char *>(asset_path_u8.c_str());
++    header.source = detail::document_source_url(file::get_asset_path(""));
+     doc->ProcessHeader(&header);
+ 
+     ret.close();
+diff --git a/recompui/src/core/ui_document_source.h b/recompui/src/core/ui_document_source.h
+new file mode 100644
+--- /dev/null
++++ b/recompui/src/core/ui_document_source.h
+@@ -0,0 +1,19 @@
++#pragma once
++
++#include <algorithm>
++#include <filesystem>
++#include <string>
++
++namespace recompui::detail {
++
++// RmlUi document sources use forward slashes and encode a Windows drive
++// colon as '|'. Its JoinPath restores the colon before opening a file.
++inline std::string document_source_url(const std::filesystem::path& path) {
++    const std::u8string utf8 = path.generic_u8string();
++    std::string source(reinterpret_cast<const char*>(utf8.c_str()), utf8.size());
++    std::replace(source.begin(), source.end(), '\\', '/');
++    if (source.size() > 1 && source[1] == ':') source[1] = '|';
++    return source;
++}
++
++} // namespace recompui::detail
