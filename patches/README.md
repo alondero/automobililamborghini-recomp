@@ -44,6 +44,7 @@ significant single-space lines from `git diff --check`;
 | 0029 | RT64 | Opt-in D3D12 game alpha evidence borrows matching native descriptors and selected vertex shaders after the Workload fence. Isolated native owner passes and actual pre-clipping vertex outputs expose coverage disagreements; all game alpha admission remains closed. Raw draws retain zero face start and native rendering remains available. |
 | 0030 | RT64 | Optional production sunlight shadows. A port-registered provider is told each Workload id as HLE assigns it, before any queue thread can see it, and attaches admitted metadata to that Workload; RT64 builds a per-Workload shadow acceleration structure from presented world positions, re-rasterizes admitted prelit receivers with an SM6.5 ray-query pass and composites `C = min(C, T*C + (1-T)*fog)` once to RGB only, so a shadow never brightens a pixel and native coverage alpha is kept. The exact native overlays of one view are replaced all-or-nothing; every pending, failed or unsupported gate keeps the native command stream. D3D12 with DXR 1.1 only; single-sample and MSAA targets. Adds GPU timestamps for the AS build and receiver pass. Original mode is byte-identical to the previous build. The DXC options hunk keeps PS/VS-only context so it applies with and without Android-only patch 0013's blank line (their overlap broke the Android release configure). |
 | 0031 | RecompFrontend | Normalize document sources to RmlUi URL syntax: forward slashes and a Windows drive separator of \|. Prevents malformed-protocol errors and the red debugger beacon while preserving relative asset paths. Applied by CMake after 0020. Compared 2026-10-08 with pinned source and [upstream main](https://github.com/N64Recomp/RecompFrontend/blob/main/recompui/src/core/ui_context.cpp), both of which use native path text. Supported Windows build, native captures and an RmlUi-backed URL regression pass; other platforms remain unverified. |
+| 0032 | RecompFrontend | The settings header keeps Quit and Close inside the modal. The tab row of a tabbed modal takes only the width the header's right side leaves and wraps its labels onto further rows, and the right side never shrinks; before this, tab labels wider than the modal laid Quit and Close out past its edge, where they could not be clicked. Focus order and tab switching follow the tab list, not its rows. Applied by CMake after 0031. Compared on 2026-10-09 with [upstream `main`](https://github.com/N64Recomp/RecompFrontend/blob/main/recompui/src/elements/ui_modal.cpp), which is the pinned commit `b1a1477`: `TabbedModal::initialize_tab` puts the tab set in the header's left side with no way to shrink or wrap. Generic frontend behavior, kept local. Checked on native Windows at 1066x580 and 2560x1440 with eight tabs and, in a throwaway build, twelve: the labels wrap to a second row and Quit and Close stay inside the modal. Those captures were made with this hunk inside a larger local frontend patch; the hunk is byte-identical. Other platforms remain unverified. |
 
 ## Application matrix
 
@@ -183,9 +184,9 @@ No patch content or dependency pin changed in that continuation.
 
 | Build path | Applies |
 | --- | --- |
-| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0030 in CMake. |
-| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0030 in CMake. |
-| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0030 in CMake. |
+| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0032 in CMake. |
+| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0032 in CMake. |
+| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0032 in CMake. |
 
 If a patch no longer applies to its pinned submodule, stop and update the
 patch or pin as a deliberate change. Do not reset a developer's unrelated

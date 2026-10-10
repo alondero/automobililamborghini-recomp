@@ -26,3 +26,4 @@ lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0017-recom
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0019-recompfrontend-prompt-back-cancels.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0020-recompfrontend-enum-wrap.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0031-recompfrontend-document-source-url.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0032-recompfrontend-settings-header-wrap.patch)

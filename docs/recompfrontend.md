@@ -21,6 +21,23 @@ overlay before it is assigned to a player; the bindings can be changed in Contro
 F11 and Alt+Enter still toggle fullscreen, and the window's own close button and Alt+F4
 still exit.
 
+### Header layout
+
+The settings header keeps Quit and Close at its right edge. When the tab labels are wider
+than the space left, they wrap onto a second row instead of pushing the buttons out of the
+modal (patch 0032). Focus order and tab switching follow the tab list, not the rows: Left
+and Right walk every tab, and the last Right leaves the tabs for Quit. Down from either row
+should move into the page, because navigation follows the tab list rather than positions
+(Inferred from `ui_document.cpp`, not played).
+
+Status: **Confirmed** on native Windows for the layout. RT64 captures of the open overlay
+at 1066x580 and 2560x1440 show the eight current tabs on one row and, in a throwaway build
+with twelve tabs, two rows with Quit and Close inside the modal at both sizes. Those
+captures were made with this hunk inside a larger local frontend patch that also changed
+keyboard menu keys; the layout hunk is byte-identical. Keyboard and mouse interaction with
+the wrapped header was checked only in that larger build, so it is **Unverified** with
+patch 0032 alone.
+
 Controls > Assign players binds devices to N64 ports 1-4. At startup, player one
 uses the connected legacy preferred controller, or the first available controller, with
 keyboard fallback when no controller is available. Assign controllers explicitly
@@ -143,8 +160,8 @@ played, in the running game or otherwise. `lambo_frontend_settings_tests` covers
 it for the default and a remapped binding, and
 `tests/test_prompt_back_action.py` checks the patch content.
 
-The shorter Controls label leaves room for the header's Quit and Close buttons
-at the default 1600x900 window size. The keyboard route is F1 to open the overlay,
+The header keeps Quit and Close inside the modal at any tab count; see
+[Header layout](#header-layout). The keyboard route is F1 to open the overlay,
 then the Back action to focus the active tab, then Right to the last tab and one
 more to leave them onto Quit.
 
@@ -238,7 +255,7 @@ RecompFrontend is pinned at `b1a1477c6556aeb7ed45defbfb5924f721efebc1` and
 N64ModernRuntime at `cdf5abbd5026fef5c364c676e4667c45e42b6863`. RmlUi is now the frontend's
 nested dependency, not a second direct submodule. Use recursive submodule initialization
 and the normal build scripts. CMake applies the frontend patches, including
-0031, idempotently and refuses
+0031 and 0032, idempotently and refuses
 conflicting dependency edits. Existing scheduler/audio/VI and lazy-RDRAM patches still apply;
 the newer runtime already includes the former dummy-VI control-register fix. Patch 0018
 restores the first-game-display-list call to the port renderer's `enable_instant_present()`.
