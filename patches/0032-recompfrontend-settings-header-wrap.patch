@@ -1,0 +1,23 @@
+diff --git a/recompui/src/elements/ui_modal.cpp b/recompui/src/elements/ui_modal.cpp
+index b057f46..f64b59a 100644
+--- a/recompui/src/elements/ui_modal.cpp
++++ b/recompui/src/elements/ui_modal.cpp
+@@ -404,7 +404,17 @@ void TabbedModal::initialize_tab(TabContext &tab_context) {
+     ContextId context = get_current_context();
+     if (tabs == nullptr) {
+         header->set_padding_left(0.0f); // tabs hug to left side
+-        tabs = context.create_element<TabSet>(header->get_left());
++        // The tab labels can be wider than the modal. Let the tab side take only the
++        // space the right side leaves and wrap the labels onto further rows, so the
++        // right side (the config modal's Quit and Close) is never pushed off the
++        // modal. Focus order and tab switching follow the tab list, not its rows.
++        Element *header_left = header->get_left();
++        header_left->set_flex(1.0f, 1.0f, 0.0f);
++        header_left->set_min_width(0.0f);
++        header->get_right()->set_flex_shrink(0.0f);
++        tabs = context.create_element<TabSet>(header_left);
++        tabs->set_width(100.0f, Unit::Percent);
++        tabs->set_flex_wrap(FlexWrap::Wrap);
+         tabs->set_change_tab_callback([this](int tab_index) {
+             this->on_tab_change(tab_index);
+         });
