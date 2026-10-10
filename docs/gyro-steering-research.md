@@ -160,7 +160,9 @@ Review fixes were checked on 2026-09-25 with MinGW-w64 GCC 15.2.0:
   hook, replay ownership gate, and replay-hook isolation cases.
 - The supported Android build completed with NDK 28.2.13676358. The debug APK
   at `dist/lamborghini-recomp-android-arm64-debug.apk` installed to a connected
-  Pixel 5 (Android 13) using `adb install -r`; Android reported
+  phone using `adb install -r`. The phone reports itself as a Pixel 5, but its
+  vendor build is a Redmi K30 Pro / POCO F2 Pro (`lmi`, Snapdragon 865) on
+  Android 13. Android reported
   `lastUpdateTime=2026-09-25 15:06:46`.
 - No interactive gyro steering session has been performed on the phone. Sensor
   feel and race/countdown/pause/background transitions remain unverified. Use

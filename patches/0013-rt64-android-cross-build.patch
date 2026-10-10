@@ -117,10 +117,10 @@ index 72e8aeb..90b4186 100644
          }
  
 +#if defined(__ANDROID__)
-+        // RT64 uses non-uniform, partially bound texture arrays. Failing here
-+        // avoids submitting invalid shaders on older mobile system drivers.
-+        if (!device->getCapabilities().descriptorIndexing || !device->getCapabilities().scalarBlockLayout) {
-+            fprintf(stderr, "The Vulkan driver lacks RT64 descriptor indexing or scalar block layout support.\n");
++        // RT64 compiles its SPIR-V with DirectX buffer layouts, which need scalar
++        // block layout. Drivers without descriptor indexing get a fixed texture table.
++        if (!device->getCapabilities().scalarBlockLayout) {
++            fprintf(stderr, "The Vulkan driver lacks scalar block layout support required by RT64.\n");
 +            return SetupResult::GraphicsDeviceNotFound;
 +        }
 +#endif
