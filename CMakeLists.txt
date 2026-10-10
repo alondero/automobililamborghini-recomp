@@ -77,6 +77,7 @@ if(NOT rt64_sun_shadow_receiver_patch_applied EQUAL 0)
     lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0029-rt64-native-game-alpha-evidence.patch)
 endif()
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0030-rt64-sun-shadow-receiver.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0033-rt64-fixed-texture-table-without-descriptor-indexing.patch)
 
 # --- RT64 renderer boundary; see patches/README.md ---
 # recomp/lib/rt64 is a pinned git submodule; RT64 is always compiled in and is the
@@ -593,6 +594,18 @@ if(BUILD_TESTING)
         target_compile_definitions(lambo_rt64_scene_matching_tests PRIVATE NOMINMAX)
     endif()
     add_test(NAME lambo_rt64_scene_matching COMMAND lambo_rt64_scene_matching_tests)
+
+    add_executable(lambo_rt64_texture_table_tests tests/test_rt64_texture_table.cpp)
+    target_link_libraries(lambo_rt64_texture_table_tests PRIVATE rt64)
+    target_include_directories(lambo_rt64_texture_table_tests PRIVATE
+        lib/rt64/include lib/rt64/src lib/rt64/src/contrib
+        lib/rt64/src/contrib/hlslpp/include lib/rt64/src/contrib/plume
+    )
+    if(WIN32)
+        target_compile_definitions(lambo_rt64_texture_table_tests PRIVATE NOMINMAX)
+    endif()
+    add_test(NAME lambo_rt64_texture_table_without_descriptor_indexing
+        COMMAND lambo_rt64_texture_table_tests)
 endif()
 # SDL2main owns the Windows entry point, but this project provides its own
 # WinMain wrapper so it can build as a GUI executable while still accepting

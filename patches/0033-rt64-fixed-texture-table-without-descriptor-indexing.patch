@@ -1,0 +1,169 @@
+diff --git a/src/render/rt64_descriptor_sets.h b/src/render/rt64_descriptor_sets.h
+index 69a82ac..88979fc 100644
+--- a/src/render/rt64_descriptor_sets.h
++++ b/src/render/rt64_descriptor_sets.h
+@@ -293,22 +293,46 @@ namespace RT64 {
+     struct FramebufferRendererDescriptorTextureSet : RenderDescriptorSetBase {
+         static const int UpperRange = 8192;
+ 
++        bool boundless = true;
+         uint32_t textureCacheSize = 0;
+         uint32_t gTextures;
+         uint32_t gTMEM;
+ 
+-        FramebufferRendererDescriptorTextureSet(RenderDevice *device = nullptr, uint32_t textureCacheSize = 0) {
+-            this->textureCacheSize = textureCacheSize;
++        // A variable-count, partially bound table needs descriptor indexing. Pipeline layouts
++        // and bound sets must make the same choice, so every construction site asks here.
++        static bool usesBoundlessRange(const RenderDeviceCapabilities &capabilities) {
++            return capabilities.descriptorIndexing;
++        }
++
++        FramebufferRendererDescriptorTextureSet(bool boundless, RenderDevice *device = nullptr, uint32_t textureCacheSize = 0) {
++            this->boundless = boundless;
++
++            // A fixed table already holds every slot, so it never has to grow with the cache.
++            this->textureCacheSize = boundless ? textureCacheSize : UpperRange;
+ 
+             builder.begin();
+             gTextures = builder.addTexture(0, UpperRange);
+             gTMEM = gTextures;
+-            builder.end(true, textureCacheSize);
++            builder.end(boundless, boundless ? textureCacheSize : 0);
+ 
+             if (device != nullptr) {
+                 create(device);
+             }
+         }
++
++        // Without partially bound descriptors, every slot of a fixed table must stay valid even
++        // when no texture uses it. Variable-size tables leave unused slots untouched.
++        void clearSlot(uint32_t index, const RenderTexture *placeholder) {
++            if (!boundless) {
++                setTexture(index, placeholder, RenderTextureLayout::SHADER_READ);
++            }
++        }
++
++        void clearAllSlots(const RenderTexture *placeholder) {
++            for (uint32_t i = 0; !boundless && (i < UpperRange); i++) {
++                clearSlot(i, placeholder);
++            }
++        }
+     };
+ 
+     struct FramebufferRendererDescriptorFramebufferSet : RenderDescriptorSetBase {
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+index 100757c..5b16322 100644
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -312,9 +312,20 @@ namespace RT64 {
+         assert(worker != nullptr);
+         assert(drawBuffers != nullptr);
+         
++        const bool boundlessTextures = FramebufferRendererDescriptorTextureSet::usesBoundlessRange(worker->device->getCapabilities());
++        if (!boundlessTextures && (textureSetPlaceholder == nullptr)) {
++            textureSetPlaceholder = worker->device->createTexture(RenderTextureDesc::ColorTarget(1, 1, RenderFormat::R8G8B8A8_UNORM));
++            textureSetPlaceholder->setName("Framebuffer Renderer Texture Placeholder");
++            const RenderTexture *placeholderTarget = textureSetPlaceholder.get();
++            textureSetPlaceholderFramebuffer = worker->device->createFramebuffer(RenderFramebufferDesc(&placeholderTarget, 1));
++            textureSetPlaceholderCleared = false;
++        }
++
+         const bool createSet = (descTextureSet == nullptr) || (descTextureSet->textureCacheSize < (textureCacheSize + 1));
+         if (createSet) {
+-            descTextureSet = std::make_unique<FramebufferRendererDescriptorTextureSet>(worker->device, ((textureCacheSize + 1) * 3) / 2);
++            descTextureSet = std::make_unique<FramebufferRendererDescriptorTextureSet>(boundlessTextures, worker->device, ((textureCacheSize + 1) * 3) / 2);
++            descTextureSet->clearAllSlots(textureSetPlaceholder.get());
++            descriptorDynamicSlots.clear();
+         }
+ 
+         if (createSet || (descriptorTextureReplacementMapEnabled != textureCacheReplacementMapEnabled)) {
+@@ -383,6 +394,14 @@ namespace RT64 {
+         // Make sure the versions vector matches the texture cache size.
+         descriptorTextureVersions.resize(textureCacheSize, 0);
+ 
++        // Dynamic views only belong to the previous frame and may since have been destroyed.
++        // Cached textures that now own one of these slots are rewritten by the loop below.
++        for (uint32_t slot : descriptorDynamicSlots) {
++            descTextureSet->clearSlot(slot, textureSetPlaceholder.get());
++        }
++
++        descriptorDynamicSlots.clear();
++
+         // Update texture vector with static textures from the cache and dynamic resource views.
+         if (descriptorTextureGlobalVersion != textureCacheGlobalVersion) {
+             const uint32_t textureVersionSize = static_cast<uint32_t>(textureCacheVersions.size());
+@@ -393,6 +412,7 @@ namespace RT64 {
+ 
+                 descriptorTextureVersions[i] = textureCacheVersions[i];
+                 if (textureCacheTextures[i] == nullptr) {
++                    descTextureSet->clearSlot(i, textureSetPlaceholder.get());
+                     continue;
+                 }
+ 
+@@ -413,6 +433,7 @@ namespace RT64 {
+         for (const DynamicTextureView &dynamicView : dynamicTextureViewVector) {
+             descTextureSet->setTexture(dynamicView.dstIndex, dynamicView.texture, RenderTextureLayout::SHADER_READ, dynamicView.textureView);
+             descriptorTextureVersions[dynamicView.dstIndex] = 0;
++            descriptorDynamicSlots.emplace_back(dynamicView.dstIndex);
+         }
+     }
+ 
+@@ -1258,6 +1279,16 @@ namespace RT64 {
+             dummyDepthTargetTransitioned = true;
+         }
+ 
++        // Missing textures sample the placeholder, so give it defined contents.
++        if ((textureSetPlaceholder != nullptr) && !textureSetPlaceholderCleared) {
++            worker->commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(textureSetPlaceholder.get(), RenderTextureLayout::COLOR_WRITE));
++            worker->commandList->setFramebuffer(textureSetPlaceholderFramebuffer.get());
++            worker->commandList->clearColor(0, RenderColor(0.0f, 0.0f, 0.0f, 0.0f));
++            worker->commandList->setFramebuffer(nullptr);
++            worker->commandList->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, RenderTextureBarrier(textureSetPlaceholder.get(), RenderTextureLayout::SHADER_READ));
++            textureSetPlaceholderCleared = true;
++        }
++
+         for (BufferUploader *uploader : bufferUploaders) {
+             uploader->commandListBeforeBarriers(worker);
+         }
+diff --git a/src/render/rt64_framebuffer_renderer.h b/src/render/rt64_framebuffer_renderer.h
+index 8272f4a..ec414ce 100644
+--- a/src/render/rt64_framebuffer_renderer.h
++++ b/src/render/rt64_framebuffer_renderer.h
+@@ -91,6 +91,10 @@ namespace RT64 {
+         RenderPipeline *postBlendDitherNoiseSubNegativePipeline = nullptr;
+         std::unique_ptr<FramebufferRendererDescriptorCommonSet> descCommonSet;
+         std::unique_ptr<FramebufferRendererDescriptorTextureSet> descTextureSet;
++        std::unique_ptr<RenderTexture> textureSetPlaceholder;
++        std::unique_ptr<RenderFramebuffer> textureSetPlaceholderFramebuffer;
++        bool textureSetPlaceholderCleared = false;
++        std::vector<uint32_t> descriptorDynamicSlots;
+         std::unique_ptr<RenderTexture> dummyColorTarget;
+         std::unique_ptr<RenderTexture> dummyDepthTarget;
+         std::unique_ptr<RenderTextureView> dummyColorTargetView;
+diff --git a/src/render/rt64_raster_shader.cpp b/src/render/rt64_raster_shader.cpp
+index 9ab62d1..f2df5ed 100644
+--- a/src/render/rt64_raster_shader.cpp
++++ b/src/render/rt64_raster_shader.cpp
+@@ -498,7 +498,7 @@ namespace RT64 {
+ #   endif
+ 
+         FramebufferRendererDescriptorCommonSet descriptorCommonSet(shaderLibrary->samplerLibrary, device->getCapabilities().raytracing);
+-        FramebufferRendererDescriptorTextureSet descriptorTextureSet;
++        FramebufferRendererDescriptorTextureSet descriptorTextureSet(FramebufferRendererDescriptorTextureSet::usesBoundlessRange(device->getCapabilities()));
+         FramebufferRendererDescriptorFramebufferSet descriptorFramebufferSet;
+         RenderPipelineLayoutBuilder layoutBuilder;
+         layoutBuilder.begin(false, true);
+diff --git a/src/render/rt64_shader_library.cpp b/src/render/rt64_shader_library.cpp
+index d1c5273..3949d16 100644
+--- a/src/render/rt64_shader_library.cpp
++++ b/src/render/rt64_shader_library.cpp
+@@ -855,7 +855,7 @@ namespace RT64 {
+         // Raytracing debug.
+         {
+             FramebufferRendererDescriptorCommonSet descriptorCommonSet(samplerLibrary, deviceCapabilities.raytracing);
+-            FramebufferRendererDescriptorTextureSet descriptorTextureSet;
++            FramebufferRendererDescriptorTextureSet descriptorTextureSet(FramebufferRendererDescriptorTextureSet::usesBoundlessRange(deviceCapabilities));
+             FramebufferRendererDescriptorFramebufferSet descriptorFramebufferSet;
+             layoutBuilder.begin();
+             layoutBuilder.addDescriptorSet(descriptorCommonSet);

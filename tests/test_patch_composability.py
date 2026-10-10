@@ -35,7 +35,7 @@ SCRIPT_SERIES = {
     "android": ["0006", "0009", "0010", "0011", "0013"],
 }
 # CMake-applied rt64 patches (CMakeLists.txt order, all platforms).
-CMAKE_SERIES = ["0021", "0022", "0024", "0025", "0026", "0027", "0029", "0030"]
+CMAKE_SERIES = ["0021", "0022", "0024", "0025", "0026", "0027", "0029", "0030", "0033"]
 
 
 def resolve_patch(number):

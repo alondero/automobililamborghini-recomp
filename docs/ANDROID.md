@@ -6,8 +6,9 @@ device or driver combination.
 
 The Android build is an ARM64 APK using SDL2, RT64/Vulkan, and the same
 recompiled game/runtime as the desktop port. Minimum OS: Android 9 (API 28).
-The GPU driver must support Vulkan 1.1, descriptor indexing, and scalar block
-layout. A Vulkan version number alone does not guarantee compatibility. The APK contains no ROM. Import your own USA cartridge dump using
+The GPU driver must support Vulkan 1.1 and scalar block layout. Descriptor
+indexing is optional. A Vulkan version number alone does not guarantee
+compatibility. The APK contains no ROM. Import your own USA cartridge dump using
 the launcher; `.z64`, `.v64`, and `.n64` byte orders are accepted and the complete
 ROM is validated before replacing an existing import.
 
@@ -26,16 +27,36 @@ screen upright when starting or resuming to center steering. See
 
 ## GPU drivers and device validation
 
-On the tested Pixel 5 (Android 13), the system Adreno driver lacks renderer features.
-The launcher can import an AdrenoTools-compatible Mesa Turnip ZIP on Android 9+
-without root. Select **Import GPU driver ZIP**, choose a driver for your GPU, then
-select **Play**. **Use system GPU driver** restores the default for subsequent game
-launches. Driver files remain private to this app; they are not bundled in the APK.
+The game uses the phone's own GPU driver by default. Older drivers, such as
+the 2020 Adreno driver on the tested phone, do not support descriptor indexing.
+On those drivers the renderer uses a fixed-size texture table
+([patch 0033](../patches/0033-rt64-fixed-texture-table-without-descriptor-indexing.patch))
+instead of the variable-size table RT64 normally uses.
 
-The Pixel 5 reached the title, attract race, and player/car selection using
-[Mesa Turnip v25.3.0-R11](https://github.com/K11MCH1/AdrenoToolsDrivers/releases/tag/v25.3.0-rc.11).
-Other GPUs and driver versions have not been validated. Custom Adreno drivers are
-specific to Qualcomm hardware; they are not a compatibility solution for Mali GPUs.
+The launcher can also import an AdrenoTools-compatible Mesa Turnip ZIP on
+Android 9+ without root. Try this if graphics fail to start or look wrong.
+Select **Import GPU driver ZIP**, choose a driver for your GPU, then select
+**Play**. **Use system GPU driver** restores the default for subsequent game
+launches. Driver files remain private to this app; they are not bundled in the
+APK. Custom Adreno drivers are specific to Qualcomm hardware; they are not a
+compatibility solution for Mali GPUs.
+
+The tested phone reports itself as a Pixel 5, but its vendor build is a Redmi
+K30 Pro / POCO F2 Pro (`lmi`, Snapdragon 865, Adreno 650) on Android 13. Its
+system Vulkan driver is Qualcomm build `4783c89` (dated 11/30/20, Vulkan
+1.1.128) without `VK_EXT_descriptor_indexing`. With that driver, the title
+screen and attract races on three tracks rendered correctly. With
+[Mesa Turnip v25.3.0-R11](https://github.com/K11MCH1/AdrenoToolsDrivers/releases/tag/v25.3.0-rc.11),
+the title, attract race, and player/car selection have been reached. Both
+drivers presented roughly 24 to 30 frames per second in the attract race.
+Other GPUs and driver versions have not been validated.
+
+With the Khronos validation layer on the system driver, the only texture errors
+are that RT64's shaders declare non-uniform texture indexing without the
+matching extension. The driver accepts these shaders and renders them
+correctly on the tested phone. Other drivers without descriptor indexing may
+not. To check a device, see
+[Validate a driver without descriptor indexing](#validate-a-driver-without-descriptor-indexing).
 
 SDL and the renderer share an app-local Vulkan loader so they use the same driver
 and surface. Native libraries must be extracted by Android (`useLegacyPackaging`)
@@ -88,6 +109,32 @@ No broad storage permission is needed.
 Generated dependencies, native objects, packaging inputs, and logs live under
 `build-android/`; Gradle output lives under `android/app/build/`. Neither directory
 belongs in Git. Keep ROM-derived C and RSP sources ignored as on desktop.
+
+## Validate a driver without descriptor indexing
+
+Use a debug APK and the Android `arm64-v8a` binary of the Khronos
+[validation layer](https://github.com/KhronosGroup/Vulkan-ValidationLayers/releases).
+Select **Use system GPU driver** first; Android only inserts debug layers into
+its own Vulkan loader, so an imported Turnip driver bypasses them.
+
+```sh
+adb push libVkLayer_khronos_validation.so /data/local/tmp/
+adb shell run-as io.github.alondero.lamborghinirecomp cp /data/local/tmp/libVkLayer_khronos_validation.so .
+adb shell settings put global enable_gpu_debug_layers 1
+adb shell settings put global gpu_debug_app io.github.alondero.lamborghinirecomp
+adb shell settings put global gpu_debug_layers VK_LAYER_KHRONOS_validation
+adb logcat -c
+# Start the game from the launcher and let the attract race run.
+adb logcat -d | grep -o 'Validation [A-Za-z]*: \[ [A-Za-z0-9_-]*' | sort | uniq -c
+```
+
+On the tested phone, the errors are `VUID-VkShaderModuleCreateInfo-pCode-08740`
+and `-08742` for the shaders' non-uniform indexing. The
+`VUID-vkCmdClearAttachments-pRects-00016` error (a clear one pixel wider than
+the render area) and storage-image format warnings come from other RT64
+passes, not the texture table. Any error that names the texture descriptor set
+is a regression. Remove the settings afterwards with
+`adb shell settings delete global <name>` for each of the three names.
 
 ## Release signing (one-time repository setup)
 

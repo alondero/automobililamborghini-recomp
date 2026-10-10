@@ -61,7 +61,7 @@ public final class LauncherActivity extends Activity {
         play.setOnClickListener(v -> prepare(null));
         layout.addView(play);
         driverInfo = new TextView(this);
-        driverInfo.setText("GPU driver: " + DriverImport.description(this) + "\nOlder Adreno devices may need a Mesa Turnip driver ZIP for Vulkan support.");
+        driverInfo.setText("GPU driver: " + DriverImport.description(this) + "\nIf graphics fail or look wrong on an Adreno device, import a Mesa Turnip driver ZIP.");
         layout.addView(driverInfo);
         driver = new Button(this);
         driver.setText("Import GPU driver ZIP");
@@ -75,7 +75,7 @@ public final class LauncherActivity extends Activity {
         systemDriver.setOnClickListener(v -> {
             try {
                 DriverImport.useSystem(this);
-                driverInfo.setText("GPU driver: System GPU driver\nOlder Adreno devices may need a Mesa Turnip driver ZIP for Vulkan support.");
+                driverInfo.setText("GPU driver: System GPU driver\nIf graphics fail or look wrong on an Adreno device, import a Mesa Turnip driver ZIP.");
             }
             catch (Exception error) { status.setText(error.getMessage()); }
         });
@@ -103,7 +103,7 @@ public final class LauncherActivity extends Activity {
                     status.setText(resultMessage);
                     if (resultMessage.startsWith("GPU driver ready: ")) {
                         driverInfo.setText("GPU driver: " + DriverImport.description(this)
-                            + "\nOlder Adreno devices may need a Mesa Turnip driver ZIP for Vulkan support.");
+                            + "\nIf graphics fail or look wrong on an Adreno device, import a Mesa Turnip driver ZIP.");
                     }
                     setBusy(false);
                 });
