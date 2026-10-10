@@ -1067,6 +1067,24 @@ func = "func_80019D20"
 before_vram = 0x8001A9A0
 text = "{ extern void lambo_analog_brake_apply(uint8_t*); lambo_analog_brake_apply(rdram); }"
 
+# Steering deadzone and direct response (docs/steering.md). Two player-one seams
+# in the human steering updater; both are no-ops at the authored defaults.
+# 0x8001AA90 stores the raw pad stick byte ($t2) to the work halfword
+# 0x80098694; a non-authored deadzone rewrites $t2 so the ROM's own -4 trim
+# leaves exactly that deadzone. 0x8001B8E0 is the merge after the slew clamp,
+# speed suppression and speed adjust, before the demand store to vehicle+0xB2;
+# direct mode replaces the work value and accumulator vehicle+0xB4 with the
+# selected response-curve entry. Natives in src/lambo_steering.cpp.
+[[patches.hook]]
+func = "func_80019D20"
+before_vram = 0x8001AA90
+text = "{ extern int32_t lambo_steering_raw(uint8_t*, int32_t); ctx->r10 = (gpr)(int64_t)lambo_steering_raw(rdram, (int32_t)ctx->r10); }"
+
+[[patches.hook]]
+func = "func_80019D20"
+before_vram = 0x8001B8E0
+text = "{ extern void lambo_steering_direct(uint8_t*); lambo_steering_direct(rdram); }"
+
 # Task-owned sunlight provenance probe. Capture art inputs before flare visibility
 # culling. New task slots clear them even when a track does not call the flare.
 # These hooks do not supply a physical light or change rendering; docs/rt-shadows.md.

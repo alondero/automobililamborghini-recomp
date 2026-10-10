@@ -446,6 +446,16 @@ if(BUILD_TESTING)
     target_link_libraries(lambo_analog_brake_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_analog_brake_bridge COMMAND lambo_analog_brake_tests)
 
+    add_executable(lambo_steering_tests
+        tests/test_steering.cpp
+        src/lambo_steering.cpp
+    )
+    target_include_directories(lambo_steering_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/N64Recomp/include
+    )
+    add_test(NAME lambo_steering_response COMMAND lambo_steering_tests)
+
     add_executable(lambo_menu_stick_tests
         tests/test_menu_stick.cpp
         src/lambo_menu_stick.cpp
@@ -740,6 +750,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_menu_stick.cpp   # opt-in pre-race menu stick scaling (issue #238)
         src/lambo_analog_throttle.cpp # host-to-guest throttle bridge + race hook
         src/lambo_analog_brake.cpp    # host-to-guest brake bridge + race hook
+        src/lambo_steering.cpp        # opt-in steering deadzone and direct response
         src/controls/lambo_controls.cpp
         src/ui/lambo_frontend.cpp
         src/ui/lambo_launcher_menu.cpp
@@ -933,7 +944,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         add_executable(lambo_frontend_settings_tests
             tests/test_frontend_settings.cpp src/ui/lambo_frontend_settings.cpp
             src/lambo_cheats.cpp
-            src/ui/lambo_frontend_input.cpp src/controls/lambo_controls.cpp src/lambo_driving_assists.cpp
+            src/ui/lambo_frontend_input.cpp src/controls/lambo_controls.cpp src/lambo_driving_assists.cpp src/lambo_steering.cpp
             src/lambo_input_gate.cpp
             src/lambo_config.cpp src/lambo_player_name.cpp src/lambo_log.cpp src/lambo_file.cpp)
         target_include_directories(lambo_frontend_settings_tests PRIVATE src ${SDL2_INCLUDE_DIRS})

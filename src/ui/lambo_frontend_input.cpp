@@ -2,11 +2,13 @@
 #include "lambo_config.h"
 #include "lambo_driving_assists.h"
 #include "lambo_input_gate.h"
+#include "lambo_steering.h"
 #include "recompinput/profiles.h"
 #include "recompinput/input_events.h"
 #include "recompui/config.h"
 #include "librecomp/game.hpp"
 #include "json/json.hpp"
+#include <cmath>
 #include <fstream>
 #include <mutex>
 #include <SDL.h>
@@ -79,6 +81,13 @@ void read_driving_settings() {
     tilt.recenter();
     motion_valid = false;
     was_active = false;
+}
+void read_steering() {
+    auto& page = recompui::config::get_config("driving-controls");
+    lambo::steering::Settings steering;
+    steering.direct = std::get<bool>(page.get_option_value("steering_direct"));
+    steering.native_deadzone = int(std::lround(std::get<double>(page.get_option_value("steering_game_deadzone"))));
+    lambo::steering::publish(steering);
 }
 using namespace recompinput;
 using recomp::config::ConfigOptionEnumOption;
@@ -211,6 +220,12 @@ void create_frontend_driving_settings() {
     add_pedal("throttle_", "Throttle", throttle);
     add_pedal("brake_", "Brake", brake);
 
+    // Steering response, player one, races only. Both defaults are the original
+    // game's response; see docs/steering.md for the measured behaviour.
+    const lambo::steering::Settings steering{};
+    page.add_bool_option("steering_direct", "Direct steering response", "The car follows the stick at once, without the game's built-in steering delay or its reduced response to small movements at speed.", steering.direct);
+    page.add_number_option("steering_game_deadzone", "Game steering deadzone", "Stick units the game ignores at center, out of 80. 4 is the original game.", 0, lambo::steering::kMaxDeadzone, 1, 0, false, double(steering.native_deadzone));
+
     page.add_bool_option("gyro", "Gyro steering", "Player one only, during races. Tilt your Android phone like a steering wheel. Requires a phone gyroscope and accelerometer; keep the screen upright. Hold it comfortably when starting or resuming a race to center steering. Button mappings are in Controls.", false);
     page.add_bool_option("auto_accelerate", "Auto-accelerate", "Accelerate automatically during races. Hold the brake to stop automatic acceleration. Player one only; off in menus and while paused.", false);
     page.add_number_option("gyro_range", "Tilt for full steering (degrees)", "Smaller angles make steering more sensitive.", 15, 90, 5, 0, false, 35);
@@ -219,6 +234,7 @@ void create_frontend_driving_settings() {
     const auto read_merged_page = [] {
         read_driving_settings();
         read_pedals();
+        read_steering();
     };
     page.set_load_callback(read_merged_page);
     page.set_save_callback(read_merged_page);

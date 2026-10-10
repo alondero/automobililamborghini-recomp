@@ -14,6 +14,10 @@ steering** and **Auto-accelerate** for player one. The assists default to off an
 everything is saved when you select Apply. Button bindings remain in the
 adjacent **Controls** tab.
 
+Driving also holds two steering settings for player one: direct steering
+response and the game's own steering deadzone. Both defaults are the original
+game. See [Steering response](steering.md).
+
 Gyro steering uses the Android phone's gyroscope and accelerometer. Hold the
 screen upright in either landscape orientation and tilt it like a steering
 wheel. Sensors are opened while gyro steering is enabled and the app window is

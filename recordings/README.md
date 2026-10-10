@@ -21,3 +21,8 @@ the motion/coverage assertions. This trace is not a completed lap.
 single-race selections using Start/A pulses, without a warp. Its RT64 scenario
 regresses menu assets being replaced while a previous graphics task still uses
 them. It is a transition/progress check, not a driven lap or sky-motion oracle.
+
+`steering-sweep.jsonl` holds the accelerator and steps the stick through small,
+medium, full and reversed deflections with neutral gaps. Run it with
+`LAMBO_STEERING_TRACE` to record the steering chain per update; see
+[Steering response](../docs/steering.md). It is a mechanism trace, not a driven lap.

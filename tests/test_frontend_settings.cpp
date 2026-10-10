@@ -4,6 +4,7 @@
 #include "lambo_config.h"
 #include "lambo_cheats.h"
 #include "lambo_player_name.h"
+#include "lambo_steering.h"
 #include "lambo_paths.h"
 #include "ui/lambo_ui.h"
 #include "ui/lambo_frontend_input.h"
@@ -65,6 +66,9 @@ int main(int argc, char** argv) {
         { std::ofstream file(path / "controls-framework.json");
           file << R"({"version":3,"profiles":[],"controllers":[]})"; }
         std::filesystem::remove(path / "driving-controls.json");
+        // The steering save below leaves a .bak with the assists on; the loader
+        // would fall back to it on the next run, so remove it too.
+        std::filesystem::remove(path / "driving-controls.json.bak");
         // Likewise for the General page: a saved rumble_strength would make the
         // staged rumble edit below a no-op. The .bak goes too, because the
         // config loader falls back to it when the main file is missing.
@@ -118,6 +122,24 @@ int main(int argc, char** argv) {
                 std::get<bool>(driving.get_option_value("auto_accelerate")) &&
                 std::get<double>(driving.get_option_value("gyro_range")) == 45.0,
                 "driving options did not persist");
+        // Steering response: stock defaults, then a saved change reaches the game thread.
+        require(!std::get<bool>(driving.get_option_value("steering_direct")) &&
+                std::get<double>(driving.get_option_value("steering_game_deadzone")) == 4.0 &&
+                lambo::steering::current() == lambo::steering::Settings{},
+                "steering options must default to the original game");
+        driving.set_option_value("steering_direct", true);
+        driving.set_option_value("steering_game_deadzone", 2.0);
+        require(driving.save_config(), "steering settings save failed");
+        driving.update_option_value("steering_direct", false);
+        driving.apply_option_value("steering_direct");
+        require(driving.load_config(), "steering settings reload failed");
+        {
+            const auto steering = lambo::steering::current();
+            require(std::get<bool>(driving.get_option_value("steering_direct")) &&
+                    std::get<double>(driving.get_option_value("steering_game_deadzone")) == 2.0 &&
+                    steering.direct && steering.native_deadzone == 2,
+                    "steering options did not persist and publish");
+        }
         // The legacy pedals.json fixture above must have seeded the pedal options
         // now living on the merged Driving page.
         require(std::get<uint32_t>(driving.get_option_value("throttle_mode")) == 1 &&
