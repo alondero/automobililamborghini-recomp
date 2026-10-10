@@ -427,6 +427,18 @@ int main(int argc, char** argv) {
         require(imported >= 0, "legacy profile missing");
         require(profiles::get_input_binding(imported, GameInput::A, 0).input_id == SDL_CONTROLLER_BUTTON_Y, "legacy button import");
         require(profiles::get_input_binding(imported, GameInput::Y_AXIS_POS, 0).input_id == -(SDL_CONTROLLER_AXIS_LEFTY + 1), "legacy stick inversion");
+        // The fixture must see only the virtual controllers it attaches. Keep
+        // physical devices out of this process (issue #280): the backend hints
+        // stop HIDAPI/RawInput/XInput/DirectInput, and the device filter drops
+        // controllers from backends without such a hint (Windows.Gaming.Input
+        // in the pinned SDL 2.26). Neither alone isolated an Xbox pad; virtual
+        // devices still pass the filter. Override priority, so a developer's
+        // environment cannot re-admit a pad. Only this test process sets them.
+        for (const char* backend : {SDL_HINT_JOYSTICK_HIDAPI, SDL_HINT_JOYSTICK_RAWINPUT,
+                                    SDL_HINT_XINPUT_ENABLED, SDL_HINT_DIRECTINPUT_ENABLED})
+            SDL_SetHintWithPriority(backend, "0", SDL_HINT_OVERRIDE);
+        SDL_SetHintWithPriority(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT, "0x0001/0x0001",
+                                SDL_HINT_OVERRIDE);
         require(SDL_Init(SDL_INIT_GAMECONTROLLER) == 0, "SDL input init");
         players::set_player_count_range(1, 4);
         players::set_single_player_mode(false);

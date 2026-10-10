@@ -33,21 +33,10 @@ python -m unittest discover tests
 This exercises the Python tests under `tests/` without a ROM, generated game
 code, a graphics backend, or a native build.
 
-The native `lambo_frontend_settings` fixture expects no physical controller
-before attaching its virtual devices. With a real Windows gamepad connected,
-isolate physical SDL backends for the host test process (virtual devices still
-run). In a disposable PowerShell session, set:
-
-~~~powershell
-$env:SDL_JOYSTICK_HIDAPI = '0'
-$env:SDL_XINPUT_ENABLED = '0'
-$env:SDL_JOYSTICK_RAWINPUT = '0'
-$env:SDL_JOYSTICK_WGI = '0'
-$env:SDL_DIRECTINPUT_ENABLED = '0'
-ctest --test-dir build -R '^lambo_' --output-on-failure
-~~~
-
-Keep these variables out of game runs, which need their normal physical inputs.
+The native `lambo_frontend_settings` fixture works only with the virtual
+controllers it attaches. It keeps physical controllers out of its own process
+by setting SDL hints before SDL starts, so it passes with a gamepad connected
+and needs no environment setup. Game runs are unaffected.
 
 After the submodules are initialized and the ROM is present, the supported
 desktop build sequence is:
