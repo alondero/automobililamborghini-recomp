@@ -39,6 +39,18 @@ Players install a pack as a mod. Copy the `.rtz` into the `mods/` directory, or
 use **Install Mods** in **Settings > Mods**, then enable it there. The Mods tab
 owns activation, deactivation, and priority, so it is the route to use.
 
+For a pack without `mod.json`, the mod manager generates metadata: the filename
+stem is its ID and display name, author is `Unknown`, and version and minimum
+port version are both `0.0.0`. There is no meaningful minimum-version gate for
+these packs. Keep the filename stable, and test the artwork against the port
+version you intend to support.
+
+The RT64 packer defaults to zstd compression. The mod loader cannot extract
+zstd-compressed `mod.json`, so it falls back to generated metadata even when
+that entry is present. A stored/deflated, readable `mod.json` is parsed instead;
+do not assume every embedded manifest is ignored. See the
+[mod metadata contract](modding.md#install-and-manage-mods).
+
 A bare loose replacement directory is not a mod: the mod system opens a
 directory only when it contains a `mod.json` manifest. Point `texture_pack` or
 `LAMBO_TEXTURE_PACK` at a loose directory while authoring, then ship a `.rtz`.
@@ -59,6 +71,12 @@ without the F1 developer overlay. On success the log prints
 `legacy texture_pack override FAILED to load` when it did not; clear the key to
 hand texture management back to the Mods tab. See
 [Modding](modding.md#legacy-texture-pack-setting).
+
+The direct override bypasses the Mods list, including its identity, enable
+state, and manifest compatibility checks. A direct RT64 load therefore does
+not demonstrate that a pack is discoverable as a mod. The optional
+`--texture-package` case in [the mod checker](modding.md#verification-recorded-for-this-integration)
+checks mod discovery and boot headlessly; it does not verify rendered artwork.
 
 ## End-to-end workflow
 

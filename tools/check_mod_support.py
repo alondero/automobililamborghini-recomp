@@ -1,34 +1,42 @@
-"""Exercise real mod loading in isolated profiles using the developer smoke NRM."""
+"""Exercise real mod loading with a smoke NRM and an optional RT64 texture pack."""
 
 import argparse
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import zipfile
 
 
 MARKER = "[mod-smoke] boot hook executed"
+TEXTURE_ID = "texture_smoke"
 
 
-def run_case(executable, package, rom, enabled, minimum_version=None):
+def run_case(executable, package, rom, enabled, minimum_version=None, *, texture=False):
     with tempfile.TemporaryDirectory(prefix="lambo-mod-") as directory:
         root = Path(directory)
         config = root / "LamborghiniRecomp"
         mods = config / "mods"
         mods.mkdir(parents=True)
-        destination = mods / "smoke.nrm"
-        with zipfile.ZipFile(package) as source:
-            manifest = json.loads(source.read("mod.json"))
-            if minimum_version is not None:
-                manifest["minimum_recomp_version"] = minimum_version
-            with zipfile.ZipFile(destination, "w") as output:
-                for entry in source.infolist():
-                    data = (json.dumps(manifest).encode() if entry.filename == "mod.json"
-                            else source.read(entry.filename))
-                    output.writestr(entry, data)
-        mod_id = manifest["id"]
+        if texture:
+            # RT64 packs may use zstd ZIP entries. Preserve every byte and let
+            # the runtime synthesize the identity from this stable filename.
+            shutil.copyfile(package, mods / f"{TEXTURE_ID}.rtz")
+            mod_id = TEXTURE_ID
+        else:
+            destination = mods / "smoke.nrm"
+            with zipfile.ZipFile(package) as source:
+                manifest = json.loads(source.read("mod.json"))
+                if minimum_version is not None:
+                    manifest["minimum_recomp_version"] = minimum_version
+                with zipfile.ZipFile(destination, "w") as output:
+                    for entry in source.infolist():
+                        data = (json.dumps(manifest).encode() if entry.filename == "mod.json"
+                                else source.read(entry.filename))
+                        output.writestr(entry, data)
+            mod_id = manifest["id"]
         (config / "mods.json").write_text(json.dumps({
             "enabled_mods": [mod_id] if enabled else [], "mod_order": [mod_id],
         }), encoding="utf-8")
@@ -54,6 +62,8 @@ def main():
     parser.add_argument("--exe", required=True, type=Path)
     parser.add_argument("--package", required=True, type=Path)
     parser.add_argument("--protected-package", type=Path)
+    parser.add_argument("--texture-package", type=Path,
+                        help="optional RT64 .rtz with rt64.json and no mod.json")
     parser.add_argument("--rom", required=True, type=Path)
     parser.add_argument("--output", type=Path, default=Path("artifacts/mod-support"))
     args = parser.parse_args()
@@ -75,6 +85,18 @@ def main():
         else:
             passed &= "Error loading mods:" in output and "game thread #1 started" not in output
         print(f"{'PASS' if passed else 'FAIL'} {name}: exit={code}, markers={output.count(MARKER)}")
+        if not passed:
+            return 1
+    if args.texture_package:
+        code, output = run_case(executable, args.texture_package.resolve(), rom, True,
+                                texture=True)
+        (args.output / "texture-pack.log").write_text(output, encoding="utf-8")
+        # A skipped/unregistered container can still boot successfully.
+        passed = (code == 0 and f"Loading mod {TEXTURE_ID}" in output.splitlines()
+                  and "game thread #1 started" in output
+                  and "Skipping non-mod" not in output
+                  and "Error loading mods:" not in output)
+        print(f"{'PASS' if passed else 'FAIL'} texture-pack: exit={code}")
         if not passed:
             return 1
     return 0

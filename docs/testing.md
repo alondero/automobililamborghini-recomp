@@ -33,6 +33,15 @@ python -m unittest discover tests
 This exercises the Python tests under `tests/` without a ROM, generated game
 code, a graphics backend, or a native build.
 
+For real mod loading, run `tools/check_mod_support.py` with the smoke NRM and
+your USA ROM as described in [Modding](modding.md#verification-recorded-for-this-integration).
+Its optional `--texture-package PATH` accepts a manifest-free RT64 `.rtz` and
+checks actual mod selection plus guest boot. Every case uses a temporary
+profile and forces headless mode. This covers container registration, not
+rendered texture replacement. `tests/test_check_mod_support.py` checks the
+runner's staging, isolation, and rejection of incomplete or skipped load logs
+without a ROM.
+
 The native `lambo_frontend_settings` fixture works only with the virtual
 controllers it attaches. It keeps physical controllers out of its own process
 by setting SDL hints before SDL starts, so it passes with a gamepad connected
