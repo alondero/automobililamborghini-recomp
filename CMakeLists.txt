@@ -23,6 +23,10 @@ if(ANDROID)
 endif()
 
 include(CTest)
+# RT64 vendors zstd, whose long-running upstream tests otherwise inherit
+# BUILD_TESTING=ON. Keep the port's default suite focused on its own tests;
+# dependency maintainers can still opt in with -DZSTD_BUILD_TESTS=ON.
+option(ZSTD_BUILD_TESTS "Build the vendored zstd test suite" OFF)
 find_package(Threads REQUIRED)
 
 set(CMAKE_C_STANDARD 17)
