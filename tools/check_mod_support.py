@@ -70,6 +70,21 @@ def main():
     executable, package, rom = (path.resolve() for path in (args.exe, args.package, args.rom))
     if (executable.parent / "portable.txt").exists():
         parser.error("use a test executable without portable.txt beside it")
+    if args.texture_package:
+        texture_package = args.texture_package.resolve()
+        try:
+            if not texture_package.is_file():
+                parser.error("texture package must be an existing regular .rtz ZIP file")
+            # Inspect only the ZIP directory: Python need not support the RT64
+            # pack's compression method, and the archive must remain unchanged.
+            with zipfile.ZipFile(texture_package) as archive:
+                entries = {entry.filename: entry for entry in archive.infolist()}
+                if "rt64.json" not in entries or entries["rt64.json"].is_dir():
+                    parser.error("texture package must contain rt64.json at the archive root")
+                if "mod.json" in entries:
+                    parser.error("texture package must not contain mod.json")
+        except (OSError, zipfile.BadZipFile) as error:
+            parser.error(f"cannot read texture package ZIP: {error}")
     args.output.mkdir(parents=True, exist_ok=True)
     cases = [("enabled", package, True, None, 0, 1),
              ("disabled", package, False, None, 0, 0),
