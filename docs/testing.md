@@ -89,6 +89,7 @@ ctest --test-dir build -R "lambo_cheats|lambo_frontend_settings"
 ctest --test-dir build -R "lambo_prompt_back_action"
 ctest --test-dir build -R "lambo_(native_menu_retired|quit_path)"
 ctest --test-dir build -R "lambo_menu_stick_scale"
+ctest --test-dir build -R "lambo_steering_response"
 ctest --test-dir build -R "lambo_(controller_pak|startup_state_machine)"
 ctest --test-dir build -R "lambo_(no_lod|track_patch|interpolation)"
 ctest --test-dir build -R "lambo_rt64|lambo_audio"
@@ -144,6 +145,14 @@ captures the final assisted pad.
 On Android, additionally check both landscape orientations, background/resume,
 opening settings while tilted, a phone without sensors, braking, and finishing
 a race. These hardware checks are not replaced by host tests.
+
+`lambo_steering_response` checks the steering settings and overrides and both
+native steering hooks against synthetic RAM: the authored deadzone is a no-op
+over every stick value, other deadzones start the curve exactly at their edge,
+and direct mode writes the selected curve entry with the stick's sign.
+`scenarios/steering-sweep.json` replays a stick sweep; run the executable with
+`LAMBO_STEERING_TRACE` and the `LAMBO_STEERING_*` overrides to compare modes,
+as in [Steering response](steering.md#verification).
 
 `lambo_prompt_back_action` checks the settings quit confirmation's controller
 contract in the build input: the prompt must answer the Back action, that action

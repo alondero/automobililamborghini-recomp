@@ -28,7 +28,7 @@ The main configuration and save files are:
 | controls.json | legacy port import | Read as an import source when the framework profile does not exist. It is not the current writer. |
 | player.json | port | Player name and player identity. |
 | pedals.json | legacy import | Fills pedal values the Driving page has not stored yet, so previously saved settings survive the merge. It is not the current writer. |
-| driving-controls.json | frontend/port integration | Pedal bindings plus default-off gyro steering, tuning, and auto-accelerate. |
+| driving-controls.json | frontend/port integration | Pedal bindings, opt-in [steering response](steering.md) settings, plus default-off gyro steering, tuning, and auto-accelerate. |
 | mods.json | runtime | Enabled mods and package order. |
 | mod_config/ | runtime | Individual mod configuration. |
 | general.json | frontend | General settings. Also keeps a copy of the Player Name and Show launcher at startup options. |
@@ -132,6 +132,23 @@ arrays have six entries. Other enum names
 and shared-runtime fields should be changed through the frontend unless a
 developer is testing a specific JSON value.
 
+## Driving controls file
+
+driving-controls.json is written by the Driving tab. It holds pedal
+calibration, gyro steering and auto-accelerate, and the steering response keys
+below. Steering settings are global for player one and stored with the Driving
+tab, like the pedals: the live race stick does not pass through per-controller
+profiles. Out-of-range values are clamped when they are applied. Every default
+is the original game. See [Steering response](steering.md).
+
+| Key | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| steering_direct | false | true/false | Use the game's curve directly, without its slew limit and speed stages. |
+| steering_game_deadzone | 4 | 0..20 | Stick units the game ignores at center; 4 is the original value. |
+
+The `LAMBO_STEERING_*` variables in the developer table below override these
+values for one run and are not saved.
+
 ## Environment overrides
 
 Set drawing and camera overrides before starting the game. Fog/sky match,
@@ -177,6 +194,9 @@ most useful ones are:
 | `LAMBO_INPUT_START_STATE`, `LAMBO_INPUT_START_DELAY`, `LAMBO_INPUT_EXIT_ON_END` | Control replay start and exit. |
 | `LAMBO_TRACK_PATCH` | Load a Track Lab correction package. |
 | `LAMBO_ANALOG_THROTTLE`, `LAMBO_ANALOG_BRAKE` | Inject pedal values. |
+| `LAMBO_STEERING_DIRECT` | `1` or `0` forces direct steering response on or off. |
+| `LAMBO_STEERING_DEADZONE` | Override the game steering deadzone (0..20). |
+| `LAMBO_STEERING_TRACE` | Write one CSV row per player-one steering update to this path. |
 | `LAMBO_RACE_DL_DUMP`, `LAMBO_MENU_DL_TRACE`, `LAMBO_MENU_DL_DUMP` | Capture display-list diagnostics. |
 | `LAMBO_DL_INSPECT`, `LAMBO_DL_RENDER_STATE`, `LAMBO_DL_RENDER_OUT` | Inspect or capture the headless renderer. |
 | `LAMBO_PAK_TRACE`, `LAMBO_INPUT_PROBE`, `LAMBO_CAR_TRACE` | Trace guest bridges. |
