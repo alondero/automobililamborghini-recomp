@@ -27,10 +27,26 @@ Supported package types:
 
 - `.nrm`: packages built for this port with game ID `lamborghini`;
 - `.rtz`: RT64 texture packs, with `rt64.json` at the archive root;
-- loose mod directories with the runtime's `mod.json` manifest.
+- loose mod directories with the runtime's `mod.json` manifest, including
+  `"game_id": "lamborghini"` (not `automobili_lamborghini`). A bare texture
+  directory without that manifest is only supported through the direct
+  development override described below.
 
 Banjo and Donkey Kong code mods are game-specific and cannot run in this port.
-Required dependencies and minimum port versions are checked by the runtime.
+For manifest-bearing mods, required dependencies and minimum port versions are
+checked by the runtime. A normal manifest-free `.rtz` instead gets generated
+metadata: its filename stem becomes both ID and display name, author is
+`Unknown`, version is `0.0.0`, and minimum port version is `0.0.0` (no meaningful
+version gate). Keep its filename stable to preserve its identity and selection.
+
+Do not rely on embedding `mod.json` in a texture pack made with the RT64 packer's
+default zstd compression: the mod loader cannot extract zstd entries and treats
+an unreadable manifest as absent. A readable stored/deflated `mod.json` **is**
+parsed, including its identity, `game_id = "lamborghini"`, and minimum version;
+it is not unconditionally ignored. These metadata rules belong to the Mods
+route. The direct `texture_pack` override loads through RT64 without mod
+identity or compatibility checks. See [Texture packs](TEXTURES.md#loading-a-pack).
+
 Earlier texture packs in the Mods list take priority over later ones. The Mods
 tab is the only place to install, enable, disable, and order texture packs.
 See [Texture packs](TEXTURES.md) for artwork formats and texture dumping.
@@ -135,6 +151,20 @@ Add `--protected-package PATH` to check the guarded-hook variant. The checker
 requires a test executable without a `portable.txt` marker beside it. It writes
 logs under `artifacts/mod-support` by default. Its temporary profiles contain
 all runtime saves and imported ROM copies and are removed after each case.
+
+Add `--texture-package PATH` for an RT64 `.rtz` with `rt64.json` at its root and
+no `mod.json`. This optional case copies the archive unchanged as
+`texture_smoke.rtz`, enables the filename-derived ID `texture_smoke`, and checks
+for the runtime's exact `Loading mod texture_smoke` line, a started guest game
+thread, exit code 0, and no `Skipping non-mod` or mod-load error. A successful
+boot alone would miss an unregistered `.rtz` container. The case writes
+`texture-pack.log`; the existing NRM checks still run first.
+
+All checker runs force `LAMBO_HEADLESS=1` and clear inherited `LAMBO_*` overrides.
+The texture case proves discovery and selection by the real mod loader, not
+visible replacement artwork or RT64 rendering. Test those separately with a
+renderer and a pack whose artwork you have permission to use. The ROM-free
+checker tests run with `python -m unittest discover -s tests -p test_check_mod_support.py`.
 
 Unverified: Linux and Android execution, native-library mods, arbitrary gameplay
 hook targets, and visual texture replacement with real artwork. The boot smoke
