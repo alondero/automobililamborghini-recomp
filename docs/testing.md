@@ -58,6 +58,14 @@ port, and build lamborghini_modern. The exact generated directories are
 described in Architecture. If a manual CMake invocation is needed for
 diagnosis, record it in the report and also run the script path when possible.
 
+Vendored zstd tests are disabled by default. The port's host tests remain
+enabled through `BUILD_TESTING`; zstd's benchmarks and fuzzers are a separate
+dependency-maintenance task. To opt in, configure with
+`-DZSTD_BUILD_TESTS=ON` and build the dependency test targets before running
+them. Existing build directories retain their cached choice: if an older
+configuration enabled zstd tests, turn them off once with
+`cmake -S . -B build -DZSTD_BUILD_TESTS=OFF`.
+
 ## Focused checks
 
 The CMake project registers tests whose names describe the contract. Useful
