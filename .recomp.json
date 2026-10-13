@@ -1,0 +1,30 @@
+{
+  "$schema": "https://recomp.fyi/schema/v1.json",
+  "game": "Automobili Lamborghini",
+  "wikidata": "Q2872664",
+  "system": "N64",
+  "type": "recomp",
+  "original": {
+    "region": "USA",
+    "sha1": "78b36b48040426478011caef5e11884af2e80375"
+  },
+  "project": "Automobili Lamborghini: Recompiled",
+  "status": "released",
+  "targets": [
+    "Windows",
+    "Linux",
+    "Android"
+  ],
+  "toolchain": [
+    "N64Recomp",
+    "RT64"
+  ],
+  "approach": "Static recompilation of the original binary, presented by the RT64 renderer.",
+  "maintainers": [
+    {
+      "name": "alondero",
+      "link": "https://github.com/alondero"
+    }
+  ],
+  "notes": "Windows x64 and Linux x64 release packages are published and maintained; the port is pre-1.0 and under active development. Android ARM64 is an experimental build target with no current APK or device verification, and there is no macOS support. Only the North American USA release is supported. The recorded SHA-1 is for the 4 MiB big-endian .z64 dump; a byte-swapped copy of the same cartridge hashes differently."
+}

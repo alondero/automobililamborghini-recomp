@@ -13,6 +13,11 @@ which trade-offs are acceptable through the normal review process.
 4. Write down the expected behavior, evidence, and remaining uncertainty.
 5. Open an issue when the change is more than a small correction.
 
+When a change moves a public claim, such as a release target, a support limit,
+or the project status, update `.recomp.json` in the same change. External lists
+read that file as the project's own description, so a stale entry misinforms
+them.
+
 Do not use an old issue, PR body, or another port as the only specification.
 The current checkout and reproducible evidence are the starting point.
 
