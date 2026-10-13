@@ -16,10 +16,29 @@ import java.util.zip.ZipOutputStream;
 /** Device regression checks use isolated cache storage, never the user's ROM or driver. */
 public final class DriverImportInstrumentation extends Instrumentation {
     private int checks;
-    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
+    private Bundle arguments;
+    @Override public void onCreate(Bundle arguments) {
+        super.onCreate(arguments);
+        this.arguments = arguments;
+        start();
+    }
 
     @Override public void onStart() {
         Bundle result = new Bundle();
+        if (arguments != null && arguments.containsKey("gameboot")) {
+            try {
+                long holdMs = 0;
+                try { holdMs = Long.parseLong(arguments.getString("hold_ms", "0")); }
+                catch (NumberFormatException ignored) { /* default hold */ }
+                GameBootCheck.run(getTargetContext(), holdMs);
+                result.putString("stream", "\nGame process survived startup.\n");
+                finish(Activity.RESULT_OK, result);
+            } catch (Throwable error) {
+                result.putString("stream", "\nFAILED: " + android.util.Log.getStackTraceString(error));
+                finish(Activity.RESULT_CANCELED, result);
+            }
+            return;
+        }
         File sandbox = null;
         try {
             sandbox = Files.createTempDirectory(getTargetContext().getCacheDir().toPath(), "driver-tests-").toFile();
