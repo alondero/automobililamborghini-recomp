@@ -1,4 +1,5 @@
 """Recompute the car-select card's derived stats and pin its hook from the USA ROM."""
+import json
 import math
 from pathlib import Path
 import re
@@ -9,6 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 ROM = ROOT / "Automobili Lamborghini (USA).z64"
 SOURCE = ROOT / "src" / "lambo_car_card.cpp"
+EVIDENCE = ROOT / "docs" / "evidence" / "car-select-card-usa.json"
 HOOK_NAME = "lambo_car_card_draw"
 DISPATCHER = "func_800028D0"
 HOOK_VRAM = 0x80002480
@@ -88,6 +90,21 @@ class CarCardRomTests(unittest.TestCase):
                 self.assertLess(n60, n100)
                 self.assertLess(e60, e100)
                 self.assertLess(e100, n100)
+
+    def test_launch_times_match_retained_evidence(self):
+        evidence = json.loads(EVIDENCE.read_text(encoding="utf-8"))
+        self.assertEqual(evidence["excluded_failed_attempts"], [])
+        cars = source_cars()
+        for difficulty, campaign in evidence["launch_by_difficulty"].items():
+            self.assertEqual(campaign["configuration"]["difficulty"], int(difficulty))
+            runs = campaign["runs"]
+            self.assertEqual(sorted({run["model_cursor"] for run in runs}), list(range(0, 24, 3)))
+            for run in runs:
+                with self.subTest(difficulty=difficulty, model=run["model_cursor"], rep=run["rep"]):
+                    car = cars[run["category"]]
+                    column = int(difficulty)
+                    self.assertEqual(run["updates_to_speed"]["100"], car[7 + column])
+                    self.assertEqual(run["updates_to_speed"]["97"], car[9 + column])
 
     @unittest.skipUnless(ROM.is_file(), "USA ROM required for derived car stats")
     def test_derived_stats_match_rom(self):

@@ -73,7 +73,10 @@ The retained [acceleration evidence](evidence/car-select-card-usa.json) uses the
 same probe and schema as the earlier campaign in
 [car differences](CAR_DIFFERENCES.md#measurements-with-the-actual-model-cursor-2026-09-05):
 Circuit 1 time trial, automatic gearbox, A held, zero stick, one model per
-category. Run it once per difficulty into separate directories:
+category. It was collected on 2026-10-16 from revision `f355970`: two runs
+per model and difficulty, 32 runs in all, with no excluded attempts. Both runs
+of each case gave identical times. Run it once per difficulty into separate
+directories:
 
 ~~~powershell
 python tools/emu_instrumentation/probe_car_models.py --out scratch/card-novice --difficulty 0 --vis 1000 --reps 2
