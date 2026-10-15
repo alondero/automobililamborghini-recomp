@@ -314,7 +314,11 @@ saturated scales, colour restoration and separate RAM allocations.
 
 An external rewrite with exactly the previous output's opcode and bytes is
 indistinguishable from an unchanged correction and retains its stored baseline.
-This is process-local producer metadata, not part of a portable save-state.
+This is process-local producer metadata; the RDRAM-only debug save-state does
+not capture it. Even a same-process F7/F8 restore after a policy or baseline
+change can restore corrected bytes without their matching baseline and scale
+them again. Those restores have not been validated with this cache. Clearing
+the cache alone cannot recover an authored value from already corrected bytes.
 Correcting the source-level fog emitters would remove that ambiguity.
 
 ### Shared traversal and verification
@@ -369,7 +373,8 @@ Windows x64, GCC 15.2.0 Release, USA ROM SHA-256
   40.3 microseconds (maximum 80.8) for 1P and 46.3 (maximum 60.7) for 4P.
   These covered 2,164-4,591 and 5,033-7,277 commands respectively. No traversal
   limit warning occurred. These are sampled producer costs on this machine,
-  not an FPS comparison or a graphics-thread cost.
+  not an FPS comparison or a graphics-thread cost. These timings precede the
+  authored-word fog cache.
 - A further 1P RT64 texture dump emitted the two documented bounded dial
   hashes and suffix hash, with sizes 40x6, 16x57 and 96x8 respectively.
   Geometry/pixel equivalence was not measured. Six-circuit pack verification
@@ -386,6 +391,29 @@ reproduced with the pre-correction executable identified by the companion
 record's executable hash. D3D12 runs passed; this is not evidence of Vulkan
 validation for this change. Related investigation:
 [Vulkan heap-corruption issue](https://github.com/alondero/automobililamborghini-recomp/issues/111).
+
+### Fog density follow-up verification
+
+The Release producer fixture reproduced the compounding bug before the fix:
+a second prepare at density 0.5 changed 0x3200CE80 to 0x1900E740. With authored
+word tracking, the second prepare preserves the entire RAM image. The extended
+fixture also covers duplicate calls, both task slots, policy changes and fresh
+emissions. The incremental game build and all six focused CTests passed.
+
+The Python suite ran 137 tests: 131 passed and all six `ShadowCaptureTests`
+were skipped because NumPy was unavailable. All three RT64 patch-composition
+tests ran with initialized submodule metadata, and the Git-checkout pin audit
+passed. A separate extracted test file without `.git` explicitly skipped that
+audit instead of failing; it does not claim a dependency audit for archives.
+
+With `LAMBO_FOG_SCALE=0.5` and multiplayer matching disabled, circuit-1
+headless and RT64/D3D12 smoke runs each completed 600 replay frames and 601
+swaps, without traversal-limit warnings. RT64 producer snapshots at task
+sequences 60, 300, 420 and 540 each contained one reachable fog-position word
+0x3200CE80. These runs used `recordings/harness-smoke.jsonl`, isolated profiles,
+and the ordinary game loader. The repeated-walk fixture proves idempotence;
+the live samples do not establish whether the native emitter rebuilds the word
+every frame. F7/F8 cache-history restoration was not tested.
 
 ### Texture-pack coordination
 
