@@ -7,6 +7,8 @@ from pathlib import Path
 class HudRT64ContractTests(unittest.TestCase):
     def test_reviewed_rt64_pin(self):
         root = Path(__file__).resolve().parents[1]
+        if not (root / ".git").exists():
+            self.skipTest("RT64 gitlink audit requires a Git checkout; source archive has no .git")
         entry = subprocess.check_output(
             ["git", "ls-files", "--stage", "lib/rt64"], cwd=root, text=True)
         self.assertEqual(

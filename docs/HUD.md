@@ -290,16 +290,42 @@ arena. Moving all HUD/fog writes to the guest producer removes the graphics
 thread's read/modify/write window against asset-loading DMA. This is not a new
 DMA lock or permission to reuse assets referenced by pending tasks: the
 [race-start asset deferral](sky-panorama.md#race-start-asset-lifetime) remains
-required. No guest pointer is retained. The intended replacement is correct
-bounds in source-level HUD emitters as decompilation progresses.
+required. Only copied fog words, physical offsets and the RAM allocation
+identity survive a walk; no guest command pointer is retained. The intended
+replacement is correct bounds in source-level HUD emitters as decompilation
+progresses.
+
+### Idempotent fog correction
+
+`FogRewriter` keeps an authored word and its most recent corrected word per
+physical command offset, on the guest producer only. If the current opcode and
+word equal that previous output, another visit recomputes from the authored
+word. A different opcode or word replaces the baseline. Visiting a non-fog
+command removes that address's record; a different RAM allocation clears all
+records. Default fog settings create no records for unchanged commands.
+
+This makes duplicate sublist calls, repeated task preparation and shared asset
+lists fixed points for a given policy. Changing the density or multiplayer
+match recomputes from the same baseline; returning to default settings restores
+it and removes the record. It does not assume that lists are rebuilt each
+frame. The fixture checks 0.5 on consecutive prepares, shared lists across both
+task slots, fresh emissions at reused addresses, policy changes, zero and
+saturated scales, colour restoration and separate RAM allocations.
+
+An external rewrite with exactly the previous output's opcode and bytes is
+indistinguishable from an unchanged correction and retains its stored baseline.
+This is process-local producer metadata, not part of a portable save-state.
+Correcting the source-level fog emitters would remove that ambiguity.
 
 ### Shared traversal and verification
 
 `src/lambo_f3dex.h` traverses the root once for both HUD and fog policy. It
 tracks segments and calls/tail branches, uses bit 16 for G_DL push/no-push,
 skips extended-command payloads, and only dereferences the native 8 MiB RAM.
-Port-owned extended heap panorama calls contain neither policy's commands and
-are skipped. The maximum call depth is 16 below the root, with one shared
+`resolve` rejects all unaligned or out-of-range targets; it does not inspect
+extended heap lists. An invalid call returns to its parent, while an invalid
+tail branch ends that list. The panorama's extended heap targets are rejected
+by the same 8 MiB address check. The maximum call depth is 16 below the root, with one shared
 200,000-command budget. Reaching either limit aborts the walk and writes a
 `gfx-policy` warning. Already visited matches remain corrected; later matches
 can retain unstable hashes. Debug logging samples command counts, HUD matches

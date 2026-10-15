@@ -137,9 +137,64 @@ int main() {
     assert(read(ram, 0x1004) == 0x64009d00);
     assert(read(ram, 0x100c) == 0x39303712);
     assert(read(ram, root + 28) == (tiles[0].w1 | 0x80200));
-    match_fog = false; ::fog_scale = 0.5;
+    ::fog_scale = 0.5;
+    prepare(); assert(read(ram, 0x1004) == 0x3200ce80);
+    prepare(); assert(read(ram, 0x1004) == 0x3200ce80);
+    match_fog = false;
+    ::fog_scale = 1.0;
+    prepare(); // Disabling the override restores the authored fog and colour.
+    assert(read(ram, 0x1004) == 0x12345678);
+    assert(read(ram, 0x100c) == 0xabcdef12);
+    ::fog_scale = 0.5;
     cmd(0x1000, 0xbc000008, 0x64009d00);
     prepare(); assert(read(ram, 0x1004) == 0x3200ce80);
+    const auto scaled_once = memory;
+    prepare();
+    assert(memory == scaled_once); // repeated preparation must not compound fog
+    ::fog_scale = 0.25;
+    prepare(); assert(read(ram, 0x1004) == 0x1900e740); // recompute from 0x64009d00
+    prepare(); assert(read(ram, 0x1004) == 0x1900e740);
+    ::fog_scale = 0.0;
+    prepare(); assert(read(ram, 0x1004) == 0);
+    prepare(); assert(read(ram, 0x1004) == 0);
+    ::fog_scale = 2.0;
+    prepare(); assert(read(ram, 0x1004) == 0x7fff8000); // saturates signed coefficients
+    prepare(); assert(read(ram, 0x1004) == 0x7fff8000);
+    ::fog_scale = 1.0;
+    prepare(); assert(read(ram, 0x1004) == 0x64009d00); // restore authored coefficients
+
+    // The same static sublist can be called twice and shared by both task slots.
+    ::fog_scale = 0.5;
+    cmd(root, 0x06000000, 0x80001000);
+    cmd(root + 8, 0x06000000, 0x80001000);
+    cmd(root + 16, 0xb8000000, 0);
+    prepare(); assert(read(ram, 0x1004) == 0x3200ce80);
+    const auto visited_twice = memory;
+    prepare(); assert(memory == visited_twice);
+    for (unsigned offset = 0; offset < 0x40; offset += 4)
+        write(ram, second_task + offset, read(ram, task + offset));
+    write(ram, second_task + 0x30, second_root);
+    cmd(second_root, 0x06000000, 0x80001000);
+    cmd(second_root + 8, 0xb8000000, 0);
+    lambo_graphics_task_prepare(ram, second_task | 0x80000000);
+    assert(read(ram, 0x1004) == 0x3200ce80);
+
+    // Fresh guest emissions at a reused address replace the cached baseline.
+    cmd(0x1000, 0xbc000008, 0x4000c000);
+    prepare(); assert(read(ram, 0x1004) == 0x2000e000);
+    prepare(); assert(read(ram, 0x1004) == 0x2000e000);
+    cmd(0x1000, 0xbc000008, 0x64009d00);
+    prepare(); assert(read(ram, 0x1004) == 0x3200ce80);
+    // Visiting a different opcode invalidates the old command's cache entry.
+    cmd(0x1000, 0xe7000000, 0);
+    prepare();
+    cmd(0x1000, 0xbc000008, 0x3200ce80);
+    prepare(); assert(read(ram, 0x1004) == 0x1900e740);
+    // A separate RAM allocation owns its own authored words, even at the same offsets.
+    auto other_memory = memory;
+    write(other_memory.data(), 0x1004, 0x1900e740);
+    lambo_graphics_task_prepare(other_memory.data(), task | 0x80000000);
+    assert(read(other_memory.data(), 0x1004) == 0x0c80f3a0);
     ::fog_scale = 1.0;
 
     // The native builder does not author ucode_size; it cannot gate identity.

@@ -30,11 +30,39 @@ lambo::FogPolicy lambo::fog_policy(const uint8_t* ram) {
     return {config::widescreen_fog_match() && players >= 3, config::fog_scale(circuit)};
 }
 
-void lambo::FogPolicy::command(uint8_t* ram, uint32_t offset, uint32_t w0, uint32_t w1) const {
-    if ((w0 >> 24) == 0xbc && (w0 & 255) == 8 && (match_1p || scale != 1.0)) {
-        const auto value = match_1p ? FOG_MW_1P : w1;
-        f3dex::write(ram, offset + 4, scale == 1.0 ? value : scale_fog_mw(value, scale));
-    } else if ((w0 >> 24) == 0xf8 && match_1p) {
-        f3dex::write(ram, offset + 4, FOG_RGB_1P | (w1 & 255));
+void lambo::FogRewriter::begin(const uint8_t* ram) {
+    const auto identity = reinterpret_cast<uintptr_t>(ram);
+    if (identity != memory_identity) {
+        words.clear();
+        memory_identity = identity;
     }
+}
+
+void lambo::FogRewriter::command(uint8_t* ram, uint32_t offset, uint32_t w0, uint32_t w1,
+                                FogPolicy policy) {
+    const bool position = (w0 >> 24) == 0xbc && (w0 & 255) == 8;
+    if (!position && (w0 >> 24) != 0xf8) {
+        // A rebuilt arena can reuse the address for another command entirely.
+        if (!words.empty()) words.erase(offset);
+        return;
+    }
+    auto previous = words.find(offset);
+    // A fresh opcode/value replaces the baseline. An unchanged previous output
+    // is our own correction, so scale its authored word again, never that output.
+    const bool ours = previous != words.end() && previous->second.opcode == w0 &&
+        previous->second.rewritten == w1;
+    const uint32_t authored = ours ? previous->second.authored : w1;
+    uint32_t value;
+    if (position) {
+        const auto base = policy.match_1p ? FOG_MW_1P : authored;
+        value = policy.scale == 1.0 ? base : scale_fog_mw(base, policy.scale);
+    } else {
+        value = policy.match_1p ? FOG_RGB_1P | (authored & 255) : authored;
+    }
+    if (value == authored) {
+        if (previous != words.end()) words.erase(previous);
+    } else {
+        words.insert_or_assign(offset, Word{w0, authored, value});
+    }
+    if (value != w1) f3dex::write(ram, offset + 4, value);
 }

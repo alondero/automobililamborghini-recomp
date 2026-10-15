@@ -30,10 +30,12 @@ extern "C" void lambo_graphics_task_prepare(uint8_t* ram, uint32_t task_address)
     const auto start = timed ? Clock::now() : Clock::time_point{};
     lambo::HudTextureBounds hud(ram);
     const auto fog = lambo::fog_policy(ram);
+    static lambo::FogRewriter fog_rewriter; // Guest producer only; static sublists persist across tasks.
+    fog_rewriter.begin(ram);
     const auto result = lambo::f3dex::walk(ram, root | 0x80000000u,
         [&](uint32_t offset, uint32_t w0, uint32_t w1) {
             hud.command(offset, w0, w1);
-            fog.command(ram, offset, w0, w1);
+            fog_rewriter.command(ram, offset, w0, w1, fog);
         });
     if (result.budget_limit || result.depth_limit) {
         LAMBO_LOG_WARN("gfx-policy", "walk stopped: budget=%d depth=%d root=0x%08x commands=%u\n",

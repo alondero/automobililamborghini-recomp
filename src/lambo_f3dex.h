@@ -32,8 +32,8 @@ template<class Visitor> class Walker {
         if (hi >= 0x80 && hi <= 0xbf) offset = address & 0x1fffffff;
         else if (hi < 16) offset = (segments[hi] & 0x1fffffff) + (address & 0xffffff);
         else return false;
-        // Extended heap sublists contain the port's panorama, not HUD or fog.
-        // Skip those calls; never dereference outside the native 8 MiB RAM.
+        // Reject every target outside the native 8 MiB RAM. This also rejects
+        // the port's extended-heap panorama targets, without inspecting them.
         return offset <= ram_size - 8 && (offset & 7) == 0;
     }
 

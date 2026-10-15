@@ -33,6 +33,13 @@ python -m unittest discover tests
 This exercises the Python tests under `tests/` without a ROM, generated game
 code, a graphics backend, or a native build.
 
+Skip counts depend on the environment. `ShadowCaptureTests` skips its six tests
+when NumPy is unavailable. `PatchCompositionTests` skips three platform replay
+tests without an initialized RT64 submodule. The HUD gitlink audit additionally
+skips in a source archive without the top-level `.git` metadata; in a Git
+checkout, a changed RT64 pin still fails the audit. Use `python -m unittest
+discover tests -v` to see each skipped test and its reason.
+
 For real mod loading, run `tools/check_mod_support.py` with the smoke NRM and
 your USA ROM as described in [Modding](modding.md#verification-recorded-for-this-integration).
 Its optional `--texture-package PATH` accepts a manifest-free RT64 `.rtz` and
