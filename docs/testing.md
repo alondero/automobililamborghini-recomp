@@ -40,6 +40,12 @@ skips in a source archive without the top-level `.git` metadata; in a Git
 checkout, a changed RT64 pin still fails the audit. Use `python -m unittest
 discover tests -v` to see each skipped test and its reason.
 
+`python tests/test_hud_blue_bar_rom.py` pins the blue HUD strip hook locations
+and the USA ROM instructions they depend on. The instruction check runs when
+`Automobili Lamborghini (USA).z64` is present at the repository root and skips
+otherwise. It needs no generated output. CTest registers the same check as
+`lambo_hud_blue_bar_rom`.
+
 For real mod loading, run `tools/check_mod_support.py` with the smoke NRM and
 your USA ROM as described in [Modding](modding.md#verification-recorded-for-this-integration).
 Its optional `--texture-package PATH` accepts a manifest-free RT64 `.rtz` and
@@ -96,6 +102,7 @@ ctest --test-dir build -R "lambo_cheats|lambo_frontend_settings"
 ctest --test-dir build -R "lambo_prompt_back_action"
 ctest --test-dir build -R "lambo_(native_menu_retired|quit_path)"
 ctest --test-dir build -R "lambo_menu_stick_scale"
+ctest --test-dir build -R "lambo_hud_blue_bar"
 ctest --test-dir build -R "lambo_steering_response"
 ctest --test-dir build -R "lambo_(controller_pak|startup_state_machine)"
 ctest --test-dir build -R "lambo_(no_lod|track_patch|interpolation)"

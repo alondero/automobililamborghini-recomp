@@ -208,6 +208,11 @@ if(BUILD_TESTING)
     target_link_libraries(lambo_config_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_config_live_updates COMMAND lambo_config_tests)
 
+    add_executable(lambo_hud_blue_bar_tests tests/test_hud_blue_bar.cpp src/lambo_hud.cpp)
+    target_include_directories(lambo_hud_blue_bar_tests PRIVATE src
+        ${N64MR}/ultramodern/include ${N64MR}/N64Recomp/include ${N64MR}/thirdparty)
+    add_test(NAME lambo_hud_blue_bar COMMAND lambo_hud_blue_bar_tests)
+
     # Opt-in measurement; deliberately excluded from CTest and the normal build.
     add_executable(lambo_config_benchmark EXCLUDE_FROM_ALL
         tests/benchmark_config.cpp src/lambo_config.cpp
@@ -503,6 +508,8 @@ if(BUILD_TESTING)
 
 
     if(LAMBO_PYTHON_EXECUTABLE)
+        add_test(NAME lambo_hud_blue_bar_rom
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hud_blue_bar_rom.py)
         add_test(NAME lambo_frontend_assets
             COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_frontend_assets.py ${CMAKE_CURRENT_SOURCE_DIR})
         add_test(NAME lambo_quit_path
@@ -782,6 +789,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_pak_io.c
         src/lambo_pak_storage.cpp
         src/lambo_hud_widescreen.c  # extended-GBI alignment around race HUD elements
+        src/lambo_hud.cpp          # optional removal of the decorative blue strip
         src/lambo_flare_widescreen.c  # extended-GBI aspect policy for lens flares
         src/lambo_fog_widescreen.cpp  # wider fog policy for three/four-player views
         src/lambo_graphics_task.cpp

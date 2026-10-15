@@ -13,6 +13,41 @@ verified live against a driven 1P race (probe printfs in the recompiled C + deco
 frame captures of the display list). Names are splat-style (`lamborghini.syms.toml`
 name space); runtime vram = splat − 0xC00.
 
+## Optional blue strip removal
+
+The Enhancements option **Remove blue bar from HUD** defaults to off and
+persists as `remove_blue_hud_bar` in graphics.json. It applies on the next
+HUD emission, including when disabled again.
+
+Confirmed from current USA ROM generation: `func_80050860` emits calls to
+the decorative strip display list `0x80167170` at runtime `0x8004FE74` and
+`0x80051140`. Hooks immediately after those writes (`0x8004FE78` and
+`0x80051144`) call `lambo_hud_remove_blue_bar` in `src/lambo_hud.cpp`.
+Both sites hold the emitted command pointer in t3. On the game thread,
+`MEM_W` accesses the command's aligned 32-bit words directly in native host
+byte order without swapping bytes. The hook replaces only a matching G_DL
+command with G_SPNOOP. It preserves
+the cursor, adjacent HUD commands, and the shared strip display list.
+No host frame state is retained. A mismatched command is left alone.
+
+`lambo_hud_blue_bar` tests the command replacement, default/disable behavior,
+and preservation of adjacent commands. Config and frontend tests cover live
+updates and persistence. These host tests do not prove rendered appearance.
+
+`tests/test_hud_blue_bar_rom.py` pins both hook locations and the dispatcher's
+symbol address, then checks the USA ROM instructions that allocate each command,
+write its opcode and target, and leave its pointer in t3 at the hook.
+The ROM check reads big-endian instruction words using the checked-in symbol
+section's ROM/VRAM mapping; it skips when the USA ROM is absent.
+The existing generation-hook test checks that regenerating the TOML preserves
+the same hooks. A re-splat that changes these assumptions must update the pins.
+
+Visual check on 2026-10-15: Windows, MinGW GCC 15.2, RT64 D3D12,
+1280x720 Expand, one-player Single Race on circuit 1. The Enhancements
+toggle hid the strip immediately and restored it when disabled. Lap, time,
+rank, minimap and speedometer remained visible. Other layouts and backends
+were not visually checked in this session.
+
 ## The 2D pipeline
 
 - **DL write cursor: `0x800A39CC`** (runtime address). Every 2D helper allocates 8
