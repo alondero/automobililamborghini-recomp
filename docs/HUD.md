@@ -482,6 +482,21 @@ the merged generator/TOML; it is not hand-edited. The new save-state regression
 uses synthetic RAM and the production save/load and producer code, with only
 unrelated runtime notifications stubbed.
 
+The merged Release implementation at `9c350df` passed the supported
+`build.ps1 -PreserveSubmodules` build, including the Windows RDRAM reservation
+regression. All 11 focused CTests passed: HUD walker/hash/pin/save-state,
+blue-strip unit and USA-ROM checks, live config, frontend settings, sky panorama,
+interpolation tags and sunlight task records. The full Python suite ran 139
+tests: 133 passed and the same six NumPy-dependent shadow-capture tests skipped.
+`python tools/check_docs.py` and `git diff --check` passed.
+
+The rebuilt game also passed headless and RT64/D3D12 circuit-1 smoke runs at
+density 0.5 with multiplayer matching disabled. Both completed the committed
+600-frame replay and 601 swaps without traversal-limit warnings, using isolated
+profiles and the USA ROM identified above. These are race-start smoke runs;
+the restart guarantee is exercised separately by the synthetic production-I/O
+fixture, rather than a full-game restart capture.
+
 ### Texture-pack coordination
 
 The companion pack supplies dial identities 2e24c9fccec5cac4 and
