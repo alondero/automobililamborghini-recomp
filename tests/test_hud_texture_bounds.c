@@ -33,6 +33,8 @@ int main(void) {
     assert(rdram);
     check(rdram, 0x80160140, 0xF5181400, 0x0000C060, 0x0009C014, 1);
     check(rdram, 0x80160508, 0xF5180800, 0x00018040, 0x0003C0E0, 1);
+    check(rdram, 0x00160140, 0xF5181400, 0x0000C060, 0x0009C014, 1);
+    check(rdram, 0x00160508, 0xF5180800, 0x00018040, 0x0003C0E0, 1);
     // Same shape with another source, or changed geometry, must not match.
     check(rdram, 0x80160144, 0xF5181400, 0x0000C060, 0x0009C014, 0);
     check(rdram, 0x80160140, 0xF5181400, 0x0000C060, 0x0009C018, 0);

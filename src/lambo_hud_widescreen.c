@@ -166,6 +166,7 @@ static void patch_load_mtx_dx(uint8_t* rdram, gpr start, gpr end, float dx_units
 // unrelated TMEM beyond the loaded image, giving a static HUD changing identities.
 // On the guest producer thread, before submission, clamp just these exact
 // source/tile/bounds triples. All words use recomp's word-swapped RDRAM access.
+// Normalize direct physical and KSEG0 source pointers to 29-bit RDRAM addresses.
 // No match means no change. The companion pack supplies the two bounded hashes.
 static void clamp_dial_tiles(uint8_t* rdram, gpr start, gpr end) {
     uint32_t source = 0;
@@ -174,7 +175,7 @@ static void clamp_dial_tiles(uint8_t* rdram, gpr start, gpr end) {
         uint32_t w0 = (uint32_t)MEM_W(0, p);
         uint32_t w1 = (uint32_t)MEM_W(4, p);
         if ((w0 >> 24) == 0xFD) {
-            source = w1;
+            source = w1 & 0x1fffffffu;
             render_tile = 0;
         } else if ((w0 >> 24) == 0xF5 && (w1 >> 24) == 0) {
             render_tile = p;
@@ -182,9 +183,9 @@ static void clamp_dial_tiles(uint8_t* rdram, gpr start, gpr end) {
             uint32_t t0 = (uint32_t)MEM_W(0, render_tile);
             uint32_t t1 = (uint32_t)MEM_W(4, render_tile);
             const uint32_t clamp = 0x00080200u;
-            if ((source == 0x80160140u && t0 == 0xF5181400u &&
+            if ((source == 0x00160140u && t0 == 0xF5181400u &&
                  (t1 & ~clamp) == 0x0000C060u && w1 == 0x0009C014u) ||
-                (source == 0x80160508u && t0 == 0xF5180800u &&
+                (source == 0x00160508u && t0 == 0xF5180800u &&
                  (t1 & ~clamp) == 0x00018040u && w1 == 0x0003C0E0u)) {
                 MEM_W(4, render_tile) = (int32_t)(t1 | clamp);
             }

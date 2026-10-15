@@ -246,8 +246,9 @@ USA dial tiles loaded as 40x6 and 16x57 were sampled with 64x8 and 16x64
 wrap masks. RT64 v5 hashes include that unused TMEM, so another draw could
 change the replacement identity without changing any visible dial pixels.
 `lambo_ws_pin_reset` now clamps those exact tiles in the producer's completed
-HUD bracket, independently of the widescreen shift. Matching includes source
-0x80160140/0x80160508, RGBA32 stride, and exact F2 bounds.
+HUD bracket, independently of the widescreen shift. It normalizes the direct
+physical/KSEG0 source pointers to 0x00160140/0x00160508 before matching, then
+checks RGBA32 stride and exact F2 bounds.
 
 `lambo_hud_texture_bounds.cpp` clamps the six 80x80 circuit tiles (sources
 0x121A88, 0x122710, 0x123398, 0x124020, 0x124CA8, 0x125930) and 96x8 rank
