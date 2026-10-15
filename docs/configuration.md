@@ -92,6 +92,7 @@ The port adds these keys:
 | widescreen_fog_match | true | Use the open one-player fog policy for three- and four-player views. |
 | widescreen_sky_match | true | Draw the sky panorama in three- and four-player views. |
 | automatic_pit_stops | false | Automatically operate the refuelling and tyre-change stick controls during a pit stop. |
+| remove_blue_hud_bar | false | Hide the decorative blue race HUD strip. Toggle Remove blue bar from HUD in Enhancements; applies immediately. |
 | menu_stick_sensitivity | 1.0 | Multiplier on the pre-race menu analog-stick deflection; 1.0 = stock. |
 | no_lod | true | Enable port-side removal of some stock distance reductions. |
 | no_lod_circuit | [true,true,true,false,false,false] | Per-circuit visibility-list policy. |

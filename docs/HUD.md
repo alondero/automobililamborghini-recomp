@@ -13,6 +13,32 @@ verified live against a driven 1P race (probe printfs in the recompiled C + deco
 frame captures of the display list). Names are splat-style (`lamborghini.syms.toml`
 name space); runtime vram = splat − 0xC00.
 
+## Optional blue strip removal
+
+The Enhancements option **Remove blue bar from HUD** defaults to off and
+persists as `remove_blue_hud_bar` in graphics.json. It applies on the next
+HUD emission, including when disabled again.
+
+Confirmed from current USA ROM generation: `func_80050860` emits calls to
+the decorative strip display list `0x80167170` at runtime `0x8004FE74` and
+`0x80051140`. Hooks immediately after those writes (`0x8004FE78` and
+`0x80051144`) call `lambo_hud_remove_blue_bar` in `src/lambo_hud.cpp`.
+Both sites hold the emitted command pointer in t3. On the game thread,
+the hook checks both 32-bit words through word-swapped `MEM_W` accesses,
+then replaces only that matching G_DL command with G_SPNOOP. It preserves
+the cursor, adjacent HUD commands, and the shared strip display list.
+No host frame state is retained. A mismatched command is left alone.
+
+`lambo_hud_blue_bar` tests the command replacement, default/disable behavior,
+and preservation of adjacent commands. Config and frontend tests cover live
+updates and persistence. These host tests do not prove rendered appearance.
+
+Visual check on 2026-10-15: Windows, MinGW GCC 15.2, RT64 D3D12,
+1280x720 Expand, one-player Single Race on circuit 1. The Enhancements
+toggle hid the strip immediately and restored it when disabled. Lap, time,
+rank, minimap and speedometer remained visible. Other layouts and backends
+were not visually checked in this session.
+
 ## The 2D pipeline
 
 - **DL write cursor: `0x800A39CC`** (runtime address). Every 2D helper allocates 8
