@@ -275,11 +275,12 @@ pointer in t5; the hook receives t5 + 0x10, the embedded OSTask. Its two accepte
 physical addresses are 0xBF1E8/0xC6C38. The corresponding builder task pointers
 are 0x800BF240/0x800C6C90 and root lists are at builder task + 0x1C0
 (OSTask + 0x218). OSTask fields are native u32 words in word-swapped RDRAM:
-type at +0, microcode code pointer/size at +0x10/+0x14, data pointer/size at
-+0x18/+0x1C, and display-list pointer at +0x30. Sizes are bytes. The gate requires
-type 1, code at physical 0x86B60, data at 0x8F210, both sizes 0x800, and the exact
-slot's root. These values come from 0x800055D0..0x80005620 and
-0x80005524..0x8000555C. Unknown tasks/microcodes fail closed before decoding.
+type at +0, microcode code pointer at +0x10, data pointer/size at +0x18/+0x1C,
+and display-list pointer at +0x30. Sizes are bytes. The gate requires type 1,
+code at physical 0x86B60, data at 0x8F210, data size 0x800, and the exact slot's
+root. The builder does not author `ucode_size` (+0x14); it is not an identity
+gate. These values come from 0x800055D0..0x80005620 and 0x80005524..0x8000555C.
+Unknown tasks/microcodes fail closed before decoding.
 
 The scheduler's DP completion fence releases a reused slot to the producer;
 the game loads assets and builds lists before this hook publishes the task.
@@ -319,6 +320,44 @@ minimum of tile bounds and masks for `sampleWidth/sampleHeight`, then uses those
 sizes for TMEM loading/hashing. The pin test fails on a gitlink change, requiring
 review of that chain before accepting a new pin. The hasher test alone does not
 exercise the sampler-size decision. Dependency patches are unchanged.
+
+### Runtime verification of the producer correction
+
+Windows x64, GCC 15.2.0 Release, USA ROM SHA-256
+`cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c`:
+
+- `build.ps1 -PreserveSubmodules` rebuilt generated output and the full port;
+  the Windows RDRAM reservation regression passed.
+- Six focused CTests passed (HUD walker/hash/pin, sky panorama, interpolation
+  tags and sunlight task records). The existing standalone HUD bracket test
+  passed. The Python suite passed 137 tests, with six optional tests skipped.
+- The headless smoke completed 600 replay frames and 601 swaps. Sampled race
+  roots contained both dial contracts, one map setup and a suffix setup.
+- RT64/D3D12 one- and four-player circuit-1 runs each completed the same
+  600-frame replay and 601 swaps. Real root traversal reached both dial slices
+  in 1P, the map in both layouts, and suffixes when drawn. Producer snapshots
+  confirmed the unauthored `ucode_size` field is zero.
+- With debug logging enabled, 21 sampled race tasks per run took a median
+  40.3 microseconds (maximum 80.8) for 1P and 46.3 (maximum 60.7) for 4P.
+  These covered 2,164-4,591 and 5,033-7,277 commands respectively. No traversal
+  limit warning occurred. These are sampled producer costs on this machine,
+  not an FPS comparison or a graphics-thread cost.
+- A further 1P RT64 texture dump emitted the two documented bounded dial
+  hashes and suffix hash, with sizes 40x6, 16x57 and 96x8 respectively.
+  Geometry/pixel equivalence was not measured. Six-circuit pack verification
+  and the earlier PR's visual captures were not repeated here.
+
+For timing, use the smoke replay in a windowed circuit-1 run with `--verbose`,
+then repeat with four players. `gfx-policy` logs counts and elapsed microseconds.
+The fixed replay is `recordings/harness-smoke.jsonl`; both renderers can use
+`tools/run_game_scenario.py` with isolated scenario/profile paths. Texture dumps
+and task snapshots contain game data and stay local.
+
+Vulkan startup exited with `0xC0000374` in this verification. The same failure
+reproduced with the pre-correction executable identified by the companion
+record's executable hash. D3D12 runs passed; this is not evidence of Vulkan
+validation for this change. Related investigation:
+[Vulkan heap-corruption issue](https://github.com/alondero/automobililamborghini-recomp/issues/111).
 
 ### Texture-pack coordination
 

@@ -18,9 +18,10 @@ extern "C" void lambo_graphics_task_prepare(uint8_t* ram, uint32_t task_address)
     const auto field = [&](uint32_t offset) { return lambo::f3dex::read(ram, task + offset); };
     const uint32_t root = field(0x30) & 0x1fffffff;
     // Only the USA F3DEX v1 code/data pair emitted by 0x800055D0..0x80005620.
+    // ucode_size (+0x14) is not authored by this builder and is not an identity.
     // Launcher, audio and unknown microcodes fail closed before list decoding.
     if (field(0) != 1 || (field(0x10) & 0x1fffffff) != 0x86b60 ||
-        field(0x14) != 0x800 || (field(0x18) & 0x1fffffff) != 0x8f210 ||
+        (field(0x18) & 0x1fffffff) != 0x8f210 ||
         field(0x1c) != 0x800 || root != task + 0x218) return;
 
     static uint64_t sequence = 0; // Guest producer only, diagnostic sampling.

@@ -3,8 +3,8 @@
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
-#include <algorithm>
 #include <cassert>
+#include <cstring>
 #include <vector>
 #include "lambo_f3dex.h"
 #include "lambo_log.h"
@@ -35,10 +35,9 @@ int main() {
     };
     auto prepare = [&] { lambo_graphics_task_prepare(ram, task | 0x80000000); };
     auto init = [&] {
-        std::fill(memory.begin(), memory.end(), 0);
+        std::memset(ram, 0, 0x800000);
         write(ram, task, 1);
         write(ram, task + 0x10, 0x80086b60);
-        write(ram, task + 0x14, 0x800);
         write(ram, task + 0x18, 0x8008f210);
         write(ram, task + 0x1c, 0x800);
         write(ram, task + 0x30, root);
@@ -135,8 +134,13 @@ int main() {
     prepare(); assert(read(ram, 0x1004) == 0x3200ce80);
     ::fog_scale = 1.0;
 
+    // The native builder does not author ucode_size; it cannot gate identity.
+    init(); tile_list(root, tiles[0]);
+    write(ram, task + 0x14, 0xdeadbeef);
+    prepare(); assert(read(ram, root + 20) == (tiles[0].w1 | 0x80200));
+
     // Unknown tasks/microcodes/root pointers fail closed before touching lists.
-    for (auto offset : {0u, 0x10u, 0x14u, 0x18u, 0x1cu, 0x30u}) {
+    for (auto offset : {0u, 0x10u, 0x18u, 0x1cu, 0x30u}) {
         init(); tile_list(root, tiles[0]);
         write(ram, task + offset, read(ram, task + offset) + 4);
         const auto original = memory;
