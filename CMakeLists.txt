@@ -94,15 +94,14 @@ if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/CMakeLists.txt)
 endif()
 
 if(BUILD_TESTING)
-    add_executable(lambo_hud_texture_bounds_tests tests/test_hud_texture_bounds.c)
-    target_include_directories(lambo_hud_texture_bounds_tests PRIVATE
-        ${N64MR}/N64Recomp/include lib/rt64/include)
-    add_test(NAME lambo_hud_texture_bounds COMMAND lambo_hud_texture_bounds_tests)
     add_executable(lambo_hud_hash_padding_tests tests/test_hud_hash_padding.cpp)
     target_include_directories(lambo_hud_hash_padding_tests PRIVATE
         lib/rt64/src lib/rt64/src/contrib)
     add_test(NAME lambo_hud_hash_padding COMMAND lambo_hud_hash_padding_tests)
-    add_executable(lambo_hud_texture_walk_tests tests/test_hud_texture_walk.cpp)
+    add_executable(lambo_hud_texture_walk_tests tests/test_hud_texture_walk.cpp
+        src/lambo_graphics_task.cpp src/lambo_hud_texture_bounds.cpp src/lambo_fog_widescreen.cpp)
+    target_include_directories(lambo_hud_texture_walk_tests PRIVATE src
+        ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
     add_test(NAME lambo_hud_texture_walk COMMAND lambo_hud_texture_walk_tests)
 
     add_executable(lambo_mod_api_tests tests/test_mod_api.cpp src/lambo_mod_api.cpp)
@@ -515,6 +514,9 @@ if(BUILD_TESTING)
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_game_scenario.py
         )
+        add_test(NAME lambo_hud_rt64_contract
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hud_rt64_contract.py)
         add_test(NAME lambo_rt_task_capture
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rt_task_capture.py
@@ -782,6 +784,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_hud_widescreen.c  # extended-GBI alignment around race HUD elements
         src/lambo_flare_widescreen.c  # extended-GBI aspect policy for lens flares
         src/lambo_fog_widescreen.cpp  # wider fog policy for three/four-player views
+        src/lambo_graphics_task.cpp
         src/lambo_hud_texture_bounds.cpp
         src/lambo_sky_widescreen.cpp  # sky panorama policy for three/four-player views
         src/lambo_rt_shadows.cpp  # task-owned sunlight provenance diagnostics

@@ -23,7 +23,6 @@
 // Set by create_render_context so the game-specific VI retrace hook (vi_cb in main.cpp)
 // can reach RDRAM. ultramodern's events thread owns the only rdram pointer otherwise.
 uint8_t* g_lambo_rdram = nullptr;
-extern "C" void lambo_fog_match_1p(uint8_t* rdram, uint32_t dl_addr);  // src/lambo_fog_widescreen.cpp
 
 namespace headless {
 
@@ -1345,9 +1344,6 @@ public:
     void send_dl(const OSTask* t) override {
         static int count = 0;
         ++count;
-        if (t && g_lambo_rdram) {
-            lambo_fog_match_1p(g_lambo_rdram, (uint32_t)(int32_t)t->t.data_ptr);
-        }
         if (count == 1) {
             LAMBO_LOG("gfx", "first OSTask submitted to renderer (send_dl); task type=%u\n",
                          t ? (unsigned)t->t.type : 0u);

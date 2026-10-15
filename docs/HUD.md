@@ -242,42 +242,91 @@ region PAST the cursor is the previous frame's tail — same layout, already-com
 
 ## Stable HUD texture identities (2026-10-15)
 
-USA dial tiles loaded as 40x6 and 16x57 were sampled with 64x8 and 16x64
-wrap masks. RT64 v5 hashes include that unused TMEM, so another draw could
-change the replacement identity without changing any visible dial pixels.
-`lambo_ws_pin_reset` now clamps those exact tiles in the producer's completed
-HUD bracket, independently of the widescreen shift. Matching includes source
-0x80160140/0x80160508, RGBA32 stride, and exact F2 bounds.
+Status: the tile and ownership contracts below are checked in source and host
+fixtures. Runtime measurements are recorded separately below.
 
-`lambo_hud_texture_bounds.cpp` clamps the six 80x80 circuit tiles (sources
-0x121A88, 0x122710, 0x123398, 0x124020, 0x124CA8, 0x125930) and 96x8 rank
-suffix tile (0x165028), including split-screen mirrored variants. It follows
-F3DEX segmented calls/tail branches, with an 8 MiB address limit, 16-level
-stack and 200,000-command budget. Exact source, format/stride, tile index,
-wrap/mirror bits, and loaded bounds must all match. It changes only clamp
-bits; geometry, pixel data and visible UV scale are unchanged. Repeated calls
-are idempotent. Unknown tiles are left alone.
+USA dial tiles load 40x6 and 16x57 texels with 64x8 and 16x64 wrap masks.
+The six circuit maps load 80x80 texels with 128x128 masks. Rank suffixes load
+96x8 texels with a 128-wide mask. RT64 v5 can hash unused TMEM padding when
+those masks exceed the loaded rectangle. A later load can change the identity
+without changing the texture's loaded bytes.
 
-The consumer runs in `RT64Context::send_dl` before `processDisplayLists`.
-The guest frame builder alternates tasks at 0x800BF240/0x800C6C90 and the
-scheduler waits for DP completion before reusing them (see sky-panorama.md's
-task-lifetime analysis). `ultramodern/src/events.cpp` arms DP completion only
-after `send_dl` returns. Thus the producer cannot reuse this submitted task's
-commands during the walk and synchronous RT64 interpretation. The existing
-early SP completion is not the ownership fence; DP completion is. Static
-asset sublists are read-only on the guest side during rendering. No guest
-pointers survive the call. If scheduler ownership changes, move this correction
-into a source-level HUD emitter before submission instead of extending this
-consumer patch. A future emitter should encode correct tile bounds directly.
+One exact-match table in `src/lambo_hud_texture_bounds.cpp` covers both dial
+sources (physical 0x160140/0x160508), all six map sources (0x121A88, 0x122710,
+0x123398, 0x124020, 0x124CA8, 0x125930), and suffix source 0x165028.
+Matching checks the render-tile index, format/stride, wrap/mirror bits and F2
+bounds. Only the S/T clamp bits of matching F5 command words are rewritten.
+Mirror bits survive. Unknown contracts pass through unchanged; matching is
+idempotent. Geometry commands, texture bytes and UV coordinates are untouched.
+Clamp changes sampler addressing, so filtering at the loaded rectangle's edge
+may change pixels. Pixel equivalence has not been measured and is not claimed.
 
-The companion texture pack adds bounded identities 2e24c9fccec5cac4 and
-93fb46ad45acf4d2 for the dial, six bounded map identities, and
-d7ea8162b91a5e1d for suffixes. Old alias-only packs cannot supply these new
-identities. Install the matching HUD pack with this port change.
+### Producer ownership and microcode gate
 
-Focused CTest cases: `lambo_hud_texture_bounds`, `lambo_hud_hash_padding`,
-`lambo_hud_texture_walk`. Assertions stay enabled in Release. The hash test
-uses RT64's real hasher: 256 padding variations produce 256 wrapped identities
-but one bounded identity for each gauge slice; changing a visible byte still
-changes the hash. Tests also cover exclusion, idempotence, nested/segmented
-lists and malformed/cyclic traversal limits.
+`lambo_graphics_task_prepare` runs on the guest game thread at 0x80005728,
+before `osSendMesg` publishes a completed graphics task. The same hook then
+copies sunlight diagnostic records, so snapshots include these corrections.
+Both RT64 and `LAMBO_HEADLESS=1` receive the same corrected HUD/fog commands.
+The dial no longer depends on a paired widescreen bracket. Neither renderer's
+`send_dl` writes HUD or fog commands.
+
+USA frame-builder evidence: 0x800054E0..0x80005518 puts the scheduler-message
+pointer in t5; the hook receives t5 + 0x10, the embedded OSTask. Its two accepted
+physical addresses are 0xBF1E8/0xC6C38. The corresponding builder task pointers
+are 0x800BF240/0x800C6C90 and root lists are at builder task + 0x1C0
+(OSTask + 0x218). OSTask fields are native u32 words in word-swapped RDRAM:
+type at +0, microcode code pointer/size at +0x10/+0x14, data pointer/size at
++0x18/+0x1C, and display-list pointer at +0x30. Sizes are bytes. The gate requires
+type 1, code at physical 0x86B60, data at 0x8F210, both sizes 0x800, and the exact
+slot's root. These values come from 0x800055D0..0x80005620 and
+0x80005524..0x8000555C. Unknown tasks/microcodes fail closed before decoding.
+
+The scheduler's DP completion fence releases a reused slot to the producer;
+the game loads assets and builds lists before this hook publishes the task.
+The walker also rewrites matching commands in asset sublists, not just the task
+arena. Moving all HUD/fog writes to the guest producer removes the graphics
+thread's read/modify/write window against asset-loading DMA. This is not a new
+DMA lock or permission to reuse assets referenced by pending tasks: the
+[race-start asset deferral](sky-panorama.md#race-start-asset-lifetime) remains
+required. No guest pointer is retained. The intended replacement is correct
+bounds in source-level HUD emitters as decompilation progresses.
+
+### Shared traversal and verification
+
+`src/lambo_f3dex.h` traverses the root once for both HUD and fog policy. It
+tracks segments and calls/tail branches, uses bit 16 for G_DL push/no-push,
+skips extended-command payloads, and only dereferences the native 8 MiB RAM.
+Port-owned extended heap panorama calls contain neither policy's commands and
+are skipped. The maximum call depth is 16 below the root, with one shared
+200,000-command budget. Reaching either limit aborts the walk and writes a
+`gfx-policy` warning. Already visited matches remain corrected; later matches
+can retain unstable hashes. Debug logging samples command counts, HUD matches
+and producer time in microseconds for the first 12 tasks and every 60th task.
+
+Focused CTests are `lambo_hud_texture_walk`, `lambo_hud_hash_padding` and
+`lambo_hud_rt64_contract`. Assertions stay enabled in Release. The producer
+fixture checks every source contract, mirror variants, exclusion, idempotence,
+root-reachable dial commands without brackets, shared fog policy, segmented
+calls, bit-16 branches, extended payloads, unknown microcodes, depth 16 versus
+17, malformed addresses and the global command budget. The real RT64 hasher
+test varies padding 256 ways: wrapped identities vary, bounded ones do not,
+and changing a loaded texel still changes its hash.
+
+The required dependency audit is pinned to RT64
+`f0728a2520d5aa735886240de3fee75cc805f6d6`. `State::flush` in
+`src/hle/rt64_state.cpp` derives `clampS/clampT` from `cms/cmt`, selects the
+minimum of tile bounds and masks for `sampleWidth/sampleHeight`, then uses those
+sizes for TMEM loading/hashing. The pin test fails on a gitlink change, requiring
+review of that chain before accepting a new pin. The hasher test alone does not
+exercise the sampler-size decision. Dependency patches are unchanged.
+
+### Texture-pack coordination
+
+The companion pack supplies dial identities 2e24c9fccec5cac4 and
+93fb46ad45acf4d2, six bounded map identities, and suffix d7ea8162b91a5e1d.
+Older alias-only HUD packs will stop replacing these tiles. Install the matching
+[HUD texture pack](https://github.com/alondero/automobili-lamborghini-textures/pull/9).
+Its verification record currently names base `cefbde5` plus a local patch digest,
+not an exact tested `63b6c6b` checkout. That historical record does not confirm a
+regeneration against `63b6c6b`; release coordination must record the exact port
+revision used for the next pack verification.

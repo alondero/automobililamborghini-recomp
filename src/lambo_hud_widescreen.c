@@ -161,44 +161,10 @@ static void patch_load_mtx_dx(uint8_t* rdram, gpr start, gpr end, float dx_units
     }
 }
 
-// USA func_80056318 emits these two RGBA32 slices with wrap masks rounded up
-// to 64x8 and 16x64, but only loads/draws 40x6 and 16x57. RT64 then hashes
-// unrelated TMEM beyond the loaded image, giving a static HUD changing identities.
-// On the guest producer thread, before submission, clamp just these exact
-// source/tile/bounds triples. All words use recomp's word-swapped RDRAM access.
-// No match means no change. The companion pack supplies the two bounded hashes.
-static void clamp_dial_tiles(uint8_t* rdram, gpr start, gpr end) {
-    uint32_t source = 0;
-    gpr render_tile = 0;
-    for (gpr p = start; p + 8 <= end; p += 8) {
-        uint32_t w0 = (uint32_t)MEM_W(0, p);
-        uint32_t w1 = (uint32_t)MEM_W(4, p);
-        if ((w0 >> 24) == 0xFD) {
-            source = w1;
-            render_tile = 0;
-        } else if ((w0 >> 24) == 0xF5 && (w1 >> 24) == 0) {
-            render_tile = p;
-        } else if (w0 == 0xF2000000 && render_tile) {
-            uint32_t t0 = (uint32_t)MEM_W(0, render_tile);
-            uint32_t t1 = (uint32_t)MEM_W(4, render_tile);
-            const uint32_t clamp = 0x00080200u;
-            if ((source == 0x80160140u && t0 == 0xF5181400u &&
-                 (t1 & ~clamp) == 0x0000C060u && w1 == 0x0009C014u) ||
-                (source == 0x80160508u && t0 == 0xF5180800u &&
-                 (t1 & ~clamp) == 0x00018040u && w1 == 0x0003C0E0u)) {
-                MEM_W(4, render_tile) = (int32_t)(t1 | clamp);
-            }
-            render_tile = 0;
-        }
-    }
-}
-
 void lambo_ws_pin_reset(uint8_t* rdram) {
     if (!bracket_disarm_if_open()) {
         return; /* label-landing path that skipped the pin (e.g. pit stop) */
     }
-    clamp_dial_tiles(rdram, lambo_ws_bracket_start,
-                     MEM_W(0, (gpr)(int32_t)LAMBO_DL_CURSOR));
     patch_load_mtx_dx(rdram, lambo_ws_bracket_start,
                       MEM_W(0, (gpr)(int32_t)LAMBO_DL_CURSOR), LAMBO_WS_NEEDLE_DX);
     emit_cmd(rdram,

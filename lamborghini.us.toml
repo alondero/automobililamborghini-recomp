@@ -739,12 +739,14 @@ func = "func_80032450"
 before_vram = 0x80035C40
 text = "{ extern void lambo_rt_probe_sun_art(uint8_t*); lambo_rt_probe_sun_art(rdram); }"
 
-# Copy native records before osSendMesg publishes the completed task. The task
+# Apply HUD/fog policy, then copy native records before osSendMesg publishes the completed task.
+# At 0x80005728, t5 holds the scheduler message; OSTask begins at t5 + 0x10.
+# Producer-only writes and F3DEX identity/layout evidence: docs/HUD.md. The task
 # reuse fence does not protect mutable object/segment globals from later frames.
 [[patches.hook]]
 func = "func_80006018"
 before_vram = 0x80005728
-text = "{ extern void lambo_rt_probe_task_publish(uint8_t*); lambo_rt_probe_task_publish(rdram); }"
+text = "{ extern void lambo_graphics_task_prepare(uint8_t*, unsigned int); lambo_graphics_task_prepare(rdram, (unsigned int)ctx->r13 + 0x10u); extern void lambo_rt_probe_task_publish(uint8_t*); lambo_rt_probe_task_publish(rdram); }"
 
 [[patches.hook]]
 func = "func_8000A6C0"
