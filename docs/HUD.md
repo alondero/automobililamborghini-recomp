@@ -254,6 +254,7 @@ without changing the texture's loaded bytes.
 One exact-match table in `src/lambo_hud_texture_bounds.cpp` covers both dial
 sources (physical 0x160140/0x160508), all six map sources (0x121A88, 0x122710,
 0x123398, 0x124020, 0x124CA8, 0x125930), and suffix source 0x165028.
+Direct physical/KSEG0 source pointers are normalized before matching.
 Matching checks the render-tile index, format/stride, wrap/mirror bits and F2
 bounds. Only the S/T clamp bits of matching F5 command words are rewritten.
 Mirror bits survive. Unknown contracts pass through unchanged; matching is

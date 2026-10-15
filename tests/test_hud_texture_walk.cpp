@@ -80,6 +80,14 @@ int main() {
             assert(memory == expected); // static lists are idempotent
         }
     }
+    // Preserve the PR's physical-address regression cases as well as KSEG0.
+    for (const auto tile : {tiles[0], tiles[1]}) {
+        init(); tile_list(root, tile);
+        write(ram, root + 4, tile.source);
+        prepare();
+        assert(read(ram, root + 20) == (tile.w1 | 0x80200));
+    }
+
     // The alternating second task slot follows the same producer path.
     init();
     constexpr uint32_t second_task = task + 0x7a50, second_root = root + 0x7a50;
