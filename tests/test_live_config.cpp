@@ -67,6 +67,17 @@ int main() {
 #endif
 
     auto cfg = lambo::config::load_and_apply_graphics();
+    expect(!lambo::config::remove_blue_hud_bar(), "blue HUD bar removal defaults off");
+    lambo::config::set_remove_blue_hud_bar(true);
+    expect(lambo::config::remove_blue_hud_bar(), "blue HUD bar removal updates live");
+    lambo::config::flush_pending_graphics_updates();
+    expect(read_json(path).at("remove_blue_hud_bar") == true, "blue HUD bar removal persists");
+    lambo::config::load_and_apply_graphics();
+    expect(lambo::config::remove_blue_hud_bar(), "blue HUD bar removal reloads");
+    lambo::config::set_remove_blue_hud_bar(false);
+    lambo::config::flush_pending_graphics_updates();
+    lambo::config::load_and_apply_graphics();
+    expect(!lambo::config::remove_blue_hud_bar(), "blue HUD bar can be restored persistently");
     expect(!lambo::config::automatic_pit_stops(), "pit assistance defaults off");
     lambo::config::set_automatic_pit_stops(true);
     lambo::config::flush_pending_graphics_updates();

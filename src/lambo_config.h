@@ -128,6 +128,11 @@ void set_widescreen_sky_match(bool enabled);
 bool automatic_pit_stops();
 void set_automatic_pit_stops(bool enabled);
 
+// Hide the decorative blue race HUD strip. Applied live, persisted as
+// remove_blue_hud_bar in graphics.json; default false (original HUD).
+bool remove_blue_hud_bar();
+void set_remove_blue_hud_bar(bool enabled);
+
 // Remove the ROM's per-mode LOD reductions: emit each track
 // segment's scenery layer in 2P-4P races like 1P does. graphics.json key
 // "no_lod" (default true), overridable by LAMBO_NO_LOD=1/0.

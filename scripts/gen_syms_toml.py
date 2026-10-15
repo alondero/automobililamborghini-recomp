@@ -692,6 +692,18 @@ NATIVE_OVERRIDES = [
 # generated lamborghini.us.toml (issues #2/#4 landed them by editing the toml directly; the
 # generator must carry them or a regen silently drops the widescreen HUD + LOD patches).
 PATCH_BLOCKS = """
+# Optional decorative blue-strip removal, after the complete G_DL write.
+# Both sites leave the command pointer in t3; see src/lambo_hud.cpp.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x8004FE78
+text = "{ extern void lambo_hud_remove_blue_bar(uint8_t*, recomp_context*); lambo_hud_remove_blue_bar(rdram, ctx); }"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80051144
+text = "{ extern void lambo_hud_remove_blue_bar(uint8_t*, recomp_context*); lambo_hud_remove_blue_bar(rdram, ctx); }"
+
 # Native, session-only cheats. Evidence and contracts: docs/cheats.md.
 [[patches.hook]]
 func = "BootLoadInitialAssets"
