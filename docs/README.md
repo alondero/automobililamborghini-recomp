@@ -60,6 +60,7 @@ status line before relying on a historical measurement.
 | [Track research](TRACK_MODDING_RESEARCH.md) | Historical track data map and unresolved hypotheses. |
 | [Track index](TRACK_INDEX.md) | Circuit, menu, and developer-warp numbering. |
 | [Car differences](CAR_DIFFERENCES.md) | Vehicle identity and measurement notes. |
+| [Car select info](car-select-info.md) | Optional car name and stats card, derivation and measurement. |
 | [HUD notes](HUD.md) | Widescreen and HUD display-list evidence. |
 | [Interpolation](interpolation.md) | Frame interpolation behavior and regression evidence. |
 | [Camera sequences](camera-sequences.md) | Camera gate measurements and visual comparisons. |

@@ -29,6 +29,9 @@ GEAR_STATE_OFFSET = 0xA8
 STEERING_ACCUM_OFFSET = 0xB4
 POSITION_OFFSET = 0x14
 SCRATCH_OFFSET = 0xD0
+# 97 km/h is the first speed the speedometer shows as 60 MPH:
+# trunc(97 * 0.621) = 60, trunc(96 * 0.621) = 59.
+SPEED_THRESHOLDS = (50, 97, 100, 150)
 
 
 def read_text(path):
@@ -66,7 +69,7 @@ def summarize(path, model, difficulty):
 
     launch = next(s[0] for s in samples if s[1] > 0)
     thresholds = {str(t): next((s[0] - launch for s in samples if s[1] >= t), None)
-                  for t in (50, 100, 150)}
+                  for t in SPEED_THRESHOLDS}
     commands = [struct.unpack_from(">h", s[3], STEERING_ACCUM_OFFSET)[0]
                 for s in samples if s[0] <= launch + 80]
     end100 = next((i for i, s in enumerate(samples) if s[1] >= 100), None)

@@ -90,9 +90,28 @@ The gate at `0x8003C7A4-0x8003C908` clears eight availability halfwords at
 `0x800985C0`, enables categories 0 and 4, then enables the others from
 `0x800A4170`. This establishes the bit-to-category mapping, not which
 championship or victory code awards each bit. The development warp bypasses
-this availability gate. Retail names and the meaning of the three visual
-variants remain unverified; identify UI entries by descriptor/category until
-names have evidence.
+this availability gate.
+
+## Car identities
+
+The ROM has no car-name strings. Names below come from the menu's 3D preview
+of each model, captured in RT64 on 2026-10-15. The three variants of each
+category are colour schemes of one car. The availability pairs agree: the two
+unconditional cars are the Lamborghinis, and each later pair unlocks together.
+The Testarossa row's gear ratios also equal the road car's published ratios.
+
+| Model cursors | Category | Car |
+| ---: | ---: | --- |
+| 0-2 | 0 | Lamborghini Diablo |
+| 3-5 | 4 | Lamborghini Countach |
+| 6-8 | 1 | Porsche 959 |
+| 9-11 | 2 | Ferrari F50 |
+| 12-14 | 3 | McLaren F1 |
+| 15-17 | 5 | Bugatti EB110 |
+| 18-20 | 6 | Dodge Viper |
+| 21-23 | 7 | Ferrari Testarossa |
+
+The optional [car select info](car-select-info.md) card shows these names.
 
 ## Real engine and transmission differences
 
@@ -124,8 +143,10 @@ Each row also has its own engine-output curve pointer at `+0x30`. The engine
 updater indexes signed halfword samples by engine speed shifted right by 6
 (`0x80025ED8-0x80025EF4`), multiplies by applied throttle and a shared scale,
 then stores a driving contribution at vehicle `+0x94` (`0x80026400`). These
-curves and gear ratios are concrete per-car inputs to acceleration. Their
-raw values are not yet calibrated as horsepower or torque in physical units.
+curves and gear ratios are concrete per-car inputs to acceleration. The
+[car select info](car-select-info.md#what-the-numbers-mean) card reads them as
+newton-metres and derives power and top speed; that unit is an interpretation
+checked against published figures, not a decoded constant.
 The row's `+0x2C` coefficient participates in fuel depletion when enabled
 (`0x80026470-0x800264CC`); it is not a grip rating.
 
@@ -225,9 +246,11 @@ attempts.
 
 The cursor-to-category mapping and inclusive maximum gear states are ready to
 use. Launch comparisons must hold difficulty, transmission, track and input
-fixed.
-Top speed still needs a collision-free equilibrium measurement; maximum
-observed circuit speed is not a terminal-speed rating. Handling comparisons
+fixed. The [car select info](car-select-info.md) card uses both difficulties'
+launch times and a calculated top speed at the rev limit. Only the Diablo's
+top speed is observed; a collision-free equilibrium measurement for the other
+cars remains open. Maximum observed circuit speed is not a terminal-speed
+rating. Handling comparisons
 must use the actual categories at matched speed, not the old illegal
 difficulty overrides. Port measurements also need reference-emulator
 comparison before being advertised as exact retail performance.

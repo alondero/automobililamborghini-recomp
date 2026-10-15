@@ -203,6 +203,11 @@ if(BUILD_TESTING)
         ${N64MR}/ultramodern/include ${N64MR}/N64Recomp/include ${N64MR}/thirdparty)
     add_test(NAME lambo_hud_blue_bar COMMAND lambo_hud_blue_bar_tests)
 
+    add_executable(lambo_car_card_tests tests/test_car_card.cpp src/lambo_car_card.cpp)
+    target_include_directories(lambo_car_card_tests PRIVATE src
+        ${N64MR}/ultramodern/include ${N64MR}/N64Recomp/include ${N64MR}/thirdparty)
+    add_test(NAME lambo_car_card COMMAND lambo_car_card_tests)
+
     # Opt-in measurement; deliberately excluded from CTest and the normal build.
     add_executable(lambo_config_benchmark EXCLUDE_FROM_ALL
         tests/benchmark_config.cpp src/lambo_config.cpp
@@ -500,6 +505,8 @@ if(BUILD_TESTING)
     if(LAMBO_PYTHON_EXECUTABLE)
         add_test(NAME lambo_hud_blue_bar_rom
             COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hud_blue_bar_rom.py)
+        add_test(NAME lambo_car_card_rom
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_car_card_rom.py)
         add_test(NAME lambo_frontend_assets
             COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_frontend_assets.py ${CMAKE_CURRENT_SOURCE_DIR})
         add_test(NAME lambo_quit_path
@@ -777,6 +784,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_pak_storage.cpp
         src/lambo_hud_widescreen.c  # extended-GBI alignment around race HUD elements
         src/lambo_hud.cpp          # optional removal of the decorative blue strip
+        src/lambo_car_card.cpp     # optional car-select info card
         src/lambo_flare_widescreen.c  # extended-GBI aspect policy for lens flares
         src/lambo_fog_widescreen.cpp  # wider fog policy for three/four-player views
         src/lambo_sky_widescreen.cpp  # sky panorama policy for three/four-player views

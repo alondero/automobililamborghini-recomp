@@ -53,6 +53,10 @@ The Enhancements settings tab also offers an optional menu stick sensitivity so
 a shorter stick deflection moves between pre-race menu options. It defaults to
 off and does not affect race steering.
 
+**Show car details on car select** adds each car's name, power, top speed and
+acceleration to the car select screen. It is off by default. See
+[car select info](docs/car-select-info.md).
+
 ## Settings
 
 The settings screen includes:

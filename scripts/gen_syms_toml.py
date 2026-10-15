@@ -692,6 +692,13 @@ NATIVE_OVERRIDES = [
 # generated lamborghini.us.toml (issues #2/#4 landed them by editing the toml directly; the
 # generator must carry them or a regen silently drops the widescreen HUD + LOD patches).
 PATCH_BLOCKS = """
+# Optional car-select info card, drawn at the join just before the frame's
+# FULLSYNC/ENDDL so it lands over the finished screen; see src/lambo_car_card.cpp.
+[[patches.hook]]
+func = "func_800028D0"
+before_vram = 0x80002480
+text = "{ extern void lambo_car_card_draw(uint8_t*); lambo_car_card_draw(rdram); }"
+
 # Optional decorative blue-strip removal, after the complete G_DL write.
 # Both sites leave the command pointer in t3; see src/lambo_hud.cpp.
 [[patches.hook]]

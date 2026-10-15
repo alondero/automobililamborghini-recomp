@@ -390,6 +390,16 @@ int main(int argc, char** argv) {
         require(!std::get<bool>(enhancements.get_option_value("remove_blue_hud_bar")),
                 "blue HUD bar option must refresh from port config");
         enhancements.set_option_value("remove_blue_hud_bar", true);
+        require(enhancements.has_option("car_select_info"), "missing car select info option");
+        require(!std::get<bool>(enhancements.get_option_value("car_select_info")),
+                "car select info must default off");
+        enhancements.set_option_value("car_select_info", true);
+        require(lambo::config::car_select_info(), "car select info must apply immediately");
+        lambo::config::set_car_select_info(false);
+        lambo::ui::refresh_frontend_settings();
+        require(!std::get<bool>(enhancements.get_option_value("car_select_info")),
+                "car select info option must refresh from port config");
+        enhancements.set_option_value("car_select_info", true);
         for (const char* key : {"automatic_pit_stops", "fog_match", "sky_match", "no_lod", "draw_distance", "fog_scale", "camera_distance", "camera_height", "camera_fov", "menu_stick_sensitivity"})
             require(enhancements.has_option(key), "missing enhancement");
         // Ray-traced shadows are pre-alpha, so they live on the Debug tab and
@@ -431,6 +441,7 @@ int main(int argc, char** argv) {
         require(saved.at("future_option") == "preserve me", "unknown settings lost");
         require(saved.at("automatic_pit_stops") == true, "pit assistance persistence");
         require(saved.at("remove_blue_hud_bar") == true, "blue HUD bar removal persistence");
+        require(saved.at("car_select_info") == true, "car select info persistence");
         require(saved.at("menu_stick_sensitivity") == 1.8, "menu stick sensitivity persistence");
         require(saved.at("rt_shadows") == true && saved.at("rt_shadow_rays") == 16 &&
                 saved.at("rt_shadow_softness") == 1.25, "ray-traced shadow persistence");
