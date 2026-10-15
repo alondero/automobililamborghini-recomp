@@ -37,6 +37,7 @@
 #include "lambo_rt_production.h"
 
 extern "C" void lambo_fog_match_1p(uint8_t* rdram, uint32_t dl_addr);  // src/lambo_fog_widescreen.cpp
+extern "C" void lambo_hud_texture_bounds(uint8_t* rdram, uint32_t dl_addr);
 
 namespace {
 
@@ -456,6 +457,7 @@ public:
         // so resolve()'s hi>=0x80 branch handles both call sites; the seg[0]={0} default
         // would silently mis-resolve in RT64 if the root DL ever set segment 0.
         lambo_fog_match_1p(app->core.RDRAM, (uint32_t)task->t.data_ptr | 0x80000000u);
+        lambo_hud_texture_bounds(app->core.RDRAM, (uint32_t)task->t.data_ptr | 0x80000000u);
         app->interpreter->loadUCodeGBI(task->t.ucode & 0x3FFFFFF, task->t.ucode_data & 0x3FFFFFF, true);
         // The setting enables producer values for tasks begun afterwards; this
         // task keeps the snapshot taken here even if the setting changes later.

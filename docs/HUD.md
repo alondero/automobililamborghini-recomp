@@ -238,3 +238,46 @@ group stderr by line. To see actual DL bytes, dump RDRAM around the cursor from 
 native hook to a file and decode offline (F3DEX v1 decoder in session scratch;
 `tools/` has no committed copy — rederive from this table if needed). The stale
 region PAST the cursor is the previous frame's tail — same layout, already-complete.
+
+
+## Stable HUD texture identities (2026-10-15)
+
+USA dial tiles loaded as 40x6 and 16x57 were sampled with 64x8 and 16x64
+wrap masks. RT64 v5 hashes include that unused TMEM, so another draw could
+change the replacement identity without changing any visible dial pixels.
+`lambo_ws_pin_reset` now clamps those exact tiles in the producer's completed
+HUD bracket, independently of the widescreen shift. Matching includes source
+0x80160140/0x80160508, RGBA32 stride, and exact F2 bounds.
+
+`lambo_hud_texture_bounds.cpp` clamps the six 80x80 circuit tiles (sources
+0x121A88, 0x122710, 0x123398, 0x124020, 0x124CA8, 0x125930) and 96x8 rank
+suffix tile (0x165028), including split-screen mirrored variants. It follows
+F3DEX segmented calls/tail branches, with an 8 MiB address limit, 16-level
+stack and 200,000-command budget. Exact source, format/stride, tile index,
+wrap/mirror bits, and loaded bounds must all match. It changes only clamp
+bits; geometry, pixel data and visible UV scale are unchanged. Repeated calls
+are idempotent. Unknown tiles are left alone.
+
+The consumer runs in `RT64Context::send_dl` before `processDisplayLists`.
+The guest frame builder alternates tasks at 0x800BF240/0x800C6C90 and the
+scheduler waits for DP completion before reusing them (see sky-panorama.md's
+task-lifetime analysis). `ultramodern/src/events.cpp` arms DP completion only
+after `send_dl` returns. Thus the producer cannot reuse this submitted task's
+commands during the walk and synchronous RT64 interpretation. The existing
+early SP completion is not the ownership fence; DP completion is. Static
+asset sublists are read-only on the guest side during rendering. No guest
+pointers survive the call. If scheduler ownership changes, move this correction
+into a source-level HUD emitter before submission instead of extending this
+consumer patch. A future emitter should encode correct tile bounds directly.
+
+The companion texture pack adds bounded identities 2e24c9fccec5cac4 and
+93fb46ad45acf4d2 for the dial, six bounded map identities, and
+d7ea8162b91a5e1d for suffixes. Old alias-only packs cannot supply these new
+identities. Install the matching HUD pack with this port change.
+
+Focused CTest cases: `lambo_hud_texture_bounds`, `lambo_hud_hash_padding`,
+`lambo_hud_texture_walk`. Assertions stay enabled in Release. The hash test
+uses RT64's real hasher: 256 padding variations produce 256 wrapped identities
+but one bounded identity for each gauge slice; changing a visible byte still
+changes the hash. Tests also cover exclusion, idempotence, nested/segmented
+lists and malformed/cyclic traversal limits.
