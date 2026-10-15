@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #include "lambo_config.h"
+#include "lambo_vehicle.h"
 #include "recomp.h"
 
 namespace lambo::car_card {
@@ -64,16 +65,23 @@ namespace {
 using lambo::car_card::CardText;
 
 constexpr uint32_t kDlCursor = 0x800A39CCu;
-// Current frame's graphics-task block; its DL starts at +0x1C0 and the
-// 0x7A50-byte block (minus the 0x68 header before this pointer) ends it.
-constexpr uint32_t kFrameBlock = 0x800A2BFCu;
-constexpr uint32_t kFrameBlockBytesAfterPointer = 0x7A50u - 0x68u;
-constexpr uint32_t kGameState = 0x800CE6ACu;
+// Current frame's task pointer, one of two double-buffered tasks (slot +
+// 0x68, stride 0x7A50). Its display list runs from task + 0x1C0 up to the
+// scheduler fields at task + 0x79C0 (docs/sky-panorama.md).
+constexpr uint32_t kCurrentTask = 0x800A2BFCu;
+constexpr uint32_t kFirstTask = 0x800BF240u;
+constexpr uint32_t kTaskStride = 0x7A50u;
+constexpr uint32_t kListStart = 0x1C0u;
+constexpr uint32_t kListEnd = 0x79C0u;
+// Card command counts: strip and glyph setup, then one load and texture
+// rectangle per glyph.
+constexpr uint32_t kSetupCommands = 15;
+constexpr uint32_t kCommandsPerGlyph = 10;
+// The game's own FULLSYNC and ENDDL follow the card.
+constexpr uint32_t kGameTailBytes = 16;
 constexpr uint32_t kMenuScreen = 0x80098562u;
 constexpr uint32_t kSelectingPlayer = 0x800CE6A6u;  // 1-based
-constexpr uint32_t kModelCursors = 0x800CE7E6u;     // + player * 2
 constexpr uint32_t kModelDescriptors = 0x8013D490u; // 24 bytes; +0 category
-constexpr uint32_t kDifficultyCursor = 0x800CE7A4u;
 constexpr uint32_t kSpeedUnits = 0x800CE802u;       // 0 KM/H, 1 MPH
 // Blue chrome font drawn by func_8004CCB4 (runtime 0x8004C0B4) and resident
 // on the car screen: per-character glyph map and advance tables, and 16x16
@@ -174,21 +182,27 @@ size_t glyph_count(const CardText& text) {
 // the finished car-select screen and the stock frame is otherwise unchanged.
 extern "C" void lambo_car_card_draw(uint8_t* rdram) {
     if (!lambo::config::car_select_info()) return;
-    if (read_h(rdram, kGameState) != kStateMenu || read_h(rdram, kMenuScreen) != kScreenCar) return;
+    if (read_h(rdram, LAMBO_GUEST_GAME_STATE_ADDR) != kStateMenu ||
+        read_h(rdram, kMenuScreen) != kScreenCar) return;
     const int player = read_h(rdram, kSelectingPlayer);
     if (player < 1 || player > 4) return;
-    const int model = read_h(rdram, kModelCursors + static_cast<uint32_t>(player) * 2u);
+    const int model = read_h(rdram, LAMBO_GUEST_PLAYER_MODEL_CURSOR_ADDR +
+                                        static_cast<uint32_t>(player - 1) * LAMBO_GUEST_PLAYER_MODEL_CURSOR_STRIDE);
     if (model < 0 || model >= 24) return;
     const int category = read_h(rdram, kModelDescriptors + static_cast<uint32_t>(model) * 24u);
     const CardText text = lambo::car_card::card_text(
-        category, read_h(rdram, kSpeedUnits) == 1, read_h(rdram, kDifficultyCursor));
+        category, read_h(rdram, kSpeedUnits) == 1, read_h(rdram, LAMBO_GUEST_MENU_DIFFICULTY_ADDR));
     if (text.name.empty()) return;
 
-    // Skip the card rather than overrun this frame's display-list block;
-    // the 16 bytes keep room for the game's own FULLSYNC/ENDDL.
-    const uint32_t needed = (16u + static_cast<uint32_t>(glyph_count(text)) * 10u) * 8u + 16u;
-    const uint32_t end = read_w(rdram, kFrameBlock) + kFrameBlockBytesAfterPointer;
-    if (read_w(rdram, kDlCursor) + needed > end) return;
+    // Draw only into a recognised task's display-list arena, and skip the card
+    // rather than reach the scheduler fields. Subtract from the verified end
+    // instead of adding to an untrusted cursor.
+    const uint32_t task = read_w(rdram, kCurrentTask);
+    if (task != kFirstTask && task != kFirstTask + kTaskStride) return;
+    const uint32_t cursor = read_w(rdram, kDlCursor);
+    const uint32_t needed =
+        (kSetupCommands + static_cast<uint32_t>(glyph_count(text)) * kCommandsPerGlyph) * 8u + kGameTailBytes;
+    if ((cursor & 7u) != 0 || cursor < task + kListStart || cursor > task + kListEnd - needed) return;
 
     // Translucent strips use the panel's own render mode, combiner and colour.
     // Both blend only in the second cycle, so the menu draws in two-cycle mode.

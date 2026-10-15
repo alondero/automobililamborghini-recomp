@@ -92,15 +92,18 @@ dispatcher paths join there just before the frame's `G_RDPFULLSYNC` and
 
 The hook does nothing unless the option is on, game state `0x800CE6AC` is 6
 (menu) and menu screen `0x80098562` is 13 (CAR). It reads the selecting player
-at `0x800CE6A6` (1-4), that player's model cursor at `0x800CE7E6 + player*2`
-(0-23), the category from model descriptor `0x8013D490 + model*24`,
+at `0x800CE6A6` (1-4), that player's model cursor at
+`0x800CE7E8 + (player - 1) * 2` (0-23; the shared vehicle-layout address), the category from model descriptor `0x8013D490 + model*24`,
 difficulty `0x800CE7A4` and speed units `0x800CE802`. Any value out of range
 skips the card. These are all signed halfwords.
 
 The hook appends commands at the display-list cursor `0x800A39CC` and writes no
-other guest memory. The current frame's graphics block pointer at `0x800A2BFC`
-sits `0x68` bytes into a `0x7A50`-byte block; the card is skipped if it would
-not fit before that block ends.
+other guest memory. The current task pointer at `0x800A2BFC` must be one of
+the two double-buffered tasks, `0x800BF240` or `0x800C6C90`. The cursor must be
+8-byte aligned and inside that task's display-list arena, which runs from
+task + `0x1C0` to the scheduler fields at task + `0x79C0`
+([sky panorama](sky-panorama.md)). The card is skipped unless it and the game's
+own `G_RDPFULLSYNC` and `G_ENDDL` fit before task + `0x79C0`.
 
 Commands copy the game's own menu drawing:
 

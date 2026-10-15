@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "lambo_car_card.h"
+#include "lambo_vehicle.h"
 #include "recomp.h"
 
 extern "C" void lambo_car_card_draw(uint8_t*);
@@ -43,13 +44,17 @@ int main() {
     uint8_t* rdram = memory.data();
     const uint32_t block = 0x800BF240u;
     const uint32_t dl = block + 0x1C0u;
+    // Scheduler fields follow the display-list arena (docs/sky-panorama.md).
+    const uint32_t arena_end = block + 0x79C0u;
+    // The selecting player is 1-based; the cursor array is 0-based.
+    const uint32_t player_two_cursor = LAMBO_GUEST_PLAYER_MODEL_CURSOR_ADDR + LAMBO_GUEST_PLAYER_MODEL_CURSOR_STRIDE;
     auto reset = [&](uint32_t cursor) {
         MEM_W(0, address(0x800A2BFCu)) = static_cast<int32_t>(block);
         MEM_W(0, address(0x800A39CCu)) = static_cast<int32_t>(cursor);
         MEM_H(0, address(0x800CE6ACu)) = 6;
         MEM_H(0, address(0x80098562u)) = 13;
         MEM_H(0, address(0x800CE6A6u)) = 2;
-        MEM_H(0, address(0x800CE7E6u + 4)) = 18;  // player 2 on a Viper model
+        MEM_H(0, address(player_two_cursor)) = 18;  // a Viper model
         MEM_H(0, address(0x8013D490u + 18 * 24)) = 6;
         MEM_H(0, address(0x800CE7A4u)) = 0;
         MEM_H(0, address(0x800CE802u)) = 1;
@@ -100,7 +105,7 @@ int main() {
     require(cursor() == dl, "races must not emit");
 
     reset(dl);
-    MEM_H(0, address(0x800CE7E6u + 4)) = 24;
+    MEM_H(0, address(player_two_cursor)) = 24;
     lambo_car_card_draw(rdram);
     require(cursor() == dl, "invalid model cursor must not emit");
 
@@ -109,8 +114,37 @@ int main() {
     lambo_car_card_draw(rdram);
     require(cursor() == dl, "invalid selecting player must not emit");
 
-    const uint32_t near_end = block + 0x7A50u - 0x68u - 64u;
-    reset(near_end);
+    // The card plus the game's own FULLSYNC/ENDDL must end at the arena end.
+    const uint32_t card_bytes = static_cast<uint32_t>(15 + glyphs * 10) * 8u;
+    const uint32_t last_fit = arena_end - card_bytes - 16u;
+    reset(last_fit);
     lambo_car_card_draw(rdram);
-    require(cursor() == near_end, "card must not overrun the frame's display-list block");
+    require(cursor() == last_fit + card_bytes, "card must draw when it exactly fits the arena");
+    reset(last_fit + 8u);
+    lambo_car_card_draw(rdram);
+    require(cursor() == last_fit + 8u, "card must not write into the scheduler fields");
+
+    reset(dl + 4u);
+    lambo_car_card_draw(rdram);
+    require(cursor() == dl + 4u, "misaligned display-list cursor must not emit");
+
+    reset(dl - 8u);
+    lambo_car_card_draw(rdram);
+    require(cursor() == dl - 8u, "cursor before the display-list arena must not emit");
+
+    reset(0);
+    lambo_car_card_draw(rdram);
+    require(cursor() == 0, "uninitialised cursor must not emit");
+
+    reset(dl);
+    MEM_W(0, address(0x800A2BFCu)) = static_cast<int32_t>(block + 0x7A50u + 8u);
+    lambo_car_card_draw(rdram);
+    require(cursor() == dl, "unrecognised task pointer must not emit");
+
+    // The second of the two double-buffered tasks is accepted.
+    const uint32_t second = block + 0x7A50u;
+    reset(second + 0x1C0u);
+    MEM_W(0, address(0x800A2BFCu)) = static_cast<int32_t>(second);
+    lambo_car_card_draw(rdram);
+    require(cursor() == second + 0x1C0u + card_bytes, "second task buffer must draw");
 }
