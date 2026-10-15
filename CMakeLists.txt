@@ -498,6 +498,8 @@ if(BUILD_TESTING)
 
 
     if(LAMBO_PYTHON_EXECUTABLE)
+        add_test(NAME lambo_hud_blue_bar_rom
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hud_blue_bar_rom.py)
         add_test(NAME lambo_frontend_assets
             COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_frontend_assets.py ${CMAKE_CURRENT_SOURCE_DIR})
         add_test(NAME lambo_quit_path
