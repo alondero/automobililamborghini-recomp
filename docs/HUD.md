@@ -331,7 +331,8 @@ Windows x64, GCC 15.2.0 Release, USA ROM SHA-256
   the Windows RDRAM reservation regression passed.
 - Six focused CTests passed (HUD walker/hash/pin, sky panorama, interpolation
   tags and sunlight task records). The existing standalone HUD bracket test
-  passed. The Python suite passed 137 tests, with six optional tests skipped.
+  passed. The Python suite ran 137 tests: 131 passed and six optional tests
+  were skipped.
 - The headless smoke completed 600 replay frames and 601 swaps. Sampled race
   roots contained both dial contracts, one map setup and a suffix setup.
 - RT64/D3D12 one- and four-player circuit-1 runs each completed the same
