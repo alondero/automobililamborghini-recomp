@@ -32,9 +32,23 @@ lambo::FogPolicy lambo::fog_policy(const uint8_t* ram) {
 
 void lambo::FogRewriter::begin(const uint8_t* ram) {
     const auto identity = reinterpret_cast<uintptr_t>(ram);
-    if (identity != memory_identity) {
-        words.clear();
-        memory_identity = identity;
+    if (identity != memory_identity) reset(ram);
+}
+
+void lambo::FogRewriter::reset(const uint8_t* ram) {
+    words.clear();
+    memory_identity = reinterpret_cast<uintptr_t>(ram);
+}
+
+void lambo::FogRewriter::snapshot(const uint8_t* ram, uint8_t* copy) const {
+    if (memory_identity != reinterpret_cast<uintptr_t>(ram)) return;
+    for (const auto& [offset, word] : words) {
+        // Compare the captured bytes, not live RAM: a fresh emission that no
+        // longer matches our correction must survive the snapshot unchanged.
+        if (f3dex::read(copy, offset) == word.opcode &&
+            f3dex::read(copy, offset + 4) == word.rewritten) {
+            f3dex::write(copy, offset + 4, word.authored);
+        }
     }
 }
 

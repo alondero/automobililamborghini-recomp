@@ -132,6 +132,13 @@ RAM, not native thread, renderer, or audio state. Loading another state after
 playback or recording begins is therefore reported as an explicit failure rather
 than silently rewinding only half of the system.
 
+New debug saves retain authored fog words so density is applied once after a
+restart. Legacy snapshots without that baseline marker are rejected when
+non-default density would rescale an unknown value. For an old snapshot, use
+default density to inspect the stored state, or make a new save from a fresh
+race. The [HUD notes](HUD.md#idempotent-fog-correction) describe the file marker
+and the restart regression.
+
 ## Direct record/replay controls
 
 | Environment variable | Meaning |

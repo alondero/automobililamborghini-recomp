@@ -6,8 +6,27 @@
 #include <chrono>
 #include "lambo_f3dex.h"
 #include "lambo_fog_widescreen.h"
+#include "lambo_graphics_task.h"
 #include "lambo_hud_texture_bounds.h"
 #include "lambo_log.h"
+
+namespace {
+// Preparation and save/load run on the same guest producer thread.
+lambo::FogRewriter fog_rewriter;
+}
+
+extern "C" void lambo_graphics_fog_snapshot(const uint8_t* ram, uint8_t* snapshot) {
+    fog_rewriter.snapshot(ram, snapshot);
+}
+
+extern "C" void lambo_graphics_fog_loaded(uint8_t* ram) {
+    fog_rewriter.reset(ram);
+}
+
+extern "C" int lambo_graphics_fog_legacy_safe(const uint8_t* snapshot) {
+    const auto fog = lambo::fog_policy(snapshot);
+    return fog.scale == 1.0 || fog.match_1p;
+}
 
 extern "C" void lambo_graphics_task_prepare(uint8_t* ram, uint32_t task_address) {
     if (!ram) return;
@@ -30,7 +49,6 @@ extern "C" void lambo_graphics_task_prepare(uint8_t* ram, uint32_t task_address)
     const auto start = timed ? Clock::now() : Clock::time_point{};
     lambo::HudTextureBounds hud(ram);
     const auto fog = lambo::fog_policy(ram);
-    static lambo::FogRewriter fog_rewriter; // Guest producer only; static sublists persist across tasks.
     fog_rewriter.begin(ram);
     const auto result = lambo::f3dex::walk(ram, root | 0x80000000u,
         [&](uint32_t offset, uint32_t w0, uint32_t w1) {

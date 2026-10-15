@@ -349,12 +349,24 @@ saturated scales, colour restoration and separate RAM allocations.
 
 An external rewrite with exactly the previous output's opcode and bytes is
 indistinguishable from an unchanged correction and retains its stored baseline.
-This is process-local producer metadata; the RDRAM-only debug save-state does
-not capture it. Even a same-process F7/F8 restore after a policy or baseline
-change can restore corrected bytes without their matching baseline and scale
-them again. Those restores have not been validated with this cache. Clearing
-the cache alone cannot recover an authored value from already corrected bytes.
-Correcting the source-level fog emitters would remove that ambiguity.
+Debug saves preserve the baseline in the file instead of serializing the
+process-local cache. On the guest frame-boundary thread, the saver copies the
+low 8 MiB RAM, replaces only known matching fog outputs in that copy with their
+authored words, and writes the copy. Live lists remain untouched. The 32-byte
+LMBOSTAT v1 header uses `reserved[0] = 0x31474F46` (`FOG1` in little-endian
+header bytes) to identify this payload; size and word-swapped byte order stay
+the same, and Track Lab's v1 reader remains compatible. Loading clears the fog
+cache before the next task applies the current policy. Both a new process and
+same-process F8 therefore apply density once, including after policy changes.
+
+Older files have no authored-word marker. Their coefficients might already be
+scaled, and that lost baseline cannot be inferred safely. A legacy load is
+rejected before changing RAM when density differs from 1 and the 3P/4P match
+cannot supply a canonical baseline. Use default density to inspect a legacy
+snapshot as stored, or create a new save from a freshly loaded race. Legacy
+files may already contain faded fog; this does not recover their lost values.
+Correcting the source-level fog emitters would remove the remaining identical
+external-write ambiguity described above.
 
 ### Shared traversal and verification
 
@@ -371,7 +383,8 @@ can retain unstable hashes. Debug logging samples command counts, HUD matches
 and producer time in microseconds for the first 12 tasks and every 60th task.
 
 Focused CTests are `lambo_hud_texture_walk`, `lambo_hud_hash_padding` and
-`lambo_hud_rt64_contract`. Assertions stay enabled in Release. The producer
+`lambo_hud_rt64_contract`, plus `lambo_hud_savestate` for real save/load I/O.
+Assertions stay enabled in Release. The producer
 fixture checks every source contract, mirror variants, exclusion, idempotence,
 root-reachable dial commands without brackets, shared fog policy, segmented
 calls, bit-16 branches, extended payloads, unknown microcodes, depth 16 versus
@@ -448,7 +461,26 @@ sequences 60, 300, 420 and 540 each contained one reachable fog-position word
 0x3200CE80. These runs used `recordings/harness-smoke.jsonl`, isolated profiles,
 and the ordinary game loader. The repeated-walk fixture proves idempotence;
 the live samples do not establish whether the native emitter rebuilds the word
-every frame. F7/F8 cache-history restoration was not tested.
+every frame. That round did not test save-state restart; the regression and
+correction below supersede its earlier save-state limitation.
+
+### Save-state restart and main integration
+
+The real save/load fixture failed before the correction on the first fresh
+process: a saved 0x3200CE80 became 0x1900E740. `lambo_hud_savestate` now starts a
+writer and four fresh load/prepare/save processes for each of 1P and 2P. Each
+keeps the live fog at 0x3200CE80 with density 0.5; every saved payload holds the
+authored 0x64009D00. The fixture also checks same-process F8 after changing to
+0.25, loading with default density, no live-RAM writes during save, rejection
+of unmarked legacy half-density files before RAM changes, and truncated input.
+The walker fixture's separate-allocation case now normalizes its saved copy
+and expects the existing density, rather than asserting another halving.
+
+Current `main`, including the blue HUD strip enhancement, is merged. Both sets
+of documentation and generation hooks are retained. Generated C is rebuilt from
+the merged generator/TOML; it is not hand-edited. The new save-state regression
+uses synthetic RAM and the production save/load and producer code, with only
+unrelated runtime notifications stubbed.
 
 ### Texture-pack coordination
 

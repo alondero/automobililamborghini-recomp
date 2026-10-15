@@ -7,6 +7,7 @@
 #include <cstring>
 #include <vector>
 #include "lambo_f3dex.h"
+#include "lambo_graphics_task.h"
 #include "lambo_log.h"
 
 extern "C" void lambo_graphics_task_prepare(uint8_t*, uint32_t);
@@ -190,11 +191,15 @@ int main() {
     prepare();
     cmd(0x1000, 0xbc000008, 0x3200ce80);
     prepare(); assert(read(ram, 0x1004) == 0x1900e740);
-    // A separate RAM allocation owns its own authored words, even at the same offsets.
+    // A saved copy carries authored words, so a new allocation/process applies
+    // the policy once rather than treating the previous output as authored.
     auto other_memory = memory;
-    write(other_memory.data(), 0x1004, 0x1900e740);
+    lambo_graphics_fog_snapshot(ram, other_memory.data());
+    assert(read(ram, 0x1004) == 0x1900e740); // Live task is untouched.
+    assert(read(other_memory.data(), 0x1004) == 0x3200ce80);
+    lambo_graphics_fog_loaded(other_memory.data());
     lambo_graphics_task_prepare(other_memory.data(), task | 0x80000000);
-    assert(read(other_memory.data(), 0x1004) == 0x0c80f3a0);
+    assert(read(other_memory.data(), 0x1004) == 0x1900e740);
     ::fog_scale = 1.0;
 
     // The native builder does not author ucode_size; it cannot gate identity.

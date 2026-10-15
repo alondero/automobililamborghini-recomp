@@ -108,7 +108,7 @@ ctest --test-dir build -R "lambo_(controller_pak|startup_state_machine)"
 ctest --test-dir build -R "lambo_(no_lod|track_patch|interpolation)"
 ctest --test-dir build -R "lambo_rt64|lambo_audio"
 ctest --test-dir build -R "lambo_rt_sun_tasks"
-ctest --test-dir build -R "lambo_hud_(texture_walk|hash_padding|rt64_contract)"
+ctest --test-dir build -R "lambo_hud_(texture_walk|hash_padding|rt64_contract|savestate)"
 ctest --test-dir build -R "lambo_mods_rtz_container"
 ctest --test-dir build -R "lambo_sky_(projection|panorama)|lambo_camera_(projection|runtime)"
 ~~~
@@ -117,6 +117,11 @@ The HUD group covers producer-side display-list walking, RT64's unused-padding
 hash behavior, and the reviewed RT64 dependency contract. See the [HUD texture
 identity notes](HUD.md#stable-hud-texture-identities-2026-10-15) for fixture
 coverage and the bounds that the producer applies.
+The save-state case starts separate native processes around the real F7/F8
+file I/O, covering four restart cycles for each of 1P/2P, same-process policy
+changes, authored fog payloads and legacy/truncated rejection. Build
+`lambo_hud_savestate_tests` before running it; the other HUD tests use
+`lambo_hud_texture_walk_tests` and `lambo_hud_hash_padding_tests`.
 
 The complete list is the add_test list in CMakeLists.txt; keep this page
 updated when a test is added or renamed. Some tests are only registered when

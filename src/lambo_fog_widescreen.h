@@ -19,6 +19,8 @@ class FogRewriter {
     std::unordered_map<uint32_t, Word> words;
 public:
     void begin(const uint8_t* ram);
+    void reset(const uint8_t* ram);
+    void snapshot(const uint8_t* ram, uint8_t* copy) const;
     void command(uint8_t* ram, uint32_t offset, uint32_t w0, uint32_t w1, FogPolicy policy);
 };
 }

@@ -6,8 +6,9 @@
 // guest-addressable N64 RAM (osMemSize reports 8 MiB) -- every object table, the camera,
 // the car transforms, the race/state-machine word all live here. The extended region
 // above 8 MiB (PI handles at 0x80800000, the mod heap at 0x81000000) is boot-static setup,
-// identical every run, so it is neither saved nor restored. A raw memcpy preserves RDRAM's
-// byte-swizzle (MEM_B's ^3), so save and restore are symmetric with no un-swizzle.
+// identical every run, so it is neither saved nor restored. The copy preserves RDRAM's
+// byte-swizzle (MEM_B's ^3). Known corrected fog words are replaced with their authored
+// values in the save copy, so a new process reapplies density once (docs/HUD.md).
 //
 // Why this is a frame-boundary operation, not a true resumable save-state: each guest
 // OSThread is a real native std::thread with its CPU register file (recomp_context) on a
@@ -56,6 +57,7 @@
 #include <string.h>
 
 #include "lambo_log.h"
+#include "lambo_graphics_task.h"
 
 #include "recomp.h"
 
@@ -84,6 +86,9 @@ extern void lambo_rt_probe_invalidate(void);
 // touched, so a truncated or foreign file is rejected rather than corrupting the game.
 #define STATE_MAGIC "LMBOSTAT"
 #define STATE_VERSION 1u
+// reserved[0] marks a payload whose known fog corrections were replaced with
+// authored words in the save copy. Header layout and Track Lab readers stay v1.
+#define STATE_FOG_AUTHORED 0x31474F46u /* "FOG1" in little-endian header bytes */
 typedef struct {
     char     magic[8];             // "LMBOSTAT"
     uint32_t version;              // STATE_VERSION
@@ -128,14 +133,25 @@ static void do_save(uint8_t* rdram, const char* path) {
         LAMBO_LOG("state", "save: cannot open %s for write\n", tmp);
         return;
     }
+    uint8_t* snapshot = (uint8_t*)malloc(RDRAM_SNAP_SIZE);
+    if (snapshot == NULL) {
+        LAMBO_LOG("state", "save: out of memory\n");
+        fclose(f);
+        remove(tmp);
+        return;
+    }
+    memcpy(snapshot, rdram, RDRAM_SNAP_SIZE);
+    lambo_graphics_fog_snapshot(rdram, snapshot);
     state_header_t h;
     memset(&h, 0, sizeof(h));
     memcpy(h.magic, STATE_MAGIC, 8);
     h.version    = STATE_VERSION;
     h.rdram_size = RDRAM_SNAP_SIZE;
     h.state      = (uint16_t)MEM_H(0, (gpr)(int32_t)STATE_VAR);
+    h.reserved[0] = STATE_FOG_AUTHORED;
     int ok = (fwrite(&h, 1, sizeof(h), f) == sizeof(h)) &&
-             (fwrite(rdram, 1, RDRAM_SNAP_SIZE, f) == RDRAM_SNAP_SIZE);
+             (fwrite(snapshot, 1, RDRAM_SNAP_SIZE, f) == RDRAM_SNAP_SIZE);
+    free(snapshot);
     // Flush before rename so the rename publishes a fully-written file.
     ok = ok && (fflush(f) == 0);
     fclose(f);
@@ -196,8 +212,15 @@ static int do_load(uint8_t* rdram, const char* path) {
         free(buf);
         return 0;
     }
+    if (h.reserved[0] != STATE_FOG_AUTHORED && !lambo_graphics_fog_legacy_safe(buf)) {
+        LAMBO_LOG_WARN("state", "load: legacy snapshot has no authored fog baseline; "
+            "use default fog density or create a new save from a fresh race\n");
+        free(buf);
+        return 0;
+    }
     memcpy(rdram, buf, RDRAM_SNAP_SIZE);
     free(buf);
+    lambo_graphics_fog_loaded(rdram);
     // Repair the native OSThread.context pointers the memcpy just clobbered with the save
     // process's addresses; without this the scheduler dereferences garbage on the next tick.
     ultramodern_relink_thread_contexts(rdram);
