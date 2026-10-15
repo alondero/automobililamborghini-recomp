@@ -99,6 +99,11 @@ ctest --test-dir build -R "lambo_mods_rtz_container"
 ctest --test-dir build -R "lambo_sky_(projection|panorama)|lambo_camera_(projection|runtime)"
 ~~~
 
+The HUD group covers producer-side display-list walking, RT64's unused-padding
+hash behavior, and the reviewed RT64 dependency contract. See the [HUD texture
+identity notes](HUD.md#stable-hud-texture-identities-2026-10-15) for fixture
+coverage and the bounds that the producer applies.
+
 The complete list is the add_test list in CMakeLists.txt; keep this page
 updated when a test is added or renamed. Some tests are only registered when
 Python, generated functions, Windows, or an RT64 build is available.
