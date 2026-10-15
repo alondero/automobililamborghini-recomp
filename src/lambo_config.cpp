@@ -67,6 +67,7 @@ std::atomic_bool g_no_lod{true};
 std::atomic_bool g_show_launcher{false};
 std::atomic_bool g_automatic_pit_stops{false};
 std::atomic_bool g_remove_blue_hud_bar{false};
+std::atomic_bool g_car_select_info{false};
 
 // Per-circuit refinement of the global no_lod. Rationale + JSON key in
 // lambo_config.h; see that header for the ship-safe default and the
@@ -208,6 +209,7 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"no_lod", g_no_lod.load()},
         {"automatic_pit_stops", g_automatic_pit_stops.load()},
         {"remove_blue_hud_bar", g_remove_blue_hud_bar.load()},
+        {"car_select_info", g_car_select_info.load()},
         {"no_lod_circuit", nlohmann::json::array({
             g_no_lod_circuit[0].load(), g_no_lod_circuit[1].load(),
             g_no_lod_circuit[2].load(), g_no_lod_circuit[3].load(),
@@ -254,6 +256,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     bool no_lod = g_no_lod.load();
     bool automatic_pit_stops = false;
     bool remove_blue_hud_bar = false;
+    bool car_select_info = false;
     std::array<bool, 6> no_lod_circuit{};
     for (size_t i = 0; i < no_lod_circuit.size(); ++i) {
         no_lod_circuit[i] = g_no_lod_circuit[i].load();
@@ -273,6 +276,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "no_lod", no_lod);
     from_or_default(j, "automatic_pit_stops", automatic_pit_stops);
     from_or_default(j, "remove_blue_hud_bar", remove_blue_hud_bar);
+    from_or_default(j, "car_select_info", car_select_info);
     from_or_default(j, "no_lod_circuit", no_lod_circuit);
     from_or_default(j, "fog_scale", fog_scale);
     from_or_default(j, "fog_scale_circuit", g_fog_scale_circuit);
@@ -291,6 +295,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     g_no_lod.store(no_lod);
     g_automatic_pit_stops.store(automatic_pit_stops);
     g_remove_blue_hud_bar.store(remove_blue_hud_bar);
+    g_car_select_info.store(car_select_info);
     for (size_t i = 0; i < no_lod_circuit.size(); ++i) {
         g_no_lod_circuit[i].store(no_lod_circuit[i]);
     }
@@ -646,6 +651,15 @@ bool remove_blue_hud_bar() {
 void set_remove_blue_hud_bar(bool enabled) {
     g_remove_blue_hud_bar.store(enabled);
     save_graphics_updates({{"remove_blue_hud_bar", enabled}});
+}
+
+bool car_select_info() {
+    return g_car_select_info.load();
+}
+
+void set_car_select_info(bool enabled) {
+    g_car_select_info.store(enabled);
+    save_graphics_updates({{"car_select_info", enabled}});
 }
 
 // LAMBO_NO_LOD=1/0 overrides the JSON key for headless capture/testing.

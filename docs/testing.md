@@ -39,6 +39,11 @@ and the USA ROM instructions they depend on. The instruction check runs when
 otherwise. It needs no generated output. CTest registers the same check as
 `lambo_hud_blue_bar_rom`.
 
+`python tests/test_car_card_rom.py` recomputes the car select card's derived
+stats from the USA ROM, checks every card line fits its strip, and pins the
+hook and font addresses. The ROM checks skip when the ROM is absent. CTest
+registers it as `lambo_car_card_rom`.
+
 For real mod loading, run `tools/check_mod_support.py` with the smoke NRM and
 your USA ROM as described in [Modding](modding.md#verification-recorded-for-this-integration).
 Its optional `--texture-package PATH` accepts a manifest-free RT64 `.rtz` and
@@ -96,6 +101,7 @@ ctest --test-dir build -R "lambo_prompt_back_action"
 ctest --test-dir build -R "lambo_(native_menu_retired|quit_path)"
 ctest --test-dir build -R "lambo_menu_stick_scale"
 ctest --test-dir build -R "lambo_hud_blue_bar"
+ctest --test-dir build -R "lambo_car_card"
 ctest --test-dir build -R "lambo_steering_response"
 ctest --test-dir build -R "lambo_(controller_pak|startup_state_machine)"
 ctest --test-dir build -R "lambo_(no_lod|track_patch|interpolation)"

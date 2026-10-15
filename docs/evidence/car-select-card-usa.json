@@ -1,0 +1,931 @@
+{
+  "date": "2026-10-16",
+  "rom_sha256": "cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c",
+  "executable_sha256": "a15ee32ea80e2d0a54240862b2cd13a78a96512eaba3b03f4ff944bcdc0a0663",
+  "source_base_revision": "f355970d9f0b1911da76ad42ebcd381b5e6fb1db",
+  "source_dirty": true,
+  "source_dirty_note": "uncommitted: lib/RecompFrontend (build-applied dependency patches) and tests/test_car_card_rom.py; game sources match the base revision",
+  "launch_by_difficulty": {
+    "0": {
+      "configuration": {
+        "headless": true,
+        "warp": "1:2:<model_cursor>:1",
+        "difficulty": 0,
+        "mode": 0,
+        "input": "8000",
+        "max_vis": 1000
+      },
+      "runs": [
+        {
+          "model_cursor": 0,
+          "category": 0,
+          "difficulty": 0,
+          "samples": 478,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 57,
+            "97": 103,
+            "100": 107,
+            "150": 182
+          },
+          "peak_observed_speed": 162,
+          "scratch_at_launch": [
+            0.5400000214576721,
+            0.5400000214576721,
+            0.8999999761581421,
+            0.8999999761581421
+          ],
+          "trace_sha256": "7822bfa64e167d688e61107f638665ce81c07c11c883e0a8690f096cb8b9a953",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.010134124917983893
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 1
+        },
+        {
+          "model_cursor": 0,
+          "category": 0,
+          "difficulty": 0,
+          "samples": 478,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 57,
+            "97": 103,
+            "100": 107,
+            "150": 182
+          },
+          "peak_observed_speed": 162,
+          "scratch_at_launch": [
+            0.5400000214576721,
+            0.5400000214576721,
+            0.8999999761581421,
+            0.8999999761581421
+          ],
+          "trace_sha256": "7822bfa64e167d688e61107f638665ce81c07c11c883e0a8690f096cb8b9a953",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.010134124917983893
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 2
+        },
+        {
+          "model_cursor": 3,
+          "category": 4,
+          "difficulty": 0,
+          "samples": 478,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 34,
+            "97": 74,
+            "100": 78,
+            "150": 153
+          },
+          "peak_observed_speed": 167,
+          "scratch_at_launch": [
+            0.5400000214576721,
+            0.5400000214576721,
+            0.8999999761581421,
+            0.8999999761581421
+          ],
+          "trace_sha256": "17dadec37889815befdbd2760957212a23c32f1605b147e5ceb5b19d33e0ec8a",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.010190573269873406
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 1
+        },
+        {
+          "model_cursor": 3,
+          "category": 4,
+          "difficulty": 0,
+          "samples": 478,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 34,
+            "97": 74,
+            "100": 78,
+            "150": 153
+          },
+          "peak_observed_speed": 167,
+          "scratch_at_launch": [
+            0.5400000214576721,
+            0.5400000214576721,
+            0.8999999761581421,
+            0.8999999761581421
+          ],
+          "trace_sha256": "17dadec37889815befdbd2760957212a23c32f1605b147e5ceb5b19d33e0ec8a",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.010190573269873406
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 2
+        },
+        {
+          "model_cursor": 6,
+          "category": 1,
+          "difficulty": 0,
+          "samples": 477,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 37,
+            "97": 84,
+            "100": 89,
+            "150": 178
+          },
+          "peak_observed_speed": 156,
+          "scratch_at_launch": [
+            0.5400000214576721,
+            0.5400000214576721,
+            0.8999999761581421,
+            0.8999999761581421
+          ],
+          "trace_sha256": "57b3fa3344ba5ee58c496938d7fe3acf034c4e966a41c266abc0c8389bd104c4",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.010051602157277614
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 1
+        },
+        {
+          "model_cursor": 6,
+          "category": 1,
+          "difficulty": 0,
+          "samples": 477,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 37,
+            "97": 84,
+            "100": 89,
+            "150": 178
+          },
+          "peak_observed_speed": 156,
+          "scratch_at_launch": [
+            0.5400000214576721,
+            0.5400000214576721,
+            0.8999999761581421,
+            0.8999999761581421
+          ],
+          "trace_sha256": "57b3fa3344ba5ee58c496938d7fe3acf034c4e966a41c266abc0c8389bd104c4",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.010051602157277614
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 2
+        },
+        {
+          "model_cursor": 9,
+          "category": 2,
+          "difficulty": 0,
+          "samples": 478,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 49,
+            "97": 92,
+            "100": 96,
+            "150": 172
+          },
+          "peak_observed_speed": 163,
+          "scratch_at_launch": [
+            0.5400000214576721,
+            0.5400000214576721,
+            0.8999999761581421,
+            0.8999999761581421
+          ],
+          "trace_sha256": "7470703a21ebb8949630b896c693d2c636aae80a86871c48f42777638bac266d",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.01146297008501787
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 1
+        },
+        {
+          "model_cursor": 9,
+          "category": 2,
+          "difficulty": 0,
+          "samples": 477,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 49,
+            "97": 92,
+            "100": 96,
+            "150": 172
+          },
+          "peak_observed_speed": 163,
+          "scratch_at_launch": [
+            0.5400000214576721,
+            0.5400000214576721,
+            0.8999999761581421,
+            0.8999999761581421
+          ],
+          "trace_sha256": "f302a70cfddad416ac3391acb1f6fcf7cb9d974069bac3002e9a3894ac735bc2",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.01146297008501787
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 2
+        },
+        {
+          "model_cursor": 12,
+          "category": 3,
+          "difficulty": 0,
+          "samples": 474,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 41,
+            "97": 80,
+            "100": 83,
+            "150": 150
+          },
+          "peak_observed_speed": 169,
+          "scratch_at_launch": [
+            0.5400000214576721,
+            0.5400000214576721,
+            0.8999999761581421,
+            0.8999999761581421
+          ],
+          "trace_sha256": "f14ecead5e0eac732b59937b4077d01ab044cfc24facd80b1da9514b470744b8",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.007699357534989741
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 1
+        },
+        {
+          "model_cursor": 12,
+          "category": 3,
+          "difficulty": 0,
+          "samples": 477,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 41,
+            "97": 80,
+            "100": 83,
+            "150": 150
+          },
+          "peak_observed_speed": 169,
+          "scratch_at_launch": [
+            0.5400000214576721,
+            0.5400000214576721,
+            0.8999999761581421,
+            0.8999999761581421
+          ],
+          "trace_sha256": "f44f6b023163fee697741b013a7132a6b3bdc3f0fc32ede459bf01be4f1a6ae5",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.007699357534989741
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 2
+        },
+        {
+          "model_cursor": 15,
+          "category": 5,
+          "difficulty": 0,
+          "samples": 476,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 38,
+            "97": 78,
+            "100": 81,
+            "150": 155
+          },
+          "peak_observed_speed": 166,
+          "scratch_at_launch": [
+            0.5400000214576721,
+            0.5400000214576721,
+            0.8999999761581421,
+            0.8999999761581421
+          ],
+          "trace_sha256": "966f2c1fea3052003538e9d042453557585117ac90639ab96b4535f772618c3e",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.007408326432052596
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 1
+        },
+        {
+          "model_cursor": 15,
+          "category": 5,
+          "difficulty": 0,
+          "samples": 478,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 38,
+            "97": 78,
+            "100": 81,
+            "150": 155
+          },
+          "peak_observed_speed": 166,
+          "scratch_at_launch": [
+            0.5400000214576721,
+            0.5400000214576721,
+            0.8999999761581421,
+            0.8999999761581421
+          ],
+          "trace_sha256": "1525d766c44a7a2a1d56880ea8360e73a25b5404a10e3a8532876f96397029fc",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.007408326432052596
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 2
+        },
+        {
+          "model_cursor": 18,
+          "category": 6,
+          "difficulty": 0,
+          "samples": 476,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 34,
+            "97": 78,
+            "100": 81,
+            "150": 161
+          },
+          "peak_observed_speed": 162,
+          "scratch_at_launch": [
+            0.5400000214576721,
+            0.5400000214576721,
+            0.8999999761581421,
+            0.8999999761581421
+          ],
+          "trace_sha256": "40677a398462a56d603b6429a68982d5f91403723ed9ebfff220747fca47f557",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.010732181358496896
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 1
+        },
+        {
+          "model_cursor": 18,
+          "category": 6,
+          "difficulty": 0,
+          "samples": 467,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 34,
+            "97": 78,
+            "100": 81,
+            "150": 161
+          },
+          "peak_observed_speed": 162,
+          "scratch_at_launch": [
+            0.5400000214576721,
+            0.5400000214576721,
+            0.8999999761581421,
+            0.8999999761581421
+          ],
+          "trace_sha256": "23b715ada35726b3946fee60afa4ad3ea4731af7c288e1590b45033ac42a0b1b",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.010732181358496896
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 2
+        },
+        {
+          "model_cursor": 21,
+          "category": 7,
+          "difficulty": 0,
+          "samples": 274,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 44,
+            "97": 93,
+            "100": 97,
+            "150": null
+          },
+          "peak_observed_speed": 132,
+          "scratch_at_launch": [
+            0.5400000214576721,
+            0.5400000214576721,
+            0.8999999761581421,
+            0.8999999761581421
+          ],
+          "trace_sha256": "a3ddfa1e937fb0b5c48466feebe49b45c8a36a031a665c498a1a29df2c7de8e9",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.10483627418725369
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 1
+        },
+        {
+          "model_cursor": 21,
+          "category": 7,
+          "difficulty": 0,
+          "samples": 425,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 44,
+            "97": 93,
+            "100": 97,
+            "150": 185
+          },
+          "peak_observed_speed": 156,
+          "scratch_at_launch": [
+            0.5400000214576721,
+            0.5400000214576721,
+            0.8999999761581421,
+            0.8999999761581421
+          ],
+          "trace_sha256": "99a0972c57795dbd17e51f40dc969efcb0b0aaa3e98c9507fcfa01de0ff1d0d2",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.10483627418725369
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 2
+        }
+      ]
+    },
+    "1": {
+      "configuration": {
+        "headless": true,
+        "warp": "1:2:<model_cursor>:1",
+        "difficulty": 1,
+        "mode": 0,
+        "input": "8000",
+        "max_vis": 1000
+      },
+      "runs": [
+        {
+          "model_cursor": 0,
+          "category": 0,
+          "difficulty": 1,
+          "samples": 440,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 46,
+            "97": 95,
+            "100": 100,
+            "150": 181
+          },
+          "peak_observed_speed": 160,
+          "scratch_at_launch": [
+            0.27000001072883606,
+            0.27000001072883606,
+            0.44999998807907104,
+            0.44999998807907104
+          ],
+          "trace_sha256": "43e09eaf57c09b46960b5df5a20d1505e9b9ebc3c0c80b661deb55b85ac9e899",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.02465156189157125
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 1
+        },
+        {
+          "model_cursor": 0,
+          "category": 0,
+          "difficulty": 1,
+          "samples": 477,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 46,
+            "97": 95,
+            "100": 100,
+            "150": 181
+          },
+          "peak_observed_speed": 160,
+          "scratch_at_launch": [
+            0.27000001072883606,
+            0.27000001072883606,
+            0.44999998807907104,
+            0.44999998807907104
+          ],
+          "trace_sha256": "80b7f97d54c920f2c0540d8ecd712b5e7f6166ac0cfad525e6f79b4b4bf6de09",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.02465156189157125
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 2
+        },
+        {
+          "model_cursor": 3,
+          "category": 4,
+          "difficulty": 1,
+          "samples": 477,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 19,
+            "97": 63,
+            "100": 67,
+            "150": 147
+          },
+          "peak_observed_speed": 165,
+          "scratch_at_launch": [
+            0.27000001072883606,
+            0.27000001072883606,
+            0.44999998807907104,
+            0.44999998807907104
+          ],
+          "trace_sha256": "1ab39264bf064d4e4ddf01b7ef90e0e6e37191635fddaf053828c29dd17e2c6f",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.1197960479558837
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 1
+        },
+        {
+          "model_cursor": 3,
+          "category": 4,
+          "difficulty": 1,
+          "samples": 478,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 19,
+            "97": 63,
+            "100": 67,
+            "150": 147
+          },
+          "peak_observed_speed": 165,
+          "scratch_at_launch": [
+            0.27000001072883606,
+            0.27000001072883606,
+            0.44999998807907104,
+            0.44999998807907104
+          ],
+          "trace_sha256": "b88deb2a2c425d3bb15799096fbd9363b68bf60c5a5aeae2e1c63e27114a279a",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.1197960479558837
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 2
+        },
+        {
+          "model_cursor": 6,
+          "category": 1,
+          "difficulty": 1,
+          "samples": 478,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 21,
+            "97": 67,
+            "100": 72,
+            "150": 165
+          },
+          "peak_observed_speed": 157,
+          "scratch_at_launch": [
+            0.27000001072883606,
+            0.27000001072883606,
+            0.44999998807907104,
+            0.44999998807907104
+          ],
+          "trace_sha256": "cdfa24fd29aac19495c04a5cff68e7d863def0d7a82cd696efaa2a5388ed8330",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.07058826520611017
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 1
+        },
+        {
+          "model_cursor": 6,
+          "category": 1,
+          "difficulty": 1,
+          "samples": 477,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 21,
+            "97": 67,
+            "100": 72,
+            "150": 165
+          },
+          "peak_observed_speed": 157,
+          "scratch_at_launch": [
+            0.27000001072883606,
+            0.27000001072883606,
+            0.44999998807907104,
+            0.44999998807907104
+          ],
+          "trace_sha256": "bfd79ff58f80c21ce17a6c13a5aed4c7bc178a64bab4853bbe9978cfc7d773d8",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.07058826520611017
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 2
+        },
+        {
+          "model_cursor": 9,
+          "category": 2,
+          "difficulty": 1,
+          "samples": 478,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 30,
+            "97": 79,
+            "100": 83,
+            "150": 164
+          },
+          "peak_observed_speed": 161,
+          "scratch_at_launch": [
+            0.27000001072883606,
+            0.27000001072883606,
+            0.44999998807907104,
+            0.44999998807907104
+          ],
+          "trace_sha256": "e0927ba5298002356e7205a0cb2d1ed9234fb29c722a46ef654d22bfaaaf0295",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.026589424651286712
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 1
+        },
+        {
+          "model_cursor": 9,
+          "category": 2,
+          "difficulty": 1,
+          "samples": 477,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 30,
+            "97": 79,
+            "100": 83,
+            "150": 164
+          },
+          "peak_observed_speed": 161,
+          "scratch_at_launch": [
+            0.27000001072883606,
+            0.27000001072883606,
+            0.44999998807907104,
+            0.44999998807907104
+          ],
+          "trace_sha256": "f2631500c48c095c25a951f0526ab7cb42857695811d053dad22063f694a2120",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.026589424651286712
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 2
+        },
+        {
+          "model_cursor": 12,
+          "category": 3,
+          "difficulty": 1,
+          "samples": 474,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 21,
+            "97": 66,
+            "100": 70,
+            "150": 146
+          },
+          "peak_observed_speed": 167,
+          "scratch_at_launch": [
+            0.27000001072883606,
+            0.27000001072883606,
+            0.44999998807907104,
+            0.44999998807907104
+          ],
+          "trace_sha256": "6c3445215aa2892b5c0b4b8e43a027ed5615ff9cd1aab16e2313bfaf57e7f494",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.07085394000492168
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 1
+        },
+        {
+          "model_cursor": 12,
+          "category": 3,
+          "difficulty": 1,
+          "samples": 477,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 21,
+            "97": 66,
+            "100": 70,
+            "150": 146
+          },
+          "peak_observed_speed": 167,
+          "scratch_at_launch": [
+            0.27000001072883606,
+            0.27000001072883606,
+            0.44999998807907104,
+            0.44999998807907104
+          ],
+          "trace_sha256": "caa0af2496a85ee50d6ff852706a7324f8757aff48447cb3d12b4740586a47ab",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.07085394000492168
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 2
+        },
+        {
+          "model_cursor": 15,
+          "category": 5,
+          "difficulty": 1,
+          "samples": 479,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 23,
+            "97": 72,
+            "100": 76,
+            "150": 155
+          },
+          "peak_observed_speed": 164,
+          "scratch_at_launch": [
+            0.27000001072883606,
+            0.27000001072883606,
+            0.44999998807907104,
+            0.44999998807907104
+          ],
+          "trace_sha256": "b89a57e8738a8835795ac170f6a33e7f787c193e07a6ffa21afe2cb44c705aeb",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.06855879732281626
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 1
+        },
+        {
+          "model_cursor": 15,
+          "category": 5,
+          "difficulty": 1,
+          "samples": 477,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 23,
+            "97": 72,
+            "100": 76,
+            "150": 155
+          },
+          "peak_observed_speed": 164,
+          "scratch_at_launch": [
+            0.27000001072883606,
+            0.27000001072883606,
+            0.44999998807907104,
+            0.44999998807907104
+          ],
+          "trace_sha256": "7461f3535634e45fc566c6baa941171b675dc7b098d37502d196faf77d264c4d",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.06855879732281626
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 2
+        },
+        {
+          "model_cursor": 18,
+          "category": 6,
+          "difficulty": 1,
+          "samples": 478,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 20,
+            "97": 68,
+            "100": 73,
+            "150": 157
+          },
+          "peak_observed_speed": 160,
+          "scratch_at_launch": [
+            0.27000001072883606,
+            0.27000001072883606,
+            0.44999998807907104,
+            0.44999998807907104
+          ],
+          "trace_sha256": "bc6b93658d3df93a8f3fe0a6cf0ac048732f47bc0747f59ca9ec45b4b6d5c2a3",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.18638772239219312
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 1
+        },
+        {
+          "model_cursor": 18,
+          "category": 6,
+          "difficulty": 1,
+          "samples": 478,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 20,
+            "97": 68,
+            "100": 73,
+            "150": 157
+          },
+          "peak_observed_speed": 160,
+          "scratch_at_launch": [
+            0.27000001072883606,
+            0.27000001072883606,
+            0.44999998807907104,
+            0.44999998807907104
+          ],
+          "trace_sha256": "bc6b93658d3df93a8f3fe0a6cf0ac048732f47bc0747f59ca9ec45b4b6d5c2a3",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.18638772239219312
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 2
+        },
+        {
+          "model_cursor": 21,
+          "category": 7,
+          "difficulty": 1,
+          "samples": 478,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 27,
+            "97": 80,
+            "100": 85,
+            "150": 176
+          },
+          "peak_observed_speed": 155,
+          "scratch_at_launch": [
+            0.27000001072883606,
+            0.27000001072883606,
+            0.44999998807907104,
+            0.44999998807907104
+          ],
+          "trace_sha256": "600b1eeadce7fd480016caa87e18c0c4ad1356fd97e48d53e2be777933627ae9",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.12282019779670732
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 1
+        },
+        {
+          "model_cursor": 21,
+          "category": 7,
+          "difficulty": 1,
+          "samples": 468,
+          "launch_frame": 127,
+          "updates_to_speed": {
+            "50": 27,
+            "97": 80,
+            "100": 85,
+            "150": 176
+          },
+          "peak_observed_speed": 155,
+          "scratch_at_launch": [
+            0.27000001072883606,
+            0.27000001072883606,
+            0.44999998807907104,
+            0.44999998807907104
+          ],
+          "trace_sha256": "e039f99b3df243957b64b911dd09fe22317cd5a2beebe99ff003dc103e8284de",
+          "launch_steering_slew": 0,
+          "launch_window": {
+            "minimum_speed_step_to_100": 0,
+            "max_lateral_deviation_to_100": 0.12282019779670732
+          },
+          "automatic_gearbox_verified": true,
+          "rep": 2
+        }
+      ]
+    }
+  },
+  "excluded_failed_attempts": []
+}

@@ -171,7 +171,7 @@ more to leave them onto Quit.
 | --- | --- | --- |
 | General | Rumble strength, stick deadzone, background input, Player Name, startup launcher preference | Framework `general.json`, Apply/Discard; the name and launcher preference are also saved to `player.json` and `graphics.json` |
 | Graphics | Resolution, 1/2/3/4x downsampling, aspect, HUD placement, window mode, window size, original/display/manual presentation rate, MSAA through 8x, HPFB, graphics API, texture dump path | Existing `graphics.json`, Apply/Discard |
-| Enhancements | Automatic pit-stops (off by default), multiplayer fog/sky matching, full geometry and six circuit switches, draw distance, fog density, camera distance/height/FOV, menu stick sensitivity | Existing `graphics.json`, immediate |
+| Enhancements | Automatic pit-stops (off by default), car select info (off by default), multiplayer fog/sky matching, full geometry and six circuit switches, draw distance, fog density, camera distance/height/FOV, menu stick sensitivity | Existing `graphics.json`, immediate |
 | Controls | N64 button/stick remapping, keyboard/controller profiles, 1-4 player assignment | Framework `controls-framework.json` |
 | Driving | Analog/digital throttle and brake (source axis/direction, deadzone, saturation) plus default-off Android gyro steering, steering range/deadzone/inversion, and auto-accelerate | Framework `driving-controls.json`, Apply/Discard |
 | Cheats | Session-only cheat toggles; see [Cheats](cheats.md) | Not saved; reset on each launch |

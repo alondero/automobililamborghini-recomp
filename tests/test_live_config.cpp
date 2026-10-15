@@ -78,6 +78,17 @@ int main() {
     lambo::config::flush_pending_graphics_updates();
     lambo::config::load_and_apply_graphics();
     expect(!lambo::config::remove_blue_hud_bar(), "blue HUD bar can be restored persistently");
+    expect(!lambo::config::car_select_info(), "car select info defaults off");
+    lambo::config::set_car_select_info(true);
+    expect(lambo::config::car_select_info(), "car select info updates live");
+    lambo::config::flush_pending_graphics_updates();
+    expect(read_json(path).at("car_select_info") == true, "car select info persists");
+    lambo::config::load_and_apply_graphics();
+    expect(lambo::config::car_select_info(), "car select info reloads");
+    lambo::config::set_car_select_info(false);
+    lambo::config::flush_pending_graphics_updates();
+    lambo::config::load_and_apply_graphics();
+    expect(!lambo::config::car_select_info(), "car select info can be restored persistently");
     expect(!lambo::config::automatic_pit_stops(), "pit assistance defaults off");
     lambo::config::set_automatic_pit_stops(true);
     lambo::config::flush_pending_graphics_updates();

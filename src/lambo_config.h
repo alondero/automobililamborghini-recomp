@@ -133,6 +133,11 @@ void set_automatic_pit_stops(bool enabled);
 bool remove_blue_hud_bar();
 void set_remove_blue_hud_bar(bool enabled);
 
+// Show a car info card on the car-select screen. Applied live, persisted as
+// car_select_info in graphics.json; default false (original screen).
+bool car_select_info();
+void set_car_select_info(bool enabled);
+
 // Remove the ROM's per-mode LOD reductions: emit each track
 // segment's scenery layer in 2P-4P races like 1P does. graphics.json key
 // "no_lod" (default true), overridable by LAMBO_NO_LOD=1/0.
