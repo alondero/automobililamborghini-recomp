@@ -94,6 +94,22 @@ if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/CMakeLists.txt)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(lambo_hud_hash_padding_tests tests/test_hud_hash_padding.cpp)
+    target_include_directories(lambo_hud_hash_padding_tests PRIVATE
+        lib/rt64/src lib/rt64/src/contrib)
+    add_test(NAME lambo_hud_hash_padding COMMAND lambo_hud_hash_padding_tests)
+    add_executable(lambo_hud_texture_walk_tests tests/test_hud_texture_walk.cpp
+        src/lambo_graphics_task.cpp src/lambo_hud_texture_bounds.cpp src/lambo_fog_widescreen.cpp)
+    target_include_directories(lambo_hud_texture_walk_tests PRIVATE src
+        ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
+    add_test(NAME lambo_hud_texture_walk COMMAND lambo_hud_texture_walk_tests)
+    add_executable(lambo_hud_savestate_tests tests/test_hud_savestate.cpp
+        src/lambo_graphics_task.cpp src/lambo_hud_texture_bounds.cpp
+        src/lambo_fog_widescreen.cpp src/lambo_savestate.c)
+    target_include_directories(lambo_hud_savestate_tests PRIVATE src
+        ${N64MR}/N64Recomp/include ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
+
+
     add_executable(lambo_mod_api_tests tests/test_mod_api.cpp src/lambo_mod_api.cpp)
     target_include_directories(lambo_mod_api_tests PRIVATE src
         ${N64MR}/N64Recomp/include ${N64MR}/librecomp/include ${N64MR}/ultramodern/include)
@@ -518,6 +534,13 @@ if(BUILD_TESTING)
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_game_scenario.py
         )
+        add_test(NAME lambo_hud_savestate
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/hud_savestate_process.py
+                $<TARGET_FILE:lambo_hud_savestate_tests>)
+        add_test(NAME lambo_hud_rt64_contract
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hud_rt64_contract.py)
         add_test(NAME lambo_rt_task_capture
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rt_task_capture.py
@@ -787,6 +810,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_car_card.cpp     # optional car-select info card
         src/lambo_flare_widescreen.c  # extended-GBI aspect policy for lens flares
         src/lambo_fog_widescreen.cpp  # wider fog policy for three/four-player views
+        src/lambo_graphics_task.cpp
+        src/lambo_hud_texture_bounds.cpp
         src/lambo_sky_widescreen.cpp  # sky panorama policy for three/four-player views
         src/lambo_rt_shadows.cpp  # task-owned sunlight provenance diagnostics
         src/lambo_interpolation.cpp

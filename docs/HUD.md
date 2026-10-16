@@ -273,3 +273,237 @@ group stderr by line. To see actual DL bytes, dump RDRAM around the cursor from 
 native hook to a file and decode offline (F3DEX v1 decoder in session scratch;
 `tools/` has no committed copy — rederive from this table if needed). The stale
 region PAST the cursor is the previous frame's tail — same layout, already-complete.
+
+
+## Stable HUD texture identities (2026-10-15)
+
+Status: the tile and ownership contracts below are checked in source and host
+fixtures. Runtime measurements are recorded separately below.
+
+USA dial tiles load 40x6 and 16x57 texels with 64x8 and 16x64 wrap masks.
+The six circuit maps load 80x80 texels with 128x128 masks. Rank suffixes load
+96x8 texels with a 128-wide mask. RT64 v5 can hash unused TMEM padding when
+those masks exceed the loaded rectangle. A later load can change the identity
+without changing the texture's loaded bytes.
+
+One exact-match table in `src/lambo_hud_texture_bounds.cpp` covers both dial
+sources (physical 0x160140/0x160508), all six map sources (0x121A88, 0x122710,
+0x123398, 0x124020, 0x124CA8, 0x125930), and suffix source 0x165028.
+Direct physical/KSEG0 source pointers are normalized before matching.
+Matching checks the render-tile index, format/stride, wrap/mirror bits and F2
+bounds. Only the S/T clamp bits of matching F5 command words are rewritten.
+Mirror bits survive. Unknown contracts pass through unchanged; matching is
+idempotent. Geometry commands, texture bytes and UV coordinates are untouched.
+Clamp changes sampler addressing, so filtering at the loaded rectangle's edge
+may change pixels. Pixel equivalence has not been measured and is not claimed.
+
+### Producer ownership and microcode gate
+
+`lambo_graphics_task_prepare` runs on the guest game thread at 0x80005728,
+before `osSendMesg` publishes a completed graphics task. The same hook then
+copies sunlight diagnostic records, so snapshots include these corrections.
+Both RT64 and `LAMBO_HEADLESS=1` receive the same corrected HUD/fog commands.
+The dial no longer depends on a paired widescreen bracket. Neither renderer's
+`send_dl` writes HUD or fog commands.
+
+USA frame-builder evidence: 0x800054E0..0x80005518 puts the scheduler-message
+pointer in t5; the hook receives t5 + 0x10, the embedded OSTask. Its two accepted
+physical addresses are 0xBF1E8/0xC6C38. The corresponding builder task pointers
+are 0x800BF240/0x800C6C90 and root lists are at builder task + 0x1C0
+(OSTask + 0x218). OSTask fields are native u32 words in word-swapped RDRAM:
+type at +0, microcode code pointer at +0x10, data pointer/size at +0x18/+0x1C,
+and display-list pointer at +0x30. Sizes are bytes. The gate requires type 1,
+code at physical 0x86B60, data at 0x8F210, data size 0x800, and the exact slot's
+root. The builder does not author `ucode_size` (+0x14); it is not an identity
+gate. These values come from 0x800055D0..0x80005620 and 0x80005524..0x8000555C.
+Unknown tasks/microcodes fail closed before decoding.
+
+The scheduler's DP completion fence releases a reused slot to the producer;
+the game loads assets and builds lists before this hook publishes the task.
+The walker also rewrites matching commands in asset sublists, not just the task
+arena. Moving all HUD/fog writes to the guest producer removes the graphics
+thread's read/modify/write window against asset-loading DMA. This is not a new
+DMA lock or permission to reuse assets referenced by pending tasks: the
+[race-start asset deferral](sky-panorama.md#race-start-asset-lifetime) remains
+required. Only copied fog words, physical offsets and the RAM allocation
+identity survive a walk; no guest command pointer is retained. The intended
+replacement is correct bounds in source-level HUD emitters as decompilation
+progresses.
+
+### Idempotent fog correction
+
+`FogRewriter` keeps an authored word and its most recent corrected word per
+physical command offset, on the guest producer only. If the current opcode and
+word equal that previous output, another visit recomputes from the authored
+word. A different opcode or word replaces the baseline. Visiting a non-fog
+command removes that address's record; a different RAM allocation clears all
+records. Default fog settings create no records for unchanged commands.
+
+This makes duplicate sublist calls, repeated task preparation and shared asset
+lists fixed points for a given policy. Changing the density or multiplayer
+match recomputes from the same baseline; returning to default settings restores
+it and removes the record. It does not assume that lists are rebuilt each
+frame. The fixture checks 0.5 on consecutive prepares, shared lists across both
+task slots, fresh emissions at reused addresses, policy changes, zero and
+saturated scales, colour restoration and separate RAM allocations.
+
+An external rewrite with exactly the previous output's opcode and bytes is
+indistinguishable from an unchanged correction and retains its stored baseline.
+Debug saves preserve the baseline in the file instead of serializing the
+process-local cache. On the guest frame-boundary thread, the saver copies the
+low 8 MiB RAM, replaces only known matching fog outputs in that copy with their
+authored words, and writes the copy. Live lists remain untouched. The 32-byte
+LMBOSTAT v1 header uses `reserved[0] = 0x31474F46` (`FOG1` in little-endian
+header bytes) to identify this payload; size and word-swapped byte order stay
+the same, and Track Lab's v1 reader remains compatible. Loading clears the fog
+cache before the next task applies the current policy. Both a new process and
+same-process F8 therefore apply density once, including after policy changes.
+
+Older files have no authored-word marker. Their coefficients might already be
+scaled, and that lost baseline cannot be inferred safely. A legacy load is
+rejected before changing RAM when density differs from 1 and the 3P/4P match
+cannot supply a canonical baseline. Use default density to inspect a legacy
+snapshot as stored, or create a new save from a freshly loaded race. Legacy
+files may already contain faded fog; this does not recover their lost values.
+Correcting the source-level fog emitters would remove the remaining identical
+external-write ambiguity described above.
+
+### Shared traversal and verification
+
+`src/lambo_f3dex.h` traverses the root once for both HUD and fog policy. It
+tracks segments and calls/tail branches, uses bit 16 for G_DL push/no-push,
+skips extended-command payloads, and only dereferences the native 8 MiB RAM.
+`resolve` rejects all unaligned or out-of-range targets; it does not inspect
+extended heap lists. An invalid call returns to its parent, while an invalid
+tail branch ends that list. The panorama's extended heap targets are rejected
+by the same 8 MiB address check. The maximum call depth is 16 below the root, with one shared
+200,000-command budget. Reaching either limit aborts the walk and writes a
+`gfx-policy` warning. Already visited matches remain corrected; later matches
+can retain unstable hashes. Debug logging samples command counts, HUD matches
+and producer time in microseconds for the first 12 tasks and every 60th task.
+
+Focused CTests are `lambo_hud_texture_walk`, `lambo_hud_hash_padding` and
+`lambo_hud_rt64_contract`, plus `lambo_hud_savestate` for real save/load I/O.
+Assertions stay enabled in Release. The producer
+fixture checks every source contract, mirror variants, exclusion, idempotence,
+root-reachable dial commands without brackets, shared fog policy, segmented
+calls, bit-16 branches, extended payloads, unknown microcodes, depth 16 versus
+17, malformed addresses and the global command budget. The real RT64 hasher
+test varies padding 256 ways: wrapped identities vary, bounded ones do not,
+and changing a loaded texel still changes its hash.
+
+The required dependency audit is pinned to RT64
+`f0728a2520d5aa735886240de3fee75cc805f6d6`. `State::flush` in
+`src/hle/rt64_state.cpp` derives `clampS/clampT` from `cms/cmt`, selects the
+minimum of tile bounds and masks for `sampleWidth/sampleHeight`, then uses those
+sizes for TMEM loading/hashing. The pin test fails on a gitlink change, requiring
+review of that chain before accepting a new pin. The hasher test alone does not
+exercise the sampler-size decision. Dependency patches are unchanged.
+
+### Runtime verification of the producer correction
+
+Windows x64, GCC 15.2.0 Release, USA ROM SHA-256
+`cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c`:
+
+- `build.ps1 -PreserveSubmodules` rebuilt generated output and the full port;
+  the Windows RDRAM reservation regression passed.
+- Six focused CTests passed (HUD walker/hash/pin, sky panorama, interpolation
+  tags and sunlight task records). The existing standalone HUD bracket test
+  passed. The Python suite ran 137 tests: 131 passed and six optional tests
+  were skipped.
+- The headless smoke completed 600 replay frames and 601 swaps. Sampled race
+  roots contained both dial contracts, one map setup and a suffix setup.
+- RT64/D3D12 one- and four-player circuit-1 runs each completed the same
+  600-frame replay and 601 swaps. Real root traversal reached both dial slices
+  in 1P, the map in both layouts, and suffixes when drawn. Producer snapshots
+  confirmed the unauthored `ucode_size` field is zero.
+- With debug logging enabled, 21 sampled race tasks per run took a median
+  40.3 microseconds (maximum 80.8) for 1P and 46.3 (maximum 60.7) for 4P.
+  These covered 2,164-4,591 and 5,033-7,277 commands respectively. No traversal
+  limit warning occurred. These are sampled producer costs on this machine,
+  not an FPS comparison or a graphics-thread cost. These timings precede the
+  authored-word fog cache.
+- A further 1P RT64 texture dump emitted the two documented bounded dial
+  hashes and suffix hash, with sizes 40x6, 16x57 and 96x8 respectively.
+  Geometry/pixel equivalence was not measured. Six-circuit pack verification
+  and the earlier PR's visual captures were not repeated here.
+
+For timing, use the smoke replay in a windowed circuit-1 run with `--verbose`,
+then repeat with four players. `gfx-policy` logs counts and elapsed microseconds.
+The fixed replay is `recordings/harness-smoke.jsonl`; both renderers can use
+`tools/run_game_scenario.py` with isolated scenario/profile paths. Texture dumps
+and task snapshots contain game data and stay local.
+
+Vulkan startup exited with `0xC0000374` in this verification. The same failure
+reproduced with the pre-correction executable identified by the companion
+record's executable hash. D3D12 runs passed; this is not evidence of Vulkan
+validation for this change. Related investigation:
+[Vulkan heap-corruption issue](https://github.com/alondero/automobililamborghini-recomp/issues/111).
+
+### Fog density follow-up verification
+
+The Release producer fixture reproduced the compounding bug before the fix:
+a second prepare at density 0.5 changed 0x3200CE80 to 0x1900E740. With authored
+word tracking, the second prepare preserves the entire RAM image. The extended
+fixture also covers duplicate calls, both task slots, policy changes and fresh
+emissions. The incremental game build and all six focused CTests passed.
+
+The Python suite ran 137 tests: 131 passed and all six `ShadowCaptureTests`
+were skipped because NumPy was unavailable. All three RT64 patch-composition
+tests ran with initialized submodule metadata, and the Git-checkout pin audit
+passed. A separate extracted test file without `.git` explicitly skipped that
+audit instead of failing; it does not claim a dependency audit for archives.
+
+With `LAMBO_FOG_SCALE=0.5` and multiplayer matching disabled, circuit-1
+headless and RT64/D3D12 smoke runs each completed 600 replay frames and 601
+swaps, without traversal-limit warnings. RT64 producer snapshots at task
+sequences 60, 300, 420 and 540 each contained one reachable fog-position word
+0x3200CE80. These runs used `recordings/harness-smoke.jsonl`, isolated profiles,
+and the ordinary game loader. The repeated-walk fixture proves idempotence;
+the live samples do not establish whether the native emitter rebuilds the word
+every frame. That round did not test save-state restart; the regression and
+correction below supersede its earlier save-state limitation.
+
+### Save-state restart and main integration
+
+The real save/load fixture failed before the correction on the first fresh
+process: a saved 0x3200CE80 became 0x1900E740. `lambo_hud_savestate` now starts a
+writer and four fresh load/prepare/save processes for each of 1P and 2P. Each
+keeps the live fog at 0x3200CE80 with density 0.5; every saved payload holds the
+authored 0x64009D00. The fixture also checks same-process F8 after changing to
+0.25, loading with default density, no live-RAM writes during save, rejection
+of unmarked legacy half-density files before RAM changes, and truncated input.
+The walker fixture's separate-allocation case now normalizes its saved copy
+and expects the existing density, rather than asserting another halving.
+
+Current `main`, including the blue HUD strip enhancement, is merged. Both sets
+of documentation and generation hooks are retained. Generated C is rebuilt from
+the merged generator/TOML; it is not hand-edited. The new save-state regression
+uses synthetic RAM and the production save/load and producer code, with only
+unrelated runtime notifications stubbed.
+
+The merged Release implementation at `9c350df` passed the supported
+`build.ps1 -PreserveSubmodules` build, including the Windows RDRAM reservation
+regression. All 11 focused CTests passed: HUD walker/hash/pin/save-state,
+blue-strip unit and USA-ROM checks, live config, frontend settings, sky panorama,
+interpolation tags and sunlight task records. The full Python suite ran 139
+tests: 133 passed and the same six NumPy-dependent shadow-capture tests skipped.
+`python tools/check_docs.py` and `git diff --check` passed.
+
+The rebuilt game also passed headless and RT64/D3D12 circuit-1 smoke runs at
+density 0.5 with multiplayer matching disabled. Both completed the committed
+600-frame replay and 601 swaps without traversal-limit warnings, using isolated
+profiles and the USA ROM identified above. These are race-start smoke runs;
+the restart guarantee is exercised separately by the synthetic production-I/O
+fixture, rather than a full-game restart capture.
+
+### Texture-pack coordination
+
+The companion pack supplies dial identities 2e24c9fccec5cac4 and
+93fb46ad45acf4d2, six bounded map identities, and suffix d7ea8162b91a5e1d.
+Older alias-only HUD packs will stop replacing these tiles. Install the matching
+[HUD texture pack](https://github.com/alondero/automobili-lamborghini-textures/pull/9).
+Its verification record currently names base `cefbde5` plus a local patch digest,
+not an exact tested `63b6c6b` checkout. That historical record does not confirm a
+regeneration against `63b6c6b`; release coordination must record the exact port
+revision used for the next pack verification.
