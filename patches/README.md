@@ -51,6 +51,13 @@ significant single-space lines from `git diff --check`;
 
 ## Application matrix
 
+Patch **0035** derives runtime-toggle eligibility from the manifest when each
+handle is constructed, including packages present but disabled at startup.
+The public scan keeps discovery and config reload under the same mod-context
+lock as game load/unload. Scanning remains synchronous; its duration has not
+been measured. The separate dependency callback-identity bug is tracked in
+[issue 317](https://github.com/alondero/automobililamborghini-recomp/issues/317).
+
 Patch **0021** adds a shadow-only AS helper, shared aligned sunlight parameters
 and an angular-query/fog kernel. CMake applies it after the existing RT64 series
 on every build path, idempotently. The game does not instantiate the helper or

@@ -43,10 +43,12 @@ if __name__ == "__main__":
             ("native", {"native_libraries": {"fixture": []}}),
             ("code", {}),
         ):
-            folder = incoming / name
-            folder.mkdir()
-            (folder / "mod.json").write_text(json.dumps(manifest(name, **extra)))
-            (folder / "rt64.json").write_text("{}")
-            if name == "code":
-                (folder / "mod_syms.bin").write_bytes(b"code fixture")
+            for destination, prefix in ((mods, "startup_"), (incoming, "")):
+                mod_id = prefix + name
+                folder = destination / mod_id
+                folder.mkdir()
+                (folder / "mod.json").write_text(json.dumps(manifest(mod_id, **extra)))
+                (folder / "rt64.json").write_text("{}")
+                if name == "code":
+                    (folder / "mod_syms.bin").write_bytes(b"code fixture")
         subprocess.run([sys.argv[1], str(root)], check=True)

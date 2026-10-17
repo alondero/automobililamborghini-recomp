@@ -118,12 +118,15 @@ updated when a test is added or renamed. Some tests are only registered when
 Python, generated functions, Windows, or an RT64 build is available.
 
 `lambo_mod_menu_refresh` compiles the patched frontend's refresh and update
-methods against UI and runtime fakes. It checks the enabled button, live and
+methods against UI fakes and runtime fakes checked against the real API headers.
+It checks the enabled button, live and
 launcher rescanning, empty-list selection, and internal list updates.
 `lambo_mod_runtime_refresh` uses the real loader and temporary, original `.rtz`
 and loose-package fixtures. It checks live discovery, enable/disable callbacks,
 preserved selections, order and config pointers, repeated scans, and packages
-that must wait for startup validation. Neither test renders replacement artwork
+that must wait for startup validation, including disabled packages present at
+startup before the first Refresh. The extractor's Python tests cover braces in
+comments and string/character literals. Neither native test renders replacement artwork
 or plays the game.
 
 The optional Windows D3D12 sunlight probe executes the shared kernel over

@@ -1,7 +1,20 @@
 diff --git a/librecomp/src/mods.cpp b/librecomp/src/mods.cpp
 --- a/librecomp/src/mods.cpp
 +++ b/librecomp/src/mods.cpp
-@@ -797,10 +797,19 @@
+@@ -277,7 +277,11 @@
+     thumbnail{ std::move(thumbnail) },
+     game_indices{std::move(game_indices)}
+ {
+-    runtime_toggleable = true;
++    // Startup validation is required regardless of when this package is found.
++    // The launcher can still select it before mods are loaded.
++    runtime_toggleable = this->manifest.dependencies.empty() &&
++        this->manifest.native_libraries.empty() && !this->manifest.custom_gamemode &&
++        !(get_project_version() < this->manifest.minimum_recomp_version);
+     for (ModContentTypeId type : this->content_types) {
+         if (!context.is_content_runtime_toggleable(type)) {
+             runtime_toggleable = false;
+@@ -797,10 +801,19 @@
  std::vector<recomp::mods::ModOpenErrorDetails> recomp::mods::ModContext::scan_mod_folder(const std::filesystem::path& mod_folder) {
      std::vector<recomp::mods::ModOpenErrorDetails> ret{};
      std::error_code ec;
@@ -22,21 +35,12 @@ diff --git a/librecomp/src/mods.cpp b/librecomp/src/mods.cpp
          bool is_mod = false;
          bool requires_manifest = true;
          std::reference_wrapper<const std::vector<ModContentTypeId>> supported_content_types = std::cref(empty_content_types);
-@@ -841,10 +850,28 @@
+@@ -841,10 +854,19 @@
          }
      }
  
 +    if (live_scan) {
-+        // New packs start disabled. Dependency-bearing mods, game modes and
-+        // packages requiring a newer port need the normal startup validation.
 +        std::unique_lock lock(opened_mods_mutex);
-+        for (auto& mod : opened_mods) {
-+            if (!mod.manifest.dependencies.empty() || !mod.manifest.native_libraries.empty() ||
-+                mod.manifest.custom_gamemode ||
-+                get_project_version() < mod.manifest.minimum_recomp_version) {
-+                mod.disable_runtime_toggle();
-+            }
-+        }
 +        rebuild_mod_order_lookup();
 +    }
      return ret;
@@ -73,3 +77,22 @@ diff --git a/librecomp/include/librecomp/mods.hpp b/librecomp/include/librecomp/
              std::unordered_map<std::string, size_t> opened_mods_by_id;
              std::unordered_map<std::filesystem::path::string_type, size_t> opened_mods_by_filename;
              std::vector<size_t> opened_mods_order; // order index -> mod index
+diff --git a/librecomp/src/recomp.cpp b/librecomp/src/recomp.cpp
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -112,12 +112,13 @@
+     {
+         std::lock_guard mod_lock{ mod_context_mutex };
+         mod_open_errors = mod_context->scan_mod_folder(config_path / mods_directory);
++        // Keep the active-game check and config load serialized with game
++        // load/unload, just like discovery and the public mod API readers.
++        mod_context->load_mods_config();
+     }
+     for (const auto& cur_error : mod_open_errors) {
+         printf("Error opening mod " PATHFMT ": %s (%s)\n", cur_error.mod_path.c_str(), recomp::mods::error_to_string(cur_error.error).c_str(), cur_error.error_param.c_str());
+     }
+-
+-    mod_context->load_mods_config();
+ }
+ 
+ void recomp::mods::close_mods() {

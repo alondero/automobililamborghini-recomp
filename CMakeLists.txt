@@ -145,7 +145,11 @@ if(BUILD_TESTING)
             VERBATIM)
         add_executable(lambo_mod_menu_refresh_tests tests/test_mod_menu_refresh.cpp
             ${CMAKE_CURRENT_BINARY_DIR}/mod_menu_refresh_methods.inl)
-        target_include_directories(lambo_mod_menu_refresh_tests PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+        target_include_directories(lambo_mod_menu_refresh_tests PRIVATE
+            ${CMAKE_CURRENT_BINARY_DIR} ${N64MR}/N64Recomp/include
+            $<TARGET_PROPERTY:librecomp,INTERFACE_INCLUDE_DIRECTORIES>
+            $<TARGET_PROPERTY:miniz,INTERFACE_INCLUDE_DIRECTORIES>)
+        target_compile_definitions(lambo_mod_menu_refresh_tests PRIVATE NOMINMAX MINIZ_STATIC_DEFINE)
         add_test(NAME lambo_mod_menu_refresh COMMAND lambo_mod_menu_refresh_tests)
     endif()
 

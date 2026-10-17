@@ -4,18 +4,30 @@ The full widget needs a renderer. Keep the real refresh and update bodies so
 the host test exercises their control flow without creating an RmlUi context.
 """
 
+import re
 import sys
 from pathlib import Path
 
 
+CPP_NON_CODE = re.compile(
+    r'//[^\n]*|/\*.*?\*/|R"(?P<delimiter>[^ ()\\\t\r\n]{0,16})\(.*?\)(?P=delimiter)"'
+    r'|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'',
+    re.DOTALL,
+)
+
+
 def extract_method(source, name):
-    start = source.index(f"void ModMenu::{name}(")
-    opening = source.index("{", start)
-    depth, end = 1, opening + 1
-    while depth:
-        depth += (source[end] == "{") - (source[end] == "}")
-        end += 1
-    return source[start:end]
+    # Preserve offsets into the original text, but ignore braces and method
+    # signatures in comments, character literals, normal strings and raw strings.
+    code = CPP_NON_CODE.sub(lambda match: " " * len(match.group()), source)
+    start = code.index(f"void ModMenu::{name}(")
+    opening = code.index("{", start)
+    depth = 0
+    for end in range(opening, len(code)):
+        depth += (code[end] == "{") - (code[end] == "}")
+        if depth == 0:
+            return source[start:end + 1]
+    raise ValueError(f"Unterminated ModMenu::{name} method")
 
 
 if __name__ == "__main__":

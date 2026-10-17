@@ -35,6 +35,9 @@ int main(int argc, char** argv) {
     require(context.scan_mod_folder(mods).empty(), "initial scan failed");
     context.load_mods_config();
     context.enable_mod("base", true, false); // An unsaved choice must survive refresh.
+    context.enable_mod("startup_dependent", true, false);
+    require(context.is_mod_enabled("startup_dependent"), "launcher must allow selecting a dependency pack");
+    context.enable_mod("startup_dependent", false, false);
     auto* base_config = context.get_mod_config("base");
     const auto base_order = context.get_mod_order_index("base");
     recomp::GameEntry game{};
@@ -42,6 +45,17 @@ int main(int argc, char** argv) {
     uint32_t ram_used = 0;
     require(context.load_mods(game, "", nullptr, 0, ram_used).empty(), "texture-only startup failed");
     require(enables["base"] == 1, "initial pack callback was not called");
+
+    // Packages present but disabled at startup must have the same live-toggle
+    // restrictions as packages discovered later, before anyone presses Refresh.
+    for (const auto* id : {"startup_dependent", "startup_future", "startup_mode", "startup_native", "startup_code"}) {
+        const auto details = context.get_details_for_mod(id);
+        require(details.has_value() && !details->runtime_toggleable,
+                "startup-only package is runtime-toggleable before Refresh");
+        context.enable_mod(id, true, false);
+        require(!context.is_mod_enabled(id) && enables[id] == 0,
+                "startup-only package was enabled live before Refresh");
+    }
 
     for (const auto& entry : std::filesystem::directory_iterator(root / "incoming")) {
         std::filesystem::copy(entry.path(), mods / entry.path().filename(),
