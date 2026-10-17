@@ -153,6 +153,10 @@ if(BUILD_TESTING)
     find_program(LAMBO_PYTHON_EXECUTABLE NAMES python python3)
 
     if(LAMBO_PYTHON_EXECUTABLE)
+        if(WIN32)
+            add_test(NAME lambo_drive_input
+                COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_drive_input.py)
+        endif()
         set(MOD_MENU_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend/recompui/src/composites/ui_mod_menu.cpp)
         add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mod_menu_refresh_methods.inl
             COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_mod_menu_methods.py

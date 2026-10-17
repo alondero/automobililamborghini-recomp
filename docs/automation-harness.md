@@ -34,6 +34,36 @@ and waypoint fields—not to hide divergence with teleports.
 
 ## Run a scenario
 
+### Windows menu helper
+
+`tools/drive_input.py` controls an **already running window**; it is not a
+headless game runner. `press <key>[,key] <ms>` sends literal physical keys and
+does not read or modify the player's Controls profile. With the framework's
+default keyboard profile, Space is A, Left Shift is B, Enter is Start, Q/E/R
+are Z/L/R, W/A/S/D are the stick, I/J/K/L are the D-pad, and arrows are C buttons.
+Use `space` and `lshift` as command-line names. Legacy `x`, `c`, and `z` still
+send those letters, which may be useful for remapped profiles.
+
+For example, `python tools/drive_input.py press d 600` sends stick-right under
+the default profile. The issue #319 report suggests 600 ms for left/right and
+150 ms for up/down; timings depend on the menu. Enter registered as confirmation
+in that report, but posted Space/Left Shift and D-pad keys did not. Successful
+posting alone does not establish that SDL or a menu accepts a key.
+
+The helper requests per-monitor-v2 DPI awareness before looking up a window,
+so capture and click coordinates use physical client pixels. Initialization
+accepts an already active per-monitor-v2 context, but fails if Windows refuses
+the request and the current context differs, rather than silently using
+virtualized coordinates. `python tools/drive_input.py --help` needs no window or Windows API.
+On Windows, run `python tests/test_drive_input.py` for window-free message and
+DPI tests (also registered with CTest on Windows).
+Manual acceptance still requires menu navigation on a clean keyboard profile
+and a full-size screenshot at 150% scaling. The championship exit reported in
+#318 is a separate unresolved issue. For repeatable headless races, use the
+scenario runner below.
+
+### Scenario runner
+
 After building `lamborghini_modern`, run:
 
 ```sh
