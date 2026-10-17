@@ -33,7 +33,7 @@ Frontend keys, for driving the recompui overlay rather than the ROM menus:
   enter     -> ACCEPT_MENU; RmlUi activates the focused button on Return.
 
 Manual v0.9.0 validation reached Championship with enter, x and s; a/d moved
-right/left, w moved up, and c went back. Full 1600x900 captures matched the
+left/right, w moved up, and c went back. Full 1600x900 captures matched the
 client area at 144 DPI (150%). These observations apply to that keyboard-only
 profile, not arbitrary mappings or every menu.
 """
