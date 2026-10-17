@@ -10,8 +10,13 @@ Usage (window must already be running):
   python tools/drive_input.py shot out.png          -> screenshot client area
   python tools/drive_input.py press <key>[,key] <ms>-> hold key(s) for ms
   python tools/drive_input.py click <x> <y>     -> click at client-area pixels
-Default Controls profile: space=A, lshift=B, q=Z, e=L, r=R, enter=Start;
+Generic framework profile: space=A, lshift=B, q=Z, e=L, r=R, enter=Start;
 w/a/s/d=stick up/left/down/right, i/j/k/l=D-pad, arrows=C buttons.
+The port's player-one keyboard profile differs: x=A, c=B, z=Z and arrows
+also steer. In a fresh v0.9.0 keyboard-only run, x/c, enter and w/a/s/d
+worked; space did not confirm. Check the assigned player's profile.
+Disconnect controllers before starting a keyboard-only test: a connected
+controller is assigned to player one instead of the keyboard at startup.
 Key names are physical keys, not game actions. x/c/z and arrow keys retain
 their literal meaning for custom/legacy profiles. No player config is read or changed.
 Use about 600 ms for stick left/right and 150 ms for up/down as a starting
@@ -27,10 +32,10 @@ Frontend keys, for driving the recompui overlay rather than the ROM menus:
   f16,f17   -> TAB_LEFT_MENU / TAB_RIGHT_MENU
   enter     -> ACCEPT_MENU; RmlUi activates the focused button on Return.
 
-Enter has been reported to confirm ROM menus; posted Space/Left Shift and D-pad
-keys were not accepted in the issue #319 run. Emitting a key is not proof that
-SDL/the game consumed it. Verify menu navigation and full-size captures manually
-on a clean Controls profile, including at 150% display scaling.
+Manual v0.9.0 validation reached Championship with enter, x and s; a/d moved
+right/left, w moved up, and c went back. Full 1600x900 captures matched the
+client area at 144 DPI (150%). These observations apply to that keyboard-only
+profile, not arbitrary mappings or every menu.
 """
 import argparse
 import ctypes

@@ -39,16 +39,22 @@ and waypoint fields—not to hide divergence with teleports.
 `tools/drive_input.py` controls an **already running window**; it is not a
 headless game runner. `press <key>[,key] <ms>` sends literal physical keys and
 does not read or modify the player's Controls profile. With the framework's
-default keyboard profile, Space is A, Left Shift is B, Enter is Start, Q/E/R
+generic keyboard profile, Space is A, Left Shift is B, Enter is Start, Q/E/R
 are Z/L/R, W/A/S/D are the stick, I/J/K/L are the D-pad, and arrows are C buttons.
 Use `space` and `lshift` as command-line names. Legacy `x`, `c`, and `z` still
-send those letters, which may be useful for remapped profiles.
+send those letters. The port's player-one keyboard profile uses X/C/Z for A/B/Z
+and adds arrows alongside W/A/S/D for the stick. Do not assume the generic
+framework profile is the assigned player's profile. Disconnect controllers
+before a keyboard-only test and restart: startup assigns player one to a
+connected controller when one is available, otherwise to the keyboard.
 
 For example, `python tools/drive_input.py press d 600` sends stick-right under
-the default profile. The issue #319 report suggests 600 ms for left/right and
-150 ms for up/down; timings depend on the menu. Enter registered as confirmation
-in that report, but posted Space/Left Shift and D-pad keys did not. Successful
-posting alone does not establish that SDL or a menu accepts a key.
+either keyboard profile. In a supervised v0.9.0 release check with a fresh
+configuration and no controller, A/D at 600 ms moved left/right, W/S at 150 ms
+moved up/down, X and Enter confirmed, and C went back. Space did not confirm
+under the player-one profile. The helper reached the Championship screen using
+those controls. Timings depend on the menu; successful posting alone does not
+establish that SDL or a menu accepts a key under other mappings.
 
 The helper requests per-monitor-v2 DPI awareness before looking up a window,
 so capture and click coordinates use physical client pixels. Initialization
@@ -60,9 +66,10 @@ DPI APIs; older Windows versions lacking those exports fail with an
 `python tools/drive_input.py --help` needs no running game or window lookup.
 On Windows, run `python tests/test_drive_input.py` for window-free message and
 DPI tests (also registered with CTest on Windows).
-Manual acceptance still requires menu navigation on a clean keyboard profile
-and a full-size screenshot at 150% scaling. The championship exit reported in
-#318 is a separate unresolved issue. For repeatable headless races, use the
+The same supervised check measured 144 DPI (150% scaling) and a 1600x900 client
+area; helper captures were uncropped 1600x900 images. Left Shift and D-pad
+behavior were not separately validated. The championship exit reported in
+#318 was not exercised and remains separate. For repeatable headless races, use the
 scenario runner below.
 
 ### Scenario runner
