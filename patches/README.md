@@ -48,6 +48,7 @@ significant single-space lines from `git diff --check`;
 | 0033 | RT64 | Drivers without descriptor indexing get a fixed 8192-slot texture table instead of the variable-count, partially bound one, so `vkAllocateDescriptorSets` no longer fails and crashes on older Android system drivers. Pipeline layouts and the bound set take the same choice from the device capabilities. Every fixed slot holds a cleared 1x1 placeholder until a texture owns it; released cache slots and last frame's dynamic views return to it. Drivers with descriptor indexing (D3D12, desktop Vulkan, Turnip) keep the upstream path with no extra writes. Applied by CMake after 0030. Compared 2026-10-10 with RT64 upstream `main` at `8bd2cf1530c17ce8c3489eb47671ee0da2f8319d`, which still requests the variable-size range unconditionally. The shaders still declare non-uniform indexing, which texture LOD needs ([upstream #164](https://github.com/rt64/rt64/issues/164)); see the [Android validation result](../docs/ANDROID.md#gpu-drivers-and-device-validation). ROM-free layout test plus an Android system-driver run under the Khronos validation layer. No upstream issue was opened. |
 | 0034 | RecompFrontend | Enables Refresh during play and lets its callback scan for newly added packages. Clears the old selection before rebuilding the list, avoiding invalid indices when it shrinks. Requires runtime patch 0035 to preserve active handles. Configure recognizes 0034 before checking 0017's overlapping reverse context. Compared 2026-10-17 with the pinned source and [upstream main](https://github.com/N64Recomp/RecompFrontend/blob/main/recompui/src/composites/ui_mod_menu.cpp), which disable Refresh and skip scans during play. Extracted production refresh/update methods pass a Windows host test with UI/runtime fakes; native window interaction and other platforms remain unverified. |
 | 0035 | N64ModernRuntime | During play, scans append new filenames while retaining active handles, indices, selection and order. New packages start disabled. Packages needing startup validation keep their restart requirement. Stable handle storage preserves config pointers held by the save thread and UI. Existing filenames are not reopened; replacements and removals take effect on restart. Compared 2026-10-17 with the pinned source and [upstream main](https://github.com/N64Recomp/N64ModernRuntime/blob/main/librecomp/src/mods.cpp), whose scan closes every opened handle and reloads config. Applied by CMake before 0034. The Windows real-loader regression covers live RTZ discovery/toggling, state/pointer preservation, repeated scans and startup-only packages without a ROM or renderer. |
+| 0036 | N64ModernRuntime | Defines ModHandle and its code-handle interface before ModContext instantiates deque<ModHandle>. Android NDK 28's libc++ requires a complete element type here; GCC accepted the earlier declaration order. The definitions and stable-storage behavior are unchanged. Applied after 0035. Compared with the pinned header, which places ModHandle after ModContext and originally used vector. An Android ARM64 header compile reproduces the incomplete-type error before this patch and passes after it. |
 
 ## Application matrix
 
@@ -194,9 +195,9 @@ No patch content or dependency pin changed in that continuation.
 
 | Build path | Applies |
 | --- | --- |
-| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0035 in CMake. |
-| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0035 in CMake. |
-| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0035 in CMake. |
+| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0036 in CMake. |
+| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0036 in CMake. |
+| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0036 in CMake. |
 
 If a patch no longer applies to its pinned submodule, stop and update the
 patch or pin as a deliberate change. Do not reset a developer's unrelated

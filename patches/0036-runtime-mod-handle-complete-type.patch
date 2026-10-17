@@ -1,0 +1,182 @@
+diff --git a/librecomp/include/librecomp/mods.hpp b/librecomp/include/librecomp/mods.hpp
+--- a/librecomp/include/librecomp/mods.hpp
++++ b/librecomp/include/librecomp/mods.hpp
+@@ -334,6 +334,89 @@
+         typedef std::variant<ModConfigQueueSaveMod, ModConfigQueueSave, ModConfigQueueEnd, ModConfigSetLatestGamemode> ModConfigQueueVariant;
+ 
+         class LiveRecompilerCodeHandle;
++        class ModCodeHandle {
++        public:
++            virtual ~ModCodeHandle() {}
++            virtual bool good() = 0;
++            virtual uint32_t get_api_version() = 0;
++            virtual void set_imported_function(size_t import_index, GenericFunction func) = 0;
++            virtual CodeModLoadError populate_reference_symbols(const N64Recomp::Context& recompiler_context, std::string& error_param) = 0;
++            virtual uint32_t get_base_event_index() = 0;
++            virtual void set_local_section_address(size_t section_index, int32_t address) = 0;
++            virtual GenericFunction get_function_handle(size_t func_index) = 0;
++        };
++
++        class DynamicLibrary;
++        class ModHandle {
++        public:
++            // TODO make these private and expose methods for the functionality they're currently used in.
++            ModManifest manifest;
++            config::Config config;
++            std::unique_ptr<ModCodeHandle> code_handle;
++            std::unique_ptr<N64Recomp::Context> recompiler_context;
++            std::vector<uint32_t> section_load_addresses;
++            // Content types present in this mod.
++            std::vector<ModContentTypeId> content_types;
++            std::vector<char> thumbnail;
++
++            ModHandle(const ModContext& context, ModManifest&& manifest, config::Config&& config, std::vector<size_t>&& game_indices, std::vector<ModContentTypeId>&& content_types, std::vector<char>&& thumbnail);
++            ModHandle(const ModHandle& rhs) = delete;
++            ModHandle& operator=(const ModHandle& rhs) = delete;
++            ModHandle(ModHandle&& rhs);
++            ModHandle& operator=(ModHandle&& rhs);
++            ~ModHandle();
++
++            size_t num_exports() const;
++            size_t num_events() const;
++
++            void populate_exports();
++            bool get_export_function(const std::string& export_name, GenericFunction& out) const;
++            void populate_events();
++            bool get_global_event_index(const std::string& event_name, size_t& event_index_out) const;
++            CodeModLoadError load_native_library(const NativeLibraryManifest& lib_manifest, std::string& error_param);
++
++            bool is_for_game(size_t game_index) const {
++                auto find_it = std::find(game_indices.begin(), game_indices.end(), game_index);
++                return find_it != game_indices.end();
++            }
++
++            bool is_runtime_toggleable() const {
++                return runtime_toggleable;
++            }
++
++            void disable_runtime_toggle() {
++                runtime_toggleable = false;
++            }
++
++            ModDetails get_details() const {
++                return ModDetails {
++                    .mod_id = manifest.mod_id,
++                    .display_name = manifest.display_name,
++                    .description = manifest.description,
++                    .short_description = manifest.short_description,
++                    .version = manifest.version,
++                    .authors = manifest.authors,
++                    .dependencies = manifest.dependencies,
++                    .runtime_toggleable = is_runtime_toggleable(),
++                    .enabled_by_default = manifest.enabled_by_default,
++                    .custom_gamemode = manifest.custom_gamemode
++                };
++            }
++        private:
++            // Mapping of export name to function index.
++            std::unordered_map<std::string, size_t> exports_by_name;
++            // Mapping of export name to native library function pointer.
++            std::unordered_map<std::string, recomp_func_t*> native_library_exports;
++            // Mapping of event name to local index.
++            std::unordered_map<std::string, size_t> events_by_name;
++            // Loaded dynamic libraries.
++            std::vector<std::unique_ptr<DynamicLibrary>> native_libraries; // Vector of pointers so that implementation can be elsewhere.
++            // Games that this mod supports.
++            std::vector<size_t> game_indices;
++            // Whether this mod can be toggled at runtime.
++            bool runtime_toggleable;
++        };
++
+         class ModContext {
+         public:
+             ModContext();
+@@ -448,88 +531,6 @@
+             std::string latest_game_mode;
+         };
+ 
+-        class ModCodeHandle {
+-        public:
+-            virtual ~ModCodeHandle() {}
+-            virtual bool good() = 0;
+-            virtual uint32_t get_api_version() = 0;
+-            virtual void set_imported_function(size_t import_index, GenericFunction func) = 0;
+-            virtual CodeModLoadError populate_reference_symbols(const N64Recomp::Context& recompiler_context, std::string& error_param) = 0;
+-            virtual uint32_t get_base_event_index() = 0;
+-            virtual void set_local_section_address(size_t section_index, int32_t address) = 0;
+-            virtual GenericFunction get_function_handle(size_t func_index) = 0;
+-        };
+-
+-        class DynamicLibrary;
+-        class ModHandle {
+-        public:
+-            // TODO make these private and expose methods for the functionality they're currently used in.
+-            ModManifest manifest;
+-            config::Config config;
+-            std::unique_ptr<ModCodeHandle> code_handle;
+-            std::unique_ptr<N64Recomp::Context> recompiler_context;
+-            std::vector<uint32_t> section_load_addresses;
+-            // Content types present in this mod.
+-            std::vector<ModContentTypeId> content_types;
+-            std::vector<char> thumbnail;
+-
+-            ModHandle(const ModContext& context, ModManifest&& manifest, config::Config&& config, std::vector<size_t>&& game_indices, std::vector<ModContentTypeId>&& content_types, std::vector<char>&& thumbnail);
+-            ModHandle(const ModHandle& rhs) = delete;
+-            ModHandle& operator=(const ModHandle& rhs) = delete;
+-            ModHandle(ModHandle&& rhs);
+-            ModHandle& operator=(ModHandle&& rhs);
+-            ~ModHandle();
+-
+-            size_t num_exports() const;
+-            size_t num_events() const;
+-
+-            void populate_exports();
+-            bool get_export_function(const std::string& export_name, GenericFunction& out) const;
+-            void populate_events();
+-            bool get_global_event_index(const std::string& event_name, size_t& event_index_out) const;
+-            CodeModLoadError load_native_library(const NativeLibraryManifest& lib_manifest, std::string& error_param);
+-
+-            bool is_for_game(size_t game_index) const {
+-                auto find_it = std::find(game_indices.begin(), game_indices.end(), game_index);
+-                return find_it != game_indices.end();
+-            }
+-
+-            bool is_runtime_toggleable() const {
+-                return runtime_toggleable;
+-            }
+-
+-            void disable_runtime_toggle() {
+-                runtime_toggleable = false;
+-            }
+-            
+-            ModDetails get_details() const {
+-                return ModDetails {
+-                    .mod_id = manifest.mod_id,
+-                    .display_name = manifest.display_name,
+-                    .description = manifest.description,
+-                    .short_description = manifest.short_description,
+-                    .version = manifest.version,
+-                    .authors = manifest.authors,
+-                    .dependencies = manifest.dependencies,
+-                    .runtime_toggleable = is_runtime_toggleable(),
+-                    .enabled_by_default = manifest.enabled_by_default,
+-                    .custom_gamemode = manifest.custom_gamemode
+-                };
+-            }
+-        private:
+-            // Mapping of export name to function index.
+-            std::unordered_map<std::string, size_t> exports_by_name;
+-            // Mapping of export name to native library function pointer.
+-            std::unordered_map<std::string, recomp_func_t*> native_library_exports;
+-            // Mapping of event name to local index.
+-            std::unordered_map<std::string, size_t> events_by_name;
+-            // Loaded dynamic libraries.
+-            std::vector<std::unique_ptr<DynamicLibrary>> native_libraries; // Vector of pointers so that implementation can be elsewhere.
+-            // Games that this mod supports.
+-            std::vector<size_t> game_indices;
+-            // Whether this mod can be toggled at runtime.
+-            bool runtime_toggleable;
+-        };
+         
+         struct ModCodeHandleInputs {
+             uint32_t base_event_index;
