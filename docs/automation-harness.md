@@ -54,7 +54,10 @@ The helper requests per-monitor-v2 DPI awareness before looking up a window,
 so capture and click coordinates use physical client pixels. Initialization
 accepts an already active per-monitor-v2 context, but fails if Windows refuses
 the request and the current context differs, rather than silently using
-virtualized coordinates. `python tools/drive_input.py --help` needs no window or Windows API.
+virtualized coordinates. This Windows-only helper requires the per-monitor-v2
+DPI APIs; older Windows versions lacking those exports fail with an
+`AttributeError` before accessing any window. On Windows,
+`python tools/drive_input.py --help` needs no running game or window lookup.
 On Windows, run `python tests/test_drive_input.py` for window-free message and
 DPI tests (also registered with CTest on Windows).
 Manual acceptance still requires menu navigation on a clean keyboard profile
