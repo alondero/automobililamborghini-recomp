@@ -17,6 +17,13 @@ they can be installed or toggled. Texture-only packs can be toggled and ordered
 while playing. If a code mod fails to load, an error appears over the Mods tab;
 disable the incompatible mod and return to the launcher to retry Play.
 
+**Refresh** discovers newly added packages during play. New texture-only packs
+start disabled; enable them and adjust their order without restarting. Existing
+selections and order are kept. Code mods, packs with dependencies, custom game
+modes, native libraries, and packages requiring a newer port version cannot be
+enabled this way. Replacing or removing an already discovered package takes
+effect after restarting. Before Play, Refresh rescans the whole mods folder.
+
 Packages live in the `mods/` directory under the
 [configuration directory](configuration.md#where-files-live). The Mods tab has
 an Open Mods Folder button. `mods.json` stores selection and order;

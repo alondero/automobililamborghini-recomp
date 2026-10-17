@@ -1,0 +1,75 @@
+diff --git a/librecomp/src/mods.cpp b/librecomp/src/mods.cpp
+--- a/librecomp/src/mods.cpp
++++ b/librecomp/src/mods.cpp
+@@ -797,10 +797,19 @@
+ std::vector<recomp::mods::ModOpenErrorDetails> recomp::mods::ModContext::scan_mod_folder(const std::filesystem::path& mod_folder) {
+     std::vector<recomp::mods::ModOpenErrorDetails> ret{};
+     std::error_code ec;
+-    close_mods();
++    const bool live_scan = active_game != (size_t)-1;
++    // Loaded code and texture callbacks retain these handles and indices.
++    // During play, only discover new filenames; replacements/removals wait
++    // until the next full scan before the game starts.
++    if (!live_scan) {
++        close_mods();
++    }
+ 
+     static const std::vector<ModContentTypeId> empty_content_types{};
+     for (const auto& mod_path : std::filesystem::directory_iterator{mod_folder, std::filesystem::directory_options::skip_permission_denied, ec}) {
++        if (live_scan && opened_mods_by_filename.contains(mod_path.path().filename().native())) {
++            continue;
++        }
+         bool is_mod = false;
+         bool requires_manifest = true;
+         std::reference_wrapper<const std::vector<ModContentTypeId>> supported_content_types = std::cref(empty_content_types);
+@@ -841,10 +850,28 @@
+         }
+     }
+ 
++    if (live_scan) {
++        // New packs start disabled. Dependency-bearing mods, game modes and
++        // packages requiring a newer port need the normal startup validation.
++        std::unique_lock lock(opened_mods_mutex);
++        for (auto& mod : opened_mods) {
++            if (!mod.manifest.dependencies.empty() || !mod.manifest.native_libraries.empty() ||
++                mod.manifest.custom_gamemode ||
++                get_project_version() < mod.manifest.minimum_recomp_version) {
++                mod.disable_runtime_toggle();
++            }
++        }
++        rebuild_mod_order_lookup();
++    }
+     return ret;
+ }
+ 
+ void recomp::mods::ModContext::load_mods_config() {
++    // A live scan must preserve unsaved selections and order, and must not
++    // auto-enable newly discovered packages before the player chooses them.
++    if (active_game != (size_t)-1) {
++        return;
++    }
+     std::unordered_set<std::string> config_enabled_mods;
+     std::vector<std::string> config_mod_order;
+     std::vector<bool> opened_mod_is_known;
+diff --git a/librecomp/include/librecomp/mods.hpp b/librecomp/include/librecomp/mods.hpp
+--- a/librecomp/include/librecomp/mods.hpp
++++ b/librecomp/include/librecomp/mods.hpp
+@@ -6,6 +6,7 @@
+ #include <fstream>
+ #include <cstdio>
+ #include <vector>
++#include <deque>
+ #include <memory>
+ #include <tuple>
+ #include <unordered_set>
+@@ -407,7 +408,9 @@
+             // Maps game mod ID to the mod's internal integer ID. 
+             std::unordered_map<std::string, size_t> mod_game_ids;
+             std::unordered_map<std::string, std::span<const uint8_t>> embedded_mod_bytes;
+-            std::vector<ModHandle> opened_mods;
++            // Live discovery appends mods while config saves may retain a
++            // pointer to an existing Config outside opened_mods_mutex.
++            std::deque<ModHandle> opened_mods;
+             std::unordered_map<std::string, size_t> opened_mods_by_id;
+             std::unordered_map<std::filesystem::path::string_type, size_t> opened_mods_by_filename;
+             std::vector<size_t> opened_mods_order; // order index -> mod index

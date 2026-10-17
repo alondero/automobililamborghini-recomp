@@ -22,8 +22,18 @@ function(lambo_frontend_patch directory patch)
 endfunction()
 lambo_frontend_patch("${N64MR}" 0016-runtime-host-config-storage.patch)
 lambo_frontend_patch("${N64MR}" 0018-runtime-game-presentation.patch)
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0017-recompfrontend-lamborghini-integration.patch)
+lambo_frontend_patch("${N64MR}" 0035-runtime-live-mod-discovery.patch)
+# 0034 changes a control-state line from 0017, so recognize it before checking
+# the older patch's reverse context on repeated configure runs.
+execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0034-recompfrontend-live-mod-refresh.patch"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend"
+    RESULT_VARIABLE mod_refresh_patch_applied OUTPUT_QUIET ERROR_QUIET)
+if(NOT mod_refresh_patch_applied EQUAL 0)
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0017-recompfrontend-lamborghini-integration.patch)
+endif()
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0019-recompfrontend-prompt-back-cancels.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0020-recompfrontend-enum-wrap.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0031-recompfrontend-document-source-url.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0032-recompfrontend-settings-header-wrap.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0034-recompfrontend-live-mod-refresh.patch)
