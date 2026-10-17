@@ -24,10 +24,9 @@ modes, native libraries, and packages requiring a newer port version cannot be
 enabled this way. Replacing or removing an already discovered package takes
 effect after restarting. Before Play, Refresh rescans the whole mods folder.
 
-Finish copying a package before pressing Refresh. If a partly copied package
-was already discovered, completing the copy may still require a restart before
-it can be used. Refreshing a large mods folder can briefly pause gameplay; the
-scan runs synchronously, and its duration has not been measured.
+Finish copying a package before pressing Refresh. A package discovered before
+its copy finishes may need a restart. Refreshing a large mods folder can pause
+the game for a moment.
 
 Packages live in the `mods/` directory under the
 [configuration directory](configuration.md#where-files-live). The Mods tab has

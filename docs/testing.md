@@ -118,9 +118,11 @@ updated when a test is added or renamed. Some tests are only registered when
 Python, generated functions, Windows, or an RT64 build is available.
 
 `lambo_mod_menu_refresh` compiles the patched frontend's refresh and update
-methods against UI fakes and runtime fakes checked against the real API headers.
-It checks the enabled button, live and
-launcher rescanning, empty-list selection, and internal list updates.
+methods with UI and game-state fakes. Its `recomp::mods` fakes use the real
+declarations and types from `librecomp/mods.hpp`. It checks the enabled Refresh
+button, live and launcher rescanning, empty-list selection, internal list
+updates, the selected pack's live and launcher toggle restrictions, and passing
+the selected version to the deprecation query.
 `lambo_mod_runtime_refresh` uses the real loader and temporary, original `.rtz`
 and loose-package fixtures. It checks live discovery, enable/disable callbacks,
 preserved selections, order and config pointers, repeated scans, and packages
