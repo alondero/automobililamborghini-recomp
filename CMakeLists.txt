@@ -152,6 +152,23 @@ if(BUILD_TESTING)
 
     find_program(LAMBO_PYTHON_EXECUTABLE NAMES python python3)
 
+    if(LAMBO_PYTHON_EXECUTABLE)
+        set(MOD_MENU_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend/recompui/src/composites/ui_mod_menu.cpp)
+        add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mod_menu_refresh_methods.inl
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_mod_menu_methods.py
+                ${MOD_MENU_SOURCE} ${CMAKE_CURRENT_BINARY_DIR}/mod_menu_refresh_methods.inl
+            DEPENDS tests/extract_mod_menu_methods.py ${MOD_MENU_SOURCE}
+            VERBATIM)
+        add_executable(lambo_mod_menu_refresh_tests tests/test_mod_menu_refresh.cpp
+            ${CMAKE_CURRENT_BINARY_DIR}/mod_menu_refresh_methods.inl)
+        target_include_directories(lambo_mod_menu_refresh_tests PRIVATE
+            ${CMAKE_CURRENT_BINARY_DIR} ${N64MR}/N64Recomp/include
+            $<TARGET_PROPERTY:librecomp,INTERFACE_INCLUDE_DIRECTORIES>
+            $<TARGET_PROPERTY:miniz,INTERFACE_INCLUDE_DIRECTORIES>)
+        target_compile_definitions(lambo_mod_menu_refresh_tests PRIVATE NOMINMAX MINIZ_STATIC_DEFINE)
+        add_test(NAME lambo_mod_menu_refresh COMMAND lambo_mod_menu_refresh_tests)
+    endif()
+
     if(LAMBO_PYTHON_EXECUTABLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs/funcs.h")
         file(GLOB ROM_RECOMP_SOURCES CONFIGURE_DEPENDS RecompiledFuncs/funcs_*.c)
         add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/player_record_funcs.c
@@ -726,6 +743,15 @@ endif()
 # The runtime root CMake (lib/N64ModernRuntime/CMakeLists.txt) deliberately
 # omits RT64 — it is pulled in only by a game's own CMake.
 add_subdirectory(${N64MR})
+
+if(BUILD_TESTING AND LAMBO_PYTHON_EXECUTABLE)
+    add_executable(lambo_mod_runtime_refresh_tests tests/test_mod_runtime_refresh.cpp)
+    target_include_directories(lambo_mod_runtime_refresh_tests PRIVATE ${N64MR}/N64Recomp/include)
+    target_link_libraries(lambo_mod_runtime_refresh_tests PRIVATE librecomp Threads::Threads)
+    add_test(NAME lambo_mod_runtime_refresh
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_mod_runtime_refresh.py
+            $<TARGET_FILE:lambo_mod_runtime_refresh_tests>)
+endif()
 
 # --- RecompiledFuncs: the whole-ROM recompiled image as a static library -----
 # The generated funcs #include "recomp.h" (N64Recomp/include), "funcs.h"

@@ -1,0 +1,26 @@
+diff --git a/recompui/src/composites/ui_mod_menu.cpp b/recompui/src/composites/ui_mod_menu.cpp
+--- a/recompui/src/composites/ui_mod_menu.cpp
++++ b/recompui/src/composites/ui_mod_menu.cpp
+@@ -279,11 +279,11 @@
+         recompui::release_image(thumbnail);
+     }
+ 
+-    // Prevent scanning mods after starting the game.
+-    if (scan_mods && !ultramodern::is_game_started()) {
++    if (scan_mods) {
+         recomp::mods::scan_mods();
+     }
+     mod_details = recomp::mods::get_all_mod_details(game_mod_id);
++    active_mod_index = -1;
+     create_mod_list();
+ }
+ 
+@@ -641,7 +641,7 @@
+         }
+         // A failed mod load returns to the launcher; restore its controls too.
+         install_mods_button->set_enabled(!ultramodern::is_game_started());
+-        refresh_button->set_enabled(!ultramodern::is_game_started());
++        refresh_button->set_enabled(true);
+         if (active_mod_index != -1) {        
+             bool auto_enabled = recomp::mods::is_mod_auto_enabled(mod_details[active_mod_index].mod_id);
+             bool deprecated = recomp::mods::is_mod_deprecated(mod_details[active_mod_index].mod_id, mod_details[active_mod_index].version);

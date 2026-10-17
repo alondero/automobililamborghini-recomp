@@ -98,10 +98,9 @@ git submodule update --init --recursive
 # alone (clean needs -ff to recurse), so `git submodule update --init` stays
 # authoritative for those. Keep this complete instead of listing patch-created
 # paths by hand: such a list drifts from patches/ every time a patch adds a file.
-# The list must cover every submodule the build patches, including the three that
-# cmake/Frontend.cmake patches (0016/0018 on N64ModernRuntime, 0017, 0019, and
-# 0020 on RecompFrontend) — lambo_frontend_patch refuses to configure a dirty tree rather
-# than reset it.
+# Cover every submodule patched by the scripts or cmake/Frontend.cmake.
+# Keep this list aligned with patches/README.md; lambo_frontend_patch refuses
+# conflicting edits rather than resetting them.
 log "[2/5] Resetting submodules to clean state before patching..."
 for sub in lib/N64ModernRuntime lib/rt64 lib/rt64/src/contrib/plume lib/RecompFrontend; do
     git -C "$sub" checkout -- .

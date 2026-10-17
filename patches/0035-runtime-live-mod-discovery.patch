@@ -1,0 +1,98 @@
+diff --git a/librecomp/src/mods.cpp b/librecomp/src/mods.cpp
+--- a/librecomp/src/mods.cpp
++++ b/librecomp/src/mods.cpp
+@@ -277,7 +277,11 @@
+     thumbnail{ std::move(thumbnail) },
+     game_indices{std::move(game_indices)}
+ {
+-    runtime_toggleable = true;
++    // Startup validation is required regardless of when this package is found.
++    // The launcher can still select it before mods are loaded.
++    runtime_toggleable = this->manifest.dependencies.empty() &&
++        this->manifest.native_libraries.empty() && !this->manifest.custom_gamemode &&
++        !(get_project_version() < this->manifest.minimum_recomp_version);
+     for (ModContentTypeId type : this->content_types) {
+         if (!context.is_content_runtime_toggleable(type)) {
+             runtime_toggleable = false;
+@@ -797,10 +801,19 @@
+ std::vector<recomp::mods::ModOpenErrorDetails> recomp::mods::ModContext::scan_mod_folder(const std::filesystem::path& mod_folder) {
+     std::vector<recomp::mods::ModOpenErrorDetails> ret{};
+     std::error_code ec;
+-    close_mods();
++    const bool live_scan = active_game != (size_t)-1;
++    // Loaded code and texture callbacks retain these handles and indices.
++    // During play, only discover new filenames; replacements/removals wait
++    // until the next full scan before the game starts.
++    if (!live_scan) {
++        close_mods();
++    }
+ 
+     static const std::vector<ModContentTypeId> empty_content_types{};
+     for (const auto& mod_path : std::filesystem::directory_iterator{mod_folder, std::filesystem::directory_options::skip_permission_denied, ec}) {
++        if (live_scan && opened_mods_by_filename.contains(mod_path.path().filename().native())) {
++            continue;
++        }
+         bool is_mod = false;
+         bool requires_manifest = true;
+         std::reference_wrapper<const std::vector<ModContentTypeId>> supported_content_types = std::cref(empty_content_types);
+@@ -841,10 +854,19 @@
+         }
+     }
+ 
++    if (live_scan) {
++        std::unique_lock lock(opened_mods_mutex);
++        rebuild_mod_order_lookup();
++    }
+     return ret;
+ }
+ 
+ void recomp::mods::ModContext::load_mods_config() {
++    // A live scan must preserve unsaved selections and order, and must not
++    // auto-enable newly discovered packages before the player chooses them.
++    if (active_game != (size_t)-1) {
++        return;
++    }
+     std::unordered_set<std::string> config_enabled_mods;
+     std::vector<std::string> config_mod_order;
+     std::vector<bool> opened_mod_is_known;
+diff --git a/librecomp/include/librecomp/mods.hpp b/librecomp/include/librecomp/mods.hpp
+--- a/librecomp/include/librecomp/mods.hpp
++++ b/librecomp/include/librecomp/mods.hpp
+@@ -6,6 +6,7 @@
+ #include <fstream>
+ #include <cstdio>
+ #include <vector>
++#include <deque>
+ #include <memory>
+ #include <tuple>
+ #include <unordered_set>
+@@ -407,7 +408,9 @@
+             // Maps game mod ID to the mod's internal integer ID. 
+             std::unordered_map<std::string, size_t> mod_game_ids;
+             std::unordered_map<std::string, std::span<const uint8_t>> embedded_mod_bytes;
+-            std::vector<ModHandle> opened_mods;
++            // Live discovery appends mods while config saves may retain a
++            // pointer to an existing Config outside opened_mods_mutex.
++            std::deque<ModHandle> opened_mods;
+             std::unordered_map<std::string, size_t> opened_mods_by_id;
+             std::unordered_map<std::filesystem::path::string_type, size_t> opened_mods_by_filename;
+             std::vector<size_t> opened_mods_order; // order index -> mod index
+diff --git a/librecomp/src/recomp.cpp b/librecomp/src/recomp.cpp
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -112,12 +112,13 @@
+     {
+         std::lock_guard mod_lock{ mod_context_mutex };
+         mod_open_errors = mod_context->scan_mod_folder(config_path / mods_directory);
++        // Keep the active-game check and config load serialized with game
++        // load/unload, just like discovery and the public mod API readers.
++        mod_context->load_mods_config();
+     }
+     for (const auto& cur_error : mod_open_errors) {
+         printf("Error opening mod " PATHFMT ": %s (%s)\n", cur_error.mod_path.c_str(), recomp::mods::error_to_string(cur_error.error).c_str(), cur_error.error_param.c_str());
+     }
+-
+-    mod_context->load_mods_config();
+ }
+ 
+ void recomp::mods::close_mods() {

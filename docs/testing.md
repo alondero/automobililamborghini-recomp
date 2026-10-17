@@ -116,6 +116,8 @@ ctest --test-dir build -R "lambo_rt64|lambo_audio"
 ctest --test-dir build -R "lambo_rt_sun_tasks"
 ctest --test-dir build -R "lambo_hud_(texture_walk|hash_padding|rt64_contract|savestate)"
 ctest --test-dir build -R "lambo_mods_rtz_container"
+ctest --test-dir build -R "lambo_mod_menu_refresh"
+ctest --test-dir build -R "lambo_mod_runtime_refresh"
 ctest --test-dir build -R "lambo_sky_(projection|panorama)|lambo_camera_(projection|runtime)"
 ~~~
 
@@ -132,6 +134,20 @@ changes, authored fog payloads and legacy/truncated rejection. Build
 The complete list is the add_test list in CMakeLists.txt; keep this page
 updated when a test is added or renamed. Some tests are only registered when
 Python, generated functions, Windows, or an RT64 build is available.
+
+`lambo_mod_menu_refresh` compiles the patched frontend's refresh and update
+methods with UI and game-state fakes. Its `recomp::mods` fakes use the real
+declarations and types from `librecomp/mods.hpp`. It checks the enabled Refresh
+button, live and launcher rescanning, empty-list selection, internal list
+updates, the selected pack's live and launcher toggle restrictions, and passing
+the selected version to the deprecation query.
+`lambo_mod_runtime_refresh` uses the real loader and temporary, original `.rtz`
+and loose-package fixtures. It checks live discovery, enable/disable callbacks,
+preserved selections, order and config pointers, repeated scans, and packages
+that must wait for startup validation, including disabled packages present at
+startup before the first Refresh. The extractor's Python tests cover braces in
+comments and string/character literals. Neither native test renders replacement artwork
+or plays the game.
 
 The optional Windows D3D12 sunlight probe executes the shared kernel over
 synthetic geometry, including real BLAS/TLAS and GPU readback. Configure with
