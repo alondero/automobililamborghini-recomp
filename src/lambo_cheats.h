@@ -4,7 +4,7 @@
 #include <cstddef>
 
 namespace lambo::cheats {
-enum class Cheat { ExtraVehicles, InfiniteTime, FreezeLapTimers, Count };
+enum class Cheat { ExtraVehicles, InfiniteTime, FreezeLapTimers, ReverseTracks, Count };
 struct Description {
     Cheat cheat;
     const char* id;
@@ -18,6 +18,8 @@ inline constexpr std::array<Description, static_cast<std::size_t>(Cheat::Count)>
      "Freeze the remaining countdown from the next timer tick. Disable to resume. Does not restart an expired race. Resets when the application closes."},
     {Cheat::FreezeLapTimers, "freeze_lap_timers", "Freeze lap timers",
      "Freeze lap and time-trial clocks for all players from the next timer tick. Disable to resume. Race results can retain cheated times. Resets when the application closes."},
+    {Cheat::ReverseTracks, "reverse_tracks", "Unlock reverse tracks",
+     "Unlock the reverse option when entering a race setup menu. Re-enter the menu after toggling. Saved unlocks and a race already in progress are unchanged. Resets when the application closes."},
 }};
 
 // UI threads publish flags; game-thread hooks consume them. Session-only,

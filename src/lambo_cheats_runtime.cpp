@@ -25,6 +25,12 @@ extern "C" int lambo_cheat_extra_vehicles() {
     return lambo::cheats::enabled(lambo::cheats::Cheat::ExtraVehicles);
 }
 
+extern "C" int lambo_cheat_reverse_tracks() {
+    // Override only the four setup-menu checks of progress bit 0x2 at
+    // 0x800A4170. Never feed the override into a progress writer or car unlock.
+    return lambo::cheats::enabled(lambo::cheats::Cheat::ReverseTracks);
+}
+
 extern "C" void lambo_cheat_current_lap_timer(uint8_t*, recomp_context* ctx) {
     if (lambo::cheats::enabled(lambo::cheats::Cheat::FreezeLapTimers)) {
         // The second clock bank at 0x80098850 tracks the current lap.

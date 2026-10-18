@@ -340,6 +340,28 @@ before_vram = 0x80051144
 text = "{ extern void lambo_hud_remove_blue_bar(uint8_t*, recomp_context*); lambo_hud_remove_blue_bar(rdram, ctx); }"
 
 # Native, session-only cheats. Evidence and contracts: docs/cheats.md.
+# Setup-menu direction gates, after masking saved progress with 0x2. The
+# initializer runs on menu entry, so toggling requires re-entering that menu.
+[[patches.hook]]
+func = "func_8003CD84"
+before_vram = 0x8003C53C
+text = "{ extern int lambo_cheat_reverse_tracks(void); if (lambo_cheat_reverse_tracks()) ctx->r15 = 2; }"
+
+[[patches.hook]]
+func = "func_8003CD84"
+before_vram = 0x8003C5E0
+text = "{ extern int lambo_cheat_reverse_tracks(void); if (lambo_cheat_reverse_tracks()) ctx->r8 = 2; }"
+
+[[patches.hook]]
+func = "func_8003CD84"
+before_vram = 0x8003C684
+text = "{ extern int lambo_cheat_reverse_tracks(void); if (lambo_cheat_reverse_tracks()) ctx->r11 = 2; }"
+
+[[patches.hook]]
+func = "func_8003CD84"
+before_vram = 0x8003C774
+text = "{ extern int lambo_cheat_reverse_tracks(void); if (lambo_cheat_reverse_tracks()) ctx->r25 = 2; }"
+
 [[patches.hook]]
 func = "BootLoadInitialAssets"
 before_vram = 0x80001754

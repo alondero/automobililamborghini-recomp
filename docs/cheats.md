@@ -12,6 +12,7 @@ launch and are not stored in a settings file.
 | Extra vehicles | The next left/right vehicle selection can reach every model, including locked models. Works for every player. | Normal selection restrictions resume. An already selected vehicle remains selected. Earned unlocks are unchanged. |
 | Infinite time | Stops the remaining countdown from decreasing at its next tick. It cannot revive an expired race. | Countdown resumes from the remaining time. |
 | Freeze lap timers | Stops both time-trial/race and current-lap clocks for all players at their next tick. | Clocks resume. Existing cheated times are not undone. |
+| Unlock reverse tracks | Enables the reverse option when entering a race setup menu. Leave and re-enter the setup screen after toggling. | Normal restrictions resume on the next menu entry. Earned unlocks and a race already in progress are unchanged. |
 
 Normal game saves can retain results achieved with cheats. Turning a cheat off
 does not undo a race result. Toggling while the game is paused takes effect when
@@ -59,6 +60,7 @@ Disabled hooks leave the original registers and game behavior intact.
 | BootLoadInitialAssets, before 0x80001754 | The same loop updates the current-lap bank at 0x80098850 + player*8 + 6. Restore t5 from t7 before store/rollover. The existing per-player race gate remains intact. |
 | func_8003F40C, before 0x8003E8AC and 0x8003E954 | Left selection loads the category's signed availability halfword from 0x800985C0 + category*2. Set the loaded branch operand (t4/t3) to one when enabled. |
 | func_8003F56C, before 0x8003EA0C and 0x8003EAB4 | Equivalent right-selection operands are t3/t9. The ROM retains cursor bounds, wrapping, descriptor lookup and player selection. |
+| func_8003CD84, before 0x8003C53C, 0x8003C5E0, 0x8003C684 and 0x8003C774 | Setup screens 3, 9, 12 and 10 test progress bit 0x2 from the unsigned halfword at 0x800A4170. Set only the masked branch operands (t7, t0, t3, t9) to 2 when enabled. The ROM enables its direction item without changing saved progress or live race direction. |
 
 Guest halfwords use N64 byte order through MEM_H, not native host struct casts.
 Clock subsecond fields count in sixtieths; the update adds two and rolls over at
@@ -66,6 +68,27 @@ Clock subsecond fields count in sixtieths; the update adds two and rolls over at
 writes. See [vehicle evidence](CAR_DIFFERENCES.md) for category availability.
 The source-level replacement would be named timer-update and vehicle-availability
 functions once those game routines are decompiled.
+
+### Reverse-track access
+
+The setup initializer at runtime `0x8003C184` (symbol `func_8003CD84`)
+loads progress, masks it with `0x2`, and writes zero (available) or minus one
+(unavailable) to the direction item's signed halfword. The four item fields
+are `0x801EA702`, `0x801EA642`, `0x801EA842`, and `0x801EB062`, respectively.
+These writes occur on the game thread when entering the setup screen. The
+cheat changes the branch operand after the mask; it does not write the item
+or progress itself. Re-entering the screen refreshes availability after either
+toggle. Turning it off does not cancel an existing reverse race.
+
+The Championship completion handler `func_800419E0` at runtime `0x80040DE0`
+sets progress bit `0x1` or `0x2` according to the live difficulty halfword at
+`0x800CE79C`; the Expert branch stores bit `0x2` at `0x80040E28`.
+Bit `0x2` also unlocks a vehicle category in the initializer's separate car
+availability path at `0x8003C8EC`. Hooking that progress load globally would
+therefore grant an unrelated vehicle unlock. Only the four direction gates
+are overridden. Disabled hooks preserve the ROM's earned-unlock decisions.
+The eventual source-level replacement would be a named reverse-track access
+check in the setup menus.
 
 ## Synthetic-RAM test layout
 
@@ -86,6 +109,8 @@ same runtime USA build and N64 big-endian halfword accesses as the seams above.
 | `0x800CE7E8 + player*2` | Halfword model cursor for zero-based player index 0-3. |
 | `0x800985C0 + category*2` | Eight availability halfwords; categories 0 and 4 start unlocked in the fixture. |
 | `0x800A4170` | Halfword progress-bit source for locked categories. A sentinel verifies the selector cheat does not change progression. |
+| `0x801EA702`, `0x801EA642`, `0x801EA842`, `0x801EB062` | Signed halfword availability fields for the four setup-menu direction items; zero permits selection and minus one disables it. |
+| `0x800CE6C0`, `0x800CE7B0` | Halfword circuit cursor and live race direction. The reverse-menu fixture checks the existing 3/4-player circuit clamp and preserves live direction. |
 
 The two dispatcher gate values are fixture inputs to known branches in the
 extracted timer body; the test does not assign them broader gameplay meanings.
@@ -101,6 +126,13 @@ tests enabled/disabled behavior, four players, rollover boundaries, pause,
 expired countdown, all 24 model cursors, both directions and preserved unlocks.
 Extraction asserts each timer hook remains inside the extracted address region.
 Only the countdown warning sound is stubbed. Generated ROM data is not committed.
+
+The same target extracts all four complete setup paths through their direction
+gates, including menu bounds, pointers and the multiplayer circuit clamp. It
+tests locked and earned progress, unrelated progress bits, enable/disable,
+one to four players, unchanged live race direction, and RAM equality with the
+normal earned-unlock path. The vehicle tests also run with reverse access
+enabled to check that it does not bypass vehicle selection restrictions.
 
 `lambo_frontend_settings` checks the Cheats page, immediate enable/disable,
 external refresh and absence of cheats.json persistence.
@@ -118,6 +150,20 @@ frames consumed. This scenario ran with cheats off and checks baseline gameplay,
 not interactive toggling. Dependencies were reused from an existing patched
 checkout for the manual CMake build; the full build.ps1 setup was not rerun.
 
+Reverse-track validation on Windows with MinGW GCC 15.2 (2026-10-18):
+regenerated the USA output and rebuilt the changed game objects, generated
+menu code, and frontend-settings test sources. Linked the game and settings
+test with unaffected objects and dependencies from an existing CMake build;
+the full build.ps1 setup was not rerun. Both focused test executables passed.
+`python tools/check_docs.py`, `python -m unittest discover tests` (176 tests,
+nine skipped), and `git diff --check` passed. Running
+`python tools/run_game_scenario.py scenarios/harness-smoke.json` against the
+rebuilt executable passed with 601 swaps and all 600 replay frames consumed.
+The smoke scenario checks gameplay with cheats off, not reverse selection.
+
 Interactive follow-up: toggle each option mid-race or while in vehicle selection;
 check pause/resume, a lap boundary, race completion and returning to menus.
 The tests do not establish record validity or visually verify the menu.
+For reverse access, enable the cheat, re-enter each setup screen, select
+REVERSE, and start a race. Disable and re-enter to check the saved restriction
+returns. Interactive reverse selection and Android behavior remain unverified.
