@@ -174,15 +174,53 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(api.PostMessageW.call_args.args[2], driver.VK['x'])
 
     def test_failed_key_up_does_not_skip_the_remaining_releases(self):
+        # Every release is still attempted, and a key left held is not success.
         api = Mock()
         # Both downs succeed; the x key-up is rejected and c must still be sent.
         api.PostMessageW.side_effect = [1, 1, 0, 1]
         with patch.object(driver, 'user32', api), patch.object(driver.time, 'sleep'), \
                 patch.object(ctypes, 'get_last_error', create=True, return_value=5):
-            driver.press(123, ['x', 'c'], 150)
+            with self.assertRaises(OSError) as result:
+                driver.press(123, ['x', 'c'], 150)
         self.assertEqual([c.args[1] for c in api.PostMessageW.call_args_list],
                          [0x0100, 0x0100, 0x0101, 0x0101])
         self.assertEqual(api.PostMessageW.call_args.args[2], driver.VK['c'])
+        self.assertIn('still held: x', str(result.exception))
+
+    def test_original_failure_survives_a_release_that_also_fails(self):
+        api = Mock()
+        # x goes down, the c key-down is rejected, and the x release fails too.
+        api.PostMessageW.side_effect = [1, 0, 0]
+        with patch.object(driver, 'user32', api), patch.object(driver.time, 'sleep'), \
+                patch.object(ctypes, 'get_last_error', create=True, return_value=5):
+            with self.assertRaises(OSError) as result:
+                driver.press(123, ['x', 'c'], 150)
+        message = str(result.exception)
+        self.assertIn('0x0100', message)
+        self.assertIn('still held: x', message)
+
+    def test_failed_click_release_is_reported(self):
+        api = Mock()
+        api.PostMessageW.side_effect = [1, 1, 0]  # move ok, down ok, up rejected
+        with patch.object(driver, 'user32', api), patch.object(driver.time, 'sleep'), \
+                patch.object(ctypes, 'get_last_error', create=True, return_value=5):
+            with self.assertRaises(OSError) as result:
+                driver.click(123, 10, 20)
+        self.assertEqual([c.args[1] for c in api.PostMessageW.call_args_list],
+                         [0x0200, 0x0201, 0x0202])
+        self.assertIn('left button', str(result.exception))
+
+    def test_cli_exits_nonzero_when_a_key_cannot_be_released(self):
+        # The regression: a stuck key used to be swallowed and reported as success.
+        api = Mock()
+        api.PostMessageW.side_effect = [1, 1, 0, 1]
+        with patch.object(driver, 'initialize_windows'), \
+                patch.object(driver, 'find_window', return_value=(123, 'game')), \
+                patch.object(driver, 'user32', api), patch.object(driver.time, 'sleep'), \
+                patch.object(ctypes, 'get_last_error', create=True, return_value=5), \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(driver.main(['press', 'x,c', '150']), 1)
+        self.assertIn('still held', stderr.getvalue())
 
     def test_failed_click_down_sends_no_button_up(self):
         # Nothing went down, so nothing is released; a stray up would hit-test

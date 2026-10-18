@@ -179,19 +179,41 @@ def _post(hwnd, message, wparam, lparam):
 
 
 def _release_keys(hwnd, held):
-    """Best-effort WM_KEYUP for every key that is still down.
+    """Post a WM_KEYUP for every key that went down, attempting all of them.
 
-    Each release is independent: one that fails must not skip the others, or
-    the game keeps those keys held. A key only appears in `held` once its
+    Returns the releases that were rejected as (name, error) pairs instead of
+    raising, so the caller can report a stuck key without masking the error that
+    caused the cleanup in the first place. A key only appears in `held` once its
     WM_KEYDOWN was accepted, so nothing is released that never went down.
     """
+    stuck = []
     for k in held:
         ext = (1 << 24) if k in EXTENDED else 0
         try:
             _post(hwnd, 0x0101, VK[k],
                   1 | (SC[k] << 16) | ext | (1 << 30) | (1 << 31))
-        except OSError:
-            pass
+        except OSError as error:
+            stuck.append((k, error))
+    return stuck
+
+
+def _raise_cleanup(failure, stuck, subject):
+    """Report input left held after a failed command, keeping the first cause.
+
+    Input still held when this process exits must not look like success, and a
+    release failure must not replace the error that triggered the cleanup.
+    """
+    if failure is None and not stuck:
+        return
+    if failure is not None and not stuck:
+        raise failure
+    first = failure if failure is not None else stuck[0][1]
+    message = str(failure) if failure is not None else f'could not release {subject}'
+    if stuck:
+        message += '; still held: ' + ', '.join(f'{name} ({error})'
+                                                 for name, error in stuck)
+    errno = getattr(first, 'errno', None)
+    raise OSError(errno if errno is not None else 0, message)
 
 
 def press(h, keys, ms):
@@ -199,17 +221,19 @@ def press(h, keys, ms):
     if ms < 0 or not keys or any(k not in VK for k in keys):
         raise ValueError('use known physical key names and a non-negative duration')
     held = []
+    failure = None
     try:
         for k in keys:
             ext = (1 << 24) if k in EXTENDED else 0
             _post(h, 0x0100, VK[k], 1 | (SC[k] << 16) | ext)
             held.append(k)
         time.sleep(ms / 1000.0)
-    finally:
-        # A chord that fails part way, or a key-up that fails before the rest
-        # are sent, would otherwise leave those keys down in SDL after this
-        # process exits. Release first, then let the original error propagate.
-        _release_keys(h, held)
+    except OSError as error:
+        failure = error
+    # A chord that fails part way would otherwise leave those keys down in SDL
+    # after this process exits. Release them all, then report any that stay.
+    stuck = _release_keys(h, held)
+    _raise_cleanup(failure, stuck, 'key(s)')
     time.sleep(0.15)
 
 
@@ -220,18 +244,22 @@ def click(h, x, y):
     _post(h, 0x0200, 0, lp)  # WM_MOUSEMOVE
     time.sleep(0.08)
     pressed = False
+    failure = None
     try:
         _post(h, 0x0201, 1, lp)  # WM_LBUTTONDOWN, MK_LBUTTON
         pressed = True
         time.sleep(0.08)
-    finally:
-        # Release whatever went down, even if a later step fails. No up is sent
-        # when the down was rejected, since nothing is held in that case.
-        if pressed:
-            try:
-                _post(h, 0x0202, 0, lp)  # WM_LBUTTONUP
-            except OSError:
-                pass
+    except OSError as error:
+        failure = error
+    # Release whatever went down, even if a later step failed. Nothing is sent
+    # when the down was rejected, since nothing is held in that case.
+    stuck = []
+    if pressed:
+        try:
+            _post(h, 0x0202, 0, lp)  # WM_LBUTTONUP
+        except OSError as error:
+            stuck.append(('left button', error))
+    _raise_cleanup(failure, stuck, 'left button')
     time.sleep(0.15)
 
 
