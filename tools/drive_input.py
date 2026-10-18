@@ -178,18 +178,38 @@ def _post(hwnd, message, wparam, lparam):
                       f'PostMessageW(0x{message:04X}) to window {hwnd} failed')
 
 
+def _release_keys(hwnd, held):
+    """Best-effort WM_KEYUP for every key that is still down.
+
+    Each release is independent: one that fails must not skip the others, or
+    the game keeps those keys held. A key only appears in `held` once its
+    WM_KEYDOWN was accepted, so nothing is released that never went down.
+    """
+    for k in held:
+        ext = (1 << 24) if k in EXTENDED else 0
+        try:
+            _post(hwnd, 0x0101, VK[k],
+                  1 | (SC[k] << 16) | ext | (1 << 30) | (1 << 31))
+        except OSError:
+            pass
+
+
 def press(h, keys, ms):
     # Validate the entire chord before posting anything (no partially held keys).
     if ms < 0 or not keys or any(k not in VK for k in keys):
         raise ValueError('use known physical key names and a non-negative duration')
-    for k in keys:
-        ext = (1 << 24) if k in EXTENDED else 0
-        _post(h, 0x0100, VK[k], 1 | (SC[k] << 16) | ext)
-    time.sleep(ms / 1000.0)
-    for k in keys:
-        ext = (1 << 24) if k in EXTENDED else 0
-        _post(h, 0x0101, VK[k],
-              1 | (SC[k] << 16) | ext | (1 << 30) | (1 << 31))
+    held = []
+    try:
+        for k in keys:
+            ext = (1 << 24) if k in EXTENDED else 0
+            _post(h, 0x0100, VK[k], 1 | (SC[k] << 16) | ext)
+            held.append(k)
+        time.sleep(ms / 1000.0)
+    finally:
+        # A chord that fails part way, or a key-up that fails before the rest
+        # are sent, would otherwise leave those keys down in SDL after this
+        # process exits. Release first, then let the original error propagate.
+        _release_keys(h, held)
     time.sleep(0.15)
 
 
@@ -199,9 +219,19 @@ def click(h, x, y):
     # with a stale position and hit-test against the wrong element.
     _post(h, 0x0200, 0, lp)  # WM_MOUSEMOVE
     time.sleep(0.08)
-    _post(h, 0x0201, 1, lp)  # WM_LBUTTONDOWN, MK_LBUTTON
-    time.sleep(0.08)
-    _post(h, 0x0202, 0, lp)  # WM_LBUTTONUP
+    pressed = False
+    try:
+        _post(h, 0x0201, 1, lp)  # WM_LBUTTONDOWN, MK_LBUTTON
+        pressed = True
+        time.sleep(0.08)
+    finally:
+        # Release whatever went down, even if a later step fails. No up is sent
+        # when the down was rejected, since nothing is held in that case.
+        if pressed:
+            try:
+                _post(h, 0x0202, 0, lp)  # WM_LBUTTONUP
+            except OSError:
+                pass
     time.sleep(0.15)
 
 

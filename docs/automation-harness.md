@@ -76,7 +76,9 @@ so capture and click coordinates use physical client pixels. Initialization
 accepts an already active per-monitor-v2 context, but fails if Windows refuses
 the request and the current context differs, rather than silently using
 virtualized coordinates. A failed `PostMessageW` is reported with a non-zero
-exit instead of being ignored. This Windows-only helper requires the
+exit instead of being ignored. A key or button that went down is released again
+before that error propagates, so a chord that fails part way does not leave the
+game holding input after the command exits. This Windows-only helper requires the
 per-monitor-v2 DPI APIs; older Windows versions lacking those exports fail with
 an `AttributeError` before accessing any window. `python
 tools/drive_input.py --help` needs no running game or window lookup. Run

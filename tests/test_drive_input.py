@@ -160,6 +160,53 @@ class DriverTests(unittest.TestCase):
         for action in driver.SEEDED_PROFILE:
             self.assertIn(action, epilog)
 
+    def test_failed_key_down_in_a_chord_still_releases_the_earlier_key(self):
+        # A chord that dies part way used to leave the keys that did go down
+        # held in SDL after this process exited.
+        api = Mock()
+        api.PostMessageW.side_effect = [1, 0, 1]  # x down, c rejected, x released
+        with patch.object(driver, 'user32', api), patch.object(driver.time, 'sleep'), \
+                patch.object(ctypes, 'get_last_error', create=True, return_value=5):
+            with self.assertRaises(OSError):
+                driver.press(123, ['x', 'c'], 150)
+        self.assertEqual([c.args[1] for c in api.PostMessageW.call_args_list],
+                         [0x0100, 0x0100, 0x0101])
+        self.assertEqual(api.PostMessageW.call_args.args[2], driver.VK['x'])
+
+    def test_failed_key_up_does_not_skip_the_remaining_releases(self):
+        api = Mock()
+        # Both downs succeed; the x key-up is rejected and c must still be sent.
+        api.PostMessageW.side_effect = [1, 1, 0, 1]
+        with patch.object(driver, 'user32', api), patch.object(driver.time, 'sleep'), \
+                patch.object(ctypes, 'get_last_error', create=True, return_value=5):
+            driver.press(123, ['x', 'c'], 150)
+        self.assertEqual([c.args[1] for c in api.PostMessageW.call_args_list],
+                         [0x0100, 0x0100, 0x0101, 0x0101])
+        self.assertEqual(api.PostMessageW.call_args.args[2], driver.VK['c'])
+
+    def test_failed_click_down_sends_no_button_up(self):
+        # Nothing went down, so nothing is released; a stray up would hit-test
+        # against an element the caller never pressed.
+        api = Mock()
+        api.PostMessageW.side_effect = [1, 0, 1]  # move ok, down rejected
+        with patch.object(driver, 'user32', api), patch.object(driver.time, 'sleep'), \
+                patch.object(ctypes, 'get_last_error', create=True, return_value=5):
+            with self.assertRaises(OSError):
+                driver.click(123, 10, 20)
+        self.assertEqual([c.args[1] for c in api.PostMessageW.call_args_list],
+                         [0x0200, 0x0201])
+
+    def test_failure_after_a_click_down_still_releases_the_button(self):
+        # The release must not depend on the rest of the sequence succeeding,
+        # or an interruption leaves the left button held.
+        api = Mock()
+        with patch.object(driver, 'user32', api), \
+                patch.object(driver.time, 'sleep', side_effect=[None, OSError('cut')]):
+            with self.assertRaises(OSError):
+                driver.click(123, 10, 20)
+        self.assertEqual([c.args[1] for c in api.PostMessageW.call_args_list],
+                         [0x0200, 0x0201, 0x0202])
+
     def test_failed_post_raises_instead_of_doing_nothing_silently(self):
         api = Mock()
         api.PostMessageW.return_value = 0
