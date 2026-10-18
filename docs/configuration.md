@@ -7,6 +7,10 @@ The game creates its configuration on first launch. The in-game frontend is
 the normal editor. Direct JSON editing is useful for advanced options and
 diagnosis.
 
+The hidden `debug_mode` boolean in `general.json` enables the frontend RmlUi
+debugger only when explicitly set to `true`; it defaults to `false` and requires
+a restart. See [Debugging](debugging.md#frontend-rmlui-debugger).
+
 ## Where files live
 
 By default:

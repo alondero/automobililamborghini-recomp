@@ -1,0 +1,74 @@
+--- a/recompui/src/base/ui_state.cpp
++++ b/recompui/src/base/ui_state.cpp
+@@ -11,7 +11,7 @@
+ #include "concurrentqueue.h"
+ 
+ #include "RmlUi/Core.h"
+-#include "RmlUi/Debugger.h"
++#include "core/ui_debugger.h"
+ #include "RmlUi/Core/RenderInterfaceCompatibility.h"
+ #include "RmlUi/../../Source/Core/Elements/ElementLabel.h"
+ #include "RmlUi_Platform_SDL.h"
+@@ -219,6 +219,8 @@
+     Rml::Context* context;
+     recompui::UiEventListenerInstancer event_listener_instancer;
+ 
++    recompui::detail::UiDebugger debugger;
++
+     UIState(const UIState& rhs) = delete;
+     UIState& operator=(const UIState& rhs) = delete;
+     UIState(UIState&& rhs) = delete;
+@@ -246,7 +248,8 @@
+         
+         context = Rml::CreateContext("main", Rml::Vector2i(width, height));
+ 
+-        Rml::Debugger::Initialise(context);
++        // General config is finalized before the renderer hooks are installed.
++        debugger.initialise(context, recompui::config::general::get_debug_mode_enabled());
+         {
+             struct FontFace {
+                 const char* filename;
+@@ -762,9 +765,7 @@
+                     kb_interacted = true;
+ 
+                     if (cur_event.key.keysym.scancode == SDL_Scancode::SDL_SCANCODE_F8) {
+-                        if (recompui::config::general::get_debug_mode_enabled()) {
+-                            Rml::Debugger::SetVisible(!Rml::Debugger::IsVisible());
+-                        }
++                        ui_state->debugger.toggle();
+                     }
+                 }
+ 
+@@ -902,7 +903,7 @@
+     recompui::destroy_all_contexts();
+ 
+     std::lock_guard lock {ui_state_mutex};
+-    Rml::Debugger::Shutdown();
++    ui_state->debugger.shutdown();
+     Rml::Shutdown();
+     ui_state->unload();
+     ui_state.reset();
+--- /dev/null
++++ b/recompui/src/core/ui_debugger.h
+@@ -0,0 +1,21 @@
++#pragma once
++#include <RmlUi/Debugger.h>
++
++namespace recompui::detail {
++// Sample the developer option at startup. A disabled debugger must not install
++// its diagnostic listener or create its beacon; the system logger stays active.
++class UiDebugger {
++    bool initialized = false;
++public:
++    void initialise(Rml::Context* context, bool enabled) {
++        initialized = enabled && Rml::Debugger::Initialise(context);
++    }
++    void toggle() {
++        if (initialized) Rml::Debugger::SetVisible(!Rml::Debugger::IsVisible());
++    }
++    void shutdown() {
++        if (initialized) Rml::Debugger::Shutdown();
++        initialized = false;
++    }
++};
++}
