@@ -38,3 +38,4 @@ lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0020-recom
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0031-recompfrontend-document-source-url.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0032-recompfrontend-settings-header-wrap.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0034-recompfrontend-live-mod-refresh.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0037-recompfrontend-optional-ui-debugger.patch)
