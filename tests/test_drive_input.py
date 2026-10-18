@@ -4,13 +4,22 @@ import ctypes
 import importlib.util
 import io
 from pathlib import Path
+import re
 import unittest
 from unittest.mock import Mock, patch
 
+ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
     'drive_input', Path(__file__).resolve().parents[1] / 'tools' / 'drive_input.py')
 driver = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(driver)
+
+# The seeded profile names the N64 input; the C++ table names the frontend's
+# GameInput enum. Only the four stick axes differ.
+ACTION_NAMES = {'X_AXIS_NEG': 'STICK_LEFT', 'X_AXIS_POS': 'STICK_RIGHT',
+                'Y_AXIS_POS': 'STICK_UP', 'Y_AXIS_NEG': 'STICK_DOWN'}
+# SDL's scancode token for Enter is RETURN; the driver names that key `enter`.
+SDL_NAME_ALIASES = {'RETURN': 'ENTER'}
 
 
 class DriverTests(unittest.TestCase):
@@ -106,6 +115,70 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(api.AreDpiAwarenessContextsEqual.call_args.args[0], 1234)
         self.assertEqual(api.AreDpiAwarenessContextsEqual.call_args.args[1].value,
                          ctypes.c_void_p(-4).value)
+
+    def test_seeded_profile_matches_the_frontend_table(self):
+        # #319 was caused by this driver's key map drifting away from the profile
+        # the port actually installs. Read that table straight out of the C++ so
+        # the two cannot disagree again.
+        source = (ROOT / 'src' / 'ui' / 'lambo_frontend.cpp').read_text(encoding='utf-8')
+        table = re.search(r'std::pair<GameInput, SDL_Scancode> keys\[\] = \{(.*?)\};',
+                          source, re.S)
+        self.assertIsNotNone(table, 'seeded keys[] table not found in lambo_frontend.cpp')
+        parsed = {}
+        for game_input, scancode in re.findall(r'\{GameInput::(\w+), SDL_SCANCODE_(\w+)\}',
+                                              table.group(1)):
+            parsed.setdefault(ACTION_NAMES.get(game_input, game_input), []).append(scancode)
+        # Slot 0 above is the first binding; the stick adds a second one here.
+        second = re.findall(
+            r'set_input_binding\(keyboard, GameInput::(\w+), 1, '
+            r'InputField::keyboard\(SDL_SCANCODE_(\w+)\)\)', source)
+        self.assertEqual(len(second), 4, 'expected four second stick bindings')
+        for game_input, scancode in second:
+            parsed[ACTION_NAMES[game_input]].append(scancode)
+
+        # SDL_SCANCODE_* values are USB HID usage IDs, so they are the SC values
+        # in the driver. Round-trip through them instead of hard-coding numbers.
+        by_name = {name.upper(): scan for name, scan in driver.SC.items()}
+        self.assertEqual(len(by_name), len(driver.SC), 'duplicate scancode name')
+        by_scan = {scan: name for name, scan in driver.SC.items()}
+        self.assertEqual(len(by_scan), len(driver.SC), 'duplicate scancode value')
+        resolved = {action: [by_scan[by_name[SDL_NAME_ALIASES.get(code, code)]]
+                             for code in codes]
+                    for action, codes in parsed.items()}
+        self.assertEqual(resolved, driver.SEEDED_PROFILE)
+
+    def test_every_seeded_key_is_sendable(self):
+        for action, keys in driver.SEEDED_PROFILE.items():
+            for key in keys:
+                with self.subTest(action=action, key=key):
+                    self.assertIn(key, driver.VK)
+                    self.assertIn(key, driver.SC)
+
+    def test_help_epilog_lists_every_seeded_action(self):
+        epilog = driver.profile_epilog()
+        self.assertIn('src/ui/lambo_frontend.cpp', epilog)
+        for action in driver.SEEDED_PROFILE:
+            self.assertIn(action, epilog)
+
+    def test_failed_post_raises_instead_of_doing_nothing_silently(self):
+        api = Mock()
+        api.PostMessageW.return_value = 0
+        with patch.object(driver, 'user32', api), patch.object(driver.time, 'sleep'), \
+                patch.object(ctypes, 'get_last_error', create=True, return_value=5):
+            with self.assertRaises(OSError) as result:
+                driver.press(123, ['x'], 150)
+            self.assertEqual(result.exception.errno, 5)
+
+    def test_cli_reports_a_failed_post_with_a_nonzero_exit(self):
+        api = Mock()
+        api.PostMessageW.return_value = 0
+        with patch.object(driver, 'initialize_windows'), \
+                patch.object(driver, 'find_window', return_value=(123, 'game')), \
+                patch.object(driver, 'user32', api), patch.object(driver.time, 'sleep'), \
+                patch.object(ctypes, 'get_last_error', create=True, return_value=5), \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(driver.main(['press', 'x', '150']), 1)
+        self.assertIn('PostMessageW', stderr.getvalue())
 
     def test_capture_uses_physical_client_size_and_deselects_bitmap(self):
         api, gdi, pil = Mock(), Mock(), Mock()

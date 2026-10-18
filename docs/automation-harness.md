@@ -38,39 +38,60 @@ and waypoint fields—not to hide divergence with teleports.
 
 `tools/drive_input.py` controls an **already running window**; it is not a
 headless game runner. `press <key>[,key] <ms>` sends literal physical keys and
-does not read or modify the player's Controls profile. With the framework's
-generic keyboard profile, Space is A, Left Shift is B, Enter is Start, Q/E/R
-are Z/L/R, W/A/S/D are the stick, I/J/K/L are the D-pad, and arrows are C buttons.
-Use `space` and `lshift` as command-line names. Legacy `x`, `c`, and `z` still
-send those letters. The port's player-one keyboard profile uses X/C/Z for A/B/Z
-and adds arrows alongside W/A/S/D for the stick. Do not assume the generic
-framework profile is the assigned player's profile. Disconnect controllers
-before a keyboard-only test and restart: startup assigns player one to a
-connected controller when one is available, otherwise to the keyboard.
+never reads or writes the player's Controls profile.
 
-For example, `python tools/drive_input.py press d 600` sends stick-right under
-either keyboard profile. In a supervised v0.9.0 release check with a fresh
-configuration and no controller, A/D at 600 ms moved left/right, W/S at 150 ms
-moved up/down, X and Enter confirmed, and C went back. Space did not confirm
-under the player-one profile. The helper reached the Championship screen using
-those controls. Timings depend on the menu; successful posting alone does not
-establish that SDL or a menu accepts a key under other mappings.
+The seeded player-one keyboard profile is the `keys[]` table in
+`src/ui/lambo_frontend.cpp`:
+
+| Input | Key |
+| --- | --- |
+| A / B / Z / Start | X / C / Z / Enter |
+| L / R | Q / E |
+| C up / down / left / right | I / K / J / L |
+| Left stick | Left arrow or A |
+| Right stick | Right arrow or D |
+| Up / down | Up arrow or W, Down arrow or S |
+
+`press --help` prints that table, generated from the same mapping.
+`tests/test_drive_input.py` parses the C++ table and fails when the two
+disagree, so the documented mapping cannot drift silently.
+
+Space, Left Shift and F are sendable physical keys that this profile does not
+bind. I/J/K/L are the C buttons here, not the D-pad, and the arrows steer.
+A player who remapped their Controls is not covered by this table. Disconnect
+controllers before a keyboard-only test and restart: startup assigns player one
+to a connected controller when one is available, otherwise to the keyboard.
+This helper posts keyboard messages, so it can only drive a keyboard-bound
+player one at all.
+
+For example, `python tools/drive_input.py press d 600` sends stick-right. In a
+supervised v0.9.0 release check with a fresh configuration and no controller,
+A/D at 600 ms moved left/right, W/S at 150 ms moved up/down, X and Enter
+confirmed, and C went back. The helper reached the Championship screen using
+those controls. Space did not confirm. Timings depend on the menu; successful
+posting alone does not establish that SDL or a menu accepts a key.
 
 The helper requests per-monitor-v2 DPI awareness before looking up a window,
 so capture and click coordinates use physical client pixels. Initialization
 accepts an already active per-monitor-v2 context, but fails if Windows refuses
 the request and the current context differs, rather than silently using
-virtualized coordinates. This Windows-only helper requires the per-monitor-v2
-DPI APIs; older Windows versions lacking those exports fail with an
-`AttributeError` before accessing any window. On Windows,
-`python tools/drive_input.py --help` needs no running game or window lookup.
-On Windows, run `python tests/test_drive_input.py` for window-free message and
-DPI tests (also registered with CTest on Windows).
+virtualized coordinates. A failed `PostMessageW` is reported with a non-zero
+exit instead of being ignored. This Windows-only helper requires the
+per-monitor-v2 DPI APIs; older Windows versions lacking those exports fail with
+an `AttributeError` before accessing any window. `python
+tools/drive_input.py --help` needs no running game or window lookup. Run
+`python tests/test_drive_input.py` for window-free message and DPI tests; they
+are registered with CTest wherever python is available.
+
 The same supervised check measured 144 DPI (150% scaling) and a 1600x900 client
-area; helper captures were uncropped 1600x900 images. Left Shift and D-pad
-behavior were not separately validated. The championship exit reported in
-#318 was not exercised and remains separate. For repeatable headless races, use the
-scenario runner below.
+area; helper captures were uncropped 1600x900 images. Left Shift and the C
+buttons were not separately validated. The championship exit reported in #318
+was not exercised and remains separate.
+
+An earlier revision of the driver recorded a proven route to a 1P arcade race
+from attract (`enter, enter, x, x, x, x, x, x`). It was not re-validated under
+this profile, so it is not repeated here as fact. Use the scenario runner below
+for a repeatable race, including `scenarios/menu-to-race-smoke.json`.
 
 ### Scenario runner
 

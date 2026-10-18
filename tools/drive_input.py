@@ -10,15 +10,20 @@ Usage (window must already be running):
   python tools/drive_input.py shot out.png          -> screenshot client area
   python tools/drive_input.py press <key>[,key] <ms>-> hold key(s) for ms
   python tools/drive_input.py click <x> <y>     -> click at client-area pixels
-Generic framework profile: space=A, lshift=B, q=Z, e=L, r=R, enter=Start;
-w/a/s/d=stick up/left/down/right, i/j/k/l=D-pad, arrows=C buttons.
-The port's player-one keyboard profile differs: x=A, c=B, z=Z and arrows
-also steer. In a fresh v0.9.0 keyboard-only run, x/c, enter and w/a/s/d
-worked; space did not confirm. Check the assigned player's profile.
-Disconnect controllers before starting a keyboard-only test: a connected
-controller is assigned to player one instead of the keyboard at startup.
-Key names are physical keys, not game actions. x/c/z and arrow keys retain
-their literal meaning for custom/legacy profiles. No player config is read or changed.
+
+`press` sends literal physical keys, not game actions, and never reads or
+writes the player's Controls profile. `press --help` prints the seeded
+player-one keyboard profile, which lives in the keys[] table in
+src/ui/lambo_frontend.cpp. tests/test_drive_input.py parses that table and fails
+when the two disagree, so the documented mapping cannot drift silently.
+
+Space, Left Shift and F are sendable physical keys that the seeded profile does
+not bind. A player who remapped their Controls is not covered by that table;
+check their profile. Disconnect controllers before a keyboard-only test and
+restart: startup assigns player one to a connected controller when one is
+available, otherwise to the keyboard. This helper posts keyboard messages, so it
+can only drive a keyboard-bound player one at all.
+
 Use about 600 ms for stick left/right and 150 ms for up/down as a starting
 point (reported menu timings, not a guarantee for every screen).
 
@@ -32,10 +37,18 @@ Frontend keys, for driving the recompui overlay rather than the ROM menus:
   f16,f17   -> TAB_LEFT_MENU / TAB_RIGHT_MENU
   enter     -> ACCEPT_MENU; RmlUi activates the focused button on Return.
 
-Manual v0.9.0 validation reached Championship with enter, x and s; a/d moved
-left/right, w moved up, and c went back. Full 1600x900 captures matched the
-client area at 144 DPI (150%). These observations apply to that keyboard-only
-profile, not arbitrary mappings or every menu.
+Manual v0.9.0 validation on a fresh configuration with no controller reached
+Championship with enter, x and s; a/d moved left/right at 600 ms, w/s at 150 ms,
+x and enter confirmed, and c went back. Space did not confirm. Full 1600x900
+captures matched the client area at 144 DPI (150%). Left Shift and the C buttons
+were not separately validated. The championship exit in #318 was not exercised.
+These observations apply to that keyboard-only profile, not arbitrary mappings
+or every menu.
+
+An earlier revision of this file recorded a proven route to a 1P arcade race
+from attract (enter, enter, x, x, x, x, x, x). It was not re-validated under
+this profile and is not repeated here as fact. For repeatable headless races,
+use tools/run_game_scenario.py.
 """
 import argparse
 import ctypes
@@ -109,6 +122,31 @@ for key, scan in {'w': 0x11, 'a': 0x1E, 's': 0x1F, 'd': 0x20,
 VK.update(space=0x20, lshift=0x10)  # WM_KEYDOWN uses VK_SHIFT; scan selects left.
 SC.update(space=0x39, lshift=0x2A)
 
+# Player one's seeded keyboard bindings, mirroring the keys[] table in
+# src/ui/lambo_frontend.cpp. The SC values above are SDL_SCANCODE values (SDL
+# uses USB HID usage IDs), so a scancode read out of that table lands directly
+# in this dict. tests/test_drive_input.py parses the C++ and compares it against
+# this mapping, and profile_epilog() renders the help from it, so neither the
+# table nor the help text can drift without failing a test.
+SEEDED_PROFILE = {
+    'A': ['x'], 'B': ['c'], 'Z': ['z'], 'START': ['enter'],
+    'L': ['q'], 'R': ['e'],
+    'C_UP': ['i'], 'C_DOWN': ['k'], 'C_LEFT': ['j'], 'C_RIGHT': ['l'],
+    'STICK_LEFT': ['left', 'a'], 'STICK_RIGHT': ['right', 'd'],
+    'STICK_UP': ['up', 'w'], 'STICK_DOWN': ['down', 's'],
+}
+
+
+def profile_epilog():
+    """Render SEEDED_PROFILE for --help so the help has no second copy."""
+    width = max(len(action) for action in SEEDED_PROFILE)
+    rows = '\n'.join(f'{action.ljust(width)}  {"+".join(keys)}'
+                     for action, keys in SEEDED_PROFILE.items())
+    return ('Seeded player-one keyboard profile, from src/ui/lambo_frontend.cpp:\n'
+            f'{rows}\n'
+            'A stick entry lists both bindings. Space, Left Shift and F are '
+            'sendable keys this profile does not bind.')
+
 
 def find_window():
     # Match both SDL2's window class and the game's exact title. Steam also uses
@@ -128,18 +166,30 @@ def find_window():
     return hwnds[0] if hwnds else (None, None)
 
 
+def _post(hwnd, message, wparam, lparam):
+    """Post one message, and fail loudly instead of silently doing nothing.
+
+    An ignored PostMessageW return is the "no visible result and no error"
+    symptom reported in #319, for example when the game runs elevated and UIPI
+    drops the post. Callers report the winerror and exit non-zero.
+    """
+    if not user32.PostMessageW(hwnd, message, wparam, lparam):
+        raise OSError(ctypes.get_last_error(),
+                      f'PostMessageW(0x{message:04X}) to window {hwnd} failed')
+
+
 def press(h, keys, ms):
     # Validate the entire chord before posting anything (no partially held keys).
     if ms < 0 or not keys or any(k not in VK for k in keys):
         raise ValueError('use known physical key names and a non-negative duration')
     for k in keys:
         ext = (1 << 24) if k in EXTENDED else 0
-        user32.PostMessageW(h, 0x0100, VK[k], 1 | (SC[k] << 16) | ext)
+        _post(h, 0x0100, VK[k], 1 | (SC[k] << 16) | ext)
     time.sleep(ms / 1000.0)
     for k in keys:
         ext = (1 << 24) if k in EXTENDED else 0
-        user32.PostMessageW(h, 0x0101, VK[k],
-                            1 | (SC[k] << 16) | ext | (1 << 30) | (1 << 31))
+        _post(h, 0x0101, VK[k],
+              1 | (SC[k] << 16) | ext | (1 << 30) | (1 << 31))
     time.sleep(0.15)
 
 
@@ -147,11 +197,11 @@ def click(h, x, y):
     lp = (y << 16) | (x & 0xFFFF)
     # SDL2 tracks the cursor from WM_MOUSEMOVE; a bare WM_LBUTTONDOWN can arrive
     # with a stale position and hit-test against the wrong element.
-    user32.PostMessageW(h, 0x0200, 0, lp)  # WM_MOUSEMOVE
+    _post(h, 0x0200, 0, lp)  # WM_MOUSEMOVE
     time.sleep(0.08)
-    user32.PostMessageW(h, 0x0201, 1, lp)  # WM_LBUTTONDOWN, MK_LBUTTON
+    _post(h, 0x0201, 1, lp)  # WM_LBUTTONDOWN, MK_LBUTTON
     time.sleep(0.08)
-    user32.PostMessageW(h, 0x0202, 0, lp)  # WM_LBUTTONUP
+    _post(h, 0x0202, 0, lp)  # WM_LBUTTONUP
     time.sleep(0.15)
 
 
@@ -186,7 +236,7 @@ def shot(h, path):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__,
+    parser = argparse.ArgumentParser(description=__doc__, epilog=profile_epilog(),
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest='cmd', required=True)
     commands.add_parser('find')
@@ -194,7 +244,9 @@ def main(argv=None):
     click_parser = commands.add_parser('click')
     click_parser.add_argument('x', type=int)
     click_parser.add_argument('y', type=int)
-    press_parser = commands.add_parser('press')
+    press_parser = commands.add_parser(
+        'press', epilog=profile_epilog(),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     press_parser.add_argument('keys', help='comma-separated physical keys: ' + ', '.join(VK))
     press_parser.add_argument('ms', type=int)
     args = parser.parse_args(argv)
@@ -202,6 +254,8 @@ def main(argv=None):
         keys = args.keys.split(',')
         if args.ms < 0 or any(k not in VK for k in keys):
             parser.error('use known physical key names and a non-negative duration')
+    # initialize_windows() is deliberately outside the handler below: a refused
+    # DPI request is a setup failure, not a failed command.
     initialize_windows()
     h, title = find_window()
     if args.cmd == 'find':
@@ -210,12 +264,16 @@ def main(argv=None):
     if not h:
         print("window not found")
         return 1
-    if args.cmd == 'shot':
-        shot(h, args.path)
-    elif args.cmd == 'click':
-        click(h, args.x, args.y)
-    elif args.cmd == 'press':
-        press(h, keys, args.ms)
+    try:
+        if args.cmd == 'shot':
+            shot(h, args.path)
+        elif args.cmd == 'click':
+            click(h, args.x, args.y)
+        elif args.cmd == 'press':
+            press(h, keys, args.ms)
+    except OSError as error:
+        print(f'error: {error}', file=sys.stderr)
+        return 1
     return 0
 
 
