@@ -256,6 +256,70 @@ class DriverTests(unittest.TestCase):
             self.assertEqual(driver.main(['press', 'x,c', '150']), 1)
         self.assertIn('still held', stderr.getvalue())
 
+    def test_interrupt_inside_the_key_down_post_still_releases_the_key(self):
+        # Windows can queue the key-down and the interrupt then land before the
+        # driver records it. Releasing is the safe answer either way.
+        api = Mock()
+        posted = []
+
+        def accept_then_interrupt(*args):
+            posted.append(args)
+            if len(posted) == 1:
+                raise KeyboardInterrupt
+            return 1
+        api.PostMessageW.side_effect = accept_then_interrupt
+        with patch.object(driver, 'user32', api), patch.object(driver.time, 'sleep'):
+            with self.assertRaises(KeyboardInterrupt):
+                driver.press(123, ['x'], 600)
+        self.assertEqual([c.args[1] for c in api.PostMessageW.call_args_list],
+                         [0x0100, 0x0101])
+
+    def test_interrupt_inside_the_mouse_down_post_still_releases_the_button(self):
+        api = Mock()
+        posted = []
+
+        def accept_then_interrupt(*args):
+            posted.append(args)
+            if len(posted) == 2:
+                raise KeyboardInterrupt
+            return 1
+        api.PostMessageW.side_effect = accept_then_interrupt
+        with patch.object(driver, 'user32', api), patch.object(driver.time, 'sleep'):
+            with self.assertRaises(KeyboardInterrupt):
+                driver.click(123, 10, 20)
+        self.assertEqual([c.args[1] for c in api.PostMessageW.call_args_list],
+                         [0x0200, 0x0201, 0x0202])
+
+    def test_rejected_key_down_is_not_released_as_if_it_went_down(self):
+        # Recording before the post must not turn a rejected post into a stray
+        # key-up for a key the game never saw.
+        api = Mock()
+        api.PostMessageW.side_effect = [1, 0, 1]
+        with patch.object(driver, 'user32', api), patch.object(driver.time, 'sleep'), \
+                patch.object(ctypes, 'get_last_error', create=True, return_value=5):
+            with self.assertRaises(OSError):
+                driver.press(123, ['x', 'c'], 150)
+        self.assertEqual([c.args[1] for c in api.PostMessageW.call_args_list],
+                         [0x0100, 0x0100, 0x0101])
+        self.assertEqual(api.PostMessageW.call_args.args[2], driver.VK['x'])
+
+    def test_documented_profile_table_matches_the_seeded_profile(self):
+        # The guide claims the documented mapping cannot drift silently. That is
+        # only true while the page itself is checked, not just the C++ table.
+        page = (ROOT / 'docs' / 'automation-harness.md').read_text(encoding='utf-8')
+        section = page.split('### Windows menu helper', 1)[1].split('\n### ', 1)[0]
+        rows = {}
+        for line in section.splitlines():
+            if not line.startswith('|'):
+                continue
+            cells = [cell.strip() for cell in line.strip('|').split('|')]
+            if len(cells) != 2 or not cells[0] or set(cells[0]) <= {'-'}:
+                continue
+            if cells[0] in ('Input', 'Key'):  # the table header row
+                continue
+            rows[cells[0]] = [key.strip(' `') for key in cells[1].split(',')]
+        self.assertEqual(rows, driver.SEEDED_PROFILE)
+
     def test_failed_click_down_sends_no_button_up(self):
         # Nothing went down, so nothing is released; a stray up would hit-test
         # against an element the caller never pressed.

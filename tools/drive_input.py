@@ -223,8 +223,17 @@ def press(h, keys, ms):
     try:
         for k in keys:
             ext = (1 << 24) if k in EXTENDED else 0
-            _post(h, 0x0100, VK[k], 1 | (SC[k] << 16) | ext)
+            # Record before the post. Windows may queue the key-down and the
+            # interrupt may then land before the bookkeeping, and cleanup has to
+            # know the key is down either way. An explicitly rejected post is
+            # the only case where nothing went down, so that is the only case
+            # that clears the record.
             held.append(k)
+            try:
+                _post(h, 0x0100, VK[k], 1 | (SC[k] << 16) | ext)
+            except OSError:
+                held.pop()
+                raise
         time.sleep(ms / 1000.0)
     finally:
         # Runs on every exit, Ctrl+C during the hold included. A key left down
@@ -241,10 +250,15 @@ def click(h, x, y):
     # with a stale position and hit-test against the wrong element.
     _post(h, 0x0200, 0, lp)  # WM_MOUSEMOVE
     time.sleep(0.08)
-    pressed = False
+    pressed = True  # recorded before the post; see press() for why
     try:
-        _post(h, 0x0201, 1, lp)  # WM_LBUTTONDOWN, MK_LBUTTON
-        pressed = True
+        # Only a rejected post clears the flag. The inner try keeps a later
+        # sleep failure from looking like a rejected press.
+        try:
+            _post(h, 0x0201, 1, lp)  # WM_LBUTTONDOWN, MK_LBUTTON
+        except OSError:
+            pressed = False  # explicitly rejected, so nothing is held
+            raise
         time.sleep(0.08)
     finally:
         # Nothing is sent when the down was rejected, since nothing is held.

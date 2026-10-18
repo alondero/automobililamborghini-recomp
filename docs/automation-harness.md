@@ -41,20 +41,29 @@ headless game runner. `press <key>[,key] <ms>` sends literal physical keys and
 never reads or writes the player's Controls profile.
 
 The seeded player-one keyboard profile is the `keys[]` table in
-`src/ui/lambo_frontend.cpp`:
+`src/ui/lambo_frontend.cpp`. The key column holds the names `press` takes:
 
 | Input | Key |
 | --- | --- |
-| A / B / Z / Start | X / C / Z / Enter |
-| L / R | Q / E |
-| C up / down / left / right | I / K / J / L |
-| Left stick | Left arrow or A |
-| Right stick | Right arrow or D |
-| Up / down | Up arrow or W, Down arrow or S |
+| A | `x` |
+| B | `c` |
+| Z | `z` |
+| START | `enter` |
+| L | `q` |
+| R | `e` |
+| C_UP | `i` |
+| C_DOWN | `k` |
+| C_LEFT | `j` |
+| C_RIGHT | `l` |
+| STICK_LEFT | `left`, `a` |
+| STICK_RIGHT | `right`, `d` |
+| STICK_UP | `up`, `w` |
+| STICK_DOWN | `down`, `s` |
 
-`press --help` prints that table, generated from the same mapping.
-`tests/test_drive_input.py` parses the C++ table and fails when the two
-disagree, so the documented mapping cannot drift silently.
+`press --help` prints the same mapping, generated from it.
+`tests/test_drive_input.py` parses the C++ table and this page's table, and
+fails when either disagrees with the driver, so the documented mapping cannot
+drift silently.
 
 Space, Left Shift and F are sendable physical keys that this profile does not
 bind. I/J/K/L are the C buttons here, not the D-pad, and the arrows steer.
