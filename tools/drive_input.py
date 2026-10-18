@@ -179,12 +179,15 @@ def _post(hwnd, message, wparam, lparam):
 
 
 def _release_keys(hwnd, held):
-    """Post a WM_KEYUP for every key that went down, attempting all of them.
+    """Post a WM_KEYUP for every pending or accepted key, attempting all of them.
 
     Returns the releases that were rejected as (name, error) pairs instead of
     raising, so the caller can report a stuck key without masking the error that
-    caused the cleanup in the first place. A key only appears in `held` once its
-    WM_KEYDOWN was accepted, so nothing is released that never went down.
+    caused the cleanup in the first place. `held` records a key before its
+    key-down is posted, so this can release a key whose acceptance was never
+    confirmed: an interrupt may land between the post and the bookkeeping. That
+    is deliberate. An unnecessary key-up is harmless, while a missed one leaves
+    input held in the game.
     """
     stuck = []
     for k in held:
