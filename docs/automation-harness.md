@@ -77,11 +77,13 @@ accepts an already active per-monitor-v2 context, but fails if Windows refuses
 the request and the current context differs, rather than silently using
 virtualized coordinates. A failed `PostMessageW` is reported with a non-zero
 exit instead of being ignored. A key or button that went down is released again
-before that error propagates, so a chord that fails part way does not normally
-leave the game holding input. The release is best-effort: if Windows keeps
-rejecting it, the command still exits non-zero and names the input it could not
-release, but that input stays held in the game until something else releases it.
-This Windows-only helper requires the per-monitor-v2 DPI APIs; older Windows
+before that error propagates, and the same cleanup runs when the command is
+interrupted with Ctrl+C, so a held key is released rather than left down. The
+release is best-effort: if Windows keeps rejecting it, the command still exits
+non-zero and names the input it could not release, but that input stays held in
+the game until something else releases it. An error that caused the cleanup is
+re-raised unchanged rather than replaced by the cleanup failure. This
+Windows-only helper requires the per-monitor-v2 DPI APIs; older Windows
 versions lacking those exports fail with an `AttributeError` before accessing
 any window. `python tools/drive_input.py --help` needs no running game or window
 lookup. Run `python tests/test_drive_input.py` for window-free message and DPI

@@ -197,23 +197,22 @@ def _release_keys(hwnd, held):
     return stuck
 
 
-def _raise_cleanup(failure, stuck, subject):
-    """Report input left held after a failed command, keeping the first cause.
+def _report_cleanup(failure, stuck, subject):
+    """Surface input left held, without hiding the error that caused it.
 
-    Input still held when this process exits must not look like success, and a
-    release failure must not replace the error that triggered the cleanup.
+    `failure` is whatever is propagating through the cleanup, if anything. It is
+    re-raised unchanged, so an interruption is never turned into a different
+    error, and a release that would not succeed is reported beside it. With
+    nothing else failing, stuck input becomes the error itself.
     """
-    if failure is None and not stuck:
-        return
-    if failure is not None and not stuck:
+    detail = ', '.join(f'{name} ({error})' for name, error in stuck)
+    if failure is not None:
+        if stuck:
+            print(f'warning: still held after cleanup: {detail}', file=sys.stderr)
         raise failure
-    first = failure if failure is not None else stuck[0][1]
-    message = str(failure) if failure is not None else f'could not release {subject}'
     if stuck:
-        message += '; still held: ' + ', '.join(f'{name} ({error})'
-                                                 for name, error in stuck)
-    errno = getattr(first, 'errno', None)
-    raise OSError(errno if errno is not None else 0, message)
+        raise OSError(stuck[0][1].errno,
+                      f'could not release {subject}; still held: {detail}')
 
 
 def press(h, keys, ms):
@@ -221,19 +220,18 @@ def press(h, keys, ms):
     if ms < 0 or not keys or any(k not in VK for k in keys):
         raise ValueError('use known physical key names and a non-negative duration')
     held = []
-    failure = None
     try:
         for k in keys:
             ext = (1 << 24) if k in EXTENDED else 0
             _post(h, 0x0100, VK[k], 1 | (SC[k] << 16) | ext)
             held.append(k)
         time.sleep(ms / 1000.0)
-    except OSError as error:
-        failure = error
-    # A chord that fails part way would otherwise leave those keys down in SDL
-    # after this process exits. Release them all, then report any that stay.
-    stuck = _release_keys(h, held)
-    _raise_cleanup(failure, stuck, 'key(s)')
+    finally:
+        # Runs on every exit, Ctrl+C during the hold included. A key left down
+        # in SDL survives this process, so cleanup must not depend on OSError.
+        propagating = sys.exc_info()[1]
+        stuck = _release_keys(h, held)
+        _report_cleanup(propagating, stuck, 'key(s)')
     time.sleep(0.15)
 
 
@@ -244,22 +242,20 @@ def click(h, x, y):
     _post(h, 0x0200, 0, lp)  # WM_MOUSEMOVE
     time.sleep(0.08)
     pressed = False
-    failure = None
     try:
         _post(h, 0x0201, 1, lp)  # WM_LBUTTONDOWN, MK_LBUTTON
         pressed = True
         time.sleep(0.08)
-    except OSError as error:
-        failure = error
-    # Release whatever went down, even if a later step failed. Nothing is sent
-    # when the down was rejected, since nothing is held in that case.
-    stuck = []
-    if pressed:
-        try:
-            _post(h, 0x0202, 0, lp)  # WM_LBUTTONUP
-        except OSError as error:
-            stuck.append(('left button', error))
-    _raise_cleanup(failure, stuck, 'left button')
+    finally:
+        # Nothing is sent when the down was rejected, since nothing is held.
+        propagating = sys.exc_info()[1]
+        stuck = []
+        if pressed:
+            try:
+                _post(h, 0x0202, 0, lp)  # WM_LBUTTONUP
+            except OSError as error:
+                stuck.append(('left button', error))
+        _report_cleanup(propagating, stuck, 'left button')
     time.sleep(0.15)
 
 

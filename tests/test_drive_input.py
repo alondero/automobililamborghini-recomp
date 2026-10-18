@@ -188,16 +188,50 @@ class DriverTests(unittest.TestCase):
         self.assertIn('still held: x', str(result.exception))
 
     def test_original_failure_survives_a_release_that_also_fails(self):
+        # The key-down error stays the reported error; the stuck key is reported
+        # beside it rather than replacing it.
         api = Mock()
         # x goes down, the c key-down is rejected, and the x release fails too.
         api.PostMessageW.side_effect = [1, 0, 0]
         with patch.object(driver, 'user32', api), patch.object(driver.time, 'sleep'), \
-                patch.object(ctypes, 'get_last_error', create=True, return_value=5):
+                patch.object(ctypes, 'get_last_error', create=True, return_value=5), \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
             with self.assertRaises(OSError) as result:
                 driver.press(123, ['x', 'c'], 150)
-        message = str(result.exception)
-        self.assertIn('0x0100', message)
-        self.assertIn('still held: x', message)
+        self.assertIn('0x0100', str(result.exception))
+        self.assertIn('still held', stderr.getvalue())
+
+    def test_interruption_during_the_hold_still_releases_the_key(self):
+        # Ctrl+C is not an OSError, and it arrives during the hold often enough
+        # that leaving the key down in SDL is not acceptable.
+        api = Mock()
+        with patch.object(driver, 'user32', api), \
+                patch.object(driver.time, 'sleep', side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                driver.press(123, ['x'], 600)
+        self.assertEqual([c.args[1] for c in api.PostMessageW.call_args_list],
+                         [0x0100, 0x0101])
+
+    def test_interruption_is_not_replaced_by_a_release_failure(self):
+        api = Mock()
+        api.PostMessageW.side_effect = [1, 0]  # down ok, release rejected
+        with patch.object(driver, 'user32', api), \
+                patch.object(driver.time, 'sleep', side_effect=KeyboardInterrupt), \
+                patch.object(ctypes, 'get_last_error', create=True, return_value=5), \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            with self.assertRaises(KeyboardInterrupt):
+                driver.press(123, ['x'], 600)
+        self.assertIn('still held', stderr.getvalue())
+
+    def test_interruption_after_mouse_down_releases_the_button(self):
+        api = Mock()
+        with patch.object(driver, 'user32', api), \
+                patch.object(driver.time, 'sleep',
+                             side_effect=[None, KeyboardInterrupt]):
+            with self.assertRaises(KeyboardInterrupt):
+                driver.click(123, 10, 20)
+        self.assertEqual([c.args[1] for c in api.PostMessageW.call_args_list],
+                         [0x0200, 0x0201, 0x0202])
 
     def test_failed_click_release_is_reported(self):
         api = Mock()
