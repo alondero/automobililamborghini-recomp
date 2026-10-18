@@ -5,6 +5,10 @@
 #include <vector>
 
 extern "C" void cheat_test_timer(uint8_t*, recomp_context*);
+extern "C" void cheat_test_reverse_8003C500(uint8_t*, recomp_context*);
+extern "C" void cheat_test_reverse_8003C5A4(uint8_t*, recomp_context*);
+extern "C" void cheat_test_reverse_8003C610(uint8_t*, recomp_context*);
+extern "C" void cheat_test_reverse_8003C6B4(uint8_t*, recomp_context*);
 extern "C" void func_8003F40C(uint8_t*, recomp_context*);
 extern "C" void func_8003F56C(uint8_t*, recomp_context*);
 extern "C" void func_80066F84(uint8_t*, recomp_context*) {} // Countdown warning sound.
@@ -82,6 +86,7 @@ int main() {
     MEM_H(0x985C0, base) = 1;
     MEM_H(0x985C8, base) = 1;
     MEM_H(0xA4170, base) = 0x1234; // Sentinel saved progress.
+    set_enabled(Cheat::ReverseTracks, true); // Must not unlock the car sharing progress bit 0x2.
     for (int player = 1; player <= 4; ++player) {
         MEM_H(0xCE6A6, base) = player;
         const int cursor = 0xCE7E8 + (player - 1) * 2;
@@ -107,5 +112,54 @@ int main() {
         require(MEM_H(0x985C0 + category * 2, base) == (category == 0 || category == 4),
                 "availability table was modified");
     require(MEM_H(0xA4170, base) == 0x1234, "saved progress was modified");
-    std::cout << "PASS native cheats against generated USA-ROM timer and selectors\n";
+    set_enabled(Cheat::ReverseTracks, false);
+
+    // Four setup paths in func_8003CD84 gate a menu item's signed halfword
+    // at descriptor+0x02: zero enables it, -1 disables it. Saved progress bit
+    // 0x2 controls them normally. The cheat must only change those decisions.
+    struct ReverseMenu {
+        void (*setup)(uint8_t*, recomp_context*);
+        int gate;
+    };
+    const ReverseMenu menus[] = {
+        {cheat_test_reverse_8003C500, 0x1EA702},
+        {cheat_test_reverse_8003C5A4, 0x1EA642},
+        {cheat_test_reverse_8003C610, 0x1EA842},
+        {cheat_test_reverse_8003C6B4, 0x1EB062},
+    };
+    for (const auto& menu : menus) {
+        for (int players = 1; players <= 4; ++players) {
+            for (int progress : {0, 1, 2, 3, 0xFFFD, 0xFFFF}) {
+                for (bool unlock : {false, true, false}) {
+                    MEM_H(0xA4170, base) = progress;
+                    MEM_H(0xCE6A4, base) = players;
+                    MEM_H(0xCE6C0, base) = 5;
+                    MEM_H(0xCE7B0, base) = 1; // Live race direction sentinel.
+                    MEM_H(menu.gate, base) = 123;
+                    const auto before = memory;
+                    set_enabled(Cheat::ReverseTracks, unlock);
+                    menu.setup(rdram, &ctx);
+                    require(MEM_H(menu.gate, base) == (unlock || (progress & 2) ? 0 : -1),
+                            "reverse menu gate ignored cheat or earned unlock");
+                    require(MEM_HU(0xA4170, base) == progress, "reverse cheat modified saved progress");
+                    require(MEM_H(0xCE7B0, base) == 1, "reverse cheat modified an active race");
+                    if (menu.setup == cheat_test_reverse_8003C610)
+                        require(MEM_H(0xCE6C0, base) == (players >= 3 ? 0 : 5),
+                                "reverse cheat changed multiplayer circuit limits");
+                    // Enabling the cheat must produce precisely the RAM writes
+                    // of the earned-unlock path, without changing progression.
+                    if (unlock) {
+                        const auto cheated = memory;
+                        memory = before;
+                        MEM_H(0xA4170, base) = progress | 2;
+                        set_enabled(Cheat::ReverseTracks, false);
+                        menu.setup(rdram, &ctx);
+                        MEM_H(0xA4170, base) = progress;
+                        require(memory == cheated, "reverse cheat changed unrelated menu state");
+                    }
+                }
+            }
+        }
+    }
+    std::cout << "PASS native cheats against generated USA-ROM timers, selectors and reverse menus\n";
 }

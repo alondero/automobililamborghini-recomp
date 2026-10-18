@@ -1,4 +1,4 @@
-"""Extract USA-ROM selector functions and timer block, retaining injected hooks.
+"""Extract USA-ROM selectors, timers and reverse-menu gates with injected hooks.
 
 The timer block is inside the non-returning boot dispatcher. Extract its
 complete pause gate, countdown and both four-player clock loops; terminate
@@ -9,7 +9,7 @@ import re
 import sys
 
 source, output = map(pathlib.Path, sys.argv[1:])
-wanted = {"func_8003F40C", "func_8003F56C", "BootLoadInitialAssets"}
+wanted = {"func_8003F40C", "func_8003F56C", "BootLoadInitialAssets", "func_8003CD84"}
 found = {}
 for path in source.glob("funcs_*.c"):
     for match in re.finditer(
@@ -47,6 +47,23 @@ found["timer"] = (
     "void cheat_test_timer(uint8_t* rdram, recomp_context* ctx) {\n"
     + timer_block + "    return;\n}\n"
 )
+# Complete setup paths through the direction gate, ending at the initializer's
+# shared exit. Include bounds/pointer setup and the multiplayer circuit limit.
+menu = found.pop("func_8003CD84")
+for address, end, hook in (
+    (0x8003C500, 0x8003C56C, 0x8003C53C),
+    (0x8003C5A4, 0x8003C610, 0x8003C5E0),
+    (0x8003C610, 0x8003C6B4, 0x8003C684),
+    (0x8003C6B4, 0x8003C7A4, 0x8003C774),
+):
+    block = menu[menu.index(f"L_{address:08X}:"):menu.index(f"L_{end:08X}:")]
+    assert "lambo_cheat_reverse_tracks" in block and \
+        block.index("lambo_cheat_reverse_tracks") < block.index(f"// 0x{hook:08X}:"), \
+        f"reverse gate hook missing before 0x{hook:08X}"
+    found[f"reverse_{address:08X}"] = (
+        f"void cheat_test_reverse_{address:08X}(uint8_t* rdram, recomp_context* ctx) {{\n"
+        + block + "L_8003DA60:\n    return;\n}\n"
+    )
 output.parent.mkdir(parents=True, exist_ok=True)
 output.write_text('#include "recomp.h"\n#include "funcs.h"\n' +
                   "\n".join(found.values()), encoding="utf-8")
