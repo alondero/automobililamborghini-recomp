@@ -51,6 +51,16 @@ stats from the USA ROM, checks every card line fits its strip, and pins the
 hook and font addresses. The ROM checks skip when the ROM is absent. CTest
 registers it as `lambo_car_card_rom`.
 
+`lambo_drive_input` runs `python tests/test_drive_input.py`, which needs no
+window, running game or ROM. It pins the driver's physical-key scan codes, checks
+the seeded player-one keyboard profile against the `keys[]` table in
+`src/ui/lambo_frontend.cpp`, and covers the per-monitor-v2 DPI setup and the
+capture path. Failure paths stub `PostMessageW`, so held-input release and
+cleanup reporting are exercised without a game. It is registered on every
+platform rather than only Windows, because it stubs `sys.platform` and
+`ctypes.WinDLL`. See [Automated harness](automation-harness.md#windows-menu-helper)
+for what the helper itself does.
+
 For real mod loading, run `tools/check_mod_support.py` with the smoke NRM and
 your USA ROM as described in [Modding](modding.md#verification-recorded-for-this-integration).
 Its optional `--texture-package PATH` accepts a manifest-free RT64 `.rtz` and

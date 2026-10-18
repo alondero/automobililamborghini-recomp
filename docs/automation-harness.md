@@ -34,6 +34,82 @@ and waypoint fields—not to hide divergence with teleports.
 
 ## Run a scenario
 
+### Windows menu helper
+
+`tools/drive_input.py` controls an **already running window**; it is not a
+headless game runner. `press <key>[,key] <ms>` sends literal physical keys and
+never reads or writes the player's Controls profile.
+
+The seeded player-one keyboard profile is the `keys[]` table in
+`src/ui/lambo_frontend.cpp`. The key column holds the names `press` takes:
+
+| Input | Key |
+| --- | --- |
+| A | `x` |
+| B | `c` |
+| Z | `z` |
+| START | `enter` |
+| L | `q` |
+| R | `e` |
+| C_UP | `i` |
+| C_DOWN | `k` |
+| C_LEFT | `j` |
+| C_RIGHT | `l` |
+| STICK_LEFT | `left`, `a` |
+| STICK_RIGHT | `right`, `d` |
+| STICK_UP | `up`, `w` |
+| STICK_DOWN | `down`, `s` |
+
+`press --help` prints the same mapping, generated from it.
+`tests/test_drive_input.py` parses the C++ table and this page's table, and
+fails when either disagrees with the driver, so the documented mapping cannot
+drift silently.
+
+Space, Left Shift and F are sendable physical keys that this profile does not
+bind. I/J/K/L are the C buttons here, not the D-pad, and the arrows steer.
+A player who remapped their Controls is not covered by this table. Disconnect
+controllers before a keyboard-only test and restart: startup assigns player one
+to a connected controller when one is available, otherwise to the keyboard.
+This helper posts keyboard messages, so it can only drive a keyboard-bound
+player one at all.
+
+For example, `python tools/drive_input.py press d 600` sends stick-right. In a
+supervised v0.9.0 release check with a fresh configuration and no controller,
+A/D at 600 ms moved left/right, W/S at 150 ms moved up/down, X and Enter
+confirmed, and C went back. The helper reached the Championship screen using
+those controls. Space did not confirm. Timings depend on the menu; successful
+posting alone does not establish that SDL or a menu accepts a key.
+
+The helper requests per-monitor-v2 DPI awareness before looking up a window,
+so capture and click coordinates use physical client pixels. Initialization
+accepts an already active per-monitor-v2 context, but fails if Windows refuses
+the request and the current context differs, rather than silently using
+virtualized coordinates. A failed `PostMessageW` is reported with a non-zero
+exit instead of being ignored. A key or button that went down is released again
+before that error propagates, and the same cleanup runs when the command is
+interrupted with Ctrl+C, so a held key is released rather than left down. The
+release is best-effort: if Windows keeps rejecting it, the command still exits
+non-zero and names the input it could not release, but that input stays held in
+the game until something else releases it. An error that caused the cleanup is
+re-raised unchanged rather than replaced by the cleanup failure. This
+Windows-only helper requires the per-monitor-v2 DPI APIs; older Windows
+versions lacking those exports fail with an `AttributeError` before accessing
+any window. `python tools/drive_input.py --help` needs no running game or window
+lookup. Run `python tests/test_drive_input.py` for window-free message and DPI
+tests; they are registered with CTest wherever python is available.
+
+The same supervised check measured 144 DPI (150% scaling) and a 1600x900 client
+area; helper captures were uncropped 1600x900 images. Left Shift and the C
+buttons were not separately validated. The championship exit reported in #318
+was not exercised and remains separate.
+
+An earlier revision of the driver recorded a proven route to a 1P arcade race
+from attract (`enter, enter, x, x, x, x, x, x`). It was not re-validated under
+this profile, so it is not repeated here as fact. Use the scenario runner below
+for a repeatable race, including `scenarios/menu-to-race-smoke.json`.
+
+### Scenario runner
+
 After building `lamborghini_modern`, run:
 
 ```sh
