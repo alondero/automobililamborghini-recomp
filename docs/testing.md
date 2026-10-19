@@ -103,6 +103,17 @@ them. Existing build directories retain their cached choice: if an older
 configuration enabled zstd tests, turn them off once with
 `cmake -S . -B build -DZSTD_BUILD_TESTS=OFF`.
 
+The `lambo_frontend_debugger_default` and `lambo_frontend_debugger_enabled`
+host tests inject an RmlUi error into the real debugger with a no-render adapter.
+They check logger delivery, beacon absence/visibility, inspector toggling,
+shutdown, and focus/show/hide on small navigation documents. They need no ROM,
+window, or GPU. They do not verify the actual rendered launcher/settings pages.
+
+~~~powershell
+cmake --build build --target lambo_frontend_debugger_tests
+ctest --test-dir build -R "^lambo_frontend_debugger_" --output-on-failure
+~~~
+
 ## Focused checks
 
 The CMake project registers tests whose names describe the contract. Useful

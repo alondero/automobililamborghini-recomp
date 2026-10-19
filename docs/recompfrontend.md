@@ -88,7 +88,10 @@ Physical-controller navigation and other platforms remain **Unverified**.
 `lambo_launcher_menu_tests` checks row order, copy, all destination effects,
 and both accepted and rejected Start Engine gates.
 `lambo_frontend_asset_url_tests` reproduces the Windows document-source error
-and checks valid relative icon paths, UTF-8, parent segments and POSIX paths. The shared
+and checks valid relative icon paths, UTF-8, parent segments and POSIX paths. `lambo_frontend_debugger_tests`
+injects a real RmlUi diagnostic with a no-render adapter and checks logger
+delivery, beacon absence or visibility, the inspector toggle, shutdown, and
+focus on small navigation documents; it needs no ROM, window, or GPU. The shared
 `lambo_frontend_settings_tests` covers menu bindings, player assignment, and
 configuration. Native visual and input checks are recorded in the pull request;
 physical-controller and other-platform results must be stated separately.
@@ -102,6 +105,28 @@ still pass native filesystem text here (compared 2026-10-08); this is a local
 generic fix, not an upstream-supported change. Fresh native captures have no
 beacon. The supported Windows build, URL regression and settings tests passed.
 Other platform runtime checks remain unverified.
+
+## Frontend debugger
+
+The frontend debugger is off by default, so its red `!` beacon cannot reach a
+player build. Patch 0037 gates debugger initialization, the F8 toggle, and
+shutdown on the existing hidden `debug_mode` option in `general.json`, which
+defaults to `false`. Set it to `true` and restart to get the inspector; F8
+toggles it. No log filter was added, so UI diagnostics still reach the system
+logger in both modes.
+
+The option is sampled once when the frontend starts, so a mid-session change has
+no effect. It is separate from the Debug tab's developer overlay, which is a
+renderer diagnostic and shows no UI elements.
+
+Status: **Unverified** in a played build. The two `lambo_frontend_debugger_tests`
+cases drive the real debugger through a no-render adapter, so logger delivery,
+beacon visibility, the toggle, shutdown, and focus on small navigation documents
+are covered. `lambo_frontend_settings_tests` covers the option itself: a
+hand-edited `general.json` must load the flag, the flag must default to off
+before the file is read, and a General save must not drop it. The rendered
+launcher and settings pages were not navigated in either mode, and no full game
+build or top-level configure was run.
 
 ## The quit confirmation
 
@@ -169,7 +194,7 @@ more to leave them onto Quit.
 
 | Tab | Options | Persistence |
 | --- | --- | --- |
-| General | Rumble strength, stick deadzone, background input, Player Name, startup launcher preference | Framework `general.json`, Apply/Discard; the name and launcher preference are also saved to `player.json` and `graphics.json` |
+| General | Rumble strength, stick deadzone, background input, Player Name, startup launcher preference, and a hidden `debug_mode` that enables the [frontend debugger](#frontend-debugger) | Framework `general.json`, Apply/Discard; the name and launcher preference are also saved to `player.json` and `graphics.json` |
 | Graphics | Resolution, 1/2/3/4x downsampling, aspect, HUD placement, window mode, window size, original/display/manual presentation rate, MSAA through 8x, HPFB, graphics API, texture dump path | Existing `graphics.json`, Apply/Discard |
 | Enhancements | Automatic pit-stops (off by default), car select info (off by default), multiplayer fog/sky matching, full geometry and six circuit switches, draw distance, fog density, camera distance/height/FOV, menu stick sensitivity | Existing `graphics.json`, immediate |
 | Controls | N64 button/stick remapping, keyboard/controller profiles, 1-4 player assignment | Framework `controls-framework.json` |

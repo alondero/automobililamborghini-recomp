@@ -3,6 +3,17 @@
 Start with a reproducible symptom. Keep the player-facing report short, then
 collect developer evidence only when it can distinguish layers.
 
+## Frontend RmlUi debugger
+
+The frontend debugger is disabled by default, including its red diagnostic
+beacon. UI diagnostics still reach the normal system logger. To enable the
+inspector, quit the game, set `"debug_mode": true` in `general.json` in the
+[configuration directory](configuration.md#where-files-live), and restart.
+Preserve the other fields in that file. F8 toggles the inspector; UI diagnostics
+can also display its beacon. Set the value back to `false` and restart to disable
+it. The option is hidden from normal settings and is sampled when the frontend
+starts. This is separate from the port's Debug-tab developer overlay.
+
 ## First checks
 
 1. Confirm the supported USA ROM and do not replace a save file while the game
