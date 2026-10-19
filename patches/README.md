@@ -49,7 +49,7 @@ significant single-space lines from `git diff --check`;
 | 0034 | RecompFrontend | Enables Refresh during play and lets its callback scan for newly added packages. Clears the old selection before rebuilding the list, avoiding invalid indices when it shrinks. Requires runtime patch 0035 to preserve active handles. Configure recognizes 0034 before checking 0017's overlapping reverse context. Compared 2026-10-17 with the pinned source and [upstream main](https://github.com/N64Recomp/RecompFrontend/blob/main/recompui/src/composites/ui_mod_menu.cpp), which disable Refresh and skip scans during play. Extracted production refresh/update methods pass a Windows host test with UI/runtime fakes; native window interaction and other platforms remain unverified. |
 | 0035 | N64ModernRuntime | During play, scans append new filenames while retaining active handles, indices, selection and order. New packages start disabled. Packages needing startup validation keep their restart requirement. Stable handle storage preserves config pointers held by the save thread and UI. Existing filenames are not reopened; replacements and removals take effect on restart. Compared 2026-10-17 with the pinned source and [upstream main](https://github.com/N64Recomp/N64ModernRuntime/blob/main/librecomp/src/mods.cpp), whose scan closes every opened handle and reloads config. Applied by CMake before 0034. The Windows real-loader regression covers live RTZ discovery/toggling, state/pointer preservation, repeated scans and startup-only packages without a ROM or renderer. |
 | 0036 | N64ModernRuntime | Defines ModHandle and its code-handle interface before ModContext instantiates deque<ModHandle>. Android NDK 28's libc++ requires a complete element type here; GCC accepted the earlier declaration order. The definitions and stable-storage behavior are unchanged. Applied after 0035. Compared with the pinned header, which places ModHandle after ModContext and originally used vector. An Android ARM64 header compile reproduces the incomplete-type error before this patch and passes after it. |
-| 0037 | RecompFrontend | Gates RmlUi debugger initialization, F8 visibility, and shutdown on the existing default-off `general.json` `debug_mode` option. Diagnostics still reach the system logger. Applied through shared CMake on all platforms. Headless tests inject a real diagnostic in both modes and inspect the beacon. |
+| 0037 | RecompFrontend | Gates RmlUi debugger initialization, F8 visibility, and shutdown on the existing default-off `general.json` `debug_mode` option. Diagnostics still reach the system logger. Applied through shared CMake on all platforms. Headless tests inject a real diagnostic in both modes and inspect the beacon. The tests exercise the host path only: no full game build, top-level configure, or rendered launcher/settings navigation was run, and other platforms remain unverified. |
 
 ## Application matrix
 
@@ -240,3 +240,10 @@ installing renderer hooks, so the existing hidden, default-false setting is
 available when the UI starts. Patch 0037 snapshots that choice and guards
 shutdown and toggles on successful initialization. No logging filter is added.
 The upstream comparison is local evidence; no upstream issue was opened.
+
+Limitation: the headless tests drive the wrapper against existing local RmlUi
+libraries, so they cover the debugger lifecycle and beacon, not the port. No
+full game build, top-level configure, or rendered launcher/settings navigation
+was run in either mode, the `general.json` hand-edit path was not played, and
+other platforms remain unverified. F8 is shared with the developer save-state
+restore in `src/main.cpp`, so a press reaches both handlers.
