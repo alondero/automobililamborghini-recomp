@@ -74,6 +74,11 @@ int main(int argc, char** argv) {
         // config loader falls back to it when the main file is missing.
         std::filesystem::remove(path / "general.json");
         std::filesystem::remove(path / "general.json.bak");
+        // The frontend debugger is turned on by hand-editing this file, so the
+        // General page must load that flag from disk. Only debug_mode is set;
+        // the keys the file leaves out keep their registered defaults, so the
+        // staged rumble edit below is still a real change.
+        { std::ofstream file(path / "general.json"); file << R"({"debug_mode":true})"; }
         // Pedal settings used to live in pedals.json. A saved file must survive
         // the merge into the Driving page, so seed the legacy shape here.
         { std::ofstream file(path / "pedals.json");
@@ -88,7 +93,15 @@ int main(int argc, char** argv) {
         lambo::config::load_and_apply_graphics();
         require(lambo::player::set_saved_name("RACER"), "driver cache fixture");
         lambo::ui::create_frontend_settings();
+        // The option is registered default-off, so a normal build never turns
+        // the debugger on. The file above is not read until finalize() below.
+        require(!recompui::config::general::get_debug_mode_enabled(),
+                "the frontend debugger option must default off");
         recompui::config::finalize();
+        // The hand-edited flag is what the frontend reads at startup to decide
+        // whether to initialise the RmlUi debugger.
+        require(recompui::config::general::get_debug_mode_enabled(),
+                "general.json did not enable the frontend debugger");
         auto& cheats = recompui::config::get_config("cheats");
         require(!cheats.requires_confirmation && cheats.external_storage, "cheats must be live and session-only");
         for (const auto& entry : lambo::cheats::catalog) {
@@ -239,7 +252,10 @@ int main(int argc, char** argv) {
         // The framework's own General options are staged on the same footer.
         general.save_config();
         { std::ifstream file(path / "general.json"); nlohmann::json saved_general; file >> saved_general;
-          require(saved_general.at("rumble_strength") == 60, "staged General option did not reach general.json"); }
+          require(saved_general.at("rumble_strength") == 60, "staged General option did not reach general.json");
+          // A General save must not drop the hand-edited flag, or the debugger
+          // would switch itself off the next time the player changes a setting.
+          require(saved_general.value("debug_mode", false), "the debugger flag did not survive a General save"); }
         general.revert_temp_config();
         general.set_option_value("show_launcher", true);
         general.save_config();

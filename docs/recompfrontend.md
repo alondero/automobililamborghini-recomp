@@ -122,8 +122,11 @@ renderer diagnostic and shows no UI elements.
 Status: **Unverified** in a played build. The two `lambo_frontend_debugger_tests`
 cases drive the real debugger through a no-render adapter, so logger delivery,
 beacon visibility, the toggle, shutdown, and focus on small navigation documents
-are covered. The rendered launcher and settings pages were not navigated in
-either mode, and no full game build or top-level configure was run.
+are covered. `lambo_frontend_settings_tests` covers the option itself: a
+hand-edited `general.json` must load the flag, the flag must default to off
+before the file is read, and a General save must not drop it. The rendered
+launcher and settings pages were not navigated in either mode, and no full game
+build or top-level configure was run.
 
 ## The quit confirmation
 

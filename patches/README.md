@@ -242,8 +242,9 @@ shutdown and toggles on successful initialization. No logging filter is added.
 The upstream comparison is local evidence; no upstream issue was opened.
 
 Limitation: the headless tests drive the wrapper against existing local RmlUi
-libraries, so they cover the debugger lifecycle and beacon, not the port. No
-full game build, top-level configure, or rendered launcher/settings navigation
-was run in either mode, the `general.json` hand-edit path was not played, and
-other platforms remain unverified. F8 is shared with the developer save-state
-restore in `src/main.cpp`, so a press reaches both handlers.
+libraries, so they cover the debugger lifecycle and beacon, not the port. The
+hand-edited `general.json` path is covered by the settings host test, not by a
+played session. No full game build, top-level configure, or rendered
+launcher/settings navigation was run in either mode, and other platforms remain
+unverified. F8 is shared with the developer save-state restore in
+`src/main.cpp`, so a press reaches both handlers.
