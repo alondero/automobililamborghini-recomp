@@ -1,6 +1,7 @@
 #include <cstdint>
 
 #include "recomp.h"
+#include "lambo_vehicle.h"
 #include "rt64_extended_gbi.h"
 
 namespace {
@@ -25,7 +26,7 @@ extern "C" void lambo_interpolation_object_begin(uint8_t* rdram, uint32_t object
     // Car records (flag 8) submit body, then four wheels in a fixed order. Anonymous
     // matching can swap even stationary wheels after a pan and sustain that swap.
     // Other scene records contain variable scenery draws and still need AUTO.
-    const gpr record = static_cast<int32_t>(0x800B69A8u + object * 0x10Cu);
+    const gpr record = static_cast<int32_t>(LAMBO_VEHICLE_BASE + object * sizeof(LamboVehicleRecord));
     const bool car = (MEM_HU(0, record) & 8u) != 0;
     // The frame builder iterates viewports 1..4 at 0x800CE6A6 (0x80004AA8 /
     // 0x80005124). 0x80098732 is the race lap high-water mark: using it here

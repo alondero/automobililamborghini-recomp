@@ -45,18 +45,18 @@ int main() {
         std::cerr << "runtime must publish both physical analog channels\n";
         return 1;
     }
-    std::vector<std::uint8_t> ram(8 * 1024 * 1024);
+    std::vector<std::uint8_t> ram(0x924000);
     auto half = [&](std::uint32_t address, std::int16_t value) {
-        std::memcpy(ram.data() + ((address ^ 2u) & 0x7fffffu), &value, 2);
+        std::memcpy(ram.data() + ((address ^ 2u) & 0xffffffu), &value, 2);
     };
     auto pad = [&]() {
         std::uint16_t value;
-        std::memcpy(&value, ram.data() + ((0x800A39E0u ^ 2u) & 0x7fffffu), 2);
+        std::memcpy(&value, ram.data() + ((0x800A39E0u ^ 2u) & 0xffffffu), 2);
         return value;
     };
     auto prepare_pad = [&]() {
         half(0x800A39E0, 0);
-        ram[(0x800A39E2u ^ 3u) & 0x7fffffu] = 0;
+        ram[(0x800A39E2u ^ 3u) & 0xffffffu] = 0;
     };
     auto tick_replay = [&]() {
         lambo_replay_input_tick(ram.data());
@@ -84,13 +84,13 @@ int main() {
     if (!expect(pad() == 0 && !lambo::driving::racing(),
                 "replay hook alone must not apply driving assists or update race state")) return 1;
     tick();
-    if (!expect(pad() == 0x8000 && ram[(0x800A39E2u ^ 3u) & 0x7fffffu] == 50,
+    if (!expect(pad() == 0x8000 && ram[(0x800A39E2u ^ 3u) & 0xffffffu] == 50,
                 "dedicated driving hook must apply assists before replay observes input")) return 1;
     for (auto [address, value] : {std::pair{0x800CE6ACu, 6}, {0x800CE6B0u, 2},
-                                 {0x800CE808u, 1}, {0x800CE6B4u, 4}, {0x800A5F6Eu, 1}}) {
+                                 {0x800CE808u, 1}, {0x800CE6B4u, 4}, {0x80902086u, 1}}) {
         half(address, value);
         tick();
-        if (!expect(pad() == 0 && ram[(0x800A39E2u ^ 3u) & 0x7fffffu] == 0 && !lambo::driving::racing(),
+        if (!expect(pad() == 0 && ram[(0x800A39E2u ^ 3u) & 0xffffffu] == 0 && !lambo::driving::racing(),
                     "guest menu/countdown/pause/demo/finish must reject stale assist snapshot")) return 1;
         half(address, address == 0x800CE6ACu ? 8 : address == 0x800CE6B0u ? 3 : 0);
     }
@@ -99,7 +99,7 @@ int main() {
     if (!expect(pad() == 0, "guest analog braking must suppress auto acceleration")) return 1;
     lambo::input_gate::set_ui_capture(true);
     tick();
-    if (!expect(pad() == 0 && ram[(0x800A39E2u ^ 3u) & 0x7fffffu] == 0,
+    if (!expect(pad() == 0 && ram[(0x800A39E2u ^ 3u) & 0xffffffu] == 0,
                 "overlay capture must suppress all assists")) return 1;
 
     // Arm an actual recorder and verify it observes the assisted pad after the
@@ -125,7 +125,7 @@ int main() {
     half(0x800CE6B0, 3);
     half(0x800CE6B4, 0);
     half(0x800CE808, 0);
-    half(0x800A5F6E, 0);
+    half(0x80902086, 0);
     lambo_replay_dispatch_end(ram.data()); // first eligible active-race tick
     prepare_pad();
     lambo_driving_assists_tick(ram.data());

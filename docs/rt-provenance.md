@@ -190,7 +190,7 @@ unaligned, reversed, unmatched, duplicate-pending and over-budget spans mark
 the record incomplete. At most 64 spans are retained. Task reuse, epoch and
 one-time alias consumption follow the [existing bridge](rt-shadows.md#native-provenance-and-producer-boundary).
 
-`LAMBO_RT_CAPTURE_DIR` additionally writes four paired schema-2 JSON/8-MiB
+`LAMBO_RT_CAPTURE_DIR` additionally writes four paired schema-3 JSON/0x924000-byte
 word-swapped snapshots at task sequences 60/300/420/540. The game producer
 copies native RAM at `0x80005728` in `func_80006018`, after the task descriptor
 is complete and before `osSendMesg` at `0x80005734` publishes it. Mutable
@@ -212,14 +212,15 @@ Offline annotation reads the same snapshot, never live RAM:
 
 | Field | USA layout | Width/meaning |
 | --- | --- | --- |
-| Native object | `0x800B69A8 + index * 0x10C` | flags u16 +0, list u32 +8, constructor kind s16 +`0x0E`, parent s16 +`0x58`; observation budget 128 objects |
+| Native object | `0x80910000 + index * 0x10C` | flags u16 +0, list u32 +8, constructor kind s16 +`0x0E`, parent s16 +`0x58`; 64 relocated objects (see [race fields](race-fields.md)) |
 | Track header pointer | `0x80098238` | u32; header +4/+8 bound 20-byte PVS rows |
 | Segment-record pointer | `0x800BF1D0` | u32; 64-byte records with u32 road/wall/scenery lists |
 | Lights | F3DEX MoveMem pointer | RGB u8 +0..2; directional signed bytes +8..10; MoveWord supplies count, followed by ambient |
 | Matrices/vertices | F3DEX command pointers | 64-byte Mtx; 16-byte Vtx with signed s16 XYZ |
 
 u32 words are native little-endian; halfwords use offset XOR 2, bytes XOR 3.
-All dereferences are bounded to the captured low 8 MiB. Header row count must
+All dereferences are bounded to the capture; schema 3 also includes the relocated
+race tables. Historical schema 2 captures contain only the low 8 MiB. Header row count must
 be integral and at most 256. List traversal is bounded to depth 16 and 200000
 commands. Unknown geometry/state commands fail instead of silently establishing
 eligibility. Lights/transforms are associated at vertex load, so later state

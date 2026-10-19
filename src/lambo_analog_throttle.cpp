@@ -9,6 +9,7 @@
 #include "lambo_log.h"
 #include "lambo_input_quantize.h"
 #include "lambo_vehicle.h"
+#include "lambo_race_field.h"
 
 namespace {
 
@@ -20,7 +21,7 @@ constexpr uint32_t kVehicleBase = LAMBO_VEHICLE_BASE;
 constexpr uint32_t kVehicleStride = sizeof(LamboVehicleRecord);
 constexpr uint32_t kSpeedOffset = offsetof(LamboVehicleRecord, speed);
 constexpr uint32_t kThrottleOffset = offsetof(LamboVehicleRecord, throttle_demand);
-constexpr uint32_t kLimitBase = 0x800A5F2Cu;
+constexpr uint32_t kLimitBase = LAMBO_FIELD_AI + 0x44u;
 constexpr uint32_t kLimitStride = 0x84u;
 
 std::array<std::atomic<uint32_t>, lambo::analog_throttle::kPortCount> g_ports{};

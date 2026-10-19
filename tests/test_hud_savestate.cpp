@@ -3,6 +3,7 @@
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
+#undef NDEBUG
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
@@ -44,7 +45,7 @@ int main(int argc, char** argv) {
     assert(argc >= 3);
     using lambo::f3dex::read;
     using lambo::f3dex::write;
-    std::vector<uint8_t> memory(0x800000);
+    std::vector<uint8_t> memory(0x924000);
     auto* ram = memory.data();
     constexpr uint32_t task = 0xbf1e8, root = 0xbf400;
     write(ram, 0xce6ac, 8u << 16);
@@ -75,9 +76,11 @@ int main(int argc, char** argv) {
         assert(memory == before && relinks == 0);
         return 0;
     }
+    if (mode == "write") write(ram, 0x902084, 0x12345678u);
     if (mode != "write") {
         load();
         assert(relinks == 1);
+        assert(read(ram, 0x902084) == 0x12345678u);
     }
     prepare();
     const uint32_t expected = mode == "legacy-default" ? 0x3200ce80u :

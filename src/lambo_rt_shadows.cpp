@@ -43,7 +43,7 @@ bool procedural_world_object(const TaskSunProbe::ObjectIdentity& object) {
 namespace {
 constexpr uint32_t first_task = 0x800BF240u;
 constexpr uint32_t task_stride = 0x7A50u;
-constexpr size_t guest_ram_size = 0x800000u;
+constexpr size_t guest_ram_size = 0x924000u;
 // USA fields documented in docs/rt-shadows.md's guest-bridge table and
 // docs/rt-provenance.md's emitter/object snapshot tables.
 constexpr uint32_t current_task_address = 0x800A2BFCu;
@@ -56,10 +56,10 @@ constexpr uint32_t race_mode_address = 0x800CE6B4u;
 constexpr uint32_t task_cursor_address = 0x800A39CCu;
 constexpr uint32_t camera_slot_address = 0x800CE6AAu;
 constexpr uint32_t native_bearing_address = 0x800A2FB8u;
-constexpr uint32_t camera_heading_address = 0x800A2F10u;
+constexpr uint32_t camera_heading_address = 0x80900E00u;
 constexpr uint32_t camera_height_term_address = 0x800A2F90u;
-constexpr uint32_t native_object_table_address = 0x800B69A8u;
-constexpr uint32_t native_object_stride = 0x10Cu;
+constexpr uint32_t native_object_table_address = LAMBO_VEHICLE_BASE;
+constexpr uint32_t native_object_stride = sizeof(LamboVehicleRecord);
 constexpr uint32_t native_object_list_offset = 0x08u;
 constexpr uint32_t native_object_kind_offset = 0x0Eu;
 constexpr uint32_t native_object_parent_offset = 0x58u;
@@ -92,9 +92,9 @@ bool capture_sequence(uint64_t sequence) {
 }
 
 // Runtime RAM is word-swapped: native u32/float words, halfwords at offset^2.
-// Fixed fields below are all inside the supported USA low 8 MiB layout.
+// Fixed fields below are all inside the USA RAM and expanded race-field layout.
 template<class T> T read(const uint8_t* ram, uint32_t address) {
-    const uint32_t offset = (address & 0x7FFFFFu) ^ (sizeof(T) == 2 ? 2u : 0u);
+    const uint32_t offset = (address & 0xFFFFFFu) ^ (sizeof(T) == 2 ? 2u : 0u);
     T value;
     std::memcpy(&value, ram + offset, sizeof(value));
     return value;
@@ -286,7 +286,7 @@ void capture_task(const TaskSunProbe& task) {
     try {
         const auto base = std::filesystem::path(directory) / ("task-" + std::to_string(task.sequence));
         std::filesystem::create_directories(base.parent_path());
-        nlohmann::json metadata = {{"schema", 2}, {"snapshot_point", "producer-before-submit"},
+        nlohmann::json metadata = {{"schema", 3}, {"snapshot_point", "producer-before-submit"},
             {"epoch", task.epoch}, {"sequence", task.sequence},
             {"task_address", task.task_address}, {"root", task.task_address + 0x1C0u},
             {"phase", task.phase}, {"circuit", task.circuit}, {"players", task.players},

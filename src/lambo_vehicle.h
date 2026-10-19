@@ -31,7 +31,9 @@ typedef struct LamboVehicleRecord {
 } LamboVehicleRecord;
 #pragma pack(pop)
 
-#define LAMBO_VEHICLE_BASE UINT32_C(0x800B69A8)
+// Relocated shared body pool; see docs/race-fields.md.
+#define LAMBO_VEHICLE_CAPACITY 64
+#define LAMBO_VEHICLE_BASE UINT32_C(0x80910000)
 #define LAMBO_GUEST_CURRENT_VEHICLE_ADDR UINT32_C(0x80098398)
 #define LAMBO_GUEST_GAME_STATE_ADDR UINT32_C(0x800CE6AC)
 #define LAMBO_GUEST_RACE_DIFFICULTY_ADDR UINT32_C(0x800CE79C)

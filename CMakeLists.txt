@@ -204,6 +204,16 @@ if(BUILD_TESTING)
         target_include_directories(lambo_pit_stop_tests PRIVATE src RecompiledFuncs
             ${N64MR}/N64Recomp/include ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
         add_test(NAME lambo_automatic_pit_stops COMMAND lambo_pit_stop_tests)
+        add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/race_field_funcs.c
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_race_field_funcs.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs ${CMAKE_CURRENT_BINARY_DIR}/race_field_funcs.c
+            DEPENDS tests/extract_race_field_funcs.py ${ROM_RECOMP_SOURCES} VERBATIM)
+        add_executable(lambo_race_field_tests tests/test_race_field.cpp src/lambo_race_field.cpp
+            ${CMAKE_CURRENT_BINARY_DIR}/race_field_funcs.c)
+        target_include_directories(lambo_race_field_tests PRIVATE src RecompiledFuncs
+            ${N64MR}/N64Recomp/include ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
+        add_test(NAME lambo_race_field COMMAND lambo_race_field_tests)
+
 
         add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/cheat_funcs.c
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
@@ -816,6 +826,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_driving_assists_runtime.cpp
         src/lambo_harness_report.cpp
         src/lambo_file.cpp
+        src/lambo_race_field.cpp
         src/lambo_automatic_pit_stops.cpp
         src/lambo_cheats.cpp
         src/lambo_cheats_runtime.cpp

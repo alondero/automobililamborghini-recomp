@@ -17,7 +17,7 @@ static void require(bool value, const char* message) {
 }
 
 int main() {
-    std::vector<uint8_t> memory(8 * 1024 * 1024);
+    std::vector<uint8_t> memory(0x924000);
     auto* rdram = memory.data();
     auto word = [&](uint32_t address) -> int32_t& {
         return MEM_W(0, static_cast<gpr>(static_cast<int32_t>(address)));
@@ -26,7 +26,7 @@ int main() {
         return MEM_H(0, static_cast<gpr>(static_cast<int32_t>(address)));
     };
     auto tag = [&](uint32_t object, bool car = false) {
-        MEM_H(0, static_cast<gpr>(static_cast<int32_t>(0x800B69A8u + object * 0x10Cu))) = car ? 8 : 0;
+        MEM_H(0, static_cast<gpr>(static_cast<int32_t>(0x80910000u + object * 0x10Cu))) = car ? 8 : 0;
         word(0x800A39CC) = static_cast<int32_t>(0x80400000);
         lambo_interpolation_object_begin(rdram, object);
         const uint32_t id = word(0x8040000C);

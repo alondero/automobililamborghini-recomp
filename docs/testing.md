@@ -279,3 +279,25 @@ Record the commit, OS, compiler, backend, ROM identity/hash when applicable,
 exact command, result, logs, generated-file state, and known limitations.
 Link the report from an investigation or pull request when the result is
 important enough to guide future work.
+
+## Configurable race fields
+
+After the supported USA build, run:
+
+~~~text
+ctest --test-dir build -R "lambo_race_field|lambo_config|lambo_frontend_settings"
+python tools/check_race_field.py --cars 16 --circuit 1 --reverse 0
+python tools/check_field_championship.py artifacts/race-fields/<run>/race.lstate
+~~~
+
+The ROM-backed host fixture executes the generated championship standings
+initializer for 2-16 racers across six rounds. The game check boots a fresh race,
+drives the replay, then checks every car's body, movement and ranking from a v2
+snapshot. Use circuits 1-6, reverse 0/1 and modes 1-3 to vary coverage. Captures,
+ROM-derived snapshots and logs remain in ignored artifacts/race-fields.
+This movement check alone does not prove collision spacing or correct pixels.
+The championship check takes the sixteen-car snapshot from the previous command,
+injects controlled finishing positions, advances the native results and standings
+screens, and checks the next round's count, roster and cumulative points while
+the next-session setting is two. It does not prove natural race completion.
+Add `--render` to inspect those screens in the RT64 window.

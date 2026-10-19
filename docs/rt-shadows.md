@@ -225,7 +225,7 @@ writes it:
 | Players | `0x800CE6A4` | s16 player count |
 | Race mode | `0x800CE6B4` | s16; 0 time trial, 1 menu Arcade, 2 single race, 3 unidentified, 4 attract |
 | Model cursors | `0x800CE7E8 + player * 2` | four s16 model selectors, 0 through 23 |
-| Native objects | `0x800B69A8 + index * 0x10C` | flags u16 +0, list u32 +8, kind s16 +`0x0E`, parent s16 +`0x58`; 128 copied identities |
+| Native objects | `0x80910000 + index * 0x10C` | flags u16 +0, list u32 +8, kind s16 +`0x0E`, parent s16 +`0x58`; 64 copied identities (see [race fields](race-fields.md)) |
 
 Phase, circuit, race mode, player count and model changes advance the scene
 epoch and clear pending records. Save-state restore and renderer shutdown

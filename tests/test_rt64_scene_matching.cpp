@@ -17,13 +17,13 @@ static void require(bool condition, const char* message) {
 }
 
 int main() {
-    std::vector<uint8_t> memory(8 * 1024 * 1024);
+    std::vector<uint8_t> memory(0x924000);
     auto* rdram = memory.data();
     auto guest_address = [](uint32_t address) -> gpr {
         return static_cast<int32_t>(address);
     };
     auto object_id = [&](uint32_t object) {
-        MEM_H(0, guest_address(0x800B69A8u + object * 0x10Cu)) = 8;
+        MEM_H(0, guest_address(0x80910000u + object * 0x10Cu)) = 8;
         MEM_W(0, guest_address(0x800A39CCu)) = static_cast<int32_t>(0x80400000u);
         lambo_interpolation_object_begin(rdram, object);
         const uint32_t id = MEM_W(0, guest_address(0x8040000Cu));

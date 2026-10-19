@@ -4,6 +4,7 @@
 #include "lambo_driving_assists.h"
 #include "lambo_input_gate.h"
 #include "recomp.h"
+#include "lambo_race_field.h"
 
 #include <cstdint>
 
@@ -12,7 +13,7 @@ constexpr gpr kGameStateAddress = static_cast<gpr>(static_cast<std::int32_t>(0x8
 constexpr gpr kRacePhaseAddress = static_cast<gpr>(static_cast<std::int32_t>(0x800CE6B0u));
 constexpr gpr kGameModeAddress = static_cast<gpr>(static_cast<std::int32_t>(0x800CE6B4u));
 constexpr gpr kPauseStateAddress = static_cast<gpr>(static_cast<std::int32_t>(0x800CE808u));
-constexpr gpr kPlayerOneFinishedAddress = static_cast<gpr>(static_cast<std::int32_t>(0x800A5F6Eu));
+constexpr gpr kPlayerOneFinishedAddress = static_cast<gpr>(static_cast<std::int32_t>(LAMBO_FIELD_AI + 0x86u));
 constexpr gpr kPortZeroPadAddress = static_cast<gpr>(static_cast<std::int32_t>(0x800A39E0u));
 }
 

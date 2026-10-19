@@ -127,7 +127,7 @@ def load_scenario(path: Path) -> dict[str, Any]:
         raise ScenarioError("scenario.graphics.hpfb_option must be Auto, On or Off")
     scenario["graphics"] = graphics
     developer = _dict(scenario.get("developer_env", {}), "scenario.developer_env")
-    if set(developer) - {"LAMBO_RT_SHADOW_FAULT", "LAMBO_TEST_RESIZE", "LAMBO_RT_SHADOW_SWEEP"}:
+    if set(developer) - {"LAMBO_RACE_CARS", "LAMBO_RT_SHADOW_FAULT", "LAMBO_TEST_RESIZE", "LAMBO_RT_SHADOW_SWEEP"}:
         raise ScenarioError("unsupported scenario developer variable")
     if any(type(value) is not str for value in developer.values()):
         raise ScenarioError("scenario.developer_env values must be a string")

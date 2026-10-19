@@ -134,7 +134,7 @@ int main() {
                     MEM_H(0xA4170, base) = progress;
                     MEM_H(0xCE6A4, base) = players;
                     MEM_H(0xCE6C0, base) = 5;
-                    MEM_H(0xCE7B0, base) = 1; // Live race direction sentinel.
+                    MEM_H(0xCE7B0, base) = 1; // Live pit-stop setting sentinel.
                     MEM_H(menu.gate, base) = 123;
                     const auto before = memory;
                     set_enabled(Cheat::ReverseTracks, unlock);

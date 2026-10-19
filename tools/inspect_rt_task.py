@@ -35,8 +35,8 @@ class CaptureError(ValueError):
 
 class TaskInspector:
     def __init__(self, ram: bytes, metadata: dict):
-        if not isinstance(metadata, dict) or len(ram) != 0x800000 or metadata.get("schema") != 2 or metadata.get("ram_layout") != "word-swapped":
-            raise CaptureError("expected schema 2 and exactly 8 MiB of word-swapped RAM")
+        if not isinstance(metadata, dict) or metadata.get("schema") not in (2, 3) or len(ram) != (0x924000 if metadata.get("schema") == 3 else 0x800000) or metadata.get("ram_layout") != "word-swapped":
+            raise CaptureError("expected a complete schema 2 or 3 word-swapped RAM capture")
         if metadata.get("snapshot_point") != "producer-before-submit":
             raise CaptureError("snapshot must belong to the task producer before publication")
         if not metadata.get("emitters_complete"):
@@ -347,8 +347,8 @@ class TaskInspector:
             if state["emitter"] == 0x80009AC0 and group & 0xFFF00000 == 0x10000000:
                 index = group & 0xFFFF
                 # An observation budget, not a claim about the native capacity.
-                if index < 128:
-                    address = OBJECT_TABLE_ADDRESS + index * OBJECT_STRIDE
+                if index < (64 if self.metadata["schema"] == 3 else 128):
+                    address = (0x80910000 if self.metadata["schema"] == 3 else OBJECT_TABLE_ADDRESS) + index * OBJECT_STRIDE
                     draw["native_object"] = {"index": index, "address": address,
                         "flags": self.read(address, "H"), "list": self.read(address + OBJECT_LIST_OFFSET, "I"),
                         "kind": self.read(address + OBJECT_KIND_OFFSET, "h"),

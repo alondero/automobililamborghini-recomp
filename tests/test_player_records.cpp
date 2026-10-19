@@ -58,7 +58,7 @@ int main() {
         lambo::player::reload_saved_name();
         for (int mode : {0, 2}) {
             for (int mirror : {0, 1}) {
-                std::vector<uint8_t> memory(0x800000);
+                std::vector<uint8_t> memory(0x924000);
                 auto* rdram = memory.data();
                 put(rdram, player, "TITUS");
                 put(rdram, player + 13, "GUEST");
@@ -67,9 +67,9 @@ int main() {
                 MEM_H(0, addr(0x800CE6B4)) = mode;
                 MEM_H(0, addr(0x800CE79C)) = mirror;
                 MEM_H(0, addr(0x800CE78C)) = 3; // configured laps
-                MEM_H(0, addr(0x800A5EF0)) = 1; // next crossing completes lap one
-                MEM_H(0, addr(0x800A5EF2)) = 1; // crossing counter before increment
-                MEM_H(0, addr(0x800B69B6)) = 1; // vehicle belongs to player one
+                MEM_H(0, addr(0x80902008)) = 1; // next crossing completes lap one
+                MEM_H(0, addr(0x8090200A)) = 1; // crossing counter before increment
+                MEM_H(0, addr(0x8091000E)) = 1; // vehicle belongs to player one
                 MEM_H(0, addr(0x8009876C)) = 30; // lap timer: 0:30:00
                 MEM_W(0, addr(0x80098844)) = 3600; // previous best: 1:00:00
                 recomp_context ctx{};
@@ -85,9 +85,9 @@ int main() {
                 // to player two. The lap hook must use the resolved owner.
                 put(rdram, player, "LOCAL");
                 MEM_H(0, addr(0x800CE6A6)) = 1;
-                MEM_H(0, addr(0x800A5EF0)) = 1;
-                MEM_H(0, addr(0x800A5EF2)) = 1;
-                MEM_H(0, addr(0x800B69B6)) = 2;
+                MEM_H(0, addr(0x80902008)) = 1;
+                MEM_H(0, addr(0x8090200A)) = 1;
+                MEM_H(0, addr(0x8091000E)) = 2;
                 MEM_H(0, addr(0x80098774)) = 20;
                 ctx = {};
                 ctx.r29 = addr(0x807FF000);
@@ -124,7 +124,7 @@ int main() {
                 check_name(rdram, profile + names + 14, "ADAM", "previous player record preserved");
             }
         }
-        std::vector<uint8_t> memory(0x800000);
+        std::vector<uint8_t> memory(0x924000);
         auto* rdram = memory.data();
         put(rdram, player, "TITUS");
         MEM_H(0, addr(0x800CE6A6)) = 1;
@@ -135,14 +135,14 @@ int main() {
     for (const std::string saved : {"", "NAME123", "ABCDEFGHIJKLM", "\xC3\xA9"}) {
         std::ofstream(path) << nlohmann::json{{"name", saved}};
         lambo::player::reload_saved_name();
-        std::vector<uint8_t> memory(0x800000);
+        std::vector<uint8_t> memory(0x924000);
         auto* rdram = memory.data();
         put(rdram, player, "TITUS");
         lambo_player_name_restore_for_record(rdram, 0);
         check_name(rdram, player, "TITUS", "unsupported saved name preserves ROM buffer");
     }
     {
-        std::vector<uint8_t> memory(0x800000);
+        std::vector<uint8_t> memory(0x924000);
         auto* rdram = memory.data();
         std::ofstream(path) << nlohmann::json{{"name", "abcdefghijkl"}};
         lambo::player::reload_saved_name();

@@ -13,7 +13,7 @@
 
 #define TRACE_VBASE   LAMBO_VEHICLE_BASE
 #define TRACE_VSTRIDE ((unsigned)sizeof(LamboVehicleRecord))
-#define TRACE_VEHICLES 6
+#define TRACE_VEHICLES LAMBO_VEHICLE_CAPACITY
 #define TRACE_E290    0x8013E290u
 #define TRACE_E2D0    0x8013E2D0u
 #define TRACE_TABLE_BYTES 64
@@ -90,7 +90,7 @@ void lambo_car_trace_tick(uint8_t* rdram, recomp_context* ctx) {
     for (int v = 0; v < TRACE_VEHICLES; v++) {
         const uint32_t base = TRACE_VBASE + (uint32_t)v * TRACE_VSTRIDE;
         const int ch = (int16_t)MEM_H(0, (gpr)(int32_t)(base + offsetof(LamboVehicleRecord, channel)));
-        if (ch <= 0) continue;  // unpopulated slot: channel is 1-based
+        if (ch <= 0 || !(MEM_H(0, (gpr)(int32_t)base) & 8)) continue;  // unpopulated slot: channel is 1-based
         const int cat = (int)MEM_HU(0, (gpr)(int32_t)(base + offsetof(LamboVehicleRecord, category)));
         const int speed = (int)MEM_W(0, (gpr)(int32_t)(base + offsetof(LamboVehicleRecord, speed)));
         const int thr = (int16_t)MEM_H(0, (gpr)(int32_t)(base + offsetof(LamboVehicleRecord, throttle_demand)));

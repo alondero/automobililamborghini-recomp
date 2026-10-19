@@ -65,6 +65,7 @@ std::atomic_bool g_widescreen_sky_match{true};
 // record pointer being non-null, so segments without a scenery DL are unaffected.
 std::atomic_bool g_no_lod{true};
 std::atomic_bool g_show_launcher{false};
+std::atomic_int g_race_cars{6};
 std::atomic_bool g_automatic_pit_stops{false};
 std::atomic_bool g_remove_blue_hud_bar{false};
 std::atomic_bool g_car_select_info{false};
@@ -207,6 +208,7 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"widescreen_fog_match", g_widescreen_fog_match.load()},
         {"widescreen_sky_match", g_widescreen_sky_match.load()},
         {"no_lod", g_no_lod.load()},
+        {"race_cars", g_race_cars.load()},
         {"automatic_pit_stops", g_automatic_pit_stops.load()},
         {"remove_blue_hud_bar", g_remove_blue_hud_bar.load()},
         {"car_select_info", g_car_select_info.load()},
@@ -254,6 +256,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     bool widescreen_fog_match = g_widescreen_fog_match.load();
     bool widescreen_sky_match = g_widescreen_sky_match.load();
     bool no_lod = g_no_lod.load();
+    int race_cars = 6;
     bool automatic_pit_stops = false;
     bool remove_blue_hud_bar = false;
     bool car_select_info = false;
@@ -274,6 +277,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "widescreen_fog_match", widescreen_fog_match);
     from_or_default(j, "widescreen_sky_match", widescreen_sky_match);
     from_or_default(j, "no_lod", no_lod);
+    from_or_default(j, "race_cars", race_cars);
     from_or_default(j, "automatic_pit_stops", automatic_pit_stops);
     from_or_default(j, "remove_blue_hud_bar", remove_blue_hud_bar);
     from_or_default(j, "car_select_info", car_select_info);
@@ -293,6 +297,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     g_widescreen_fog_match.store(widescreen_fog_match);
     g_widescreen_sky_match.store(widescreen_sky_match);
     g_no_lod.store(no_lod);
+    g_race_cars.store(std::clamp(race_cars, 2, 16));
     g_automatic_pit_stops.store(automatic_pit_stops);
     g_remove_blue_hud_bar.store(remove_blue_hud_bar);
     g_car_select_info.store(car_select_info);
@@ -633,6 +638,14 @@ bool widescreen_sky_match() {
 void set_widescreen_sky_match(bool enabled) {
     g_widescreen_sky_match.store(enabled);
     save_graphics_updates({{"widescreen_sky_match", enabled}});
+}
+
+int race_cars() { return g_race_cars.load(); }
+
+void set_race_cars(int count) {
+    count = std::clamp(count, 2, 16);
+    g_race_cars.store(count);
+    save_graphics_updates({{"race_cars", count}});
 }
 
 bool automatic_pit_stops() {

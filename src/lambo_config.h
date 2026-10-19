@@ -125,6 +125,10 @@ void set_widescreen_sky_match(bool enabled);
 
 // Opt-in assistance for the pit-stop stick mini-games. Applied live, persisted
 // as automatic_pit_stops in graphics.json; default false.
+// Total cars in the next single-player race/session, including the player.
+int race_cars();
+void set_race_cars(int count);
+
 bool automatic_pit_stops();
 void set_automatic_pit_stops(bool enabled);
 
