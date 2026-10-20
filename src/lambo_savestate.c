@@ -207,17 +207,18 @@ static int do_load(uint8_t* rdram, const char* path) {
         return 0;
     }
     const size_t extension_size = LAMBO_FIELD_SIZE;
-    uint8_t* buf = (uint8_t*)malloc(RDRAM_SNAP_SIZE + extension_size);
+    const size_t payload_size = (size_t)RDRAM_SNAP_SIZE + extension_size;
+    uint8_t* buf = (uint8_t*)malloc(payload_size);
     if (buf == NULL) {
         LAMBO_LOG("state", "load: out of memory\n");
         fclose(f);
         return 0;
     }
-    size_t got = fread(buf, 1, RDRAM_SNAP_SIZE + extension_size, f);
+    size_t got = fread(buf, 1, payload_size, f);
     fclose(f);
-    if (got != RDRAM_SNAP_SIZE + extension_size) {
-        LAMBO_LOG("state", "load: %s truncated (%zu/%u bytes)\n",
-                path, got, RDRAM_SNAP_SIZE);
+    if (got != payload_size) {
+        LAMBO_LOG("state", "load: %s truncated (%zu/%zu bytes)\n",
+                path, got, payload_size);
         free(buf);
         return 0;
     }
@@ -242,8 +243,8 @@ static int do_load(uint8_t* rdram, const char* path) {
     // the patch hook decides whether the restored table is a known base or is
     // already corrected, without making the general save-state format package-aware.
     lambo_track_patch_on_savestate_loaded(rdram);
-    LAMBO_LOG("state", "loaded %u bytes from %s (state=%u)\n",
-            RDRAM_SNAP_SIZE, path, h.state);
+    LAMBO_LOG("state", "loaded %zu bytes from %s (state=%u)\n",
+            payload_size, path, h.state);
     return 1;
 }
 

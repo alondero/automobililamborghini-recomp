@@ -286,7 +286,7 @@ After the supported USA build, run:
 
 ~~~text
 ctest --test-dir build -R "lambo_race_field|lambo_config|lambo_frontend_settings"
-python tools/check_race_field.py --cars 16 --circuit 1 --reverse 0
+python tools/check_race_field.py --cars 16 --circuit 1 --reverse 0 --mode 3
 python tools/check_field_championship.py artifacts/race-fields/<run>/race.lstate
 ~~~
 
@@ -296,7 +296,8 @@ drives the replay, then checks every car's body, movement and ranking from a v2
 snapshot. Use circuits 1-6, reverse 0/1 and modes 1-3 to vary coverage. Captures,
 ROM-derived snapshots and logs remain in ignored artifacts/race-fields.
 This movement check alone does not prove collision spacing or correct pixels.
-The championship check takes the sixteen-car snapshot from the previous command,
+The championship check requires a snapshot recorded in championship mode 3. It takes
+the sixteen-car snapshot from the previous command,
 injects controlled finishing positions, advances the native results and standings
 screens, and checks the next round's count, roster and cumulative points while
 the next-session setting is two. It does not prove natural race completion.

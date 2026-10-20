@@ -11,6 +11,8 @@ from pathlib import Path
 import check_race_field
 import run_game_scenario as runner
 
+RACE_MODE_ADDR = 0x800CE6B4
+
 
 def offset(address):
     value = address & 0xffffff
@@ -21,17 +23,31 @@ def half(blob, address):
     return struct.unpack_from('<h', blob, offset(address))[0]
 
 
+def require_championship_mode(blob):
+    mode = half(blob, RACE_MODE_ADDR)
+    if mode != 3:
+        raise ValueError(
+            f'input snapshot has race mode {mode}; championship progression requires mode 3. '
+            'Create a suitable snapshot with: python tools/check_race_field.py '
+            '--cars 16 --circuit 1 --reverse 0 --mode 3'
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('state', type=Path)
     parser.add_argument('--render', action='store_true', help='Show the RT64 window for visual inspection')
     args = parser.parse_args()
-    check_race_field.inspect(args.state, 16)
     blob = bytearray(args.state.read_bytes())
+    try:
+        require_championship_mode(blob)
+    except ValueError as error:
+        parser.error(str(error))
+    check_race_field.inspect(args.state, 16)
     roster = [half(blob, 0x80901000 + i * 2) for i in range(16)]
     # Enter native results initialization in championship round one. Round two
     # uses circuit two, three laps, forward direction and no mandatory stops.
-    values = [(0x800ce6ac, 9), (0x800ce6a4, 1), (0x800ce6b4, 3),
+    values = [(0x800ce6ac, 9), (0x800ce6a4, 1), (RACE_MODE_ADDR, 3),
               (0x800ce6ba, 1), (0x800ce6b6, 3), (0x80901400, 16),
               (0x80901402, 3), (0x80901408, 0), (0x800ce6c4, 1),
               (0x800ce6e4, 3), (0x800ce704, 0), (0x800ce724, 0)]

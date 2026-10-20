@@ -9,6 +9,12 @@
 
 namespace {
 constexpr uint32_t count_addr = 0x800CE7AC;
+constexpr uint32_t race_mode_addr = 0x800CE6B4;
+constexpr uint32_t championship_round_addr = 0x800CE6BA;
+constexpr uint32_t active_player_count_addr = 0x800CE6A4;
+constexpr uint32_t model_cursor_addr = 0x800CE7E8;
+constexpr uint32_t grid_direction_addr = 0x800CE7A8;
+constexpr uint32_t finish_rank_addr = 0x800986C8;
 constexpr uint32_t meta = LAMBO_FIELD_BASE + 0x1400;
 constexpr uint32_t grid = LAMBO_FIELD_BASE + 0x3000;
 int16_t& half(uint8_t* rdram, uint32_t a) { return MEM_H(0, (gpr)(int32_t)a); }
@@ -35,9 +41,9 @@ void text(uint8_t* rdram, const char* value) {
 // word-swizzled RAM. The reserved extension is below the mod heap (0x81000000)
 // and above the runtime PI handles (0x80800000). See docs/race-fields.md.
 extern "C" void lambo_field_count(uint8_t* rdram) {
-    const int mode = half(rdram, 0x800CE6B4);
-    const int round = half(rdram, 0x800CE6BA);
-    if (half(rdram, 0x800CE6A4) != 1 || mode < 1 || mode > 3) {
+    const int mode = half(rdram, race_mode_addr);
+    const int round = half(rdram, championship_round_addr);
+    if (half(rdram, active_player_count_addr) != 1 || mode < 1 || mode > 3) {
         half(rdram, meta) = 6;
         return;
     }
@@ -51,7 +57,7 @@ extern "C" void lambo_field_count(uint8_t* rdram) {
 }
 extern "C" int lambo_field_roster(uint8_t* rdram) {
     if (!customized(rdram)) return 0;
-    const int player = half(rdram, 0x800CE7E8);
+    const int player = half(rdram, model_cursor_addr);
     if (player < 0 || player >= 24) return 0;
     for (int i = 0; i < half(rdram, count_addr); ++i)
         half(rdram, LAMBO_FIELD_ROSTER + i * 2) = ((player / 3 + i) % 8) * 3 + (player % 3 + i / 8) % 3;
@@ -68,7 +74,7 @@ extern "C" void lambo_field_grid_begin(uint8_t* rdram, recomp_context*) {
 extern "C" void lambo_field_grid_slot(uint8_t* rdram, recomp_context* ctx) {
     if (!customized(rdram)) return;
     const int i = MEM_H(0x5E, ctx->r29);
-    const int direction = half(rdram, 0x800CE7A8) ? 8 : 0;
+    const int direction = half(rdram, grid_direction_addr) ? 8 : 0;
     const uint32_t original = word(rdram, meta + 4);
     // Keep larger fields inside the authored four-row starting area. Interpolate
     // each lane separately, including the reverse grid's changing heading.
@@ -129,8 +135,8 @@ extern "C" int lambo_field_car(uint8_t* rdram, int object) {
         (half(rdram, LAMBO_VEHICLE_BASE + object * sizeof(LamboVehicleRecord)) & 8) != 0;
 }
 extern "C" void lambo_field_prepare(uint8_t* rdram) {
-    const int mode = half(rdram, 0x800CE6B4);
-    if (half(rdram, 0x800CE6A4) != 1 || mode < 1 || mode > 3)
+    const int mode = half(rdram, race_mode_addr);
+    if (half(rdram, active_player_count_addr) != 1 || mode < 1 || mode > 3)
         half(rdram, meta) = 6;
 }
 extern "C" void lambo_field_standings(uint8_t* rdram, recomp_context* ctx, int column) {
@@ -143,7 +149,7 @@ extern "C" void lambo_field_standings(uint8_t* rdram, recomp_context* ctx, int c
         ctx->r5 = 48;
         return;
     }
-    const int rank = half(rdram, 0x800986C8);
+    const int rank = half(rdram, finish_rank_addr);
     ctx->r6 = 94 + ((rank - 1) % 8) * 11;
     if (count <= 8) return;
     const int x = rank > 8 ? 112 : 0;
@@ -167,5 +173,5 @@ extern "C" void lambo_field_standings(uint8_t* rdram, recomp_context* ctx, int c
 // Native pause-restart decrements the championship round before rebuilding it.
 // Remember that transition so restarting round one does not become a new session.
 extern "C" void lambo_field_restart(uint8_t* rdram) {
-    half(rdram, meta + 8) = half(rdram, 0x800CE6B4) == 3 && half(rdram, meta + 2) == 3;
+    half(rdram, meta + 8) = half(rdram, race_mode_addr) == 3 && half(rdram, meta + 2) == 3;
 }
