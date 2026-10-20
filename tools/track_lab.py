@@ -213,19 +213,19 @@ def read_snapshot(path: str | os.PathLike[str]) -> Snapshot:
         )
         if magic != b"LMBOSTAT":
             raise TrackLabError("save-state has invalid LMBOSTAT magic")
-        if version != 1:
-            raise TrackLabError(f"unsupported LMBOSTAT version {version}; expected 1")
+        if version not in (1, 2):
+            raise TrackLabError(f"unsupported LMBOSTAT version {version}; expected 1 or 2")
         if rdram_size != RDRAM_SIZE:
             raise TrackLabError(
                 f"LMBOSTAT declares {rdram_size} RDRAM bytes; expected {RDRAM_SIZE}"
             )
-        expected_size = 32 + RDRAM_SIZE
+        expected_size = 32 + RDRAM_SIZE + (0x24000 if version == 2 else 0)
         if len(blob) != expected_size:
             raise TrackLabError(
                 f"LMBOSTAT file is {len(blob)} bytes; expected exactly {expected_size}"
             )
-        payload = blob[32:]
-        snapshot_format = "lmbostat-v1"
+        payload = blob[32:32 + RDRAM_SIZE]
+        snapshot_format = f"lmbostat-v{version}"
     else:
         raise TrackLabError(
             f"snapshot is {len(blob)} bytes; expected raw {RDRAM_SIZE}-byte RDRAM "

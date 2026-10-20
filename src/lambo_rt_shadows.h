@@ -49,7 +49,7 @@ struct TaskSunProbe {
     // Compact producer-owned object table authenticates the native car-child
     // overlay and its physical-car caster ancestry. It replaces an unsafe
     // worker-side guest-RAM lookup.
-    std::array<ObjectIdentity, 128> objects{};
+    std::array<ObjectIdentity, 64> objects{};
     bool objects_complete = false;
     // Immutable, opt-in low-RAM copy made by the game producer before queueing.
     std::shared_ptr<const std::vector<uint8_t>> native_ram;

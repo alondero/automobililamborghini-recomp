@@ -78,6 +78,17 @@ int main() {
     lambo::config::flush_pending_graphics_updates();
     lambo::config::load_and_apply_graphics();
     expect(!lambo::config::remove_blue_hud_bar(), "blue HUD bar can be restored persistently");
+    expect(lambo::config::race_cars() == 6, "race field defaults to six");
+    lambo::config::set_race_cars(16);
+    lambo::config::flush_pending_graphics_updates();
+    expect(read_json(path).at("race_cars") == 16, "race field persists");
+    lambo::config::load_and_apply_graphics();
+    expect(lambo::config::race_cars() == 16, "race field reloads");
+    lambo::config::set_race_cars(1);
+    expect(lambo::config::race_cars() == 2, "race field lower bound");
+    lambo::config::set_race_cars(100);
+    expect(lambo::config::race_cars() == 16, "race field upper bound");
+    lambo::config::set_race_cars(6);
     expect(!lambo::config::car_select_info(), "car select info defaults off");
     lambo::config::set_car_select_info(true);
     expect(lambo::config::car_select_info(), "car select info updates live");

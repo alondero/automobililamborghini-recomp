@@ -206,6 +206,14 @@ void lambo_warp_tick(uint8_t* rdram, recomp_context* ctx) {
     // existing setting unless explicitly overridden for a controlled run.
     if (g_warp_difficulty >= 0)
         MEM_H(0, (gpr)(int32_t)LAMBO_GUEST_MENU_DIFFICULTY_ADDR) = (int16_t)g_warp_difficulty;
+    // Explicit regression override for the native DIRECTION menu halfword.
+    // CE7B0 is pit-stops, not direction. Championship uses per-round cursors.
+    const char* reverse = getenv("LAMBO_WARP_REVERSE");
+    if (reverse && (strcmp(reverse, "0") == 0 || strcmp(reverse, "1") == 0)) {
+        MEM_H(0, (gpr)(int32_t)0x800CE7A8) = reverse[0] - '0';
+        for (int round = 0; round < 8; ++round)
+            MEM_H(round * 2, (gpr)(int32_t)0x800CE700) = reverse[0] - '0';
+    }
     MEM_H(0, (gpr)(int32_t)WARP_PLAYERS)    = (int16_t)players;
     MEM_H(0, (gpr)(int32_t)WARP_TRACK_FLAG) = 1;
     MEM_H(0, (gpr)(int32_t)WARP_MODE)       = (int16_t)mode;

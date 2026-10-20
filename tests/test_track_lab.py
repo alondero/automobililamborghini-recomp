@@ -174,6 +174,16 @@ class TestExtraction(TrackLabFixture):
             waypoints["records"][1]["decoded"]["progress_or_extent"], 31
         )
 
+    def test_accepts_lmbostat_v2_race_extension(self):
+        path = self.directory / "field-v2.lstate"
+        path.write_bytes(struct.pack("<8s6I", b"LMBOSTAT", 2, tl.RDRAM_SIZE, 8,
+                                     0x31474F46, 0x52414345, 0)
+                         + self.raw_bytes + bytes(0x24000))
+        document = tl.extract_document(path)
+        self.assertEqual(document["provenance"]["snapshot_format"], "lmbostat-v2")
+        self.assertEqual(document["provenance"]["rdram_sha256"],
+                         self.document["provenance"]["rdram_sha256"])
+
     def test_accepts_lmbostat_v1_header(self):
         document = tl.extract_document(self.state_path)
         self.assertEqual(document["provenance"]["snapshot_format"], "lmbostat-v1")

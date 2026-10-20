@@ -131,3 +131,14 @@ Follow-up owner:
 
 An investigation may end with "unknown". That is more useful than a confident
 claim without a measurement.
+
+## Race-field snapshot layout
+
+Developer save-states now use LMBOSTAT v2. They store the low 8 MiB followed by
+0x24000 bytes from the relocated race tables at 0x80900000. Recreate older v1
+snapshots from a fresh race; regular game progress and Controller Pak saves are
+unaffected. Track Lab accepts both versions for its low-memory track inspection.
+
+RT task captures use schema 3 and a contiguous 0x924000-byte RAM image, including
+the relocated object and camera tables. The inspector still accepts historical
+schema 2 captures. See [race fields](race-fields.md) for ownership and checks.

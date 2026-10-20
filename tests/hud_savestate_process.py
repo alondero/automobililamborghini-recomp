@@ -19,9 +19,9 @@ def main():
                 previous = current
             subprocess.run([str(helper), "default", str(previous)], check=True, timeout=20)
         # Save payloads retain authored coefficients, never a progressively
-        # scaled value. The native header stays 32 bytes plus native 8 MiB RAM.
+        # scaled value. The 32-byte v2 header precedes 8 MiB RAM and the field extension.
         blob = previous.read_bytes()
-        assert len(blob) == 32 + 0x800000
+        assert len(blob) == 32 + 0x800000 + 0x24000
         assert struct.unpack_from("<I", blob, 20)[0] == 0x31474F46  # FOG1 marker
         assert struct.unpack_from("<I", blob, 32 + 0xBF404)[0] == 0x64009D00
         # Legacy files cannot say whether a fog value is already corrected.
@@ -35,6 +35,11 @@ def main():
             legacy.write_bytes(legacy_blob)
             subprocess.run([str(helper), "reject", str(legacy)], check=True, timeout=20)
         subprocess.run([str(helper), "legacy-default", str(legacy)], check=True, timeout=20)
+        old_version = root / "v1.lstate"
+        old_blob = bytearray(blob[:32 + 0x800000])
+        struct.pack_into("<I", old_blob, 8, 1)
+        old_version.write_bytes(old_blob)
+        subprocess.run([str(helper), "reject", str(old_version)], check=True, timeout=20)
         truncated = root / "truncated.lstate"
         truncated.write_bytes(blob[:-1])
         subprocess.run([str(helper), "reject", str(truncated)], check=True, timeout=20)

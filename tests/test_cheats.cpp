@@ -1,4 +1,5 @@
 #include "lambo_cheats.h"
+#include "lambo_race_field.h"
 #include "recomp.h"
 #include <cstdlib>
 #include <iostream>
@@ -19,7 +20,7 @@ static void require(bool condition, const char* message) {
 
 int main() {
     using namespace lambo::cheats;
-    std::vector<uint8_t> memory(8 * 1024 * 1024);
+    std::vector<uint8_t> memory(0x900000 + LAMBO_FIELD_SIZE);
     uint8_t* rdram = memory.data();
     const gpr base = static_cast<int32_t>(0x80000000u);
     recomp_context ctx{};
@@ -35,9 +36,9 @@ int main() {
     MEM_H(0xCE772, base) = 58;
     // Four player race-clock records at 0x98768 + p*8 and current-lap
     // records at 0x98850 + p*8 each store seconds at +4 and sixtieths at +6.
-    // The active-player gates are halfwords at 0xA5FBC + p*0x84.
+    // Active-player gates are +0x50 in one-based relocated AI records.
     for (int p = 0; p < 4; ++p) {
-        MEM_H(0xA5FBC + p * 0x84, base) = 1;
+        MEM_H((p + 1) * 0x84 + 0x50, (gpr)(int32_t)LAMBO_FIELD_AI) = 1;
         MEM_H(0x9876E + p * 8, base) = 58;
         MEM_H(0x98856 + p * 8, base) = 58;
     }
@@ -134,7 +135,7 @@ int main() {
                     MEM_H(0xA4170, base) = progress;
                     MEM_H(0xCE6A4, base) = players;
                     MEM_H(0xCE6C0, base) = 5;
-                    MEM_H(0xCE7B0, base) = 1; // Live race direction sentinel.
+                    MEM_H(0xCE7B0, base) = 1; // Live pit-stop setting sentinel.
                     MEM_H(menu.gate, base) = 123;
                     const auto before = memory;
                     set_enabled(Cheat::ReverseTracks, unlock);

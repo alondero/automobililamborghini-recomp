@@ -95,6 +95,7 @@ The port adds these keys:
 | texture_dump | empty | Directory for runtime texture dumps. |
 | widescreen_fog_match | true | Use the open one-player fog policy for three- and four-player views. |
 | widescreen_sky_match | true | Draw the sky panorama in three- and four-player views. |
+| race_cars | 6 | Total cars (2-16) in single-player races. Takes effect at the next race or championship; time trials, demos and multiplayer keep their original sizes. |
 | automatic_pit_stops | false | Automatically operate the refuelling and tyre-change stick controls during a pit stop. |
 | remove_blue_hud_bar | false | Hide the decorative blue race HUD strip. Toggle Remove blue bar from HUD in Enhancements; applies immediately. |
 | car_select_info | false | Show the car's name and stats on the car select screen. Toggle Show car details on car select in Enhancements; applies immediately. See [car select info](car-select-info.md). |
@@ -196,6 +197,8 @@ most useful ones are:
 | `LAMBO_MODERN_INPUT` | Inject a button and stick value for a harness run. |
 | `LAMBO_INPUT_PULSE` | Send a timed button pulse for menu navigation. |
 | `LAMBO_WARP`, `LAMBO_WARP_MODE`, `LAMBO_WARP_DIFFICULTY` | Start a controlled race. |
+| `LAMBO_WARP_REVERSE` | Set a controlled race's direction: 0 forward, 1 reverse. |
+| `LAMBO_RACE_CARS` | Override the next eligible race's total field size (2..16). |
 | `LAMBO_INPUT_RECORD`, `LAMBO_INPUT_REPLAY` | Record or replay input. |
 | `LAMBO_INPUT_START_STATE`, `LAMBO_INPUT_START_DELAY`, `LAMBO_INPUT_EXIT_ON_END` | Control replay start and exit. |
 | `LAMBO_TRACK_PATCH` | Load a Track Lab correction package. |

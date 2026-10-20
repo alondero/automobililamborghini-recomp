@@ -406,6 +406,14 @@ int main(int argc, char** argv) {
         require(!std::get<bool>(enhancements.get_option_value("remove_blue_hud_bar")),
                 "blue HUD bar option must refresh from port config");
         enhancements.set_option_value("remove_blue_hud_bar", true);
+        require(enhancements.has_option("race_cars"), "missing race field option");
+        require(std::get<double>(enhancements.get_option_value("race_cars")) == 6, "default race field");
+        enhancements.set_option_value("race_cars", 16.0);
+        require(lambo::config::race_cars() == 16, "race field callback");
+        lambo::config::set_race_cars(2);
+        lambo::ui::refresh_frontend_settings();
+        require(std::get<double>(enhancements.get_option_value("race_cars")) == 2, "race field refresh");
+        enhancements.set_option_value("race_cars", 6.0);
         require(enhancements.has_option("car_select_info"), "missing car select info option");
         require(!std::get<bool>(enhancements.get_option_value("car_select_info")),
                 "car select info must default off");

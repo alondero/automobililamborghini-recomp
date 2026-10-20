@@ -3,13 +3,18 @@
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
+#undef NDEBUG
 #include <cassert>
+#include <cstdarg>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <string>
 #include <vector>
 #include "lambo_f3dex.h"
 #include "lambo_log.h"
+#include "lambo_race_field.h"
 #include "recomp.h"
 
 extern "C" {
@@ -21,6 +26,7 @@ void lambo_savestate_tick(uint8_t*, recomp_context*);
 namespace {
 double density = 0.5;
 unsigned relinks = 0;
+std::string log_output;
 void environment(const char* key, const char* value) {
 #ifdef _WIN32
     _putenv_s(key, value);
@@ -33,8 +39,15 @@ namespace lambo::config {
 bool widescreen_fog_match() { return false; }
 double fog_scale(int) { return density; }
 }
-volatile int g_log_threshold = LAMBO_LEVEL_ERROR;
-extern "C" void lambo_log_write(LamboLogLevel, const char*, const char*, ...) {}
+volatile int g_log_threshold = LAMBO_LEVEL_DEBUG;
+extern "C" void lambo_log_write(LamboLogLevel, const char*, const char* format, ...) {
+    char line[1024];
+    va_list args;
+    va_start(args, format);
+    std::vsnprintf(line, sizeof(line), format, args);
+    va_end(args);
+    log_output += line;
+}
 extern "C" void ultramodern_relink_thread_contexts(uint8_t*) { ++relinks; }
 extern "C" void lambo_replay_state_loaded(void) {}
 extern "C" void lambo_track_patch_on_savestate_loaded(uint8_t*) {}
@@ -44,7 +57,7 @@ int main(int argc, char** argv) {
     assert(argc >= 3);
     using lambo::f3dex::read;
     using lambo::f3dex::write;
-    std::vector<uint8_t> memory(0x800000);
+    std::vector<uint8_t> memory(0x924000);
     auto* ram = memory.data();
     constexpr uint32_t task = 0xbf1e8, root = 0xbf400;
     write(ram, 0xce6ac, 8u << 16);
@@ -64,6 +77,7 @@ int main(int argc, char** argv) {
     if (mode == "default" || mode == "legacy-default") density = 1.0;
     const auto prepare = [&] { lambo_graphics_task_prepare(ram, task | 0x80000000); };
     const auto load = [&] {
+        log_output.clear();
         environment("LAMBO_STATE_FILE", argv[2]);
         lambo_savestate_request_load();
         lambo_savestate_tick(ram, nullptr);
@@ -73,11 +87,18 @@ int main(int argc, char** argv) {
         const auto before = memory;
         load();
         assert(memory == before && relinks == 0);
+        const size_t payload_size = size_t(0x800000) + LAMBO_FIELD_SIZE;
+        if (std::filesystem::file_size(argv[2]) == size_t(32) + payload_size - 1) {
+            assert(log_output.find("truncated (8536063/8536064 bytes)") != std::string::npos);
+        }
         return 0;
     }
+    if (mode == "write") write(ram, 0x902084, 0x12345678u);
     if (mode != "write") {
         load();
+        assert(log_output.find("loaded 8536064 bytes") != std::string::npos);
         assert(relinks == 1);
+        assert(read(ram, 0x902084) == 0x12345678u);
     }
     prepare();
     const uint32_t expected = mode == "legacy-default" ? 0x3200ce80u :
@@ -91,6 +112,7 @@ int main(int argc, char** argv) {
         density = 0.25;
         prepare(); assert(read(ram, root + 4) == 0x1900e740);
         load();
+        assert(log_output.find("loaded 8536064 bytes") != std::string::npos);
         assert(relinks == 2);
         density = 0.5;
         prepare(); assert(read(ram, root + 4) == 0x3200ce80);

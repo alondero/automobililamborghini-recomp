@@ -18,7 +18,7 @@ class GenerationHooksTests(unittest.TestCase):
             and any(isinstance(target, ast.Name) and target.id == "PATCH_BLOCKS"
                     for target in node.targets)
         )
-        expected = tomllib.loads((ROOT / "lamborghini.us.toml").read_text(encoding="utf-8"))
+        expected = tomllib.loads((ROOT / "lamborghini.us.toml").read_text(encoding="utf-8").split("# Expanded race-field table references")[0])
         # stubs/ignored are emitted separately, before PATCH_BLOCKS.
         expected_blocks = {key: value for key, value in expected["patches"].items()
                            if key not in {"stubs", "ignored"}}

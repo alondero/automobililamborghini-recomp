@@ -26,15 +26,15 @@ void expect(bool condition, const char* message) {
 }
 
 int16_t& halfword(std::vector<uint8_t>& rdram, uint32_t address) {
-    return *reinterpret_cast<int16_t*>(&rdram[(address ^ 2u) & 0x7FFFFFu]);
+    return *reinterpret_cast<int16_t*>(&rdram[(address ^ 2u) & 0xFFFFFFu]);
 }
 
 int32_t& word(std::vector<uint8_t>& rdram, uint32_t address) {
-    return *reinterpret_cast<int32_t*>(&rdram[address & 0x7FFFFFu]);
+    return *reinterpret_cast<int32_t*>(&rdram[address & 0xFFFFFFu]);
 }
 
 int8_t& byte(std::vector<uint8_t>& rdram, uint32_t address) {
-    return *reinterpret_cast<int8_t*>(&rdram[(address ^ 3u) & 0x7FFFFFu]);
+    return *reinterpret_cast<int8_t*>(&rdram[(address ^ 3u) & 0xFFFFFFu]);
 }
 
 uint32_t accumulator_address(int vehicle) {
@@ -181,7 +181,7 @@ int main() {
             return 2;
         }
     }
-    std::vector<uint8_t> rdram(8 * 1024 * 1024);
+    std::vector<uint8_t> rdram(0x924000);
     test_settings();
     test_overrides();
     test_natives(rdram);

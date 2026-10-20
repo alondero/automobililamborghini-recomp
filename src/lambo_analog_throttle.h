@@ -21,7 +21,7 @@ int16_t scale_to_guest(uint16_t normalized, int16_t limit);
 
 // Paired game-thread hooks at guest addresses 0x80019FBC and 0x8001A120.
 // They read one published atomic snapshot and the current vehicle record at
-// 0x800B69A8 + index*0x10C, then read/write the s16 throttle at +0xAA using
+// 0x80910000 + index*0x10C, then read/write the s16 throttle at +0xAA using
 // N64 word-swapped MEM access. Invalid channels and negative/inactive vehicle
 // indices are a no-op. The first hook captures the pre-ROM value; the second runs before
 // physics. See docs/analog-throttle.md and docs/architecture.md.

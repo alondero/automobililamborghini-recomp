@@ -166,6 +166,7 @@ void refresh_frontend_settings() {
     sync_value(enhancements, "fog_match", port::widescreen_fog_match());
     sync_value(enhancements, "sky_match", port::widescreen_sky_match());
     sync_value(enhancements, "no_lod", port::no_lod());
+    sync_value(enhancements, "race_cars", double(port::race_cars()));
     sync_value(enhancements, "automatic_pit_stops", port::automatic_pit_stops());
     sync_value(enhancements, "remove_blue_hud_bar", port::remove_blue_hud_bar());
     sync_value(enhancements, "car_select_info", port::car_select_info());
@@ -291,6 +292,12 @@ void create_frontend_settings() {
     enhancements.update_option_description("remove_blue_hud_bar", "Hide the decorative blue strip during races. Applies immediately.");
     boolean(enhancements, "car_select_info", "Show car details on car select", port::car_select_info(), port::set_car_select_info);
     enhancements.update_option_description("car_select_info", "Show the car's name, power, top speed and acceleration on the car select screen. Acceleration follows the chosen difficulty. Applies immediately.");
+    enhancements.add_number_option("race_cars", "Cars per race",
+        "Total cars including you. Applies to the next single-player race or championship. Default: 6. Time trials and multiplayer keep their usual fields.",
+        2, 16, 1, 0, false, double(port::race_cars()));
+    enhancements.add_option_change_callback("race_cars", [](ConfigValueVariant value, ConfigValueVariant, OptionChangeContext context) {
+        if (context == OptionChangeContext::Permanent) lambo::config::set_race_cars(int(std::get<double>(value)));
+    });
     boolean(enhancements, "automatic_pit_stops", "Automatic pit-stops (refuelling and tyres)", port::automatic_pit_stops(), port::set_automatic_pit_stops);
     boolean(enhancements, "fog_match", "Match multiplayer fog to single player", port::widescreen_fog_match(), port::set_widescreen_fog_match);
     boolean(enhancements, "sky_match", "Show sky in 3-4 player races", port::widescreen_sky_match(), port::set_widescreen_sky_match);

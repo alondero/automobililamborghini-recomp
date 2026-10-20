@@ -15,6 +15,7 @@
 
 #include "lambo_file.h"
 #include "lambo_log.h"
+#include "lambo_vehicle.h"
 #include "lambo_replay_runtime.h"
 
 extern uint8_t* g_lambo_rdram;
@@ -72,9 +73,9 @@ void state_probe_locked(int vi) {
         const int circuit = static_cast<int16_t>(guest_halfword(rdram, 0x800CE794u));
         if (circuit >= 0 && circuit < 6) g_metrics.snapshot.loaded_circuit = circuit + 1;
 
-        constexpr std::uint32_t kVehicleBase = 0x800B69A8u;
+        constexpr std::uint32_t kVehicleBase = LAMBO_VEHICLE_BASE;
         constexpr std::uint32_t kVehicleStride = 0x10Cu;
-        for (int vehicle = 0; vehicle < 6; ++vehicle) {
+        for (int vehicle = 0; vehicle < LAMBO_VEHICLE_CAPACITY; ++vehicle) {
             const std::uint32_t base = kVehicleBase +
                 static_cast<std::uint32_t>(vehicle) * kVehicleStride;
             if (static_cast<int16_t>(guest_halfword(rdram, base + 0x0Eu)) != 1) continue;

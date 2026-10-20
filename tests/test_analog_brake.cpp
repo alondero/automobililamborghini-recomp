@@ -25,11 +25,11 @@ void expect(bool condition, const char* message) {
 }
 
 int16_t& halfword(std::vector<uint8_t>& rdram, uint32_t address) {
-    return *reinterpret_cast<int16_t*>(&rdram[(address ^ 2u) & 0x7FFFFFu]);
+    return *reinterpret_cast<int16_t*>(&rdram[(address ^ 2u) & 0xFFFFFFu]);
 }
 
 int32_t& word(std::vector<uint8_t>& rdram, uint32_t address) {
-    return *reinterpret_cast<int32_t*>(&rdram[address & 0x7FFFFFu]);
+    return *reinterpret_cast<int32_t*>(&rdram[address & 0xFFFFFFu]);
 }
 
 uint32_t latch_address(int vehicle) {
@@ -93,7 +93,7 @@ int main() {
            "half input scales to half of 16");
     expect(scale_to_guest(UINT16_MAX) == 16.0f, "full input reaches the stock ceiling");
 
-    std::vector<uint8_t> rdram(8 * 1024 * 1024);
+    std::vector<uint8_t> rdram(0x924000);
     set_context(rdram, 1, 1);
     write_brake(rdram, 1, 5.0f);
 

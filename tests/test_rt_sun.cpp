@@ -14,7 +14,7 @@ void require(bool value, const char* why) {
     if (!value) throw std::runtime_error(why);
 }
 template<class T> void write(std::vector<uint8_t>& ram, uint32_t address, T value) {
-    std::memcpy(ram.data() + ((address & 0x7FFFFFu) ^ (sizeof(T) == 2 ? 2u : 0u)),
+    std::memcpy(ram.data() + ((address & 0xFFFFFFu) ^ (sizeof(T) == 2 ? 2u : 0u)),
         &value, sizeof(value));
 }
 }
@@ -52,7 +52,7 @@ int main() {
             if (field == 3) unknown.kind = 12;
             require(!lambo::rt::procedural_world_object(unknown), "unknown procedural identity admitted");
         }
-        std::vector<uint8_t> ram(0x800000);
+        std::vector<uint8_t> ram(0x924000);
         lambo::rt::TaskSunProbes probes;
         auto begin = [&](uint32_t task, int16_t phase = 8, int16_t circuit = 0) {
             write(ram, 0x800A2BFCu, task);
@@ -64,7 +64,7 @@ int main() {
         auto capture = [&](int16_t camera_slot, int16_t heading, float height) {
             write(ram, 0x800CE6AAu, camera_slot);
             write(ram, 0x800A2FB8u, int16_t(72));
-            write(ram, 0x800A2F10u + uint32_t(camera_slot) * 2, heading);
+            write(ram, 0x80900E00u + uint32_t(camera_slot) * 2, heading);
             write(ram, 0x800A2F90u, height);
             return probes.capture(ram.data(), ram.size());
         };
@@ -210,17 +210,17 @@ int main() {
 #endif
         lambo::rt::TaskSunProbes compactSnapshots;
         write(ram, 0x800A2BFCu, 0x800BF240u);
-        write(ram, 0x800B69A8u, uint16_t(0x42));
-        write(ram, 0x800B69B0u, uint32_t(0x8013D3C8u));
-        write(ram, 0x800B6A00u, int16_t(7));
-        write(ram, 0x800B69B6u, int16_t(13));
+        write(ram, 0x80910000u, uint16_t(0x42));
+        write(ram, 0x80910008u, uint32_t(0x8013D3C8u));
+        write(ram, 0x80910058u, int16_t(7));
+        write(ram, 0x8091000Eu, int16_t(13));
         for (unsigned i = 0; i < 59; ++i) {
             require(compactSnapshots.begin(ram.data(), ram.size()), "compact snapshot sampling setup failed");
         }
         require(compactSnapshots.begin(ram.data(), ram.size()), "compact snapshot begin rejected");
         require(compactSnapshots.snapshot(ram.data(), ram.size()), "compact producer metadata rejected");
-        write(ram, 0x800B69A8u, uint16_t(0));
-        write(ram, 0x800B69B6u, int16_t(-1));
+        write(ram, 0x80910000u, uint16_t(0));
+        write(ram, 0x8091000Eu, int16_t(-1));
         const auto compact = compactSnapshots.take(0x800BF400u);
         require(compact && compact->objects_complete && !compact->native_ram &&
             compact->objects[0].flags == 0x42 && compact->objects[0].list == 0x8013D3C8u &&
@@ -229,7 +229,7 @@ int main() {
         // Production shadows need identity on every task, never a RAM snapshot.
         lambo::rt::TaskSunProbes production;
         production.set_copy_all_objects(true);
-        write(ram, 0x800B69A8u, uint16_t(0x601));
+        write(ram, 0x80910000u, uint16_t(0x601));
         require(production.begin(ram.data(), ram.size()), "production task begin rejected");
         require(production.snapshot(ram.data(), ram.size()), "production identity skipped on an unsampled task");
         const auto productionTask = production.take(0x800BF400u);

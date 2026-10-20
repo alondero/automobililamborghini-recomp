@@ -60,7 +60,7 @@ Disabled hooks leave the original registers and game behavior intact.
 | BootLoadInitialAssets, before 0x80001754 | The same loop updates the current-lap bank at 0x80098850 + player*8 + 6. Restore t5 from t7 before store/rollover. The existing per-player race gate remains intact. |
 | func_8003F40C, before 0x8003E8AC and 0x8003E954 | Left selection loads the category's signed availability halfword from 0x800985C0 + category*2. Set the loaded branch operand (t4/t3) to one when enabled. |
 | func_8003F56C, before 0x8003EA0C and 0x8003EAB4 | Equivalent right-selection operands are t3/t9. The ROM retains cursor bounds, wrapping, descriptor lookup and player selection. |
-| func_8003CD84, before 0x8003C53C, 0x8003C5E0, 0x8003C684 and 0x8003C774 | Setup screens 3, 9, 12 and 10 test progress bit 0x2 from the unsigned halfword at 0x800A4170. Set only the masked branch operands (t7, t0, t3, t9) to 2 when enabled. The ROM enables its direction item without changing saved progress or live race direction. |
+| func_8003CD84, before 0x8003C53C, 0x8003C5E0, 0x8003C684 and 0x8003C774 | Setup screens 3, 9, 12 and 10 test progress bit 0x2 from the unsigned halfword at 0x800A4170. Set only the masked branch operands (t7, t0, t3, t9) to 2 when enabled. The ROM enables its direction item without changing saved progress or live pit-stop setting. |
 
 Guest halfwords use N64 byte order through MEM_H, not native host struct casts.
 Clock subsecond fields count in sixtieths; the update adds two and rolls over at
@@ -100,7 +100,7 @@ same runtime USA build and N64 big-endian halfword accesses as the seams above.
 | --- | --- |
 | `0x800CE6B0`, `0x800CE6B4` | Halfword dispatcher countdown/warning gates. Values 3 and 1 enter the timed-race path while bypassing the warning-sound branch. |
 | `0x800CE76E`, `0x800CE772` | Countdown seconds and its 1/60-second accumulator. The accumulator starts at 58 to exercise rollover on resume. |
-| `0x800A5FBC + player*0x84` | Per-player active race-clock gate halfword. Set to one so each synthetic player clock is updated. |
+| `0x809020D4 + player*0x84` | Relocated per-player active race-clock gate halfword (native `0x800A5FBC`). Set to one so each synthetic player clock is updated. |
 | `0x80098768 + player*8` | Eight-byte elapsed race/time-trial record; halfword seconds at `+4`, subsecond ticks at `+6`. |
 | `0x80098850 + player*8` | Eight-byte elapsed current-lap record; halfword seconds at `+4`, subsecond ticks at `+6`. |
 | `0x800CE808` | Halfword dispatcher pause gate. A paused call must leave the complete fixture unchanged. |
@@ -110,7 +110,7 @@ same runtime USA build and N64 big-endian halfword accesses as the seams above.
 | `0x800985C0 + category*2` | Eight availability halfwords; categories 0 and 4 start unlocked in the fixture. |
 | `0x800A4170` | Halfword progress-bit source for locked categories. A sentinel verifies the selector cheat does not change progression. |
 | `0x801EA702`, `0x801EA642`, `0x801EA842`, `0x801EB062` | Signed halfword availability fields for the four setup-menu direction items; zero permits selection and minus one disables it. |
-| `0x800CE6C0`, `0x800CE7B0` | Halfword circuit cursor and live race direction. The reverse-menu fixture checks the existing 3/4-player circuit clamp and preserves live direction. |
+| `0x800CE6C0`, `0x800CE7B0` | Halfword circuit cursor and live pit-stop setting. The reverse-menu fixture checks the existing 3/4-player circuit clamp and preserves the live pit-stop setting. |
 
 The two dispatcher gate values are fixture inputs to known branches in the
 extracted timer body; the test does not assign them broader gameplay meanings.
@@ -130,7 +130,7 @@ Only the countdown warning sound is stubbed. Generated ROM data is not committed
 The same target extracts all four complete setup paths through their direction
 gates, including menu bounds, pointers and the multiplayer circuit clamp. It
 tests locked and earned progress, unrelated progress bits, enable/disable,
-one to four players, unchanged live race direction, and RAM equality with the
+one to four players, unchanged live pit-stop setting, and RAM equality with the
 normal earned-unlock path. The vehicle tests also run with reverse access
 enabled to check that it does not bypass vehicle selection restrictions.
 

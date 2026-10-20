@@ -13,7 +13,7 @@ namespace {
 constexpr uint32_t kCurrentChannelAddr = 0x800CE6AAu;
 constexpr uint32_t kSelectedPadPtrAddr = 0x800A39DCu;
 constexpr uint32_t kPadBase = 0x800A39E0u;
-constexpr uint32_t kLimitBase = 0x800A5F2Cu;
+constexpr uint32_t kLimitBase = 0x80902044u;
 constexpr uint32_t kLimitStride = 0x84u;
 
 int failures = 0;
@@ -26,11 +26,11 @@ void expect(bool condition, const char* message) {
 }
 
 int16_t& halfword(std::vector<uint8_t>& rdram, uint32_t address) {
-    return *reinterpret_cast<int16_t*>(&rdram[(address ^ 2u) & 0x7FFFFFu]);
+    return *reinterpret_cast<int16_t*>(&rdram[(address ^ 2u) & 0xFFFFFFu]);
 }
 
 int32_t& word(std::vector<uint8_t>& rdram, uint32_t address) {
-    return *reinterpret_cast<int32_t*>(&rdram[address & 0x7FFFFFu]);
+    return *reinterpret_cast<int32_t*>(&rdram[address & 0xFFFFFFu]);
 }
 
 uint32_t demand_address(int vehicle) {
@@ -68,7 +68,7 @@ int main() {
     expect(scale_to_guest(UINT16_MAX, 100) == 100, "full input reaches the dynamic limit");
     expect(scale_to_guest(UINT16_MAX, -1) == 0, "negative guest limits are neutral");
 
-    std::vector<uint8_t> rdram(8 * 1024 * 1024);
+    std::vector<uint8_t> rdram(0x924000);
     set_context(rdram, 1, 1, 100);
     halfword(rdram, demand_address(1)) = 37;
 

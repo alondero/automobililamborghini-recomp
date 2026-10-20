@@ -69,8 +69,8 @@ nextsessionprompt.md
 # --- Game artefacts --------------------------------------------------------
 *.mpk
 *.pak
-# Developer save-state snapshots (src/lambo_savestate.c, issue #22): an 8 MiB
-# RDRAM dump per saved spot. Local debug artefacts, regenerable, never in tree.
+# Developer save-state snapshots (src/lambo_savestate.c): RDRAM and race-field
+# extension dumps. Local debug artefacts, regenerable, never in tree.
 *.lstate
 *.lstate.tmp
 *.altrk

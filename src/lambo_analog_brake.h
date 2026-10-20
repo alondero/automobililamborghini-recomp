@@ -20,7 +20,7 @@ float scale_to_guest(uint16_t normalized);
 
 // Game-thread hook at the stock brake block's merge point (guest address
 // 0x8001A9A0). It reads one published atomic snapshot and the current vehicle
-// record at 0x800B69A8 + index*0x10C, then writes the float32 demand at +0xA0
+// record at 0x80910000 + index*0x10C, then writes the float32 demand at +0xA0
 // and the s16 brake latch at +0xAC using N64 word-swapped MEM access. Invalid
 // channels and negative/inactive vehicle indices are a no-op. The hook runs before physics
 // consumes the fields; its measured layout and replacement path are in

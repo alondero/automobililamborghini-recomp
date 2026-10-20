@@ -22,6 +22,15 @@ class TaskCaptureTests(unittest.TestCase):
                      "emitters": [{"emitter": 0x80009AC0, "begin": self.root,
                                    "end": self.root + 0x100, "camera_slot": 1}]}
 
+    def test_schema_three_relocated_memory(self):
+        self.meta["schema"] = 3
+        self.ram.extend(bytes(0x924000 - len(self.ram)))
+        self.write(0x80910000, "H", 8)
+        inspector = TaskInspector(bytes(self.ram), self.meta)
+        self.assertEqual(inspector.read(0x80910000, "H"), 8)
+        with self.assertRaises(CaptureError):
+            TaskInspector(bytes(self.ram[:-1]), self.meta)
+
     def write(self, address, fmt, value):
         offset = (address & 0x1FFFFFFF) ^ {1: 3, 2: 2}.get(struct.calcsize(fmt), 0)
         struct.pack_into("<" + fmt, self.ram, offset, value)

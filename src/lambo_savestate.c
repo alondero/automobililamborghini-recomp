@@ -2,11 +2,11 @@
 // later. It is a deterministic debugging aid, not a player quick-save.
 // Interactive and headless usage is documented in docs/debugging.md.
 //
-// What is captured: the low 8 MiB of RDRAM (rdram[0 .. 0x800000)), which is the entire
-// guest-addressable N64 RAM (osMemSize reports 8 MiB) -- every object table, the camera,
-// the car transforms, the race/state-machine word all live here. The extended region
-// above 8 MiB (PI handles at 0x80800000, the mod heap at 0x81000000) is boot-static setup,
-// identical every run, so it is neither saved nor restored. The copy preserves RDRAM's
+// What is captured: the low 8 MiB of RDRAM plus the relocated race tables at
+// 0x80900000..0x80924000. Developer snapshots use format v2; v1 snapshots cannot
+// safely restore pointers into the old object pools and must be recreated.
+// PI handles at 0x80800000 and the mod heap at 0x81000000 remain boot-static and
+// are not restored. The copy preserves RDRAM's
 // byte-swizzle (MEM_B's ^3). Known corrected fog words are replaced with their authored
 // values in the save copy, so a new process reapplies density once (docs/HUD.md).
 //
@@ -60,6 +60,7 @@
 #include "lambo_graphics_task.h"
 
 #include "recomp.h"
+#include "lambo_race_field.h"
 
 // After a wholesale RDRAM restore, guest RAM's OSThread.context fields hold the SAVE process's
 // native pointers (dangling here). ultramodern re-points them to this process's live thread
@@ -85,9 +86,9 @@ extern void lambo_rt_probe_invalidate(void);
 // artifact, not a portable format. Magic+version+size are validated before any RAM is
 // touched, so a truncated or foreign file is rejected rather than corrupting the game.
 #define STATE_MAGIC "LMBOSTAT"
-#define STATE_VERSION 1u
+#define STATE_VERSION 2u
 // reserved[0] marks a payload whose known fog corrections were replaced with
-// authored words in the save copy. Header layout and Track Lab readers stay v1.
+// authored words in the save copy. The header layout is unchanged; v2 also saves relocated race tables.
 #define STATE_FOG_AUTHORED 0x31474F46u /* "FOG1" in little-endian header bytes */
 typedef struct {
     char     magic[8];             // "LMBOSTAT"
@@ -120,7 +121,7 @@ static const char* slot_path(void) {
     return (p != NULL && p[0] != '\0') ? p : DEFAULT_STATE_PATH;
 }
 
-// Snapshot rdram[0..8MiB) to <path> via a temp file + rename, so a crash mid-write can
+// Snapshot low RAM and the race-field extension via a temp file + rename, so a crash mid-write can
 // never leave a torn state file (same atomic-write discipline as lambo_pak_save).
 static void do_save(uint8_t* rdram, const char* path) {
     char tmp[1100];
@@ -149,8 +150,10 @@ static void do_save(uint8_t* rdram, const char* path) {
     h.rdram_size = RDRAM_SNAP_SIZE;
     h.state      = (uint16_t)MEM_H(0, (gpr)(int32_t)STATE_VAR);
     h.reserved[0] = STATE_FOG_AUTHORED;
+    h.reserved[1] = 0x52414345u;
     int ok = (fwrite(&h, 1, sizeof(h), f) == sizeof(h)) &&
-             (fwrite(snapshot, 1, RDRAM_SNAP_SIZE, f) == RDRAM_SNAP_SIZE);
+             (fwrite(snapshot, 1, RDRAM_SNAP_SIZE, f) == RDRAM_SNAP_SIZE) &&
+             (fwrite(rdram + (LAMBO_FIELD_BASE & 0xFFFFFFu), 1, LAMBO_FIELD_SIZE, f) == LAMBO_FIELD_SIZE);
     free(snapshot);
     // Flush before rename so the rename publishes a fully-written file.
     ok = ok && (fflush(f) == 0);
@@ -173,12 +176,12 @@ static void do_save(uint8_t* rdram, const char* path) {
         }
     }
     LAMBO_LOG("state", "saved %u bytes to %s (state=%u)\n",
-            RDRAM_SNAP_SIZE, path, h.state);
+            RDRAM_SNAP_SIZE + LAMBO_FIELD_SIZE, path, h.state);
 }
 
 // Load <path> fully into a scratch buffer and validate BEFORE overwriting any live RAM, so
 // a bad/short file aborts the load with the game untouched. Only on full success do we
-// memcpy the payload over rdram[0..8MiB).
+// memcpy the payload over low RAM and the race-field extension.
 static int do_load(uint8_t* rdram, const char* path) {
     FILE* f = fopen(path, "rb");
     if (f == NULL) {
@@ -198,17 +201,24 @@ static int do_load(uint8_t* rdram, const char* path) {
         fclose(f);
         return 0;
     }
-    uint8_t* buf = (uint8_t*)malloc(RDRAM_SNAP_SIZE);
+    if (h.reserved[1] != 0x52414345u) {
+        LAMBO_LOG("state", "load: snapshot predates expanded race tables; create a new snapshot\n");
+        fclose(f);
+        return 0;
+    }
+    const size_t extension_size = LAMBO_FIELD_SIZE;
+    const size_t payload_size = (size_t)RDRAM_SNAP_SIZE + extension_size;
+    uint8_t* buf = (uint8_t*)malloc(payload_size);
     if (buf == NULL) {
         LAMBO_LOG("state", "load: out of memory\n");
         fclose(f);
         return 0;
     }
-    size_t got = fread(buf, 1, RDRAM_SNAP_SIZE, f);
+    size_t got = fread(buf, 1, payload_size, f);
     fclose(f);
-    if (got != RDRAM_SNAP_SIZE) {
-        LAMBO_LOG("state", "load: %s truncated (%zu/%u bytes)\n",
-                path, got, RDRAM_SNAP_SIZE);
+    if (got != payload_size) {
+        LAMBO_LOG("state", "load: %s truncated (%zu/%zu bytes)\n",
+                path, got, payload_size);
         free(buf);
         return 0;
     }
@@ -219,6 +229,9 @@ static int do_load(uint8_t* rdram, const char* path) {
         return 0;
     }
     memcpy(rdram, buf, RDRAM_SNAP_SIZE);
+    if (extension_size) {
+        memcpy(rdram + (LAMBO_FIELD_BASE & 0xFFFFFFu), buf + RDRAM_SNAP_SIZE, extension_size);
+    }
     free(buf);
     lambo_graphics_fog_loaded(rdram);
     // Repair the native OSThread.context pointers the memcpy just clobbered with the save
@@ -230,8 +243,8 @@ static int do_load(uint8_t* rdram, const char* path) {
     // the patch hook decides whether the restored table is a known base or is
     // already corrected, without making the general save-state format package-aware.
     lambo_track_patch_on_savestate_loaded(rdram);
-    LAMBO_LOG("state", "loaded %u bytes from %s (state=%u)\n",
-            RDRAM_SNAP_SIZE, path, h.state);
+    LAMBO_LOG("state", "loaded %zu bytes from %s (state=%u)\n",
+            payload_size, path, h.state);
     return 1;
 }
 

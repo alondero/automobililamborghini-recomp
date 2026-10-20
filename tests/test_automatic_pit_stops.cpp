@@ -30,7 +30,7 @@ void constant(uint8_t* rdram, uint32_t address, double value) {
 }
 int main() {
     for (unsigned slot = 0; slot < 2; ++slot) {
-        std::vector<uint8_t> ram(0x800000);
+        std::vector<uint8_t> ram(0x924000);
         auto* rdram = ram.data();
         recomp_context ctx{};
         ctx.f_odd = &ctx.f0.u32h;
