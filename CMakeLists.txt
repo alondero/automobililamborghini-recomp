@@ -290,6 +290,10 @@ if(BUILD_TESTING)
     target_include_directories(lambo_launcher_menu_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME lambo_launcher_menu COMMAND lambo_launcher_menu_tests)
 
+    add_executable(lambo_reset_tests tests/test_reset.c src/lambo_reset.c)
+    target_include_directories(lambo_reset_tests PRIVATE src ${N64MR}/N64Recomp/include)
+    add_test(NAME lambo_reset COMMAND lambo_reset_tests)
+
     add_executable(lambo_camera_projection_tests
         tests/test_camera_projection.cpp
     )
@@ -588,6 +592,8 @@ if(BUILD_TESTING)
         add_test(NAME lambo_native_menu_retired
             COMMAND ${LAMBO_PYTHON_EXECUTABLE} -m tests.test_native_menu_retired
         )
+        add_test(NAME lambo_reset_rom
+            COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_reset_rom.py)
         add_test(NAME lambo_track_lab_codec
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
                 -m unittest tests.test_track_lab
@@ -836,6 +842,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_steering.cpp        # opt-in steering deadzone and direct response
         src/controls/lambo_controls.cpp
         src/ui/lambo_frontend.cpp
+        src/lambo_reset.c
         src/ui/lambo_launcher_menu.cpp
         src/ui/lambo_frontend_settings.cpp
         src/ui/lambo_frontend_input.cpp

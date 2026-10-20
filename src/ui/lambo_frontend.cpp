@@ -5,6 +5,8 @@
 #include "lambo_config.h"
 #include "lambo_mods.h"
 #include "lambo_startup.h"
+#include "lambo_reset.h"
+#include "elements/ui_icon_button.h"
 #include "recompui/recompui.h"
 #include "recompui/config.h"
 #include "recompui/program_config.h"
@@ -32,6 +34,45 @@ std::mutex mod_error_mutex;
 std::string mod_error;
 OverlayCaptureGate overlay;
 lambo::StartupController* startup = nullptr;
+recompui::IconButton* reset_button = nullptr;
+
+void create_settings_header() {
+    using namespace recompui;
+    auto context = recompui::config::get_config_context_id();
+    context.open();
+    auto* right = recompui::config::get_config_modal()->get_header()->get_right();
+    // Own this port's header actions so their visual and navigation order agree.
+    right->clear_children();
+    reset_button = context.create_element<IconButton>(right, "icons/Reset.svg", ButtonStyle::Basic);
+    reset_button->set_enabled(ultramodern::is_game_started());
+    reset_button->add_pressed_callback([] {
+        if (!ultramodern::is_game_started()) return;
+        open_choice_prompt("Reset game?",
+            "Return to the title screen? Unsaved progress and unapplied settings will be lost.",
+            "Reset", "Cancel", [] {
+                recompui::config::get_general_config().revert_temp_config();
+                recompui::config::get_graphics_config().revert_temp_config();
+                recompui::config::close();
+                // The shared prompt hides itself after this callback returns.
+                lambo_reset_request();
+            }, [] {},
+            ButtonStyle::Danger, ButtonStyle::Tertiary);
+    });
+    auto* quit = context.create_element<IconButton>(right, "icons/Quit.svg", ButtonStyle::Basic);
+    quit->add_pressed_callback([] {
+        if (ultramodern::is_game_started()) {
+            open_quit_game_prompt();
+        } else {
+            // Use the host's safe exit path while runtime/render threads live.
+            SDL_Event event{};
+            event.type = SDL_QUIT;
+            SDL_PushEvent(&event);
+        }
+    });
+    auto* close = context.create_element<IconButton>(right, "icons/X.svg", ButtonStyle::Basic);
+    close->add_pressed_callback([] { recompui::config::close(); });
+    context.close();
+}
 
 void request(Page page) {
     overlay.request(page);
@@ -54,11 +95,13 @@ void initialize(plume::RenderInterface* interface, plume::RenderDevice* device) 
     if (SDL_GetCurrentDisplayMode(SDL_GetWindowDisplayIndex(window), &display) == 0)
         recompui::config::graphics::update_refresh_rate(display.refresh_rate);
     init_hook(interface, device);
+    create_settings_header();
     ready.store(true, std::memory_order_release);
 }
 
 void render(plume::RenderCommandList* commands, plume::RenderFramebuffer* framebuffer) {
     std::lock_guard lock(frontend_mutex());
+    if (reset_button != nullptr) reset_button->set_enabled(ultramodern::is_game_started());
     // The runtime invokes its error callback before resetting its game status.
     // Wait for that reset before offering mod changes and an explicit retry.
     if (!ultramodern::is_game_started()) {
@@ -119,6 +162,7 @@ void deinitialize() {
     ready.store(false, std::memory_order_release);
     overlay.publish_context_capture(false);
     deinit_hook();
+    reset_button = nullptr;
 }
 }
 
