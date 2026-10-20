@@ -49,6 +49,10 @@ and unapplied settings. Saved progress and controller mappings are retained.
 The port replaces the default header actions in `lambo_frontend.cpp`. It uses
 the existing icon buttons and header layout, so visual order and keyboard or
 controller navigation order agree. No frontend dependency patch is required.
+Before play, header Quit posts `SDL_QUIT` to the host's safe exit pump, just
+like launcher Quit. During play, it uses the shared quit confirmation, whose
+affirmative action posts the same event. Header callbacks must not tear down
+the runtime directly while game and renderer threads can still be alive.
 
 The frontend only queues a request. `lambo_reset_tick` consumes it on the game
 thread before the top-level dispatcher (`func_800028D0`, USA `0x80001CD0`).

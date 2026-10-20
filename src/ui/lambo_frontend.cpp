@@ -60,8 +60,14 @@ void create_settings_header() {
     });
     auto* quit = context.create_element<IconButton>(right, "icons/Quit.svg", ButtonStyle::Basic);
     quit->add_pressed_callback([] {
-        if (ultramodern::is_game_started()) open_quit_game_prompt();
-        else ultramodern::quit();
+        if (ultramodern::is_game_started()) {
+            open_quit_game_prompt();
+        } else {
+            // Use the host's safe exit path while runtime/render threads live.
+            SDL_Event event{};
+            event.type = SDL_QUIT;
+            SDL_PushEvent(&event);
+        }
     });
     auto* close = context.create_element<IconButton>(right, "icons/X.svg", ButtonStyle::Basic);
     close->add_pressed_callback([] { recompui::config::close(); });
@@ -95,7 +101,7 @@ void initialize(plume::RenderInterface* interface, plume::RenderDevice* device) 
 
 void render(plume::RenderCommandList* commands, plume::RenderFramebuffer* framebuffer) {
     std::lock_guard lock(frontend_mutex());
-    reset_button->set_enabled(ultramodern::is_game_started());
+    if (reset_button != nullptr) reset_button->set_enabled(ultramodern::is_game_started());
     // The runtime invokes its error callback before resetting its game status.
     // Wait for that reset before offering mod changes and an explicit retry.
     if (!ultramodern::is_game_started()) {

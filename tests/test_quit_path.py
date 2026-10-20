@@ -24,7 +24,8 @@ def function_body(source: str, signature: str) -> str:
 
 
 def main() -> None:
-    source = (Path(sys.argv[1]).resolve() / "src" / "main.cpp").read_text(encoding="utf-8")
+    root = Path(sys.argv[1]).resolve()
+    source = (root / "src" / "main.cpp").read_text(encoding="utf-8")
     exit_body = function_body(source, "static void application_exit_success()")
 
     # This function runs on librecomp's primary thread while RT64 can still invoke
@@ -40,6 +41,15 @@ def main() -> None:
             "SDL_WINDOWEVENT_CLOSE" in event_loop and
             "application_exit_success();" in event_loop,
             "SDL quit and window-close events must use the immediate safe exit path")
+
+    # Port-owned header/launcher callbacks must preserve patch 0017's shutdown
+    # contract. Direct runtime quit bypasses the pump and tears down live threads.
+    frontend = (root / "src" / "ui" / "lambo_frontend.cpp").read_text(encoding="utf-8")
+    require("ultramodern::quit(" not in frontend,
+            "frontend quit actions must post SDL_QUIT instead of tearing down the runtime")
+    header = function_body(frontend, "void create_settings_header()")
+    require("SDL_QUIT" in header and "SDL_PushEvent(" in header,
+            "the pre-game settings Quit action must reach the SDL exit pump")
 
 
 if __name__ == "__main__":

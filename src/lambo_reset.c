@@ -34,8 +34,9 @@ int lambo_reset_tick(uint8_t* rdram, recomp_context* ctx) {
 
     atomic_exchange_explicit(&pending, 0, memory_order_acq_rel);
     // The retail transition pair stops/drains audio (e.g. USA 0x80008290).
-    // State 3 is the title initializer: dispatcher 0x80001D50 calls
-    // func_80038794, clears its attract cursor and advances to state 4.
+    // State 3 is the title initializer: dispatcher 0x80001D50 calls USA
+    // 0x80037B94 (generated symbol func_80038794), clears the attract cursor
+    // and advances to state 4.
     // Let that retail path rebuild title assets, timers and input state.
     func_800676B4(rdram, ctx);
     func_80008ECC(rdram, ctx);
