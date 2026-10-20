@@ -6,6 +6,7 @@
 #include <cstring>
 #include <set>
 #include <vector>
+#include <cstdio>
 extern "C" {
 void lambo_field_count(uint8_t*);
 void lambo_field_restart(uint8_t*);
@@ -21,7 +22,14 @@ int lambo_field_car(uint8_t*, int);
 extern "C" void lambo_player_name_seed(uint8_t*, recomp_context*) {}
 extern "C" int lambo_cheat_reverse_tracks() { return 0; }
 extern "C" void switch_error(const char*, uint32_t, uint32_t) { std::abort(); }
+extern "C" void do_break(uint32_t) { std::abort(); }
 extern "C" void func_8003CD84(uint8_t*, recomp_context*);
+extern "C" void func_80054FFC(uint8_t*, recomp_context*);
+extern "C" void func_8004C070(uint8_t*, recomp_context*);
+extern "C" void func_80037F5C(uint8_t*, recomp_context* ctx) { ctx->f0.fl = 0; }
+extern "C" void func_800751E4(uint8_t*, recomp_context*) {}
+extern "C" void func_80075278(uint8_t*, recomp_context*) {}
+extern "C" void func_80076024(uint8_t*, recomp_context*) {}
 // Results initialization redraw/asset setup has no effect on points or ranking.
 extern "C" void func_80011710(uint8_t*, recomp_context*) {}
 extern "C" void func_80013328(uint8_t*, recomp_context*) {}
@@ -35,6 +43,67 @@ int main() {
     auto w = [&](uint32_t a) -> int32_t& { return MEM_W(0, (gpr)(int32_t)a); };
     recomp_context ctx{};
     ctx.r29 = (gpr)(int32_t)0x807FF000;
+    // The real large-font emitter must draw every decimal digit, not just the
+    // native 1-6. Counting texrects catches unsupported glyphs independently of
+    // the string-formatting hook.
+    for (int digit : {0, 7, 8, 9}) {
+        for (int pixel = 0; pixel < 256; ++pixel)
+            w(0x8013F820 + digit * 0x400 + pixel * 4) = 0x1122FF7F;
+    }
+    w(0x80909A00) = 0x12345678;
+    for (int rank = 1; rank <= 16; ++rank) {
+        lambo_field_rank_text(rdram, rank, 0);
+        w(0x800A39CC) = 0x80400000;
+        ctx.r4 = (gpr)(int32_t)0x801797E0;
+        ctx.r5 = 100; ctx.r6 = 60; ctx.r7 = 0x3F800000;
+        w((uint32_t)ctx.r29 + 0x10) = 255;
+        func_8004C070(rdram, &ctx);
+        int glyphs = 0;
+        for (uint32_t a = 0x80400000; a < (uint32_t)w(0x800A39CC); a += 8)
+            if ((uint32_t)w(a) >> 24 == 0xE4) ++glyphs;
+        std::fprintf(stderr, "rank %d: %d glyphs\n", rank, glyphs);
+        assert(glyphs == (rank >= 10 ? 2 : 1));
+    }
+    for (int digit : {0, 7, 8, 9})
+        assert((uint32_t)w(0x80904000 + digit * 0x900) == 0xEADF827F);
+    assert(w(0x80909A00) == 0x12345678);
+    // Execute the actual minimap emitter with separated route points and stale
+    // native AI storage. Every entrant must produce a distinct dot rectangle.
+    for (int n : {2, 6, 10, 16}) {
+        h(0x800CE7AC) = n;
+        w(0x800A39CC) = 0x80400000;
+        w(0x800BF1C8) = 0x80300000;
+        double factor = 1;
+        uint64_t bits;
+        std::memcpy(&bits, &factor, 8);
+        SD(bits, 0, (gpr)(int32_t)0x8008E5C0);
+        SD(bits, 0, (gpr)(int32_t)0x8008E5C8);
+        for (int id = 1; id <= n; ++id) {
+            h(LAMBO_FIELD_AI + id * 0x84 + 0xE) = id;
+            h(LAMBO_FIELD_BODIES + id * 2) = id;
+            h(0x80910000 + id * 0x10C + 0xE) = id == 1 ? 1 : id + 4;
+            float x = id * 4.0f;
+            std::memcpy(&w(0x80300000 + id * 16), &x, 4);
+        }
+        ctx.r6 = 0x3F800000;
+        ctx.r7 = 0;
+        ctx.f12.fl = 100;
+        ctx.f14.fl = 100;
+        w((uint32_t)ctx.r29 + 0x10) = 0x3F800000;
+        w((uint32_t)ctx.r29 + 0x14) = 0;
+        func_80054FFC(rdram, &ctx);
+        std::set<uint32_t> dots;
+        int labels = 0;
+        for (uint32_t a = 0x80400000; a < (uint32_t)w(0x800A39CC); a += 8) {
+            if ((uint32_t)w(a) >> 24 != 0xE4) continue;
+            const int width = ((w(a) >> 12) & 0xFFF) - ((w(a + 4) >> 12) & 0xFFF);
+            if (width == 8) dots.insert(w(a));
+            else ++labels;
+        }
+        std::fprintf(stderr, "map %d: %zu distinct rectangles\n", n, dots.size());
+        assert(dots.size() == (size_t)n);
+        assert(labels == 1);
+    }
     for (int n = 2; n <= 16; ++n) {
         requested = n;
         h(0x800CE6A4) = 1; h(0x800CE6B4) = 2; h(0x800CE6BA) = 0;

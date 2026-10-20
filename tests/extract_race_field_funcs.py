@@ -8,7 +8,7 @@ import re
 import sys
 
 source, output = map(pathlib.Path, sys.argv[1:])
-wanted = {"func_8003CD84"}
+wanted = {"func_8003CD84", "func_80054FFC", "func_8004C070"}
 found = {}
 for path in source.glob("funcs_*.c"):
     for match in re.finditer(

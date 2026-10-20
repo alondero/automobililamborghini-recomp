@@ -100,7 +100,7 @@ same runtime USA build and N64 big-endian halfword accesses as the seams above.
 | --- | --- |
 | `0x800CE6B0`, `0x800CE6B4` | Halfword dispatcher countdown/warning gates. Values 3 and 1 enter the timed-race path while bypassing the warning-sound branch. |
 | `0x800CE76E`, `0x800CE772` | Countdown seconds and its 1/60-second accumulator. The accumulator starts at 58 to exercise rollover on resume. |
-| `0x800A5FBC + player*0x84` | Per-player active race-clock gate halfword. Set to one so each synthetic player clock is updated. |
+| `0x809020D4 + player*0x84` | Relocated per-player active race-clock gate halfword (native `0x800A5FBC`). Set to one so each synthetic player clock is updated. |
 | `0x80098768 + player*8` | Eight-byte elapsed race/time-trial record; halfword seconds at `+4`, subsecond ticks at `+6`. |
 | `0x80098850 + player*8` | Eight-byte elapsed current-lap record; halfword seconds at `+4`, subsecond ticks at `+6`. |
 | `0x800CE808` | Halfword dispatcher pause gate. A paused call must leave the complete fixture unchanged. |

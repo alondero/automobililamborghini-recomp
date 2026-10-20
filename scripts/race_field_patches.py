@@ -16,9 +16,9 @@ CAMERA = [0x2D10, 0x2D28, 0x2D40, 0x2D58, 0x2D70, 0x2D98,
           0x2EC0, 0x2EE8]
 TABLES = [(0x800A0000 + off, 2 if i < 4 else 4, 0x80900000 + i * 0x100)
           for i, off in enumerate(CAMERA)]
-TABLES += [(0x800A2F10, 2, 0x80900E00), (0x80098228, 2, 0x80901000), (0x800CE818, 2, 0x80901100),
+TABLES += [(0x800A2F10, 2, 0x80900E00), (0x80098228, 2, 0x80901000), (0x800CE818, 12 * 2, 0x80901100),
            (0x800CE740, 2, 0x80901200), (0x800CE758, 2, 0x80901300),
-           (0x800A5EE8, 0x84, 0x80902000), (0x800B69A8, 0x10C, 0x80910000),
+           (0x800A5EE8, 16 * 0x84, 0x80902000), (0x800B69A8, 0x10C, 0x80910000),
            (0x800B8910, 0x40, 0x80918000), (0x800B9818, 8, 0x8091C000),
            (0x800B9878, 0x200, 0x80920000)]
 
@@ -78,6 +78,21 @@ def patch_blocks(rom, functions):
                       f'\n[[patches.hook]]\nfunc = "{name}"\nbefore_vram = {pc:#x}\ntext = "{text}"\n')
     def hook(name, pc, text):
         result.append(f'\n[[patches.hook]]\nfunc = "{name}"\nbefore_vram = {pc:#x}\ntext = "{{ {text} }}"\n')
+    # The minimap uses zero-based entrants via a second-record AI alias and
+    # eight-entry RGB palettes. Repeat the palette without reading its neighbours.
+    hook('func_80054FFC', 0x800553AC, 'ctx->r24 &= 7;')
+    # Large text only has authored digits 1-6. Extend measurement and emission
+    # to 0-9, supplying the missing textures from the game's complete small font.
+    for pc, mask, value in ((0x8004B664, 0xFC000000, 0x04000000),
+                            (0x8004B674, 0xFFFF, 10),
+                            (0x8004BCE0, 0xFFFF, 0x30),
+                            (0x8004C098, 0xFFFF, 0x3A)):
+        word = struct.unpack_from('>I', rom, pc - 0x80000000 + 0xC00)[0]
+        # blez t9 -> bltz t9 (REGIMM, rt=0).
+        patched = (word & ~mask) | value
+        result.append(f'\n[[patches.instruction]]\nfunc = "func_8004C070"\nvram = {pc:#x}\nvalue = {patched:#x}\n')
+    hook('func_8004C070', 0x8004BDB4,
+         'extern unsigned int lambo_field_digit_texture(uint8_t*, int, unsigned int); ctx->r15 = (gpr)(int32_t)lambo_field_digit_texture(rdram, MEM_HU(0x86, ctx->r29) - 48, (unsigned int)ctx->r15);')
     for pc, immediate in ((0x80010B34, 64), (0x80010BBC, 64), (0x80010BD4, 63 * 0x10C + 6),
                           (0x80010BEC, 128), (0x80010C70, 128), (0x80010C88, 127 * 64 + 6),
                           (0x80010C94, 32), (0x80010CFC, 32), (0x80010D14, 31 * 8 + 4)):
@@ -109,13 +124,16 @@ def patch_blocks(rom, functions):
     hook(setup, 0x80007D8C, 'extern void lambo_field_grid_end(uint8_t*); lambo_field_grid_end(rdram);')
     for name, pc, rank, count in [('func_800583B8', 0x80057830, 'MEM_H(0x1A, ctx->r29)', 1),
                                   ('func_80050860', 0x800508C8, 'ctx->r14', 0),
+                                  ('func_80050860', 0x80050A14, 'ctx->r10', 0),
                                   ('func_80038D6C', 0x8003B41C, 'ctx->r8', 0),
                                   ('func_80038D6C', 0x8003AF64, 'MEM_H(0, (gpr)(int32_t)0x800986C8)', 0)]:
         hook(name, pc, f'extern void lambo_field_rank_text(uint8_t*, int, int); lambo_field_rank_text(rdram, {rank}, {count});')
-    hook('func_80050860', 0x800508E8,
-         'if (MEM_H(6, ADD32((gpr)(int32_t)0x80902000, MEM_H(0, (gpr)(int32_t)0x800CE6AA) * 0x84)) >= 10) ctx->r5 -= 20;')
-    hook('func_80050860', 0x80050954,
-         'if (MEM_H(0x8A, (gpr)(int32_t)0x80902000) >= 10) MEM_H(0, (gpr)(int32_t)0x800986F8) += 20;')
+    for pc in (0x800508E8, 0x80050A2C):
+        hook('func_80050860', pc,
+             'if (MEM_H(0x8A, (gpr)(int32_t)0x80902000) >= 10) ctx->r5 -= 20;')
+    for pc in (0x80050954, 0x80050A98):
+        hook('func_80050860', pc,
+             'if (MEM_H(0x8A, (gpr)(int32_t)0x80902000) >= 10) MEM_H(0, (gpr)(int32_t)0x800986F8) += 20;')
     result.append('\n[[patches.instruction]]\nfunc = "func_8003CD84"\nvram = 0x8003CFC0\nvalue = 0\n')
     hook('func_8003CD84', 0x8003CFC0,
          'int place = MEM_H(0, (gpr)(int32_t)0x800986D8); ctx->r15 = place >= 1 && place <= 6 ? MEM_H(place * 2, (gpr)(int32_t)0x801EA164) : 0;')

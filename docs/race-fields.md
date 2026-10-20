@@ -73,6 +73,21 @@ ROM-specific address analysis, not a general control-flow-aware relocator.
 Changes to the ROM, function boundaries or relocation tables require renewed
 alias review and gameplay verification. Generated C is never edited.
 
+The AI and racer-to-body relocation ranges include their native arrays, not
+only record zero. The minimap starts its zero-based loop at the second record
+(`0x800A5F7A` route point, `0x800CE81A` body). Leaving those aliases behind
+overlapped all dots and drew incorrect player labels. The minimap now reads
+the relocated records and repeats its eight authored colours for entrants 9-16.
+
+The finish animation and settled finish screen have separate rank-string
+builders; both format decimal ranks. The large font originally draws only
+digits 1-6. Its measurement and emission now accept 0-9. Missing digits 0/7/8/9
+reuse the resident 16x16 HUD font with a gold tint in 24x24 RGBA32 scratch tiles
+at `0x80904000..0x80909A00`. The game thread fills each tile before emitting its
+texture command. These deterministic tiles remain valid across queued frames
+and are included in the existing snapshot region. Authored large digits 1-6
+are unchanged; fallback digits have a different texture style.
+
 Each car consumes three body objects and five draw nodes. Tests first exposed
 body exhaustion, then a twelve-entry asset pool overwriting its neighbour.
 A later snapshot found cars 9-16 stationary: channels 13/14 dispatch special
@@ -132,3 +147,13 @@ is sampled headroom, not a guarantee for every possible effects-heavy frame.
 
 No Android device performance claim is made. Larger fields increase simulation
 and rendering work; field-size selection does not change difficulty tuning.
+
+Follow-up HUD regression checks execute the generated minimap and large-font
+emitters. Separated route points yield one distinct dot per entrant for counts
+2/6/10/16 and exactly one player label. Every finish rank 1-16 emits the expected
+number of digit rectangles. A controlled tenth-place finish snapshot rendered
+both decimal digits and the ordinal suffix in RT64 D3D12 presentation readback.
+This supplements the earlier results-table checks, which did not exercise the
+settled finish overlay.
+The 16-car race capture also shows separate coloured map markers and one P1
+label. Nearby cars can still overlap at the native map's pixel resolution.

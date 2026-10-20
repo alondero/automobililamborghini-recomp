@@ -1425,6 +1425,17 @@ text = "{ extern void lambo_player_name_restore_for_record(uint8_t*, int); lambo
 # Expanded race-field table references (scripts/race_field_patches.py).
 
 [[patches.instruction]]
+func = "BootLoadInitialAssets"
+vram = 0x8000171c
+value = 0
+
+[[patches.hook]]
+func = "BootLoadInitialAssets"
+before_vram = 0x8000171c
+text = "ctx->r25 = MEM_H(0, ADD32(ctx->r25, 8790228));"
+
+
+[[patches.instruction]]
 func = "func_800030F8"
 vram = 0x800027a0
 value = 0
@@ -1906,6 +1917,17 @@ value = 0
 func = "func_800030F8"
 before_vram = 0x80003fdc
 text = "ctx->r13 = ADD32(ctx->r13, 8790016);"
+
+
+[[patches.instruction]]
+func = "func_800030F8"
+vram = 0x800041f0
+value = 0
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x800041f0
+text = "ctx->r14 = MEM_H(0, ADD32(ctx->r14, 8790228));"
 
 
 [[patches.instruction]]
@@ -7164,6 +7186,17 @@ value = 0
 func = "func_80014D50"
 before_vram = 0x80014400
 text = "MEM_H(0, ADD32(ctx->r1, 8781826)) = ctx->r11;"
+
+
+[[patches.instruction]]
+func = "func_800152BC"
+vram = 0x800146ec
+value = 0
+
+[[patches.hook]]
+func = "func_800152BC"
+before_vram = 0x800146ec
+text = "ctx->r25 = MEM_H(0, ADD32(ctx->r25, 8589570));"
 
 
 [[patches.instruction]]
@@ -24107,6 +24140,17 @@ text = "MEM_H(0, ADD32(ctx->r1, 8781982)) = ctx->r13;"
 
 
 [[patches.instruction]]
+func = "func_80050860"
+vram = 0x80053848
+value = 0
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80053848
+text = "MEM_W(0, ADD32(ctx->r1, 8790204)) = ctx->f16.u32l;"
+
+
+[[patches.instruction]]
 func = "func_80053A4C"
 vram = 0x80053630
 value = 0
@@ -24195,6 +24239,17 @@ text = "MEM_H(0, ADD32(ctx->r1, 8781982)) = ctx->r13;"
 
 
 [[patches.instruction]]
+func = "func_80053A4C"
+vram = 0x80053848
+value = 0
+
+[[patches.hook]]
+func = "func_80053A4C"
+before_vram = 0x80053848
+text = "MEM_W(0, ADD32(ctx->r1, 8790204)) = ctx->f16.u32l;"
+
+
+[[patches.instruction]]
 func = "func_80053C2C"
 vram = 0x80053630
 value = 0
@@ -24280,6 +24335,50 @@ value = 0
 func = "func_80053C2C"
 before_vram = 0x80053820
 text = "MEM_H(0, ADD32(ctx->r1, 8781982)) = ctx->r13;"
+
+
+[[patches.instruction]]
+func = "func_80053C2C"
+vram = 0x80053848
+value = 0
+
+[[patches.hook]]
+func = "func_80053C2C"
+before_vram = 0x80053848
+text = "MEM_W(0, ADD32(ctx->r1, 8790204)) = ctx->f16.u32l;"
+
+
+[[patches.instruction]]
+func = "func_80054FFC"
+vram = 0x8005519c
+value = 0
+
+[[patches.hook]]
+func = "func_80054FFC"
+before_vram = 0x8005519c
+text = "ctx->r8 = MEM_H(0, ADD32(ctx->r8, 8790162));"
+
+
+[[patches.instruction]]
+func = "func_80054FFC"
+vram = 0x8005532c
+value = 0
+
+[[patches.hook]]
+func = "func_80054FFC"
+before_vram = 0x8005532c
+text = "ctx->r13 = MEM_H(0, ADD32(ctx->r13, 8790152));"
+
+
+[[patches.instruction]]
+func = "func_80054FFC"
+vram = 0x80055500
+value = 0
+
+[[patches.hook]]
+func = "func_80054FFC"
+before_vram = 0x80055500
+text = "ctx->r11 = MEM_H(0, ADD32(ctx->r11, 8589570));"
 
 
 [[patches.instruction]]
@@ -24291,6 +24390,17 @@ value = 0
 func = "func_80054FFC"
 before_vram = 0x8005551c
 text = "ctx->r8 = MEM_H(0, ADD32(ctx->r8, 8781838));"
+
+
+[[patches.instruction]]
+func = "func_80054FFC"
+vram = 0x80055544
+value = 0
+
+[[patches.hook]]
+func = "func_80054FFC"
+before_vram = 0x80055544
+text = "ctx->r24 = MEM_H(0, ADD32(ctx->r24, 8589570));"
 
 
 [[patches.instruction]]
@@ -24390,6 +24500,83 @@ value = 0
 func = "func_80058770"
 before_vram = 0x80057ef4
 text = "ctx->r14 = MEM_H(0, ADD32(ctx->r14, 8781992));"
+
+
+[[patches.instruction]]
+func = "func_80059C2C"
+vram = 0x800591e4
+value = 0
+
+[[patches.hook]]
+func = "func_80059C2C"
+before_vram = 0x800591e4
+text = "ctx->r9 = MEM_H(0, ADD32(ctx->r9, 8790154));"
+
+
+[[patches.instruction]]
+func = "func_80059C2C"
+vram = 0x800593b0
+value = 0
+
+[[patches.hook]]
+func = "func_80059C2C"
+before_vram = 0x800593b0
+text = "ctx->r9 = MEM_H(0, ADD32(ctx->r9, 8790154));"
+
+
+[[patches.instruction]]
+func = "func_80059C2C"
+vram = 0x80059438
+value = 0
+
+[[patches.hook]]
+func = "func_80059C2C"
+before_vram = 0x80059438
+text = "ctx->r8 = MEM_H(0, ADD32(ctx->r8, 8790154));"
+
+
+[[patches.instruction]]
+func = "func_80059C2C"
+vram = 0x80059724
+value = 0
+
+[[patches.hook]]
+func = "func_80059C2C"
+before_vram = 0x80059724
+text = "ctx->r9 = MEM_H(0, ADD32(ctx->r9, 8790154));"
+
+
+[[patches.instruction]]
+func = "func_80059C2C"
+vram = 0x800597c0
+value = 0
+
+[[patches.hook]]
+func = "func_80059C2C"
+before_vram = 0x800597c0
+text = "ctx->r24 = MEM_H(0, ADD32(ctx->r24, 8790154));"
+
+
+[[patches.instruction]]
+func = "func_8005A084"
+vram = 0x80059724
+value = 0
+
+[[patches.hook]]
+func = "func_8005A084"
+before_vram = 0x80059724
+text = "ctx->r9 = MEM_H(0, ADD32(ctx->r9, 8790154));"
+
+
+[[patches.instruction]]
+func = "func_8005A084"
+vram = 0x800597c0
+value = 0
+
+[[patches.hook]]
+func = "func_8005A084"
+before_vram = 0x800597c0
+text = "ctx->r24 = MEM_H(0, ADD32(ctx->r24, 8790154));"
 
 
 [[patches.instruction]]
@@ -25868,6 +26055,17 @@ text = "ctx->r8 = MEM_H(0, ADD32(ctx->r8, 8781838));"
 
 [[patches.instruction]]
 func = "func_800657CC"
+vram = 0x80065ba4
+value = 0
+
+[[patches.hook]]
+func = "func_800657CC"
+before_vram = 0x80065ba4
+text = "ctx->r10 = MEM_H(0, ADD32(ctx->r10, 8790150));"
+
+
+[[patches.instruction]]
+func = "func_800657CC"
 vram = 0x80065f1c
 value = 0
 
@@ -25919,6 +26117,17 @@ value = 0
 func = "func_8006B470"
 before_vram = 0x8006b220
 text = "MEM_W(0, ADD32(ctx->r1, 8790104)) = ctx->f10.u32l;"
+
+
+[[patches.instruction]]
+func = "func_8006B470"
+vram = 0x8006bbd8
+value = 0
+
+[[patches.hook]]
+func = "func_8006B470"
+before_vram = 0x8006bbd8
+text = "ctx->r14 = MEM_H(0, ADD32(ctx->r14, 8589570));"
 
 
 [[patches.instruction]]
@@ -26000,6 +26209,17 @@ text = "MEM_W(0, ADD32(ctx->r1, 8782032)) = ctx->f10.u32l;"
 
 [[patches.instruction]]
 func = "func_8006D6C0"
+vram = 0x8006cae4
+value = 0
+
+[[patches.hook]]
+func = "func_8006D6C0"
+before_vram = 0x8006cae4
+text = "ctx->r24 = MEM_H(0, ADD32(ctx->r24, 8589570));"
+
+
+[[patches.instruction]]
+func = "func_8006D6C0"
 vram = 0x8006cb04
 value = 0
 
@@ -26007,6 +26227,17 @@ value = 0
 func = "func_8006D6C0"
 before_vram = 0x8006cb04
 text = "ctx->r8 = MEM_HU(0, ADD32(ctx->r8, 8781842));"
+
+
+[[patches.instruction]]
+func = "func_8006D8A4"
+vram = 0x8006ccc8
+value = 0
+
+[[patches.hook]]
+func = "func_8006D8A4"
+before_vram = 0x8006ccc8
+text = "ctx->r24 = MEM_H(0, ADD32(ctx->r24, 8589570));"
 
 
 [[patches.instruction]]
@@ -26022,6 +26253,17 @@ text = "ctx->r8 = MEM_HU(0, ADD32(ctx->r8, 8781842));"
 
 [[patches.instruction]]
 func = "func_8006E26C"
+vram = 0x8006d690
+value = 0
+
+[[patches.hook]]
+func = "func_8006E26C"
+before_vram = 0x8006d690
+text = "ctx->r24 = MEM_H(0, ADD32(ctx->r24, 8589570));"
+
+
+[[patches.instruction]]
+func = "func_8006E26C"
 vram = 0x8006d6b0
 value = 0
 
@@ -26029,6 +26271,17 @@ value = 0
 func = "func_8006E26C"
 before_vram = 0x8006d6b0
 text = "ctx->r8 = MEM_HU(0, ADD32(ctx->r8, 8781842));"
+
+
+[[patches.instruction]]
+func = "func_8006E450"
+vram = 0x8006d874
+value = 0
+
+[[patches.hook]]
+func = "func_8006E450"
+before_vram = 0x8006d874
+text = "ctx->r24 = MEM_H(0, ADD32(ctx->r24, 8589570));"
 
 
 [[patches.instruction]]
@@ -26051,6 +26304,42 @@ value = 0
 func = "func_80070E48"
 before_vram = 0x80070384
 text = "ctx->f16.u32l = MEM_W(0, ADD32(ctx->r1, 8790104));"
+
+
+[[patches.hook]]
+func = "func_80054FFC"
+before_vram = 0x800553ac
+text = "{ ctx->r24 &= 7; }"
+
+
+[[patches.instruction]]
+func = "func_8004C070"
+vram = 0x8004b664
+value = 0x7200013
+
+
+[[patches.instruction]]
+func = "func_8004C070"
+vram = 0x8004b674
+value = 0x2941000a
+
+
+[[patches.instruction]]
+func = "func_8004C070"
+vram = 0x8004bce0
+value = 0x240a0030
+
+
+[[patches.instruction]]
+func = "func_8004C070"
+vram = 0x8004c098
+value = 0x2981003a
+
+
+[[patches.hook]]
+func = "func_8004C070"
+before_vram = 0x8004bdb4
+text = "{ extern unsigned int lambo_field_digit_texture(uint8_t*, int, unsigned int); ctx->r15 = (gpr)(int32_t)lambo_field_digit_texture(rdram, MEM_HU(0x86, ctx->r29) - 48, (unsigned int)ctx->r15); }"
 
 
 [[patches.instruction]]
@@ -26282,6 +26571,12 @@ text = "{ extern void lambo_field_rank_text(uint8_t*, int, int); lambo_field_ran
 
 
 [[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050a14
+text = "{ extern void lambo_field_rank_text(uint8_t*, int, int); lambo_field_rank_text(rdram, ctx->r10, 0); }"
+
+
+[[patches.hook]]
 func = "func_80038D6C"
 before_vram = 0x8003b41c
 text = "{ extern void lambo_field_rank_text(uint8_t*, int, int); lambo_field_rank_text(rdram, ctx->r8, 0); }"
@@ -26296,12 +26591,24 @@ text = "{ extern void lambo_field_rank_text(uint8_t*, int, int); lambo_field_ran
 [[patches.hook]]
 func = "func_80050860"
 before_vram = 0x800508e8
-text = "{ if (MEM_H(6, ADD32((gpr)(int32_t)0x80902000, MEM_H(0, (gpr)(int32_t)0x800CE6AA) * 0x84)) >= 10) ctx->r5 -= 20; }"
+text = "{ if (MEM_H(0x8A, (gpr)(int32_t)0x80902000) >= 10) ctx->r5 -= 20; }"
+
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050a2c
+text = "{ if (MEM_H(0x8A, (gpr)(int32_t)0x80902000) >= 10) ctx->r5 -= 20; }"
 
 
 [[patches.hook]]
 func = "func_80050860"
 before_vram = 0x80050954
+text = "{ if (MEM_H(0x8A, (gpr)(int32_t)0x80902000) >= 10) MEM_H(0, (gpr)(int32_t)0x800986F8) += 20; }"
+
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050a98
 text = "{ if (MEM_H(0x8A, (gpr)(int32_t)0x80902000) >= 10) MEM_H(0, (gpr)(int32_t)0x800986F8) += 20; }"
 
 

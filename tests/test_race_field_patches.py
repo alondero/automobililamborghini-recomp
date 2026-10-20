@@ -24,7 +24,16 @@ class RaceFieldPatchTests(unittest.TestCase):
         rom = (ROOT / 'Automobili Lamborghini (USA).z64').read_bytes()
         refs = fields.references(rom, functions)
         fingerprint = hashlib.sha256('\n'.join(f'{pc:08x}:{word:08x}' for _,pc,word,_ in refs).encode()).hexdigest()
-        self.assertEqual(fingerprint, 'd1e8177c67d9ee31a820ab3dda51b13f3c677de68f9d3a0b76186367b46e40db')
+        self.assertEqual(fingerprint, '4f828a2c8dd7ea11dcb7929a7052888dc823050880af4de8548fab57e5a61b7f')
+        # Minimap aliases start at entrant one while its loop is zero-based.
+        # Both the AI route point and the player-label body lookup must move.
+        pcs = {pc for _, pc, _, _ in refs}
+        self.assertTrue({0x8005519C, 0x8005532C, 0x80055500, 0x80055544} <= pcs)
         actual = tomllib.loads(fields.patch_blocks(rom, functions))
         checked = tomllib.loads(config_text[config_text.index('# Expanded race-field table references'):])
         self.assertEqual(actual, checked)
+        hooks = {h['before_vram']: h['text'] for h in actual['patches']['hook']}
+        # Entering and settled finish screens have separate string builders.
+        for pc in (0x800508C8, 0x80050A14):
+            self.assertIn('lambo_field_rank_text', hooks[pc])
+        self.assertEqual(hooks[0x800553AC], '{ ctx->r24 &= 7; }')

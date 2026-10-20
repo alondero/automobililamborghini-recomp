@@ -104,6 +104,26 @@ extern "C" void lambo_field_rank_text(uint8_t* rdram, int rank, int with_count) 
     text(rdram, buf);
 }
 
+// Game-thread large-font texture fallback. The native 24x24 RGBA32 atlas only
+// contains 1-6. Reuse the complete 16x16 RGBA32 HUD font at 0x8013F820 for
+// 0/7/8/9, retaining its shading with a gold tint. Scratch tiles occupy
+// 0x80904000..0x80909A00, inside the snapshotted race extension.
+extern "C" uint32_t lambo_field_digit_texture(uint8_t* rdram, int digit, uint32_t original) {
+    if (digit < 0 || digit > 9 || (digit >= 1 && digit <= 6)) return original;
+    const uint32_t target = LAMBO_FIELD_BASE + 0x4000 + digit * 0x900;
+    const uint32_t source = 0x8013F820 + digit * 0x400;
+    for (int y = 0; y < 24; ++y) {
+        for (int x = 0; x < 24; ++x) {
+            const uint32_t pixel = word(rdram, source + ((y * 2 / 3) * 16 + x * 2 / 3) * 4);
+            const uint32_t shade = (pixel >> 8) & 255;
+            word(rdram, target + (y * 24 + x) * 4) =
+                ((shade * 234 / 255) << 24) | ((shade * 223 / 255) << 16) |
+                ((shade * 130 / 255) << 8) | (pixel & 255);
+        }
+    }
+    return target;
+}
+
 extern "C" int lambo_field_car(uint8_t* rdram, int object) {
     return object >= 0 && object < LAMBO_VEHICLE_CAPACITY &&
         (half(rdram, LAMBO_VEHICLE_BASE + object * sizeof(LamboVehicleRecord)) & 8) != 0;
