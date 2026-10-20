@@ -1051,7 +1051,9 @@ before_vram = 0x80001CD0
 # drains. Return before the stack prologue: the main loop must keep receiving
 # task-done messages (blocking here would deadlock). Check after warp handling.
 # Guest addresses and lifetime evidence: docs/sky-panorama.md.
-text = "{ extern void lambo_warp_tick(uint8_t*, recomp_context*); lambo_warp_tick(rdram, ctx); if (MEM_H(0, (gpr)(int32_t)0x800CE6ACu) == 7 && MEM_H(0, (gpr)(int32_t)0x80098270u) > 0) return; }"
+# Reset runs at the same boundary and waits for old tasks before returning to
+# the retail title initializer; its thread/address contract is in lambo_reset.c.
+text = "{ extern int lambo_reset_tick(uint8_t*, recomp_context*); if (lambo_reset_tick(rdram, ctx)) return; extern void lambo_warp_tick(uint8_t*, recomp_context*); lambo_warp_tick(rdram, ctx); if (MEM_H(0, (gpr)(int32_t)0x800CE6ACu) == 7 && MEM_H(0, (gpr)(int32_t)0x80098270u) > 0) return; }"
 
 # Issue #22 — developer save-state. Same top-level dispatcher (runs every frame in every
 # state), one instruction past the warp hook: N64Recomp rejects two hooks on the exact same

@@ -23,10 +23,10 @@ still exit.
 
 ### Header layout
 
-The settings header keeps Quit and Close at its right edge. When the tab labels are wider
+The settings header keeps Reset, Quit and Close at its right edge. When the tab labels are wider
 than the space left, they wrap onto a second row instead of pushing the buttons out of the
 modal (patch 0032). Focus order and tab switching follow the tab list, not the rows: Left
-and Right walk every tab, and the last Right leaves the tabs for Quit. Down from either row
+and Right walk every tab, and the last Right leaves the tabs for Reset during play. Down from either row
 should move into the page, because navigation follows the tab list rather than positions
 (Inferred from `ui_document.cpp`, not played).
 
@@ -37,6 +37,43 @@ captures were made with this hunk inside a larger local frontend patch that also
 keyboard menu keys; the layout hunk is byte-identical. Keyboard and mouse interaction with
 the wrapped header was checked only in that larger build, so it is **Unverified** with
 patch 0032 alone.
+
+### Reset game
+
+The circular-arrow button beside Quit returns to the title screen in the same
+window and process. It is disabled before a game starts. Reset opens a
+confirmation with Cancel focused;
+Back cancels through the shared prompt. Confirming loses unsaved game progress
+and unapplied settings. Saved progress and controller mappings are retained.
+
+The port replaces the default header actions in `lambo_frontend.cpp`. It uses
+the existing icon buttons and header layout, so visual order and keyboard or
+controller navigation order agree. No frontend dependency patch is required.
+
+The frontend only queues a request. `lambo_reset_tick` consumes it on the game
+thread before the top-level dispatcher (`func_800028D0`, USA `0x80001CD0`).
+Boot and race loading finish first. Outstanding graphics tasks then drain
+through the same nonblocking boundary used by the race-loader fence. Reset
+runs the retail audio stop/drain pair and sets the guest game-state halfword
+to 3. The dispatcher's normal title initializer reloads the title assets,
+resets the attract timer and advances to state 4. Runtime threads, the renderer,
+Controller Pak, controller assignments and host settings remain alive.
+
+The bridge accesses the USA signed 16-bit game state at `0x800CE6AC` and
+outstanding-task count at `0x80098270` using the guest byte order. It waits in
+boot/loading or unknown states without modifying guest memory. This is a
+game-specific return-to-title transition; a future decompiled dispatcher should
+replace the fixed-address bridge with a typed transition.
+
+`lambo_reset_tests` checks request coalescing, deferred loading, task draining,
+audio ordering, repeated resets and absence of early guest writes. The ROM test
+pins the retail transition instructions.
+
+Native Windows D3D12 checks returned from a one-player race and the game menus
+to the title, accepted Start afterward, and kept the process and window handles
+unchanged. Confirmation, default Cancel, keyboard header navigation and repeated
+resets were checked. The native bridge also compiles for Android ARM64. Linux,
+Android device execution and physical-controller reset remain **Unverified**.
 
 Controls > Assign players binds devices to N64 ports 1-4. At startup, player one
 uses the connected legacy preferred controller, or the first available controller, with
