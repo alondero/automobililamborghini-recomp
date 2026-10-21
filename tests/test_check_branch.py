@@ -73,3 +73,11 @@ class BranchChecks(unittest.TestCase):
         event = {"before": "old-push", "pull_request": {"base": {"sha": "pr-base"}}}
         self.assertEqual(github_base(event), "pr-base")
         self.assertEqual(github_base({"before": "old-push"}), "old-push")
+
+    def test_forced_push_does_not_require_the_unreachable_old_tip(self):
+        self.git("update-ref", "refs/remotes/origin/main", self.base)
+        self.commit("feature.txt", "clean\n")
+        event = {"before": "a" * 40, "forced": True,
+                 "repository": {"default_branch": "main"}}
+        self.assertEqual(github_base(event), "origin/main")
+        check(github_base(event), cwd=self.root)

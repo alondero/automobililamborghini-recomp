@@ -9,7 +9,7 @@ def github_base(event):
     if 'pull_request' in event:
         return event['pull_request']['base']['sha']
     before = event.get('before', '')
-    if before and set(before) != {'0'}:
+    if before and set(before) != {'0'} and not event.get('forced'):
         return before
     return 'origin/' + event['repository']['default_branch']
 
