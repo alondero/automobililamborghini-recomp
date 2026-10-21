@@ -21,7 +21,7 @@ Run from the repository root.
 
 ~~~powershell
 python tools/check_docs.py
-git diff --check
+python tools/check_branch.py --base origin/main --worktree
 ~~~
 
 The zero-ROM Python host suite runs with:
@@ -32,6 +32,43 @@ python -m unittest discover tests
 
 This exercises the Python tests under `tests/` without a ROM, generated game
 code, a graphics backend, or a native build.
+
+The branch check compares the merge base with `HEAD`, then checks staged and
+unstaged edits when `--worktree` is present. Use `--base REF --head REF` for a
+specific review. A clean working tree alone does not check committed changes.
+
+## Continuous integration
+
+The Host checks workflow runs on every push and pull request. It installs NumPy,
+initializes the pinned RT64 checkout, checks the complete branch diff, then runs:
+
+~~~text
+python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture
+~~~
+
+Skipping a test in either required module, or failing to discover the module,
+fails the job. ROM-dependent tests may still skip: public pull requests do not
+receive the private ROM. Locally,
+`--require-all` requires every Python test, including ROM checks, to execute.
+
+Native host checks configure the port without ROM-derived output, build
+`lambo_host_tests`, and run CTest. They also compile and run the production mod
+menu fixture with Clang and libc++, the standard library used by Android. This
+catches incomplete container-element declarations that GCC accepts. It does
+not replace an Android cross-build or device check.
+
+Desktop release jobs build `lambo_host_tests`, run CTest, and run the headless
+runtime acceptance suite before packaging. These jobs have the private ROM and
+fresh generated output. Pull-request host jobs do not compile or play the full
+game. Repository branch rules determine whether these checks block merging.
+
+For dependency changes, run `python tools/check_patch_series.py`. It checks
+the RT64 replay order against each platform's script and shared CMake calls,
+and checks that every patch has a build application site. CI uses
+`--apply-script linux` to prepare a clean checkout before its first CMake
+configure, without needing a ROM. This command refuses conflicting changes.
+The replay matrix lives in `tools/check_patch_series.py`; its platform orders
+must match the supported build inputs.
 
 Skip counts depend on the environment. `ShadowCaptureTests` skips its six tests
 when NumPy is unavailable. `PatchCompositionTests` skips three platform replay
@@ -82,6 +119,16 @@ desktop build sequence is:
 .\build.ps1
 ctest --test-dir build --output-on-failure
 ~~~
+
+Build the test fixtures explicitly before running the full CTest suite:
+
+~~~text
+cmake --build build --target lambo_host_tests --parallel 2
+ctest --test-dir build --output-on-failure --no-tests=error
+~~~
+
+The aggregate includes ROM-backed fixtures when generated functions exist.
+It does not enable the optional GPU probes.
 
 On Linux:
 
@@ -303,3 +350,46 @@ injects controlled finishing positions, advances the native results and standing
 screens, and checks the next round's count, roster and cumulative points while
 the next-session setting is two. It does not prove natural race completion.
 Add `--render` to inspect those screens in the RT64 window.
+
+## Runtime acceptance suite
+
+After the supported build and the test-fixture build, run:
+
+~~~text
+python tools/run_runtime_acceptance.py --headless
+python tools/run_runtime_acceptance.py
+~~~
+
+Both commands run the native minimap/rank-emitter, reset-safety and Quit-path
+fixtures. They boot fresh 2-, 6- and 16-car races. The sixteen-car run uses mode
+3; its own snapshot supplies two championship progression checks with player
+places 10 and 16. Those checks retain the roster and accumulated points in the
+next round. They inject finish positions rather than waiting for a natural
+finish. Headless result captures provide evidence for inspection, not a pixel
+equivalence assertion.
+
+The second command also needs a display and a working RT64 backend. It runs
+`scenarios/launcher-quit.json` and `scenarios/repeated-reset.json`. The opt-in
+`LAMBO_UI_ACCEPTANCE` driver clicks the actual RmlUi header elements and shared
+confirmation buttons on the presentation thread. It cancels a race reset,
+confirms a reset from the race, then confirms another from the live title
+screen in the same process. The scenarios require the corresponding guest
+transition logs and title completion; reaching a timeout or VI limit cannot
+substitute for that evidence. They exercise callbacks and runtime transitions,
+not physical-controller navigation or button placement. Reset completion needs
+a newer guest title sample after the game thread consumes each request; the
+pre-reset title snapshot cannot satisfy a later reset.
+
+Reviewers assess whether the scenarios exercise the behavior requested by the
+change, including its transitions and boundary cases. Passing existing
+scenarios does not establish coverage for a new requirement.
+
+Use `--exe PATH --build-dir PATH` to select a build explicitly. The suite
+writes a JSON report under ignored `artifacts/runtime-acceptance/`, recording
+the commit, operating system, compiler, generated-file presence, executable
+and ROM hashes, backend diagnostics, completed cases and rendered cases
+omitted by `--headless`. Generation freshness must come from the supported
+build record; the runner does not infer it from file presence. Each game run
+keeps its own isolated
+configuration, logs, snapshots and captures. Runtime and visual acceptance
+remain separate from the Python runner's tests with fake game processes.

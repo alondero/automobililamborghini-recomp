@@ -43,6 +43,7 @@ int main(void) {
     MEM_H(0, state) = 8;
     CHECK(lambo_reset_tick(rdram, &ctx) == 0);
     CHECK(MEM_H(0, state) == 8 && stopped == 0);
+    CHECK(lambo_reset_generation() == 0);
     lambo_reset_request();
     lambo_reset_request();
     const int unsafe_states[] = {0, 1, 2, 7, -1, 17};
@@ -65,6 +66,7 @@ int main(void) {
     MEM_H(0, state) = 8;
     CHECK(lambo_reset_tick(rdram, &ctx) == 0);
     CHECK(stopped == 1 && drained == 1);
+    CHECK(lambo_reset_generation() == 1);
     CHECK(memcmp(expected, rdram, 8 * 1024 * 1024) == 0);
     MEM_H(0, state) = 8;
     CHECK(lambo_reset_tick(rdram, &ctx) == 0);
@@ -73,6 +75,7 @@ int main(void) {
     lambo_reset_request();
     CHECK(lambo_reset_tick(rdram, &ctx) == 0);
     CHECK(MEM_H(0, state) == 3 && stopped == 2 && drained == 2);
+    CHECK(lambo_reset_generation() == 2);
     free(expected);
     free(rdram);
     if (!failures) puts("In-window reset safety checks passed");

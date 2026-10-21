@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "name": "repeated-reset",
+  "headless": false,
+  "warp": "1:1:0:1",
+  "warp_mode": 2,
+  "max_vis": 7200,
+  "timeout_seconds": 180,
+  "developer_env": {"LAMBO_LAUNCHER": "0", "LAMBO_UI_ACCEPTANCE": "reset"},
+  "expect": {
+    "max_state_at_least": 8,
+    "min_swaps": 60,
+    "log_contains": ["reset cancelled during race", "returning to title from state 8", "returning to title from state 4", "two resets completed in the same process; title active"]
+  }
+}

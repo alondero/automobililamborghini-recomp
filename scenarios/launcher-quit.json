@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "name": "launcher-quit",
+  "headless": false,
+  "timeout_seconds": 45,
+  "developer_env": {"LAMBO_LAUNCHER": "1", "LAMBO_UI_ACCEPTANCE": "quit"},
+  "expect": {"log_contains": ["pre-game header Quit clicked", "application exit requested; status=success"]}
+}

@@ -38,14 +38,7 @@ def inspect(path, count, reverse=None, players=1):
     return cars
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--cars', type=int, choices=range(2, 17), default=16)
-    parser.add_argument('--circuit', type=int, choices=range(1, 7), default=1)
-    parser.add_argument('--reverse', type=int, choices=(0, 1), default=0)
-    parser.add_argument('--mode', type=int, choices=range(4), default=2)
-    parser.add_argument('--players', type=int, choices=range(1, 5), default=1)
-    args = parser.parse_args()
+def run(args):
     expected = 1 if args.mode == 0 else 4 if args.players > 1 else args.cars
     repo = Path(__file__).resolve().parents[1]
     artifact = runner.create_artifacts(repo / 'artifacts/race-fields', f'{args.cars}-cars-c{args.circuit}-r{args.reverse}-m{args.mode}')
@@ -62,7 +55,7 @@ def main():
     environment = runner.build_environment(scenario, runtime, artifact)
     state = artifact / 'race.lstate'
     environment.update(LAMBO_STATE_SAVE=str(state), LAMBO_STATE_SAVE_DELAY='300', LAMBO_WARP_REVERSE=str(args.reverse))
-    executable = runner.find_executable(None, repo)
+    executable = runner.find_executable(args.exe, repo)
     code, stdout, stderr, timed_out = runner.run_process(runner.command_for(executable), environment, repo, 180)
     runner.write_artifacts(artifact, scenario_path, runtime, environment, stdout, stderr)
     assert not timed_out and code == 0, (code, artifact)
@@ -71,6 +64,18 @@ def main():
     cars = inspect(state, expected, args.reverse, args.players)
     (artifact / 'field-result.json').write_text(json.dumps(cars, indent=2), encoding='utf-8')
     print(f'PASS {artifact.name}: {expected} cars; active racers moving; unique bodies and ranks', flush=True)
+    return artifact
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--cars', type=int, choices=range(2, 17), default=16)
+    parser.add_argument('--circuit', type=int, choices=range(1, 7), default=1)
+    parser.add_argument('--reverse', type=int, choices=(0, 1), default=0)
+    parser.add_argument('--mode', type=int, choices=range(4), default=2)
+    parser.add_argument('--players', type=int, choices=range(1, 5), default=1)
+    parser.add_argument('--exe', help='Path to the game executable')
+    run(parser.parse_args())
 
 
 if __name__ == '__main__':

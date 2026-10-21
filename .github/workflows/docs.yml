@@ -1,18 +1,11 @@
-name: Documentation checks
+name: Host checks
 
 on:
   push:
-    paths:
-      - "**/*.md"
-      - "tests/**"
-      - "tools/check_docs.py"
-      - ".github/workflows/docs.yml"
   pull_request:
-    paths:
-      - "**/*.md"
-      - "tests/**"
-      - "tools/check_docs.py"
-      - ".github/workflows/docs.yml"
+
+permissions:
+  contents: read
 
 jobs:
   docs:
@@ -20,10 +13,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
-      - run: git diff --check HEAD~1
+          python-version: "3.13"
+      - run: python -m pip install numpy
+      - name: Initialize patch replay dependency
+        run: git submodule update --init --depth 1 lib/rt64
+      - name: Check complete branch diff
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python tools/check_branch.py --base "$BASE_REF" --head "$GITHUB_SHA"
       - run: python tools/check_docs.py
-      - run: python -m unittest discover tests
+      - run: python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture

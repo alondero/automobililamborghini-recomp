@@ -15,6 +15,7 @@
 #include "librecomp/game.hpp"
 #include "rt64_render_hooks.h"
 #include <atomic>
+#include "lambo_frontend_acceptance.h"
 
 // RecompFrontend's host contract. The renderer remains the port's RT64 context.
 SDL_Window* window = nullptr;
@@ -35,6 +36,7 @@ std::string mod_error;
 OverlayCaptureGate overlay;
 lambo::StartupController* startup = nullptr;
 recompui::IconButton* reset_button = nullptr;
+recompui::IconButton* quit_button = nullptr;
 
 void create_settings_header() {
     using namespace recompui;
@@ -59,6 +61,7 @@ void create_settings_header() {
             ButtonStyle::Danger, ButtonStyle::Tertiary);
     });
     auto* quit = context.create_element<IconButton>(right, "icons/Quit.svg", ButtonStyle::Basic);
+    quit_button = quit;
     quit->add_pressed_callback([] {
         if (ultramodern::is_game_started()) {
             open_quit_game_prompt();
@@ -154,6 +157,7 @@ void render(plume::RenderCommandList* commands, plume::RenderFramebuffer* frameb
         }
     }
     draw_hook(commands, framebuffer);
+    tick_frontend_acceptance(reset_button, quit_button);
     overlay.publish_context_capture(recompui::is_context_capturing_input());
 }
 
@@ -163,6 +167,7 @@ void deinitialize() {
     overlay.publish_context_capture(false);
     deinit_hook();
     reset_button = nullptr;
+    quit_button = nullptr;
 }
 }
 

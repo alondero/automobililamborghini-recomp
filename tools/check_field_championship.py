@@ -1,6 +1,6 @@
 """Check native championship progression using controlled outcomes in a v2 snapshot.
 
-First run check_race_field.py --cars 16, then pass its race.lstate here.
+First run check_race_field.py --cars 16 --mode 3, then pass its race.lstate here.
 This exercises results and standings logic, not natural race completion.
 """
 import argparse
@@ -33,16 +33,9 @@ def require_championship_mode(blob):
         )
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('state', type=Path)
-    parser.add_argument('--render', action='store_true', help='Show the RT64 window for visual inspection')
-    args = parser.parse_args()
+def run(args):
     blob = bytearray(args.state.read_bytes())
-    try:
-        require_championship_mode(blob)
-    except ValueError as error:
-        parser.error(str(error))
+    require_championship_mode(blob)
     check_race_field.inspect(args.state, 16)
     roster = [half(blob, 0x80901000 + i * 2) for i in range(16)]
     # Enter native results initialization in championship round one. Round two
@@ -51,8 +44,9 @@ def main():
               (0x800ce6ba, 1), (0x800ce6b6, 3), (0x80901400, 16),
               (0x80901402, 3), (0x80901408, 0), (0x800ce6c4, 1),
               (0x800ce6e4, 3), (0x800ce704, 0), (0x800ce724, 0)]
+    places = [args.player_place] + [place for place in range(1, 17) if place != args.player_place]
     for racer in range(1, 17):
-        values.extend([(0x80902000 + racer * 0x84 + 6, 16 if racer == 1 else racer - 1),
+        values.extend([(0x80902000 + racer * 0x84 + 6, places[racer - 1]),
                        (0x80901200 + racer * 2, 100 - racer)])
     for address, value in values:
         struct.pack_into('<h', blob, offset(address), value)
@@ -73,6 +67,7 @@ def main():
     scenario_path.write_text(json.dumps({'schema': 1, 'name': 'championship16',
         'headless': not args.render, 'state_load': str(state), 'max_vis': 5000,
         'input': {'replay': str(replay), 'start_state': 10, 'exit_on_end': True},
+        'capture': {'path': 'results.bmp', 'state': 10, 'every': 60},
         'expect': {'replay_complete': True, 'max_state_at_least': 10, 'min_swaps': 100},
         'developer_env': {'LAMBO_RACE_CARS': '2'}}), encoding='utf-8')
     scenario = runner.load_scenario(scenario_path)
@@ -80,7 +75,7 @@ def main():
     environment = runner.build_environment(scenario, runtime, artifact)
     result_path = artifact / 'round2.lstate'
     environment.update(LAMBO_STATE_SAVE=str(result_path), LAMBO_STATE_SAVE_DELAY='300')
-    executable = runner.find_executable(None, repo)
+    executable = runner.find_executable(args.exe, repo)
     code, stdout, stderr, timed_out = runner.run_process(runner.command_for(executable), environment, repo, 180)
     runner.write_artifacts(artifact, scenario_path, runtime, environment, stdout, stderr)
     assert not timed_out and code == 0, (code, artifact)
@@ -88,9 +83,23 @@ def main():
     result = result_path.read_bytes()
     assert [half(result, a) for a in (0x800ce6ac, 0x800ce6b4, 0x800ce6ba, 0x800ce7ac)] == [8, 3, 2, 16]
     assert [half(result, 0x80901000 + i * 2) for i in range(16)] == roster
-    awards = [0, 9, 6, 4, 2, 1] + [0] * 10
+    points = {1: 9, 2: 6, 3: 4, 4: 2, 5: 1}
+    awards = [points.get(place, 0) for place in places]
     assert [half(result, 0x80901200 + i * 2) for i in range(1, 17)] == [99 - i + award for i, award in enumerate(awards)]
     print(f'PASS {artifact}: round two retains 16 entrants, roster and accumulated points', flush=True)
+    return artifact
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('state', type=Path)
+    parser.add_argument('--render', action='store_true', help='Show the RT64 window for visual inspection')
+    parser.add_argument('--player-place', type=int, choices=range(1, 17), default=16)
+    parser.add_argument('--exe', help='Path to the game executable')
+    try:
+        run(parser.parse_args())
+    except ValueError as error:
+        parser.error(str(error))
 
 
 if __name__ == '__main__':

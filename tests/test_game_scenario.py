@@ -63,6 +63,13 @@ FAKE_GAME = textwrap.dedent(
 
 
 class ScenarioRunnerTests(unittest.TestCase):
+    def test_missing_log_evidence_cannot_pass(self):
+        completed, artifact = self.run_scenario({
+            "schema": 1, "name": "missing-evidence",
+            "expect": {"log_contains": ["two resets completed"]}})
+        self.assertEqual(completed.returncode, 1, completed.stdout + completed.stderr)
+        self.assertIn("missing log evidence: two resets completed", completed.stdout)
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)

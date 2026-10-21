@@ -9,6 +9,11 @@ void func_800676B4(uint8_t* rdram, recomp_context* ctx);
 void func_80008ECC(uint8_t* rdram, recomp_context* ctx);
 
 static _Atomic int pending;
+static _Atomic unsigned generation;
+
+unsigned lambo_reset_generation(void) {
+    return atomic_load_explicit(&generation, memory_order_acquire);
+}
 
 void lambo_reset_request(void) {
     atomic_store_explicit(&pending, 1, memory_order_release);
@@ -41,6 +46,7 @@ int lambo_reset_tick(uint8_t* rdram, recomp_context* ctx) {
     func_800676B4(rdram, ctx);
     func_80008ECC(rdram, ctx);
     MEM_H(0, (gpr)(int32_t)LAMBO_GUEST_GAME_STATE_ADDR) = 3;
+    atomic_fetch_add_explicit(&generation, 1, memory_order_release);
     LAMBO_LOG_INFO("reset", "returning to title from state %d\n", state);
     return 0;
 }
