@@ -21,8 +21,6 @@ jobs:
       - name: Initialize patch replay dependency
         run: git submodule update --init --depth 1 lib/rt64
       - name: Check complete branch diff
-        env:
-          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: python tools/check_branch.py --base "$BASE_REF" --head "$GITHUB_SHA"
+        run: python tools/check_branch.py --event-file "$GITHUB_EVENT_PATH" --head "$GITHUB_SHA"
       - run: python tools/check_docs.py
       - run: python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture

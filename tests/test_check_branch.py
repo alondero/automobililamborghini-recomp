@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from tools.check_branch import check
+from tools.check_branch import check, github_base
 
 
 class BranchChecks(unittest.TestCase):
@@ -59,3 +59,17 @@ class BranchChecks(unittest.TestCase):
         self.commit("bad.txt", "bad \n")
         with self.assertRaises(subprocess.CalledProcessError):
             check("0" * 40, cwd=self.root)
+
+    def test_first_branch_push_uses_default_branch_baseline(self):
+        self.commit("existing.txt", "existing trailing space \n")
+        baseline = self.git("rev-parse", "HEAD").strip()
+        self.git("update-ref", "refs/remotes/origin/main", baseline)
+        self.commit("feature.txt", "clean\n")
+        event = {"before": "0" * 40, "repository": {"default_branch": "main"}}
+        self.assertEqual(github_base(event), "origin/main")
+        check(github_base(event), cwd=self.root)
+
+    def test_event_selects_pr_base_or_entire_push_range(self):
+        event = {"before": "old-push", "pull_request": {"base": {"sha": "pr-base"}}}
+        self.assertEqual(github_base(event), "pr-base")
+        self.assertEqual(github_base({"before": "old-push"}), "old-push")

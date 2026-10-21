@@ -1,7 +1,17 @@
 """Check whitespace across a branch, optionally including uncommitted edits."""
 import argparse
+import json
 import subprocess
 from pathlib import Path
+
+
+def github_base(event):
+    if 'pull_request' in event:
+        return event['pull_request']['base']['sha']
+    before = event.get('before', '')
+    if before and set(before) != {'0'}:
+        return before
+    return 'origin/' + event['repository']['default_branch']
 
 
 def check(base, head="HEAD", *, worktree=False, cwd=None):
@@ -23,12 +33,15 @@ def check(base, head="HEAD", *, worktree=False, cwd=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base", default="origin/main")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--base", default="origin/main")
+    group.add_argument("--event-file", type=Path, help="Select the base from a GitHub push or pull-request event")
     parser.add_argument("--head", default="HEAD")
     parser.add_argument("--worktree", action="store_true", help="Also check staged and unstaged edits")
     args = parser.parse_args()
+    base = github_base(json.loads(args.event_file.read_text(encoding='utf-8'))) if args.event_file else args.base
     try:
-        start = check(args.base, args.head, worktree=args.worktree,
+        start = check(base, args.head, worktree=args.worktree,
                       cwd=Path(__file__).resolve().parents[1])
     except subprocess.CalledProcessError as error:
         return error.returncode

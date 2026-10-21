@@ -36,6 +36,9 @@ code, a graphics backend, or a native build.
 The branch check compares the merge base with `HEAD`, then checks staged and
 unstaged edits when `--worktree` is present. Use `--base REF --head REF` for a
 specific review. A clean working tree alone does not check committed changes.
+CI uses `--event-file` to select the PR base, the previous push tip, or the
+default branch for a newly created branch. A first branch push therefore
+checks its changes rather than rechecking every historical file.
 
 ## Continuous integration
 
