@@ -127,11 +127,19 @@ def load_scenario(path: Path) -> dict[str, Any]:
         raise ScenarioError("scenario.graphics.hpfb_option must be Auto, On or Off")
     scenario["graphics"] = graphics
     developer = _dict(scenario.get("developer_env", {}), "scenario.developer_env")
-    if set(developer) - {"LAMBO_RACE_CARS", "LAMBO_RT_SHADOW_FAULT", "LAMBO_TEST_RESIZE", "LAMBO_RT_SHADOW_SWEEP"}:
+    if set(developer) - {"LAMBO_RACE_CARS", "LAMBO_RT_SHADOW_FAULT", "LAMBO_TEST_RESIZE", "LAMBO_RT_SHADOW_SWEEP",
+                         "LAMBO_UI_ACCEPTANCE", "LAMBO_LAUNCHER"}:
         raise ScenarioError("unsupported scenario developer variable")
     if any(type(value) is not str for value in developer.values()):
         raise ScenarioError("scenario.developer_env values must be a string")
     scenario["developer_env"] = developer
+    if developer.get("LAMBO_UI_ACCEPTANCE") not in (None, "quit", "reset"):
+        raise ScenarioError("LAMBO_UI_ACCEPTANCE must be quit or reset")
+    if developer.get("LAMBO_UI_ACCEPTANCE") and scenario.get("headless", True):
+        raise ScenarioError("UI acceptance needs a windowed RT64 consumer")
+    logs = scenario["expect"].get("log_contains", [])
+    if not isinstance(logs, list) or any(not isinstance(value, str) or not value for value in logs):
+        raise ScenarioError("scenario.expect.log_contains must be a list of nonempty strings")
     diagnostics = _dict(scenario.get("diagnostics", {}), "scenario.diagnostics")
     if set(diagnostics) - {"rt_sun_probe", "rt_task_capture", "rt_render_capture", "rt_drop_overlay", "rt_owner_buffer",
                            "rt_native_alpha_check", "rt_native_alpha_exact_pixels", "rt_native_alpha_double_uv"}:
@@ -341,6 +349,9 @@ def load_native_result(path: Path) -> dict[str, Any]:
 def evaluate(scenario: dict[str, Any], result: dict[str, Any], returncode: int | None,
              stderr: str = "") -> list[str]:
     failures: list[str] = []
+    for expected in scenario["expect"].get("log_contains", []):
+        if expected not in stderr:
+            failures.append(f"missing log evidence: {expected}")
     if returncode != 0:
         failures.append(f"process exited {returncode}")
     if result.get("exit_code") != returncode:

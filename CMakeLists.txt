@@ -294,6 +294,10 @@ if(BUILD_TESTING)
     target_include_directories(lambo_reset_tests PRIVATE src ${N64MR}/N64Recomp/include)
     add_test(NAME lambo_reset COMMAND lambo_reset_tests)
 
+    add_executable(lambo_reset_observation_tests tests/test_reset_observation.cpp)
+    target_include_directories(lambo_reset_observation_tests PRIVATE src)
+    add_test(NAME lambo_reset_observation COMMAND lambo_reset_observation_tests)
+
     add_executable(lambo_camera_projection_tests
         tests/test_camera_projection.cpp
     )
@@ -1147,4 +1151,16 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
                 ${RT64_DXC_BIN}/dxil.dll
                 $<TARGET_FILE_DIR:lamborghini_modern>)
     endif()
+endif()
+
+# Build every registered host fixture without relying on the game target's
+# dependencies. The ROM-backed fixtures join this target after generation.
+if(BUILD_TESTING)
+    add_custom_target(lambo_host_tests)
+    get_property(lambo_directory_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(lambo_target IN LISTS lambo_directory_targets)
+        if(lambo_target MATCHES "_tests$")
+            add_dependencies(lambo_host_tests ${lambo_target})
+        endif()
+    endforeach()
 endif()

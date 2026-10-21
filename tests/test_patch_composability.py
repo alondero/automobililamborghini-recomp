@@ -23,19 +23,15 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from tools.check_patch_series import SCRIPT_SERIES, CMAKE_SERIES, validate
 
 ROOT = Path(__file__).resolve().parents[1]
 PATCHES_DIR = ROOT / "patches"
 RT64_DIR = ROOT / "lib" / "rt64"
 
-# Script-applied rt64 patches per platform, in application order.
-SCRIPT_SERIES = {
-    "windows": ["0006", "0005", "0009", "0010", "0011"],
-    "linux": ["0006", "0009", "0010", "0011"],
-    "android": ["0006", "0009", "0010", "0011", "0013"],
-}
-# CMake-applied rt64 patches (CMakeLists.txt order, all platforms).
-CMAKE_SERIES = ["0021", "0022", "0024", "0025", "0026", "0027", "0029", "0030", "0033"]
+class PatchWiringTests(unittest.TestCase):
+    def test_replay_matrix_matches_build_inputs(self):
+        validate(ROOT)
 
 
 def resolve_patch(number):

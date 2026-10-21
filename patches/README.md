@@ -53,6 +53,12 @@ significant single-space lines from `git diff --check`;
 
 ## Application matrix
 
+Run `python tools/check_patch_series.py` after changing the patch stack. It
+checks that each patch is wired into a build path and that the RT64 replay
+matrix matches the Windows, Linux, Android and shared CMake application order.
+The matrix and checker live in `tools/check_patch_series.py`; the replay
+tests consume that matrix rather than maintaining a separate list.
+
 Patch **0035** derives runtime-toggle eligibility from the manifest when each
 handle is constructed, including packages present but disabled at startup.
 The public scan keeps discovery and config reload under the same mod-context

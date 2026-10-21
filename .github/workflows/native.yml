@@ -1,0 +1,49 @@
+name: Native host checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config clang libc++-dev libc++abi-dev \
+            libsdl2-dev libvulkan-dev libfreetype-dev \
+            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libdbus-1-dev
+          python -m pip install numpy
+      - name: Apply Linux script patches
+        run: python tools/check_patch_series.py --apply-script linux
+      - name: Configure without ROM-derived output
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+      - name: Build host fixtures
+        run: cmake --build build --target lambo_host_tests --parallel 2
+      - name: Run host fixtures
+        run: ctest --test-dir build --output-on-failure --no-tests=error
+      - name: Check the mod interface with libc++
+        # Android's standard library rejects incomplete container element types
+        # that GCC accepts. Compile the real refresh fixture with both libraries.
+        run: |
+          cmake -S . -B build-libcxx -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS=-stdlib=libc++
+          cmake --build build-libcxx --target lambo_mod_menu_refresh_tests --parallel 2
+          ctest --test-dir build-libcxx -R '^lambo_mod_menu_refresh$' --output-on-failure --no-tests=error
+      - name: Retain failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-test-logs
+          path: build/Testing/Temporary/

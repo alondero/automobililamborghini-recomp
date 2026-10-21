@@ -9,26 +9,13 @@ conditions:
     pattern: patches[/\\][^/\\]+\.patch$
 ---
 
-⚠️ **Patch file written/edited in `patches/`**
+After changing a dependency patch, read the application matrix in
+`patches/README.md` and run `python tools/check_patch_series.py`.
 
-A file under `patches/*.patch` was just created or modified. Per the project's
-discipline (see `CLAUDE.md` + memory note about PATCH_BLOCKS-stale-again),
-every patch MUST be wired into all three of:
+Windows, Linux and Android script prefixes live in `build.ps1`, `build.sh`
+and `scripts/build_android.py`. Shared patches live in `CMakeLists.txt` and
+`cmake/Frontend.cmake`. Release workflows call those scripts.
 
-1. **`build.ps1`** — the `$patches` array (Windows path, lines ~118-123).
-2. **`build.sh`**  — the `PATCHES` bash array (Linux path, ~line 96).
-3. **`.github/workflows/build-release.yml`** — both `build-linux` and
-   `build-windows` jobs have their own `git apply` step (Linux only applies
-   runtime+rt64 patches; Windows also applies the MinGW/D3D12 fixes).
-
-Before declaring this work done:
-
-- For each build file, grep for the new patch's filename (e.g. the
-  `000X-foo.patch` basename) and confirm it appears in the right context.
-- If this patch only applies on one OS (e.g. MinGW-only or D3D12-only),
-  make sure it isn't listed on the other OS — patches are gated per-OS.
-- If you just re-edited an existing patch that's already wired up, ignore
-  this reminder.
-
-Skip this check only if you wrote a temporary patch under a path that does
-NOT start with `patches/` (this rule matches `patches/.*\.patch` only).
+For an RT64 series change, update the replay matrix in
+`tools/check_patch_series.py` and run `python -m unittest
+tests.test_patch_composability -v` with `lib/rt64` initialized.

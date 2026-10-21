@@ -83,6 +83,12 @@ jobs:
           ROM_FILENAME: ${{ env.ROM_FILENAME }}
         run: bash build.sh
 
+      - name: Build and run native regressions
+        run: |
+          cmake --build build --target lambo_host_tests --parallel 2
+          ctest --test-dir build --output-on-failure --no-tests=error
+          python tools/run_runtime_acceptance.py --headless
+
       - name: Remove ROM before packaging
         if: always()
         run: rm -f "$ROM_FILENAME"
@@ -170,6 +176,16 @@ jobs:
         env:
           ROM_FILENAME: ${{ env.ROM_FILENAME }}
         run: ./build.ps1 -RomPath "$env:ROM_FILENAME"
+
+      - name: Build and run native regressions
+        shell: pwsh
+        run: |
+          cmake --build build --target lambo_host_tests --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build --output-on-failure --no-tests=error
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tools/run_runtime_acceptance.py --headless
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Remove ROM before packaging
         if: always()

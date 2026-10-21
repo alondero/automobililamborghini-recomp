@@ -37,7 +37,7 @@ Run the smallest relevant test. For documentation changes, run:
 ~~~text
 python tools/check_docs.py
 python -m unittest discover tests
-git diff --check
+python tools/check_branch.py --base origin/main --worktree
 ~~~
 
 Do not claim a build, game run, visual check, or reference-project playthrough
