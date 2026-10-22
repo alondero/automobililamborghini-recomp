@@ -30,14 +30,20 @@ turns the setting off. See [configuration](configuration.md#graphics-file).
 
 ## Where shadows are used
 
-- One player, race state 8, on any of the six circuits, in any race mode:
-  time trial, menu Arcade, single race, Championship and attract.
+- One player, race state 8, in a validated race mode and car. Fail closed:
+  anything outside the table keeps the native shadow.
+  - Race modes 0 (time trial) and 2 (single race) on all six circuits.
+  - Race modes 1 (menu Arcade) and 3 (Championship) on Circuit 1 only, because
+    warping into them always loads Circuit 1.
+  - Attract (mode 4) is not validated.
+  - Car 0 follows the race-mode table. Cars 1-23 are validated on Circuit 1 time
+    trial only.
 - D3D12 with DXR 1.1 and Shader Model 6.5 inline ray queries.
 
 Standard and high-precision colour (`hpfb_option`) and MSAA are all handled by the code.
 This build's runs cover time trial, single race and the menu-to-race path, standard
-colour, and MSAA 2x. Championship, attract and high-precision colour have no run on
-this build; the 0030 results below are their last evidence.
+colour, and MSAA 2x. High-precision colour has no run on this build; the 0030 results
+below are its last evidence.
 
 Each draw gets a robust default. A draw the policy cannot trace (an unknown
 projection, a face range it cannot follow) neither casts nor receives, and the
@@ -190,12 +196,12 @@ material on the lap are covered.
 
 | Circuit | Start of 2026-10-22 | Final build |
 | --- | --- | --- |
-| 1 | 1,293/1,500 (86.2%) | 1,440/1,440 (100%) |
-| 2 | 1,585/1,800 (88.1%) | 1,800/1,800 (100%) |
-| 3 | 1,599/1,920 (83.3%) | 1,920/1,920 (100%) |
-| 4 | 1,805/2,400 (75.2%) | 2,400/2,400 (100%) |
-| 5 | 2,220/2,220 (100%) | 2,160/2,160 (100%) |
-| 6 | 1,954/2,160 (90.5%) | 2,640/2,640 (100%) |
+| 1 | 1,293/1,500 (86.2%) | 1,525/1,525 (100%) |
+| 2 | 1,585/1,800 (88.1%) | 1,830/1,830 (100%) |
+| 3 | 1,599/1,920 (83.3%) | 1,926/1,926 (100%) |
+| 4 | 1,805/2,400 (75.2%) | 2,442/2,442 (100%) |
+| 5 | 2,220/2,220 (100%) | 2,251/2,251 (100%) |
+| 6 | 1,954/2,160 (90.5%) | 2,666/2,666 (100%) |
 
 The start-of-day build logged no `lap_summary` line, so its counts are
 rebuilt from fallback and state-change lines and cover a slightly different
@@ -203,6 +209,11 @@ span. Its fallbacks were the old missing-key gate (tunnels and in-car views)
 and, on Circuit 4, incomplete admission. The final build also kept every task
 ready with debug views 1 and 4 and with `LAMBO_RT_SHADOW_CACHE=2` on
 Circuit 1.
+
+Earlier final-build totals counted only full 120-task windows and dropped each
+lap's tail (up to 119 tasks). The totals above include the tail, which is
+flushed when the process exits. Circuit 6's tail was 26 tasks, which is why its
+total moved from 2,640 to 2,666.
 
 ### Lifecycle and fallback
 
@@ -237,7 +248,7 @@ Final build, 2026-10-22, with remembered scenery on:
 
 | Scenes | Colour | Result |
 | --- | --- | --- |
-| Circuits 1-6, time trial and single race, car 0, hard and soft | standard | 24/24 pass. Circuits 1, 5 and 6 were first inconclusive at task 60 (ubershader draws while pipelines compiled) and passed on a rerun. Hard p1 within 0.0074 over all tasks; no brightened pixel and no ubershader draw in the passing runs. |
+| Circuits 1-6, time trial and single race, car 0, hard and soft | standard | 24/24 pass with no reruns on the review-fix build. Hard p1 within 0.0074 over all tasks; no brightened pixel and no ubershader draw. Earlier runs on this branch had a few cases fail at task 60 while pipelines compiled (ubershader draws); those are inconclusive, not shadow failures, and the rerun passed. |
 
 The high-precision colour matrix and the menu, warped-mode and car rows
 below were not rerun on the final build.
@@ -387,8 +398,10 @@ consumes it; see [sky ownership](sky-panorama.md).
 ## Not covered
 
 - Two to four players: those views keep the native shadow.
-- Cars 1 to 23 on circuits other than Circuit 1, and modes 1 and 3 on
-  Circuits 2-6. They take the traced path but have not been measured.
+- Cars 1 to 23 outside Circuit 1 time trial, modes 1 and 3 outside Circuit 1,
+  and attract mode. These draw the native shadow until a capture run is
+  recorded. `LAMBO_RT_SHADOW_SWEEP=1` lets them reach the traced path for that
+  measurement only; it is never a player setting.
 - Scenery no earlier view of the scene has drawn. The cache only remembers
   what the camera has seen, so the first view after a warp, reset or new race
   still misses casters behind it. Course-asset caster submission remains a

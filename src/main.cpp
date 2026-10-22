@@ -128,6 +128,9 @@ static void claim_immediate_exit() {
     g_termination_latch.wait();
 }
 
+// Logs a ray-traced shadow lap's partial window; defined in lambo_rt_production.cpp.
+extern "C" void lambo_rt_flush_lap_summary_at_exit();
+
 // Print the one-line boot summary the runtime guard (tests/pivot/test_boot_smoke.py) parses,
 // then terminate the process immediately. We _Exit instead of returning through
 // recomp::start()'s teardown on purpose: that teardown joins the helper threads and munmaps
@@ -138,6 +141,7 @@ static void claim_immediate_exit() {
     // (Graceful game-thread shutdown belongs at the RT64 integration boundary.)
 [[noreturn]] static void boot_summary_and_exit() {
     claim_immediate_exit();
+    lambo_rt_flush_lap_summary_at_exit();
     lambo::harness::log_boot_summary();
     const lambo::harness::Snapshot metrics = lambo::harness::snapshot();
     const lambo::harness::Outcome outcome = lambo::harness::finalize_outcome(
@@ -151,6 +155,7 @@ static void claim_immediate_exit() {
 
 [[noreturn]] static void harness_summary_and_exit(const char* reason, int exit_code) {
     claim_immediate_exit();
+    lambo_rt_flush_lap_summary_at_exit();
     const lambo::harness::Outcome outcome = lambo::harness::finalize_outcome(reason, exit_code);
     LAMBO_LOG("harness", "scenario finished; reason=%s status=%d\n",
               outcome.reason.c_str(), outcome.exit_code);
@@ -164,6 +169,7 @@ static void claim_immediate_exit() {
 
 [[noreturn]] static void application_exit_success() {
     claim_immediate_exit();
+    lambo_rt_flush_lap_summary_at_exit();
     lambo::ui::save_frontend_preferences();
     LAMBO_LOG("probe", "application exit requested; status=success\n");
     // update_gfx_stub runs on librecomp's primary thread, while RT64 invokes the

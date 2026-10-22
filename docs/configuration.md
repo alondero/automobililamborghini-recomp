@@ -218,6 +218,7 @@ most useful ones are:
 | `LAMBO_RT_SHADOW_CONTACT`, `LAMBO_RT_SHADOW_CONTACT_DISTANCE` | Contact shadow strength (default 0.55) and reach in renderer units (default 1.6). |
 | `LAMBO_RT_SHADOW_SKY_DISTANCE`, `LAMBO_RT_SHADOW_SKY_OPEN` | Reach of the open-sky test (default 30, 0 disables it) and the open-sky fraction that keeps the full sun shadow (default 0.5). |
 | `LAMBO_RT_SHADOW_CACHE=<0-2>` | Remembered static scenery: 0 off, 1 on (default), 2 trace only remembered scenery in place of the presented world, to check its coverage. |
+| `LAMBO_RT_SHADOW_SWEEP=1` | Let unvalidated race modes and cars reach ray-traced shadows, so their scenes can be measured. Not a player setting: without it they draw the native shadow. |
 | `LAMBO_TEST_RESIZE=<frame>:<W>x<H>` | Resize the window once at an input-replay frame. |
 
 These variables are for developers. They are not a stable player settings

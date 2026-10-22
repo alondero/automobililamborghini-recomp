@@ -230,7 +230,8 @@ and limits; this does not test native game receivers or swapchain pixels. The
 probe also covers the instance masks (moving-only lamp light, remembered
 scenery) and the static layer's rebuild when its snapshot changes.
 `lambo_rt_shadow_cache` checks, on the host, which static scenery the shadow
-cache remembers, publishes and evicts.
+cache remembers, publishes and evicts. `lambo_rt_lap_window` checks that the
+lap summary counts each Workload once and keeps a lap's partial tail.
 
 `python tools/check_rt_shadow_lap.py` drives each circuit's recorded
 time-trial lap in a real D3D12 window and fails when more than 1% of race

@@ -199,8 +199,6 @@ class ScenarioRunnerTests(unittest.TestCase):
         for key, value in developer.items():
             self.assertEqual(environment[key], value)
         for bad, message in (({"LAMBO_HEADLESS": "0"}, "unsupported scenario developer variable"),
-                             # The retired sweep variable is no longer allow-listed.
-                             ({"LAMBO_RT_SHADOW_SWEEP": "1"}, "unsupported scenario developer variable"),
                              ({"LAMBO_RT_SHADOW_FAULT": 1}, "must be a string")):
             path = self.scenario_dir / "bad-dev.json"
             path.write_text(json.dumps({"schema": 1, "name": "bad", "developer_env": bad}), encoding="utf-8")
@@ -208,6 +206,13 @@ class ScenarioRunnerTests(unittest.TestCase):
                                       cwd=self.root, capture_output=True, text=True, timeout=10)
             self.assertEqual(rejected.returncode, 2, bad)
             self.assertIn(message, rejected.stderr)
+
+    def test_validation_sweep_is_allowlisted(self) -> None:
+        completed, artifact = self.run_scenario({"schema": 1, "name": "sweep",
+                                                 "developer_env": {"LAMBO_RT_SHADOW_SWEEP": "1"}})
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        environment = json.loads((artifact / "harness-environment.json").read_text())
+        self.assertEqual(environment["LAMBO_RT_SHADOW_SWEEP"], "1")
 
     def test_warp_mode_accepts_player_race_modes_only(self) -> None:
         for mode in (0, 1, 2, 3):

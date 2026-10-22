@@ -68,7 +68,30 @@ struct ShadowSettings {
     // strength. Production keeps the last one seen; this default is the
     // Circuit 1 start-line key (155, 163, 98)/255.
     float key_luminance = 0.6143f;
+    // Developer measurement only: admits race modes and cars that have no
+    // validated evidence yet, so their captures can be recorded.
+    bool validation_sweep = false;
 };
+
+// Race modes measured per circuit (bit n = circuit n). Modes 0 and 2 were
+// measured on all six circuits; modes 1 and 3 only on Circuit 1, because
+// warping into them always loads Circuit 1. Attract mode 4 is unmeasured.
+inline constexpr std::array<uint8_t, 4> validated_race_mode_circuits{{0x3F, 0x01, 0x3F, 0x01}};
+
+inline bool validated_race_mode(int race_mode, int circuit) {
+    return race_mode >= 0 && race_mode < int(validated_race_mode_circuits.size()) && circuit >= 0 && circuit < 6 &&
+        (validated_race_mode_circuits[size_t(race_mode)] & (1u << circuit)) != 0;
+}
+
+// Player-one model selectors 0-23. Car 0 is measured on every validated race
+// mode; cars 1-23 were measured only on Circuit 1 time trial, hard shadows.
+inline constexpr int16_t last_player_model = 23;
+
+inline bool validated_player_model(int model, int race_mode, int circuit) {
+    if (model < 0 || model > last_player_model) return false;
+    if (model == 0) return validated_race_mode(race_mode, circuit);
+    return race_mode == 0 && circuit == 0;
+}
 
 // Strength is framebuffer-space attenuation; the VI's gamma runs afterwards.
 // The displayed native overlay core transmits about 0.51 on every captured
