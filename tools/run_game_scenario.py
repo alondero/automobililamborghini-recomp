@@ -127,7 +127,9 @@ def load_scenario(path: Path) -> dict[str, Any]:
         raise ScenarioError("scenario.graphics.hpfb_option must be Auto, On or Off")
     scenario["graphics"] = graphics
     developer = _dict(scenario.get("developer_env", {}), "scenario.developer_env")
-    if set(developer) - {"LAMBO_RACE_CARS", "LAMBO_RT_SHADOW_FAULT", "LAMBO_TEST_RESIZE", "LAMBO_RT_SHADOW_SWEEP",
+    if set(developer) - {"LAMBO_RACE_CARS", "LAMBO_RT_SHADOW_FAULT", "LAMBO_TEST_RESIZE", "LAMBO_RT_SHADOW_DEBUG", "LAMBO_RT_SHADOW_SWEEP",
+                         "LAMBO_RT_SHADOW_CONTACT", "LAMBO_RT_SHADOW_CONTACT_DISTANCE",
+                         "LAMBO_RT_SHADOW_SKY_DISTANCE", "LAMBO_RT_SHADOW_SKY_OPEN", "LAMBO_RT_SHADOW_CACHE",
                          "LAMBO_UI_ACCEPTANCE", "LAMBO_LAUNCHER"}:
         raise ScenarioError("unsupported scenario developer variable")
     if any(type(value) is not str for value in developer.values()):

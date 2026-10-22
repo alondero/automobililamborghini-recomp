@@ -7,9 +7,13 @@ The [shadow feature page](rt-shadows.md) records the production path, its
 validated scope and its limits; [material evidence](rt-material-evidence.md)
 records the caster/receiver policy and contrast calibration. This page keeps
 the original plan from 2026-10-02 for its reasoning; later sections describe
-the planning state at that time, not the current code. Relighting, offscreen
-caster submission, multiplayer views and non-D3D12 backends remain follow-on
-work. The target is Automobili Lamborghini: Recompiled. RaceWave46 is a peer
+the planning state at that time, not the current code. Since 2026-10-22 every
+one-player race traces with robust per-draw defaults, tunnel lamps light the
+car's shadow, and static scenery the camera no longer sees keeps casting
+through a cache of drawn scenery ([casters outside the view](rt-shadows.md#casters-outside-the-view)).
+That cache only remembers what some earlier view drew; it is not the
+course-asset caster submission of follow-on phase 2. Relighting, multiplayer
+views and non-D3D12 backends remain follow-on work. The target is Automobili Lamborghini: Recompiled. RaceWave46 is a peer
 implementation to learn from; its courses, RAM addresses and lighting policy
 are not Lamborghini inputs.
 

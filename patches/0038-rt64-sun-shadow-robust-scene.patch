@@ -1,0 +1,1326 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index c3ed6b9..ed7a91f 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -410,6 +410,7 @@ set (SOURCES
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_render_target.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_render_target_manager.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_render_worker.cpp"
++    "${PROJECT_SOURCE_DIR}/src/render/rt64_sun_shadow_cache.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_sun_shadow_scene.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_sun_shadow_pass.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_native_alpha_evidence.cpp"
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+index 5b16322..d1072da 100644
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -561,7 +561,19 @@ namespace RT64 {
+         // an interleaved or diagnostic copy.
+         const bool sunShadowActive = (sunShadowPass != nullptr) && sunShadowPass->active(rasterScene) &&
+             (framebuffer.renderTargetDrawCall.fbStorage == fbStorage);
++        // A ready plan skips every native overlay of this view and composites the
++        // ray traced receivers once, right after the last receiver or overlay.
++        auto recordSunShadow = [&]() {
++            sunShadowPass->recordReplacement(worker, *this, uint32_t(&framebuffer - framebufferVector.data()), fbStorage, depthState);
++            switchToGraphicsPipeline();
++            worker->commandList->setFramebuffer(depthState ? fbStorage->colorWriteDepthRead.get() : fbStorage->colorDepthWrite.get());
++        };
++
+         for (size_t position = 0; position < rasterScene.instanceIndices.size(); position++) {
++            if (sunShadowActive && sunShadowPass->compositeBefore(position)) {
++                recordSunShadow();
++            }
++
+             const uint32_t i = rasterScene.instanceIndices[position];
+             const InstanceDrawCall &drawCall = instanceDrawCallVector[i];
+             switch (drawCall.type) {
+@@ -570,15 +582,7 @@ namespace RT64 {
+             case InstanceDrawCall::Type::RegularRect: {
+                 assert(fbStorage->colorTarget != nullptr);
+ 
+-                // A ready plan replaces every native overlay of this view at once;
+-                // the ray traced receivers composite where the last one was drawn.
+                 if (sunShadowActive && sunShadowPass->overlayAt(position)) {
+-                    if (sunShadowPass->replaceAt(position)) {
+-                        sunShadowPass->recordReplacement(worker, *this, uint32_t(&framebuffer - framebufferVector.data()), fbStorage, depthState);
+-                        switchToGraphicsPipeline();
+-                        worker->commandList->setFramebuffer(depthState ? fbStorage->colorWriteDepthRead.get() : fbStorage->colorDepthWrite.get());
+-                    }
+-
+                     break;
+                 }
+ 
+@@ -735,6 +739,10 @@ namespace RT64 {
+             }
+         }
+ 
++        if (sunShadowActive && sunShadowPass->compositeBefore(rasterScene.instanceIndices.size())) {
++            recordSunShadow();
++        }
++
+         // Mark targets for resolve.
+         if (fbStorage->colorTarget != nullptr) {
+             fbStorage->colorTarget->markForResolve();
+diff --git a/src/render/rt64_sun_shadow_cache.cpp b/src/render/rt64_sun_shadow_cache.cpp
+new file mode 100644
+index 0000000..16a81c9
+--- /dev/null
++++ b/src/render/rt64_sun_shadow_cache.cpp
+@@ -0,0 +1,134 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#include "rt64_sun_shadow_cache.h"
++
++#include <algorithm>
++#include <atomic>
++#include <cmath>
++#include <cstring>
++
++namespace RT64 {
++    namespace {
++        // Shared by every cache, so a replaced cache never reissues a version
++        // that its owner already built.
++        std::atomic<uint64_t> versions{ 0 };
++
++        float distanceSquared(const SunShadowStaticCache::Triangle &triangle, const float eye[3]) {
++            float sum = 0.0f;
++            for (int axis = 0; axis < 3; axis++) {
++                const float centroid = (triangle[axis] + triangle[3 + axis] + triangle[6 + axis]) / 3.0f;
++                const float delta = centroid - eye[axis];
++                sum += delta * delta;
++            }
++            return sum;
++        }
++
++        bool finite(const SunShadowStaticCache::Triangle &triangle) {
++            for (float value : triangle) {
++                if (!std::isfinite(value)) return false;
++            }
++            return true;
++        }
++    };
++
++    bool SunShadowStaticCache::Key::operator==(const Key &other) const {
++        return std::memcmp(bits.data(), other.bits.data(), sizeof(Triangle)) == 0;
++    }
++
++    size_t SunShadowStaticCache::KeyHash::operator()(const Key &key) const {
++        uint32_t words[9];
++        std::memcpy(words, key.bits.data(), sizeof(words));
++        uint64_t hash = 1469598103934665603ULL;
++        for (uint32_t word : words) {
++            hash ^= word;
++            hash *= 1099511628211ULL;
++        }
++        return size_t(hash ^ (hash >> 32));
++    }
++
++    void SunShadowStaticCache::reset() {
++        entries_.clear();
++        promoted_ = 0;
++        prunedTask_ = 0;
++        if (!published_.empty()) {
++            published_.clear();
++            version_ = ++versions;
++        }
++    }
++
++    void SunShadowStaticCache::observe(uint64_t epoch, uint64_t task, const std::vector<Triangle> &triangles, const float eye[3]) {
++        if (!started_ || (epoch != epoch_)) {
++            reset();
++            epoch_ = epoch;
++            started_ = true;
++        }
++
++        for (const Triangle &triangle : triangles) {
++            if (!finite(triangle)) continue;
++            auto inserted = entries_.try_emplace(Key{ triangle });
++            Entry &entry = inserted.first->second;
++            if (!inserted.second && !entry.promoted && (task > entry.lastTask) && (task - entry.lastTask <= settings_.promoteGap)) {
++                entry.promoted = true;
++                promoted_++;
++            }
++
++            entry.lastTask = std::max(entry.lastTask, task);
++        }
++
++        const uint32_t interval = std::max(settings_.pruneInterval, 1U);
++        if ((task - prunedTask_ >= interval) || (promoted_ > settings_.maxTriangles)) {
++            prune(task, eye);
++        }
++
++        publish(task);
++    }
++
++    void SunShadowStaticCache::prune(uint64_t task, const float eye[3]) {
++        prunedTask_ = task;
++        const float radiusSquared = settings_.radius * settings_.radius;
++        for (auto it = entries_.begin(); it != entries_.end();) {
++            const uint64_t unseen = task > it->second.lastTask ? task - it->second.lastTask : 0;
++            bool erase = false;
++            if (!it->second.promoted) {
++                erase = unseen > settings_.promoteGap;
++            }
++            else if ((unseen > settings_.keepTasks) && (distanceSquared(it->first.bits, eye) > radiusSquared)) {
++                erase = true;
++                promoted_--;
++            }
++
++            it = erase ? entries_.erase(it) : std::next(it);
++        }
++
++        if (promoted_ <= settings_.maxTriangles) return;
++
++        // Over the cap: keep the scenery nearest the camera.
++        std::vector<std::pair<float, Key>> ranked;
++        ranked.reserve(promoted_);
++        for (const auto &entry : entries_) {
++            if (entry.second.promoted) ranked.emplace_back(distanceSquared(entry.first.bits, eye), entry.first);
++        }
++
++        auto keep = ranked.begin() + settings_.maxTriangles;
++        std::nth_element(ranked.begin(), keep, ranked.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
++        for (auto it = keep; it != ranked.end(); it++) {
++            entries_.erase(it->second);
++        }
++
++        promoted_ = settings_.maxTriangles;
++    }
++
++    void SunShadowStaticCache::publish(uint64_t task) {
++        next_.clear();
++        for (const auto &entry : entries_) {
++            if (entry.second.promoted && (settings_.includePresented || (entry.second.lastTask != task))) {
++                next_.push_back(entry.first.bits);
++            }
++        }
++
++        if (next_ != published_) {
++            published_.swap(next_);
++            version_ = ++versions;
++        }
++    }
++};
+diff --git a/src/render/rt64_sun_shadow_cache.h b/src/render/rt64_sun_shadow_cache.h
+new file mode 100644
+index 0000000..cbe75a6
+--- /dev/null
++++ b/src/render/rt64_sun_shadow_cache.h
+@@ -0,0 +1,70 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 RT64 Contributors
++#pragma once
++#include <array>
++#include <cstddef>
++#include <cstdint>
++#include <unordered_map>
++#include <vector>
++
++namespace RT64 {
++// Static scenery remembered across Workloads. A view only presents what the
++// camera sees, so casters behind or beside it would otherwise vanish and their
++// shadows would change with the viewpoint. Triangles are world-space float
++// positions; a triangle becomes static once the same bits are presented in two
++// tasks at most promoteGap apart, which moving geometry never repeats.
++// Promoted triangles far from the camera and unseen for keepTasks are evicted.
++// CPU only: the owner uploads published() and builds its own structure.
++struct SunShadowStaticCacheSettings {
++    uint32_t maxTriangles = 131072;
++    uint32_t promoteGap = 2;
++    uint32_t keepTasks = 300;
++    float radius = 400.0f; // World units from the camera.
++    uint32_t pruneInterval = 30; // Tasks between eviction passes.
++    // Publish presented scenery too. A diagnostic: the owner then traces the
++    // remembered scenery in place of the presented world.
++    bool includePresented = false;
++};
++
++class SunShadowStaticCache {
++public:
++    using Triangle = std::array<float, 9>;
++
++    explicit SunShadowStaticCache(SunShadowStaticCacheSettings settings = {}) : settings_(settings) {}
++    // Records one task's static casters. A new epoch starts an empty cache.
++    void observe(uint64_t epoch, uint64_t task, const std::vector<Triangle> &triangles, const float eye[3]);
++    // Promoted triangles that the last observed task did not present: the
++    // view traces those it presents itself, and a duplicate would only slow
++    // every ray. version() is 0 until the first snapshot, changes with the
++    // contents and never repeats, even across epochs or cache instances.
++    const std::vector<Triangle> &published() const { return published_; }
++    uint64_t version() const { return version_; }
++    size_t promoted() const { return promoted_; }
++    size_t candidates() const { return entries_.size() - promoted_; }
++    void reset();
++
++private:
++    struct Key {
++        Triangle bits;
++        bool operator==(const Key &other) const;
++    };
++    struct KeyHash {
++        size_t operator()(const Key &key) const;
++    };
++    struct Entry {
++        uint64_t lastTask = 0;
++        bool promoted = false;
++    };
++    void prune(uint64_t task, const float eye[3]);
++    void publish(uint64_t task);
++
++    SunShadowStaticCacheSettings settings_;
++    std::unordered_map<Key, Entry, KeyHash> entries_;
++    std::vector<Triangle> published_, next_;
++    uint64_t epoch_ = 0;
++    uint64_t version_ = 0;
++    uint64_t prunedTask_ = 0;
++    size_t promoted_ = 0;
++    bool started_ = false;
++};
++}
+diff --git a/src/render/rt64_sun_shadow_pass.cpp b/src/render/rt64_sun_shadow_pass.cpp
+index 99af1e5..5a15471 100644
+--- a/src/render/rt64_sun_shadow_pass.cpp
++++ b/src/render/rt64_sun_shadow_pass.cpp
+@@ -3,6 +3,8 @@
+ #include "rt64_sun_shadow_pass.h"
+ 
+ #include <algorithm>
++#include <chrono>
++#include <cmath>
+ 
+ #include "hle/rt64_workload.h"
+ #include "rt64_framebuffer_renderer.h"
+@@ -29,6 +31,51 @@ namespace RT64 {
+         uint32_t compositeKey(RenderFormat format, uint32_t sampleCount) {
+             return (uint32_t(format) << 8) | sampleCount;
+         }
++
++        // World position of a view transform's eye, w = 1; w = 0 when the
++        // matrix cannot be inverted. RT64 stores row-vector matrices.
++        hlslpp::float4 cameraPosition(const interop::float4x4 &view) {
++            const hlslpp::float4x4 inverse = hlslpp::inverse(view);
++            const interop::float4 eye = hlslpp::mul(hlslpp::float4(0.0f, 0.0f, 0.0f, 1.0f), inverse);
++            const float w = eye.w;
++            if (!std::isfinite(w) || std::abs(w) < 1e-6f) return hlslpp::float4(0.0f, 0.0f, 0.0f, 0.0f);
++            const float x = eye.x / w, y = eye.y / w, z = eye.z / w;
++            if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) return hlslpp::float4(0.0f, 0.0f, 0.0f, 0.0f);
++            return hlslpp::float4(x, y, z, 1.0f);
++        }
++
++        // World positions of the Workload's opaque static casters, from the
++        // game frame's own transforms: the bits repeat while the scenery holds
++        // still, whatever the interpolated presentation does.
++        void staticCasters(const Workload &workload, const SunShadowWorkload &shadow,
++            std::vector<SunShadowStaticCache::Triangle> &triangles)
++        {
++            triangles.clear();
++            const auto &drawData = workload.drawData;
++            const auto &faces = drawData.faceIndices;
++            const size_t vertexCount = drawData.worldIndices.size();
++            if (drawData.posFloats.size() < vertexCount * 3) return;
++            for (const SunShadowRange &range : shadow.geometry) {
++                if (range.dynamicCaster || !range.opaqueSolid || range.nativeAlphaCoverage || range.rejection) continue;
++                if (range.indexCount % 3 != 0 || range.faceStart > faces.size() || range.indexCount > faces.size() - range.faceStart) continue;
++                for (uint32_t i = range.faceStart; i < range.faceStart + range.indexCount; i += 3) {
++                    SunShadowStaticCache::Triangle triangle;
++                    bool valid = true;
++                    for (uint32_t corner = 0; corner < 3 && valid; ++corner) {
++                        const uint32_t v = faces[i + corner];
++                        valid = v < vertexCount && drawData.worldIndices[v] < drawData.worldTransforms.size();
++                        if (!valid) break;
++                        const float *p = &drawData.posFloats[size_t(v) * 3];
++                        const interop::float4 world = hlslpp::mul(hlslpp::float4(p[0], p[1], p[2], 1.0f),
++                            drawData.worldTransforms[drawData.worldIndices[v]]);
++                        triangle[corner * 3 + 0] = world.x;
++                        triangle[corner * 3 + 1] = world.y;
++                        triangle[corner * 3 + 2] = world.z;
++                    }
++                    if (valid) triangles.push_back(triangle);
++                }
++            }
++        }
+     }
+ 
+     SunShadowPass::SunShadowPass() { }
+@@ -40,7 +87,8 @@ namespace RT64 {
+         raster_ = nullptr;
+         overlayPositions_.clear();
+         receiverInstances_.clear();
+-        replacementPosition_ = SIZE_MAX;
++        receiverDraws_.clear();
++        compositePosition_ = SIZE_MAX;
+         result_.ready = false;
+         result_.reason = reason;
+         return false;
+@@ -179,8 +227,11 @@ namespace RT64 {
+         result_.requested = true;
+         result_.sceneEpoch = shadow->sceneEpoch;
+         result_.taskSequence = shadow->taskSequence;
+-        if (!shadow->authenticated || !shadow->complete) { reject("incomplete scene admission"); return; }
+-        if (!validSunShadowParams(shadow->params)) { reject("invalid light parameters"); return; }
++        if (!shadow->authenticated || !shadow->complete) { reject("no traced receivers"); return; }
++        if (!validSunShadowParams(shadow->params) || !validSunShadowAmbient(shadow->ambient)) {
++            reject("invalid light parameters");
++            return;
++        }
+         if (!ensureDevice(worker)) { reject(supportReason_); return; }
+         const uint32_t vertexCount = workload.drawData.vertexCount();
+         const auto &world = workload.outputBuffers.worldPosBuffer;
+@@ -189,53 +240,74 @@ namespace RT64 {
+             return;
+         }
+ 
+-        // Every admitted native overlay must be presented exactly once, all in
+-        // one framebuffer raster scene; otherwise this view stays native.
+-        std::vector<bool> found(shadow->overlays.size(), false);
++        // Each receiver's camera, from the view of the projection that drew it.
++        std::unordered_map<uint32_t, ReceiverDraw> receivers;
++        receivers.reserve(shadow->receivers.size());
++        for (const auto &receiver : shadow->receivers) {
++            receivers[receiver.draw] = { &receiver, hlslpp::float4(0.0f, 0.0f, 0.0f, 0.0f) };
++        }
++        const auto &drawData = workload.drawData;
++        for (uint32_t f = 0; f < workload.fbPairCount; ++f) {
++            const auto &pair = workload.fbPairs[f];
++            for (uint32_t p = 0; p < pair.projectionCount; ++p) {
++                const auto &projection = pair.projections[p];
++                if (projection.transformsIndex >= drawData.viewTransforms.size()) continue;
++                const hlslpp::float4 camera = cameraPosition(drawData.viewTransforms[projection.transformsIndex]);
++                for (uint32_t c = 0; c < projection.gameCallCount; ++c) {
++                    auto found = receivers.find(projection.gameCalls[c].callDesc.callIndex);
++                    if (found != receivers.end()) found->second.camera = camera;
++                }
++            }
++        }
++
++        // The view is the raster scene with the most visible receivers. Native
++        // overlays in it are skipped; overlays elsewhere stay native.
++        const auto receiverMatch = [&](const InstanceDrawCall &call, uint32_t draw) -> const ReceiverDraw * {
++            if (call.type != InstanceDrawCall::Type::IndexedTriangles || call.triangles.vertexTestZ ||
++                call.triangles.scissor.isEmpty()) return nullptr;
++            auto found = receivers.find(draw);
++            if (found == receivers.end() || found->second.range->faceStart != call.triangles.indexStart ||
++                found->second.range->indexCount != call.triangles.faceCount * 3) return nullptr;
++            return &found->second;
++        };
++        size_t bestCount = 0;
+         for (uint32_t f = 0; f < renderer.framebufferCount; ++f) {
+             const auto &drawCall = renderer.framebufferVector[f].renderTargetDrawCall;
+             for (const RasterScene &scene : drawCall.rasterScenes) {
+-                for (size_t k = 0; k < scene.instanceIndices.size(); ++k) {
+-                    const uint32_t i = scene.instanceIndices[k];
+-                    const InstanceDrawCall &call = renderer.instanceDrawCallVector[i];
+-                    if (call.type != InstanceDrawCall::Type::IndexedTriangles || call.triangles.vertexTestZ) continue;
+-                    const uint32_t draw = renderer.renderIndicesVector[i].instanceIndex;
+-                    for (size_t o = 0; o < shadow->overlays.size(); ++o) {
+-                        const auto &overlay = shadow->overlays[o];
+-                        if (overlay.draw != draw || overlay.faceStart != call.triangles.indexStart ||
+-                            overlay.indexCount != call.triangles.faceCount * 3) continue;
+-                        if (found[o]) { reject("native overlay presented twice"); return; }
+-                        if (raster_ != nullptr && raster_ != &scene) { reject("native overlays span views"); return; }
+-                        found[o] = true;
+-                        raster_ = &scene;
+-                        framebufferIndex_ = f;
+-                        overlayPositions_.push_back(k);
+-                    }
++                size_t count = 0;
++                for (uint32_t i : scene.instanceIndices) {
++                    if (receiverMatch(renderer.instanceDrawCallVector[i], renderer.renderIndicesVector[i].instanceIndex)) ++count;
++                }
++                if (count > bestCount) {
++                    bestCount = count;
++                    raster_ = &scene;
++                    framebufferIndex_ = f;
+                 }
+             }
+         }
+-        if (overlayPositions_.empty() || std::find(found.begin(), found.end(), false) != found.end()) {
+-            reject("native overlay not presented");
+-            return;
+-        }
+-        replacementPosition_ = *std::max_element(overlayPositions_.begin(), overlayPositions_.end());
++        if (raster_ == nullptr) { reject("no visible receiver draw"); return; }
+ 
+-        // Receivers drawn before the replacement point, as native overlays are.
+-        for (size_t k = 0; k < replacementPosition_; ++k) {
++        size_t lastPosition = 0;
++        for (size_t k = 0; k < raster_->instanceIndices.size(); ++k) {
+             const uint32_t i = raster_->instanceIndices[k];
+             const InstanceDrawCall &call = renderer.instanceDrawCallVector[i];
+-            if (call.type != InstanceDrawCall::Type::IndexedTriangles || call.triangles.vertexTestZ ||
+-                call.triangles.scissor.isEmpty()) continue;
+             const uint32_t draw = renderer.renderIndicesVector[i].instanceIndex;
+-            for (const auto &receiver : shadow->receivers) {
+-                if (receiver.draw == draw && receiver.faceStart == call.triangles.indexStart &&
+-                    receiver.indexCount == call.triangles.faceCount * 3) {
+-                    receiverInstances_.push_back(i);
+-                    break;
++            if (call.type == InstanceDrawCall::Type::IndexedTriangles && !call.triangles.vertexTestZ) {
++                for (const auto &overlay : shadow->overlays) {
++                    if (overlay.draw == draw && overlay.faceStart == call.triangles.indexStart &&
++                        overlay.indexCount == call.triangles.faceCount * 3) {
++                        overlayPositions_.push_back(k);
++                        lastPosition = k;
++                    }
+                 }
+             }
++            if (const ReceiverDraw *receiver = receiverMatch(call, draw)) {
++                receiverInstances_.push_back(i);
++                receiverDraws_.push_back(*receiver);
++                lastPosition = k;
++            }
+         }
+-        if (receiverInstances_.empty()) { reject("no visible receiver draw"); return; }
++        compositePosition_ = lastPosition + 1;
+ 
+         const auto &framebuffer = renderer.framebufferVector[framebufferIndex_];
+         const RenderFramebufferStorage *storage = framebuffer.renderTargetDrawCall.fbStorage;
+@@ -304,11 +376,38 @@ namespace RT64 {
+             return;
+         }
+ 
++        SunShadowStaticInput staticInput;
++        if (shadow->ambient.staticCache != 0) {
++            const auto start = std::chrono::steady_clock::now();
++            if (staticCacheMode_ != shadow->ambient.staticCache) {
++                SunShadowStaticCacheSettings settings;
++                settings.includePresented = shadow->ambient.staticCache == 2;
++                staticCache_ = SunShadowStaticCache(settings);
++                staticCacheMode_ = shadow->ambient.staticCache;
++                observedEpoch_ = observedTask_ = 0;
++            }
++            // Interpolated presentations of one task add no new sighting.
++            const hlslpp::float4 &eye = receiverDraws_.front().camera;
++            const bool observed = observedEpoch_ == shadow->sceneEpoch && observedTask_ == shadow->taskSequence;
++            if (!observed && eye.w == 1.0f) {
++                staticCasters(workload, *shadow, staticTriangles_);
++                const float position[3] = { eye.x, eye.y, eye.z };
++                staticCache_.observe(shadow->sceneEpoch, shadow->taskSequence, staticTriangles_, position);
++                observedEpoch_ = shadow->sceneEpoch;
++                observedTask_ = shadow->taskSequence;
++            }
++            staticInput = { &staticCache_.published(), staticCache_.version(), shadow->ambient.staticCache == 2 };
++            result_.cacheMicroseconds = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count();
++        }
++        else {
++            staticCache_.reset();
++        }
++
+         ++presentation_;
+         const auto &faces = workload.drawBuffers.faceIndicesBuffer;
+         if (!shadowScene_.prepare(device, {world.buffer.get(), world.allocatedSize},
+             {faces.defaultBuffer.get(), faces.allocatedSize}, vertexCount, workload.drawData.faceIndices,
+-            shadow->geometry, presentation_)) {
++            shadow->geometry, presentation_, staticInput)) {
+             reject("acceleration structure preparation failed");
+             return;
+         }
+@@ -321,11 +420,14 @@ namespace RT64 {
+         receiverSet_->setBuffer(worldBinding_, world.buffer.get(), world.allocatedSize, &Float4View);
+         receiverSet_->setBuffer(facesBinding_, faces.defaultBuffer.get(), faces.allocatedSize, &UintView);
+         params_ = shadow->params;
++        ambient_ = shadow->ambient;
+         ready_ = true;
+         result_.reason = "pending acceleration structure build";
+         result_.casterRanges = shadowScene_.stats().admitted;
+         result_.receiverDraws = uint32_t(receiverInstances_.size());
+         result_.triangles = shadowScene_.stats().triangles;
++        result_.staticTriangles = shadowScene_.stats().staticTriangles;
++        result_.staticVersion = staticInput.version;
+         result_.asBytes = shadowScene_.stats().asBytes;
+         result_.scratchBytes = shadowScene_.stats().scratchBytes;
+     }
+@@ -367,7 +469,8 @@ namespace RT64 {
+         commands->setVertexBuffers(0, renderer.indexedVertexViews.data(), uint32_t(renderer.indexedVertexViews.size()), renderer.vertexInputSlots.data());
+         commands->setIndexBuffer(&renderer.indexBufferView);
+         commands->setGraphicsPushConstants(2, &params_);
+-        for (uint32_t i : receiverInstances_) {
++        for (size_t r = 0; r < receiverInstances_.size(); ++r) {
++            const uint32_t i = receiverInstances_[r];
+             const auto &triangles = renderer.instanceDrawCallVector[i].triangles;
+             commands->setScissors(triangles.scissor);
+             interop::RasterParams raster{};
+@@ -375,9 +478,18 @@ namespace RT64 {
+             raster.screenScale = triangles.screenScale;
+             raster.screenOffset = triangles.screenOffset;
+             commands->setGraphicsPushConstants(0, &raster);
++            const ReceiverDraw &draw = receiverDraws_[r];
+             interop::SunShadowReceiverParams receiver{};
+             receiver.draw = renderer.renderIndicesVector[i].instanceIndex;
+             receiver.faceStart = triangles.indexStart;
++            receiver.standardFog = draw.range->standardFog ? 1 : 0;
++            receiver.debugMode = ambient_.debugMode;
++            receiver.camera = draw.camera;
++            receiver.contactStrength = ambient_.contactStrength;
++            receiver.contactDistance = ambient_.contactDistance;
++            receiver.skyDistance = ambient_.skyDistance;
++            receiver.skyOpenFull = ambient_.skyOpenFull;
++            receiver.occluderMask = ambient_.occluderMask;
+             commands->setGraphicsPushConstants(1, &receiver);
+             commands->drawIndexedInstanced(triangles.faceCount * 3, 1, triangles.indexStart, 0, 0);
+         }
+@@ -405,14 +517,16 @@ namespace RT64 {
+         commands->drawInstanced(3, 1, 0, 0);
+         commands->writeTimestamp(timestamps_.get(), 3);
+         result_.overlaysReplaced = uint32_t(overlayPositions_.size());
++        composited_ = true;
+     }
+ 
+     SunShadowFrameResult SunShadowPass::finish() {
+         SunShadowFrameResult result = result_;
+-        if (ready_ && result.overlaysReplaced == 0) {
++        if (ready_ && !composited_) {
+             result.reason = "replacement point not recorded";
+         }
+-        result.ready = ready_ && result.overlaysReplaced != 0;
++        result.ready = ready_ && composited_;
++        composited_ = false;
+         if (result.ready) {
+             // Timestamps are nanoseconds; the Workload fence has completed.
+             timestamps_->queryResults();
+@@ -424,7 +538,8 @@ namespace RT64 {
+         raster_ = nullptr;
+         overlayPositions_.clear();
+         receiverInstances_.clear();
+-        replacementPosition_ = SIZE_MAX;
++        receiverDraws_.clear();
++        compositePosition_ = SIZE_MAX;
+         result_ = {};
+         return result;
+     }
+diff --git a/src/render/rt64_sun_shadow_pass.h b/src/render/rt64_sun_shadow_pass.h
+index 5221e41..0b6b4dd 100644
+--- a/src/render/rt64_sun_shadow_pass.h
++++ b/src/render/rt64_sun_shadow_pass.h
+@@ -8,6 +8,8 @@
+ 
+ #include "common/rt64_plume.h"
+ #include "rhi/rt64_render_hooks.h"
++#include "shared/rt64_hlsl.h"
++#include "rt64_sun_shadow_cache.h"
+ #include "rt64_sun_shadow_scene.h"
+ 
+ namespace RT64 {
+@@ -19,9 +21,10 @@ namespace RT64 {
+ 
+     // Optional sunlight replacement for one Workload render on its queue
+     // thread. The Workload's caller-admitted metadata selects casters,
+-    // receivers and the exact native overlay draws. Replacement is all or
+-    // nothing: plan() decides before any command is recorded, and every
+-    // failed, pending or unsupported gate keeps the native command stream.
++    // receivers and the exact native overlay draws. plan() picks the raster
++    // scene with the most visible receivers; when ready, its native overlays
++    // are skipped and one composite follows the last receiver or overlay.
++    // Every failed, pending or unsupported gate keeps the native command stream.
+     //
+     // Lifetime: the queue fences each Workload before the next plan(), which
+     // satisfies SunShadowScene's rebuild/destruction contract. One plan covers
+@@ -37,7 +40,9 @@ namespace RT64 {
+         void recordBuild(RenderCommandList *commands);
+         bool active(const RasterScene &scene) const { return ready_ && &scene == raster_; }
+         bool overlayAt(size_t position) const;
+-        bool replaceAt(size_t position) const { return position == replacementPosition_; }
++        // True for the raster position the composite is recorded before; the
++        // scene's instance count when it follows the last draw.
++        bool compositeBefore(size_t position) const { return position == compositePosition_; }
+         // Records receiver visibility and the single composite into the
+         // current color target. Leaves the depth target in DEPTH_READ.
+         void recordReplacement(RenderWorker *worker, FramebufferRenderer &renderer, uint32_t framebufferIndex,
+@@ -78,14 +83,27 @@ namespace RT64 {
+         uint32_t targetWidth_ = 0, targetHeight_ = 0;
+ 
+         SunShadowScene shadowScene_;
++        // Static scenery seen in earlier tasks of this scene epoch, so casters
++        // outside the current view still cast. Fed once per task.
++        SunShadowStaticCache staticCache_;
++        uint32_t staticCacheMode_ = 1; // SunShadowAmbient::staticCache the cache was made for.
++        std::vector<SunShadowStaticCache::Triangle> staticTriangles_;
++        uint64_t observedEpoch_ = 0, observedTask_ = 0;
+         uint64_t presentation_ = 0;
+         bool ready_ = false;
+         const RasterScene *raster_ = nullptr;
+         uint32_t framebufferIndex_ = 0;
+         std::vector<size_t> overlayPositions_;
+-        size_t replacementPosition_ = SIZE_MAX;
++        size_t compositePosition_ = SIZE_MAX;
++        bool composited_ = false;
++        struct ReceiverDraw {
++            const SunShadowRange *range = nullptr; // Owned by the planned Workload.
++            hlslpp::float4 camera; // World eye of the receiver's projection; w = 0 if unknown.
++        };
+         std::vector<uint32_t> receiverInstances_;
++        std::vector<ReceiverDraw> receiverDraws_;
+         SunShadowParams params_;
++        SunShadowAmbient ambient_;
+         SunShadowFrameResult result_;
+     };
+ };
+diff --git a/src/render/rt64_sun_shadow_scene.cpp b/src/render/rt64_sun_shadow_scene.cpp
+index 41af679..0a9c525 100644
+--- a/src/render/rt64_sun_shadow_scene.cpp
++++ b/src/render/rt64_sun_shadow_scene.cpp
+@@ -17,29 +17,50 @@ bool upload(RenderBuffer *buffer, const void *data, size_t size) {
+     buffer->unmap(0, &written);
+     return true;
+ }
++
++// Grow-only: the owner's fence guarantees no prior build or query still reads
++// the old allocation, so a large-enough buffer is simply reused.
++bool reserve(std::unique_ptr<RenderBuffer> &buffer, uint64_t &capacity, uint64_t bytes, RenderDevice *device,
++    const RenderBufferDesc &desc)
++{
++    if (buffer && capacity >= bytes) return true;
++    buffer.reset();
++    capacity = 0;
++    buffer = device->createBuffer(desc);
++    if (!buffer) return false;
++    capacity = desc.size;
++    return true;
++}
++
++uint64_t grown(uint64_t bytes) {
++    return std::max<uint64_t>(bytes + bytes / 2, 64 * 1024);
+ }
++}
++
+ void SunShadowScene::invalidate() {
+     prepared_ = built_ = false;
+     presentation_ = 0;
+     positions_ = indices_ = nullptr;
+     stats_ = {};
+     error_.clear();
++    for (auto &layer : layers_) layer.used = false;
+ }
++
+ bool SunShadowScene::prepare(RenderDevice *device, SunShadowBuffer positions,
+     SunShadowBuffer indices, uint32_t vertexCount, const std::vector<uint32_t> &cpuIndices,
+-    const std::vector<SunShadowRange> &ranges, uint64_t presentation)
++    const std::vector<SunShadowRange> &ranges, uint64_t presentation, const SunShadowStaticInput &staticInput)
+ {
+     invalidate();
+     auto fail = [&](const char *why) { error_ = why; return false; };
+     if (!device || !device->getCapabilities().raytracing) return fail("Hardware AS unavailable");
+     if (device_ && device_ != device) return fail("Scene belongs to a different device");
+     if (!positions.buffer || !indices.buffer || !vertexCount || !presentation || ranges.empty() ||
+-        cpuIndices.empty() || cpuIndices.size() > UINT32_MAX || ranges.size() > 4096)
++        cpuIndices.empty() || cpuIndices.size() > UINT32_MAX || ranges.size() > 8192)
+         return fail("Missing input or geometry budget exceeded");
+     if (uint64_t(vertexCount) * 16 > positions.bytes || uint64_t(cpuIndices.size()) * 4 > indices.bytes)
+         return fail("GPU input buffer capacity exceeded");
+-    std::vector<RenderBottomLevelASMesh> meshes;
+-    std::vector<std::array<uint32_t, 4>> metadata;
++    std::vector<RenderBottomLevelASMesh> meshes[LayerCount];
++    std::vector<std::array<uint32_t, 4>> metadata[LayerCount];
+     for (const auto &range : ranges) {
+         bool valid = (range.opaqueSolid != range.nativeAlphaCoverage) && !range.rejection &&
+             range.indexCount && range.indexCount % 3 == 0 &&
+@@ -50,70 +71,149 @@ bool SunShadowScene::prepare(RenderDevice *device, SunShadowBuffer positions,
+             }
+         }
+         if (!valid) { ++stats_.rejected; continue; }
+-        if (stats_.triangles + range.indexCount / 3 > 262144)
++        if (staticInput.replaceWorld && !range.dynamicCaster) continue;
++        if (stats_.triangles + range.indexCount / 3 > 524288)
+             return fail("Shadow triangle budget exceeded");
+         // Non-opaque is an AS traversal contract, not material translucency.
+         // Every triangle reaches the shared shader for exact originating-face exclusion.
+-        meshes.emplace_back(indices.buffer->at(uint64_t(range.faceStart) * 4), positions.buffer->at(0),
++        const uint32_t layer = range.dynamicCaster ? MovingLayer : WorldLayer;
++        meshes[layer].emplace_back(indices.buffer->at(uint64_t(range.faceStart) * 4), positions.buffer->at(0),
+             RenderFormat::R32_UINT, RenderFormat::R32G32B32_FLOAT,
+             range.indexCount, vertexCount, 16, false);
+-        metadata.push_back({range.faceStart, range.draw, range.indexCount, range.nativeAlphaCoverage ? 1u : 0u});
++        metadata[layer].push_back({range.faceStart, range.draw, range.indexCount, range.nativeAlphaCoverage ? 1u : 0u});
+         stats_.triangles += range.indexCount / 3;
++        if (range.dynamicCaster) stats_.movingTriangles += range.indexCount / 3;
+     }
+-    if (meshes.empty()) return fail("No admitted material-covered casters");
+-    device->setBottomLevelASBuildInfo(bottom_, meshes.data(), uint32_t(meshes.size()), true, false);
+-    if (!bottom_.accelerationStructureSize || !bottom_.scratchSize ||
+-        bottom_.accelerationStructureSize > 128u * 1024u * 1024u)
+-        return fail("Invalid BLAS size or memory budget exceeded");
+-    // This bounded first version recreates allocations only after the owner's
+-    // fence. Reuse/static partitioning needs measurements from actual game scenes.
+-    blas_.reset();
+-    tlas_.reset();
+-    blasBuffer_ = device->createBuffer(RenderBufferDesc::AccelerationStructureBuffer(bottom_.accelerationStructureSize));
+-    if (!blasBuffer_) return fail("BLAS allocation failed");
+-    blas_ = device->createAccelerationStructure(RenderAccelerationStructureDesc(
+-        RenderAccelerationStructureType::BOTTOM_LEVEL, blasBuffer_->at(0), bottom_.accelerationStructureSize));
+-    if (!blas_) return fail("BLAS view failed");
+-    const RenderTopLevelASInstance instance(blasBuffer_->at(0), 0, 0xFF, 0, true, RenderAffineTransform());
+-    device->setTopLevelASBuildInfo(top_, &instance, 1, true, false);
+-    stats_.asBytes = bottom_.accelerationStructureSize + top_.accelerationStructureSize;
+-    stats_.scratchBytes = std::max(bottom_.scratchSize, top_.scratchSize);
++    const bool useStatic = staticInput.triangles && !staticInput.triangles->empty() && staticInput.version != 0;
++    if (meshes[WorldLayer].empty() && meshes[MovingLayer].empty() && !useStatic)
++        return fail("No admitted material-covered casters");
++    if (useStatic && staticInput.version != staticVersion_) {
++        // A new snapshot: upload it whole, since a BLAS never refers to its input after its build.
++        staticVersion_ = 0;
++        staticBuilt_ = false;
++        const auto &triangles = *staticInput.triangles;
++        if (triangles.size() > 262144) return fail("Static shadow triangle budget exceeded");
++        const uint32_t count = uint32_t(triangles.size() * 3);
++        std::vector<uint32_t> sequence(count);
++        for (uint32_t i = 0; i < count; ++i) sequence[i] = i;
++        const uint64_t positionBytes = uint64_t(triangles.size()) * sizeof(triangles[0]);
++        if (!reserve(staticPositions_, staticPositionsCapacity_, positionBytes, device, RenderBufferDesc::UploadBuffer(
++                grown(positionBytes), RenderBufferFlag::ACCELERATION_STRUCTURE_INPUT)) ||
++            !reserve(staticIndices_, staticIndicesCapacity_, uint64_t(count) * 4, device, RenderBufferDesc::UploadBuffer(
++                grown(uint64_t(count) * 4), RenderBufferFlag::ACCELERATION_STRUCTURE_INPUT)) ||
++            !upload(staticPositions_.get(), triangles.data(), size_t(positionBytes)) ||
++            !upload(staticIndices_.get(), sequence.data(), size_t(count) * 4))
++            return fail("Static shadow upload failed");
++        const RenderBottomLevelASMesh mesh(staticIndices_->at(0), staticPositions_->at(0), RenderFormat::R32_UINT,
++            RenderFormat::R32G32B32_FLOAT, count, count, 12, false);
++        device->setBottomLevelASBuildInfo(static_.info, &mesh, 1, true, false);
++        if (!static_.info.accelerationStructureSize || !static_.info.scratchSize ||
++            static_.info.accelerationStructureSize > 128u * 1024u * 1024u)
++            return fail("Invalid static BLAS size or memory budget exceeded");
++        static_.view.reset();
++        if (!reserve(static_.buffer, static_.capacity, static_.info.accelerationStructureSize, device,
++            RenderBufferDesc::AccelerationStructureBuffer(grown(static_.info.accelerationStructureSize))))
++            return fail("Static BLAS allocation failed");
++        static_.view = device->createAccelerationStructure(RenderAccelerationStructureDesc(
++            RenderAccelerationStructureType::BOTTOM_LEVEL, static_.buffer->at(0), static_.info.accelerationStructureSize));
++        if (!static_.view) return fail("Static BLAS view failed");
++        staticCount_ = count;
++        staticVersion_ = staticInput.version;
++    }
++
++    // Instance ids offset each layer into one metadata buffer: world ranges
++    // first, then moving ones. The shader adds CandidateInstanceID().
++    std::vector<std::array<uint32_t, 4>> allMetadata;
++    std::vector<RenderTopLevelASInstance> instances;
++    for (uint32_t index = 0; index < LayerCount; ++index) {
++        Layer &layer = layers_[index];
++        if (meshes[index].empty()) continue;
++        device->setBottomLevelASBuildInfo(layer.info, meshes[index].data(), uint32_t(meshes[index].size()), true, false);
++        if (!layer.info.accelerationStructureSize || !layer.info.scratchSize ||
++            layer.info.accelerationStructureSize > 128u * 1024u * 1024u)
++            return fail("Invalid BLAS size or memory budget exceeded");
++        layer.view.reset();
++        if (!reserve(layer.buffer, layer.capacity, layer.info.accelerationStructureSize, device,
++            RenderBufferDesc::AccelerationStructureBuffer(grown(layer.info.accelerationStructureSize))))
++            return fail("BLAS allocation failed");
++        layer.view = device->createAccelerationStructure(RenderAccelerationStructureDesc(
++            RenderAccelerationStructureType::BOTTOM_LEVEL, layer.buffer->at(0), layer.info.accelerationStructureSize));
++        if (!layer.view) return fail("BLAS view failed");
++        layer.used = true;
++        const uint32_t mask = index == WorldLayer ? SunShadowWorldMask : SunShadowMovingMask;
++        instances.emplace_back(layer.buffer->at(0), uint32_t(allMetadata.size()), mask, 0, true, RenderAffineTransform());
++        allMetadata.insert(allMetadata.end(), metadata[index].begin(), metadata[index].end());
++        stats_.asBytes += layer.info.accelerationStructureSize;
++        stats_.scratchBytes = std::max(stats_.scratchBytes, layer.info.scratchSize);
++    }
++    static_.used = useStatic;
++    if (useStatic) {
++        // No draw is UINT32_MAX, so originating-face exclusion never applies.
++        instances.emplace_back(static_.buffer->at(0), uint32_t(allMetadata.size()), SunShadowStaticMask, 0, true,
++            RenderAffineTransform());
++        allMetadata.push_back({0, UINT32_MAX, staticCount_, 0});
++        stats_.staticTriangles = staticCount_ / 3;
++        stats_.asBytes += static_.info.accelerationStructureSize;
++        if (!staticBuilt_) stats_.scratchBytes = std::max(stats_.scratchBytes, static_.info.scratchSize);
++    }
++    device->setTopLevelASBuildInfo(top_, instances.data(), uint32_t(instances.size()), true, false);
++    stats_.asBytes += top_.accelerationStructureSize;
++    stats_.scratchBytes = std::max(stats_.scratchBytes, top_.scratchSize);
+     if (!top_.accelerationStructureSize || !top_.scratchSize || top_.instancesBufferData.empty() ||
+-        stats_.asBytes > 128u * 1024u * 1024u || stats_.scratchBytes > 128u * 1024u * 1024u)
++        stats_.asBytes > 256u * 1024u * 1024u || stats_.scratchBytes > 128u * 1024u * 1024u)
+         return fail("Invalid TLAS size or memory budget exceeded");
+-    tlasBuffer_ = device->createBuffer(RenderBufferDesc::AccelerationStructureBuffer(top_.accelerationStructureSize));
+-    if (!tlasBuffer_) return fail("TLAS allocation failed");
++    tlas_.reset();
++    if (!reserve(tlasBuffer_, tlasCapacity_, top_.accelerationStructureSize, device,
++        RenderBufferDesc::AccelerationStructureBuffer(grown(top_.accelerationStructureSize))))
++        return fail("TLAS allocation failed");
+     tlas_ = device->createAccelerationStructure(RenderAccelerationStructureDesc(
+         RenderAccelerationStructureType::TOP_LEVEL, tlasBuffer_->at(0), top_.accelerationStructureSize));
+-    scratch_ = device->createBuffer(RenderBufferDesc::DefaultBuffer(stats_.scratchBytes,
+-        RenderBufferFlag::ACCELERATION_STRUCTURE_SCRATCH | RenderBufferFlag::UNORDERED_ACCESS));
+-    instances_ = device->createBuffer(RenderBufferDesc::UploadBuffer(top_.instancesBufferData.size(),
+-        RenderBufferFlag::ACCELERATION_STRUCTURE_INPUT));
+-    metadata_ = device->createBuffer(RenderBufferDesc::UploadBuffer(metadata.size() * 16, RenderBufferFlag::STORAGE));
+-    if (!tlas_ || !scratch_ || !instances_ || !metadata_) return fail("Shadow resources allocation failed");
++    const uint64_t metadataBytes = allMetadata.size() * 16;
++    if (!tlas_ ||
++        !reserve(scratch_, scratchCapacity_, stats_.scratchBytes, device, RenderBufferDesc::DefaultBuffer(
++            grown(stats_.scratchBytes), RenderBufferFlag::ACCELERATION_STRUCTURE_SCRATCH | RenderBufferFlag::UNORDERED_ACCESS)) ||
++        !reserve(instances_, instancesCapacity_, top_.instancesBufferData.size(), device, RenderBufferDesc::UploadBuffer(
++            grown(top_.instancesBufferData.size()), RenderBufferFlag::ACCELERATION_STRUCTURE_INPUT)) ||
++        !reserve(metadata_, metadataCapacity_, metadataBytes, device, RenderBufferDesc::UploadBuffer(
++            grown(metadataBytes), RenderBufferFlag::STORAGE)))
++        return fail("Shadow resources allocation failed");
+     if (!upload(instances_.get(), top_.instancesBufferData.data(), top_.instancesBufferData.size()) ||
+-        !upload(metadata_.get(), metadata.data(), metadata.size() * 16)) return fail("Shadow upload failed");
++        !upload(metadata_.get(), allMetadata.data(), metadataBytes)) return fail("Shadow upload failed");
+     device_ = device;
+     positions_ = positions.buffer;
+     indices_ = indices.buffer;
+-    stats_.admitted = uint32_t(metadata.size());
++    stats_.admitted = uint32_t(allMetadata.size());
+     presentation_ = presentation;
+     prepared_ = true;
+     return true;
+ }
++
+ bool SunShadowScene::recordBuild(RenderCommandList *commands) {
+     if (!prepared_ || !commands || built_) return false;
+-    const RenderBufferBarrier before[] = {
+-        {positions_, RenderBufferAccess::READ}, {indices_, RenderBufferAccess::READ},
+-        {scratch_.get(), RenderBufferAccess::WRITE}, {blasBuffer_.get(), RenderBufferAccess::WRITE},
+-        {tlasBuffer_.get(), RenderBufferAccess::WRITE}
+-    };
+-    commands->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, before, 5);
+-    commands->buildBottomLevelAS(blas_.get(), scratch_->at(0), bottom_);
+-    const RenderBufferBarrier between[] = {
+-        {blasBuffer_.get(), RenderBufferAccess::READ}, {scratch_.get(), RenderBufferAccess::WRITE}
+-    };
+-    commands->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, between, 2);
++    commands->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, {
++        RenderBufferBarrier(positions_, RenderBufferAccess::READ), RenderBufferBarrier(indices_, RenderBufferAccess::READ),
++        RenderBufferBarrier(tlasBuffer_.get(), RenderBufferAccess::WRITE)
++    });
++    // The layers share one scratch buffer, so each build waits for the last.
++    for (Layer &layer : layers_) {
++        if (!layer.used) continue;
++        commands->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, {
++            RenderBufferBarrier(scratch_.get(), RenderBufferAccess::WRITE),
++            RenderBufferBarrier(layer.buffer.get(), RenderBufferAccess::WRITE)
++        });
++        commands->buildBottomLevelAS(layer.view.get(), scratch_->at(0), layer.info);
++        commands->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, RenderBufferBarrier(layer.buffer.get(), RenderBufferAccess::READ));
++    }
++    if (static_.used && !staticBuilt_) {
++        commands->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, {
++            RenderBufferBarrier(scratch_.get(), RenderBufferAccess::WRITE),
++            RenderBufferBarrier(static_.buffer.get(), RenderBufferAccess::WRITE)
++        });
++        commands->buildBottomLevelAS(static_.view.get(), scratch_->at(0), static_.info);
++        commands->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, RenderBufferBarrier(static_.buffer.get(), RenderBufferAccess::READ));
++        staticBuilt_ = true;
++    }
++    commands->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, RenderBufferBarrier(scratch_.get(), RenderBufferAccess::WRITE));
+     commands->buildTopLevelAS(tlas_.get(), scratch_->at(0), instances_->at(0), top_);
+     commands->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE,
+         RenderBufferBarrier(tlasBuffer_.get(), RenderBufferAccess::READ));
+diff --git a/src/render/rt64_sun_shadow_scene.h b/src/render/rt64_sun_shadow_scene.h
+index b5ec0fb..f99825a 100644
+--- a/src/render/rt64_sun_shadow_scene.h
++++ b/src/render/rt64_sun_shadow_scene.h
+@@ -13,10 +13,19 @@ struct SunShadowBuffer {
+     RenderBuffer *buffer = nullptr;
+     uint64_t bytes = 0; // Actual allocation capacity, supplied by its owner.
+ };
++// Remembered static scenery: world-space triangles, three float3 corners
++// each, identified by a snapshot version that changes with the contents.
++struct SunShadowStaticInput {
++    const std::vector<std::array<float, 9>> *triangles = nullptr;
++    uint64_t version = 0;
++    bool replaceWorld = false; // Diagnostic: trace no presented world ranges.
++};
+ struct SunShadowSceneStats {
+     uint32_t admitted = 0;
+     uint32_t rejected = 0;
+     uint64_t triangles = 0;
++    uint64_t movingTriangles = 0;
++    uint64_t staticTriangles = 0;
+     uint64_t asBytes = 0;
+     uint64_t scratchBytes = 0;
+ };
+@@ -35,11 +44,20 @@ struct SunShadowSceneStats {
+ // metadata tags them for candidate evaluation. The opaque-only shader rejects
+ // that tag. This helper does not authenticate textures or admit game materials.
+ // No submission, wait, RAM read, game classifier or water dependency is hidden.
++//
++// Static scenery and moving casters (SunShadowRange::dynamicCaster) build
++// separate bottom-level structures under instance masks SunShadowWorldMask
++// and SunShadowMovingMask; each instance id is its layer's first metadata index.
++// Remembered static scenery is a third structure under SunShadowStaticMask.
++// It owns its upload and is rebuilt only when its snapshot version changes;
++// its metadata names no draw, so it never matches a receiver's own face.
++// Allocations are reused while large enough.
+ class SunShadowScene {
+ public:
+     bool prepare(RenderDevice *device, SunShadowBuffer positions, SunShadowBuffer indices,
+         uint32_t vertexCount, const std::vector<uint32_t> &cpuIndices,
+-        const std::vector<SunShadowRange> &ranges, uint64_t presentation);
++        const std::vector<SunShadowRange> &ranges, uint64_t presentation,
++        const SunShadowStaticInput &staticInput = {});
+     bool recordBuild(RenderCommandList *commands);
+     void invalidate();
+     bool ready(uint64_t presentation) const { return built_ && presentation == presentation_; }
+@@ -54,14 +72,30 @@ public:
+     const std::string &error() const { return error_; }
+ 
+ private:
++    enum { WorldLayer, MovingLayer, LayerCount };
++    struct Layer {
++        // The view dies before its backing allocation, also when it is replaced.
++        std::unique_ptr<RenderBuffer> buffer;
++        std::unique_ptr<RenderAccelerationStructure> view;
++        RenderBottomLevelASBuildInfo info;
++        uint64_t capacity = 0;
++        bool used = false;
++    };
+     RenderDevice *device_ = nullptr;
+     RenderBuffer *positions_ = nullptr;
+     RenderBuffer *indices_ = nullptr;
+-    // Views die before their backing allocations, also when prepare replaces them.
+-    std::unique_ptr<RenderBuffer> blasBuffer_, tlasBuffer_;
+-    std::unique_ptr<RenderAccelerationStructure> blas_, tlas_;
++    std::array<Layer, LayerCount> layers_;
++    // Survives invalidate(): its build is reused until the snapshot changes.
++    Layer static_;
++    std::unique_ptr<RenderBuffer> staticPositions_, staticIndices_;
++    uint64_t staticPositionsCapacity_ = 0, staticIndicesCapacity_ = 0;
++    uint64_t staticVersion_ = 0; // Snapshot in the static buffers; 0 for none.
++    uint32_t staticCount_ = 0; // Indices in that snapshot.
++    bool staticBuilt_ = false;
++    std::unique_ptr<RenderBuffer> tlasBuffer_;
++    std::unique_ptr<RenderAccelerationStructure> tlas_;
+     std::unique_ptr<RenderBuffer> scratch_, instances_, metadata_;
+-    RenderBottomLevelASBuildInfo bottom_;
++    uint64_t tlasCapacity_ = 0, scratchCapacity_ = 0, instancesCapacity_ = 0, metadataCapacity_ = 0;
+     RenderTopLevelASBuildInfo top_;
+     SunShadowSceneStats stats_;
+     std::string error_;
+diff --git a/src/rhi/rt64_render_hooks.h b/src/rhi/rt64_render_hooks.h
+index 704972e..bbd7336 100644
+--- a/src/rhi/rt64_render_hooks.h
++++ b/src/rhi/rt64_render_hooks.h
+@@ -93,8 +93,11 @@ namespace RT64 {
+         const char *reason = ""; // Static string naming the first failed gate.
+         uint32_t casterRanges = 0, receiverDraws = 0, overlaysReplaced = 0;
+         uint64_t triangles = 0, asBytes = 0, scratchBytes = 0;
+-        // GPU time of the AS build and of the receiver pass plus composite.
+-        double buildMicroseconds = 0, receiverMicroseconds = 0;
++        // Remembered static scenery traced this frame, and its snapshot.
++        uint64_t staticTriangles = 0, staticVersion = 0;
++        // GPU time of the AS build and of the receiver pass plus composite;
++        // CPU time spent remembering static scenery.
++        double buildMicroseconds = 0, receiverMicroseconds = 0, cacheMicroseconds = 0;
+     };
+ 
+     // Production seam for game-specific shadow admission. The provider owns
+diff --git a/src/shaders/SunShadow.hlsli b/src/shaders/SunShadow.hlsli
+index d67bdec..c269eec 100644
+--- a/src/shaders/SunShadow.hlsli
++++ b/src/shaders/SunShadow.hlsli
+@@ -32,9 +32,10 @@ float3 SunShadowDirection(SunShadowParams p, uint sampleIndex) {
+ // All admitted triangles are non-opaque in the AS for exact face exclusion.
+ // Metadata is {faceStart, draw, indexCount, nativeAlphaCoverage}. The optional
+ // candidate evaluator must distinguish unsupported input from an alpha hole.
+-float SunShadowVisibility(RaytracingAccelerationStructure scene,
++// occluderMask selects the instances that block the light.
++float SunShadowVisibilityMasked(RaytracingAccelerationStructure scene,
+     StructuredBuffer<uint4> geometry, float3 position, float3 geometricNormal,
+-    uint receiverDraw, uint receiverFaceStart, SunShadowParams p, out bool coverageValid)
++    uint receiverDraw, uint receiverFaceStart, SunShadowParams p, uint occluderMask, out bool coverageValid)
+ {
+     coverageValid = true;
+     if (!SunShadowValid(p) || !all(isfinite(position)) || !all(isfinite(geometricNormal)) ||
+@@ -57,10 +58,10 @@ float SunShadowVisibility(RaytracingAccelerationStructure scene,
+         ray.TMin = p.rayMin;
+         ray.TMax = p.rayMax;
+         RayQuery<RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> query;
+-        query.TraceRayInline(scene, RAY_FLAG_NONE, 0xFF, ray);
++        query.TraceRayInline(scene, RAY_FLAG_NONE, occluderMask, ray);
+         while (query.Proceed()) {
+             if (query.CandidateType() != CANDIDATE_NON_OPAQUE_TRIANGLE) continue;
+-            uint4 range = geometry[query.CandidateGeometryIndex()];
++            uint4 range = geometry[query.CandidateInstanceID() + query.CandidateGeometryIndex()];
+             uint face = range.x + 3 * query.CandidatePrimitiveIndex();
+             if (range.y == receiverDraw && face == receiverFaceStart) continue;
+             if (range.w != 0) {
+@@ -82,6 +83,76 @@ float SunShadowVisibility(RaytracingAccelerationStructure scene,
+     return visibility / float(count);
+ }
+ 
++// Fixed cosine-weighted directions on a Fibonacci spiral about +Z. Fixed
++// directions keep the result stable from frame to frame without a denoiser.
++float3 SunShadowHemisphere(uint i, uint count) {
++    float u = (float(i) + 0.5) / float(count);
++    float r = sqrt(u);
++    float phi = float(i) * 2.399963229728653;
++    return float3(r * cos(phi), r * sin(phi), sqrt(max(0.0, 1 - u)));
++}
++
++float3 SunShadowAround(float3 normal, float3 local) {
++    float3 axis = abs(normal.y) < 0.9 ? float3(0, 1, 0) : float3(1, 0, 0);
++    float3 tangent = normalize(cross(axis, normal));
++    float3 bitangent = cross(normal, tangent);
++    return tangent * local.x + bitangent * local.y + normal * local.z;
++}
++
++// Fraction of the upward sky that world geometry leaves open within
++// `distance`. Rays below the horizon cannot see sky and are not counted, so a
++// surface facing down (ceiling, underpass) sees none; the
++// world layer alone is tested, so the car never closes its own sky.
++float SunShadowOpenSky(RaytracingAccelerationStructure scene, float3 origin, float3 normal,
++    float distance, uint worldMask)
++{
++    const uint count = 12;
++    float open = 0, counted = 0;
++    for (uint i = 0; i < count; ++i) {
++        RayDesc ray;
++        ray.Origin = origin;
++        ray.Direction = SunShadowAround(normal, SunShadowHemisphere(i, count));
++        if (ray.Direction.y < 0.1) continue;
++        ray.TMin = 0.0;
++        ray.TMax = distance;
++        RayQuery<RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> query;
++        query.TraceRayInline(scene, RAY_FLAG_NONE, worldMask, ray);
++        query.Proceed();
++        open += query.CommittedStatus() == COMMITTED_NOTHING ? 1 : 0;
++        counted += 1;
++    }
++    return counted > 0 ? open / counted : 0;
++}
++
++// Short-range occlusion by moving casters only: closer hits occlude more.
++float SunShadowContact(RaytracingAccelerationStructure scene, float3 origin, float3 normal,
++    float distance, uint movingMask)
++{
++    const uint count = 12;
++    float occlusion = 0;
++    for (uint i = 0; i < count; ++i) {
++        RayDesc ray;
++        ray.Origin = origin;
++        ray.Direction = SunShadowAround(normal, SunShadowHemisphere(i, count));
++        ray.TMin = 0.0;
++        ray.TMax = distance;
++        RayQuery<RAY_FLAG_FORCE_OPAQUE> query;
++        query.TraceRayInline(scene, RAY_FLAG_NONE, movingMask, ray);
++        query.Proceed();
++        if (query.CommittedStatus() != COMMITTED_NOTHING)
++            occlusion += 1 - query.CommittedRayT() / distance;
++    }
++    return occlusion / float(count);
++}
++
++float SunShadowVisibility(RaytracingAccelerationStructure scene,
++    StructuredBuffer<uint4> geometry, float3 position, float3 geometricNormal,
++    uint receiverDraw, uint receiverFaceStart, SunShadowParams p, out bool coverageValid)
++{
++    return SunShadowVisibilityMasked(scene, geometry, position, geometricNormal,
++        receiverDraw, receiverFaceStart, p, 0xFF, coverageValid);
++}
++
+ // Existing opaque-only callers have no alpha resources. A tagged candidate
+ // returns native visibility rather than silently turning a cutout into a solid.
+ float SunShadowVisibility(RaytracingAccelerationStructure scene,
+diff --git a/src/shaders/SunShadowCompositePS.hlsl b/src/shaders/SunShadowCompositePS.hlsl
+index 03e109f..d702ad8 100644
+--- a/src/shaders/SunShadowCompositePS.hlsl
++++ b/src/shaders/SunShadowCompositePS.hlsl
+@@ -22,6 +22,8 @@ float4 PSMain(in float4 position : SV_POSITION) : SV_TARGET0 {
+     const float4 native = gNative.Load(int3(floor(position.xy), 0));
+ #endif
+     const float4 shadow = gShadow.Load(int3(floor(position.xy), 0));
++    // Receiver debug views (negative alpha) replace the colour outright.
++    if (shadow.a < 0.0f) return float4(shadow.rgb, native.a);
+     const float3 shadowed = native.rgb * shadow.a + shadow.rgb * (1.0f - shadow.a);
+     return float4(min(native.rgb, shadowed), native.a);
+ }
+diff --git a/src/shaders/SunShadowReceiverPS.hlsl b/src/shaders/SunShadowReceiverPS.hlsl
+index 0681353..6c7552f 100644
+--- a/src/shaders/SunShadowReceiverPS.hlsl
++++ b/src/shaders/SunShadowReceiverPS.hlsl
+@@ -1,9 +1,10 @@
+ // SPDX-License-Identifier: MIT
+ // Copyright (c) 2026 RT64 Contributors
+ //
+-// Shader Model 6.5 receiver pass for admitted opaque standard-fog surfaces.
+-// It never changes native color directly: it writes the fog contribution and
+-// shadow transmission to a private target that one composite applies once.
++// Shader Model 6.5 receiver pass for admitted opaque surfaces. It never
++// changes native color directly: it writes shadow transmission, plus the fog
++// contribution of standard-fog surfaces, to a private target that one
++// composite applies once after the scene's last receiver.
+ 
+ #include "shared/rt64_other_mode.h"
+ #include "shared/rt64_raster_params.h"
+@@ -14,6 +15,13 @@
+ #include "FbRendererCommon.hlsli"
+ #include "SunShadow.hlsli"
+ 
++// SunShadowWorldMask, SunShadowMovingMask, SunShadowStaticMask and
++// SunShadowSceneryMask (shared/rt64_sun_shadow.h).
++#define SUN_SHADOW_WORLD_MASK 0x1
++#define SUN_SHADOW_MOVING_MASK 0x2
++#define SUN_SHADOW_STATIC_MASK 0x4
++#define SUN_SHADOW_SCENERY_MASK 0x5
++
+ [[vk::push_constant]] ConstantBuffer<RasterParams> gConstants : register(b0, space0);
+ ConstantBuffer<SunShadowReceiverParams> gReceiver : register(b0, space5);
+ ConstantBuffer<SunShadowParams> gSunParams : register(b1, space5);
+@@ -40,6 +48,28 @@ StructuredBuffer<uint> gShadowFaceIndices : register(t1, space4);
+ RaytracingAccelerationStructure gShadowScene : register(t2, space4);
+ StructuredBuffer<uint4> gShadowGeometry : register(t3, space4);
+ 
++// Shadow transmission from the sun term, blocked by sunMask and faded by the
++// sky that skyMask leaves open, combined with the contact term.
++float ReceiverTransmission(float3 position, float3 geometric, float3 origin, float3 normal, uint face,
++    uint sunMask, uint skyMask, float contactDarken)
++{
++    bool coverageValid;
++    float visibility = sunMask == 0 ? 1.0f : SunShadowVisibilityMasked(gShadowScene, gShadowGeometry, position,
++        geometric, gReceiver.draw, face, gSunParams, sunMask, coverageValid);
++    if (sunMask != 0 && !coverageValid) visibility = 1.0f;
++
++    // The art bakes its own lamps into prelit colour. Where scenery hides
++    // most of the sky (tunnels, underpasses) that colour is not sunlight, so
++    // the sun shadow fades out instead of darkening the lamps' work.
++    float sky = 1.0f;
++    if (visibility < 1.0f && gReceiver.skyDistance > 0) {
++        sky = SunShadowOpenSky(gShadowScene, origin, normal, gReceiver.skyDistance, skyMask);
++    }
++    const float sunlit = smoothstep(gReceiver.skyOpenFull * 0.25f, gReceiver.skyOpenFull, sky);
++    const float sunDarken = saturate(gSunParams.strength) * sunlit * (1.0f - saturate(visibility));
++    return 1.0f - max(sunDarken, contactDarken);
++}
++
+ float4 PSMain(
+     in float4 vertexPosition : SV_POSITION
+     , in float4 vertexShade : COLOR0
+@@ -75,13 +105,38 @@ float4 PSMain(
+     const float3 a = gShadowWorldPos[gShadowFaceIndices[face]].xyz;
+     const float3 b = gShadowWorldPos[gShadowFaceIndices[face + 1]].xyz;
+     const float3 c = gShadowWorldPos[gShadowFaceIndices[face + 2]].xyz;
+-    bool coverageValid;
+-    float visibility = SunShadowVisibility(gShadowScene, gShadowGeometry, vertexWorld,
+-        cross(b - a, c - a), gReceiver.draw, face, gSunParams, coverageValid);
+-    if (!coverageValid) visibility = 1.0f;
+-    const float transmission = 1.0f - saturate(gSunParams.strength) * (1.0f - saturate(visibility));
++    const float3 geometric = cross(b - a, c - a);
++
++    // Sky and contact rays leave from the side the camera sees.
++    float3 normal = dot(geometric, geometric) > 1e-12f ? normalize(geometric) : float3(0, 1, 0);
++    if (dot(normal, gReceiver.camera.xyz - vertexWorld) < 0) normal = -normal;
++    const float3 origin = vertexWorld + normal * gSunParams.originBias;
++
++    // Moving casters also block ambient light right next to them, which keeps
++    // a car grounded where the sun cannot reach.
++    float contact = 0.0f;
++    if (gReceiver.contactStrength > 0 && gReceiver.contactDistance > 0) {
++        contact = SunShadowContact(gShadowScene, origin, normal, gReceiver.contactDistance, SUN_SHADOW_MOVING_MASK);
++    }
++    const float contactDarken = saturate(gReceiver.contactStrength) * saturate(contact * 1.5f);
++    const float transmission = ReceiverTransmission(vertexWorld, geometric, origin, normal, face,
++        gReceiver.occluderMask, SUN_SHADOW_SCENERY_MASK, contactDarken);
++
++    // Debug views bypass the composite clamp (alpha < 0) and show one term.
++    if (gReceiver.debugMode == 1) return float4(transmission.xxx, -1.0f);
++    if (gReceiver.debugMode == 2) {
++        const float sky = gReceiver.skyDistance > 0 ? SunShadowOpenSky(gShadowScene, origin, normal, gReceiver.skyDistance, SUN_SHADOW_SCENERY_MASK) : 1.0f;
++        return float4(sky.xxx, -1.0f);
++    }
++    if (gReceiver.debugMode == 3) return float4((1.0f - contact).xxx, -1.0f);
++    if (gReceiver.debugMode == 4) {
++        const float without = ReceiverTransmission(vertexWorld, geometric, origin, normal, face,
++            gReceiver.occluderMask & ~SUN_SHADOW_STATIC_MASK, SUN_SHADOW_WORLD_MASK, contactDarken);
++        return float4(transmission, without, without, -1.0f);
++    }
+ 
+     // Standard fog: native = (1 - a) * surface + a * fog, a = shade alpha.
+-    const float3 fogContribution = instanceRDPParams[instanceIndex].fogColor.rgb * saturate(vertexShade.a);
++    const float3 fogContribution = gReceiver.standardFog != 0 ?
++        instanceRDPParams[instanceIndex].fogColor.rgb * saturate(vertexShade.a) : float3(0, 0, 0);
+     return float4(fogContribution, transmission);
+ }
+diff --git a/src/shared/rt64_sun_shadow.h b/src/shared/rt64_sun_shadow.h
+index fa0f302..aba4071 100644
+--- a/src/shared/rt64_sun_shadow.h
++++ b/src/shared/rt64_sun_shadow.h
+@@ -38,6 +38,37 @@ struct SunShadowRange {
+     // Caller has authenticated native texture/attribute resources for candidate
+     // evaluation. This is mutually exclusive with opaqueSolid; unknown is neither.
+     bool nativeAlphaCoverage = false;
++    // Caster that moves between frames (a car). Moving casters live in their
++    // own acceleration-structure instance so contact rays can query them alone.
++    bool dynamicCaster = false;
++    // Receiver whose blender is the standard fog cycle; others carry no fog.
++    bool standardFog = false;
++};
++
++// Acceleration-structure instance masks: presented static scenery, moving
++// casters and remembered static scenery the view no longer presents.
++constexpr uint32_t SunShadowWorldMask = 0x1, SunShadowMovingMask = 0x2, SunShadowStaticMask = 0x4,
++    SunShadowSceneryMask = SunShadowWorldMask | SunShadowStaticMask, SunShadowAllMask = 0xFF;
++
++// Light the native art already bakes in. Prelit scenery has no sun term of
++// its own, so sun shadow is faded where the sky is mostly hidden (tunnels,
++// under bridges) and a short-range contact shadow from moving casters keeps
++// the car grounded there. Distances are renderer world units.
++struct SunShadowAmbient {
++    float contactStrength = 0; // 0 disables contact shadows.
++    float contactDistance = 0;
++    float skyDistance = 0; // 0 disables the open-sky test: the sun reaches everywhere.
++    float skyOpenFull = 1; // Fraction of open sky at which the sun shadow is full strength.
++    // 0 off, 1 transmission, 2 open sky, 3 contact, 4 what remembered scenery
++    // changes: red is transmission with it, green and blue without it.
++    uint32_t debugMode = 0;
++    // Instances that block the light. A light the art already bakes for the
++    // scenery (tunnel lamps) is blocked by moving casters only.
++    uint32_t occluderMask = SunShadowAllMask;
++    // Static scenery remembered after it leaves the view also casts and closes
++    // the sky (SunShadowStaticCache): 0 off, 1 on, 2 the remembered scenery
++    // alone stands in for the presented world (a diagnostic of its coverage).
++    uint32_t staticCache = 0;
+ };
+ 
+ // Immutable, task-owned shadow input attached to exactly one Workload. The
+@@ -49,6 +80,7 @@ struct SunShadowWorkload {
+     int32_t phase = 0;
+     uint32_t playerCount = 0;
+     SunShadowParams params;
++    SunShadowAmbient ambient;
+     std::vector<SunShadowRange> geometry;
+     std::vector<SunShadowRange> overlays;
+     std::vector<SunShadowRange> rejected;
+@@ -77,6 +109,14 @@ inline bool validSunShadowParams(const SunShadowParams &p) {
+         (p.sampleCount == 4 || p.sampleCount == 8 || p.sampleCount == 16) &&
+         p.debugMode <= 1 && p.reserved == 0;
+ }
++
++inline bool validSunShadowAmbient(const SunShadowAmbient &a) {
++    return std::isfinite(a.contactStrength) && a.contactStrength >= 0 && a.contactStrength <= 1 &&
++        std::isfinite(a.contactDistance) && a.contactDistance >= 0 && a.contactDistance <= 100 &&
++        std::isfinite(a.skyDistance) && a.skyDistance >= 0 && a.skyDistance <= 1000 &&
++        std::isfinite(a.skyOpenFull) && a.skyOpenFull > 0 && a.skyOpenFull <= 1 && a.debugMode <= 4 &&
++        a.occluderMask != 0 && a.occluderMask <= SunShadowAllMask && a.staticCache <= 2;
++}
+ }
+ #else
+ struct SunShadowParams {
+diff --git a/src/shared/rt64_sun_shadow_receiver.h b/src/shared/rt64_sun_shadow_receiver.h
+index de03802..76bb162 100644
+--- a/src/shared/rt64_sun_shadow_receiver.h
++++ b/src/shared/rt64_sun_shadow_receiver.h
+@@ -9,11 +9,20 @@ namespace interop {
+ #endif
+     // Per receiver draw: its native call identity and the first index of its
+     // original face range, matching SunShadowScene metadata for exact
+-    // originating-face exclusion.
++    // originating-face exclusion. The camera position orients the visible side
++    // of the surface for sky and contact rays.
+     struct SunShadowReceiverParams {
+         uint draw;
+         uint faceStart;
+-        uint2 padding;
++        uint standardFog;
++        uint debugMode; // SunShadowAmbient::debugMode.
++        float4 camera; // World position; w unused.
++        float contactStrength;
++        float contactDistance;
++        float skyDistance;
++        float skyOpenFull;
++        uint occluderMask; // SunShadowAmbient::occluderMask.
++        uint reserved0, reserved1, reserved2; // Scalars: cbuffer arrays pad each element.
+     };
+ #ifdef HLSL_CPU
+ };

@@ -60,13 +60,14 @@ struct Probe {
     uint32_t receiverFace = UINT32_MAX;
     float native[4] = {0.8f, 0.6f, 0.4f, 0.7f};
     float fog[3] = {0.1f, 0.2f, 0.3f};
-    uint32_t reserved = 0;
+    uint32_t occluderMask = 0; // 0 traces every instance.
 };
 struct Result {
     float color[4], info[4], directionStrength[4], radiusIntervalBias[4];
     uint32_t flags[4];
+    float sky[4];
 };
-static_assert(sizeof(Probe) == 64 && sizeof(Result) == 80);
+static_assert(sizeof(Probe) == 64 && sizeof(Result) == 96);
 using Vertex = std::array<float, 4>;
 
 // Exercise the placed-footprint destination that a real swapchain capture uses.
@@ -221,11 +222,12 @@ int main(int argc, char **argv) {
         params.rayMax = 20;
         params.originBias = 0.005f;
         uint64_t presentation = 0;
-        auto execute = [&](const std::vector<SunShadowRange> &ranges, bool validParams = true) {
+        auto execute = [&](const std::vector<SunShadowRange> &ranges, bool validParams = true,
+            const SunShadowStaticInput &staticInput = {}) {
             require(validSunShadowParams(params) == validParams, "parameter validator disagrees");
             ++presentation;
             require(scene.prepare(device.get(), positionInput, indexInput, uint32_t(vertices.size()), indices,
-                ranges, presentation), scene.error().c_str());
+                ranges, presentation, staticInput), scene.error().c_str());
             require(!scene.ready(presentation) && !scene.accelerationStructure(presentation),
                 "unbuilt scene exposed as ready");
             upload(vertexUpload.get(), vertices.data(), vertices.size() * 16);
@@ -340,6 +342,54 @@ int main(int argc, char **argv) {
         close(self[0].info[0], 1, "originating face was not excluded");
         auto closed = execute({{6,6,17,true},{0,6,17,true}});
         close(closed[0].info[0], 0, "whole receiver draw was excluded");
+        // Moving casters are a second instance: its hits must read its own
+        // metadata, or this ceiling would be taken for the excluded face.
+        auto layered = execute({{6,6,17,true}, {0,6,17,true,0,0,false,true}});
+        require(scene.stats().movingTriangles == 2 && scene.stats().triangles == 4, "moving layer admission changed");
+        close(layered[0].info[0], 0, "moving instance read world metadata");
+        // Lamp light: only moving casters block it, so a world ceiling does not.
+        for (auto &p : probes) p.occluderMask = SunShadowMovingMask;
+        auto worldOnly = execute({{6,6,17,true}, {0,6,17,true}});
+        close(worldOnly[0].info[0], 1, "moving-only mask was blocked by world geometry");
+        auto movingOnly = execute({{6,6,17,true}, {0,6,17,true,0,0,false,true}});
+        close(movingOnly[0].info[0], 0, "moving-only mask missed a moving caster");
+        for (auto &p : probes) p.occluderMask = 0;
+        // Open sky is measured toward +Y. A receiver facing straight down sees
+        // none of it, so it must not read as fully open.
+        const auto savedProbes = probes;
+        for (auto &p : probes) { p.position[0] = p.position[1] = p.position[2] = 0; p.normal[0] = p.normal[2] = 0; p.normal[1] = 1; }
+        auto skyUp = execute({{6,6,17,true}});
+        require(skyUp[0].sky[0] > 0.5f, "an upward receiver saw no open sky");
+        for (auto &p : probes) p.normal[1] = -1;
+        auto skyDown = execute({{6,6,17,true}});
+        close(skyDown[0].sky[0], 0, "a downward receiver counted as open sky");
+        probes = savedProbes;
+        // Remembered scenery: a ceiling no longer presented still casts, as
+        // world geometry, and a new snapshot replaces the old structure.
+        const std::vector<std::array<float, 9>> rememberedCeiling{
+            {-1,-1,3, 1,-1,3, 1,1,3}, {-1,-1,3, 1,1,3, -1,1,3}};
+        const std::vector<std::array<float, 9>> rememberedElsewhere{{50,50,3, 51,50,3, 51,51,3}};
+        auto remembered = execute({{6,6,17,true}}, true, {&rememberedCeiling, 1});
+        require(scene.stats().staticTriangles == 2 && scene.stats().admitted == 2, "static layer admission changed");
+        close(remembered[0].info[0], 0, "remembered scenery did not cast");
+        auto reused = execute({{6,6,17,true}}, true, {&rememberedCeiling, 1});
+        close(reused[0].info[0], 0, "reused static structure stopped casting");
+        for (auto &p : probes) p.occluderMask = SunShadowMovingMask;
+        auto rememberedLamp = execute({{6,6,17,true}}, true, {&rememberedCeiling, 1});
+        close(rememberedLamp[0].info[0], 1, "moving-only mask was blocked by remembered scenery");
+        // Remembered scenery has its own mask, so a view can measure what it adds.
+        for (auto &p : probes) p.occluderMask = SunShadowWorldMask;
+        auto presentedOnly = execute({{6,6,17,true}}, true, {&rememberedCeiling, 1});
+        close(presentedOnly[0].info[0], 1, "presented-world mask was blocked by remembered scenery");
+        for (auto &p : probes) p.occluderMask = SunShadowStaticMask;
+        auto rememberedOnly = execute({{6,6,17,true}}, true, {&rememberedCeiling, 1});
+        close(rememberedOnly[0].info[0], 0, "static mask missed remembered scenery");
+        for (auto &p : probes) p.occluderMask = 0;
+        auto replaced = execute({{6,6,17,true}}, true, {&rememberedElsewhere, 2});
+        close(replaced[0].info[0], 1, "a new snapshot kept the old static structure");
+        auto staticOnly = execute({{6,6,17,true}, {0,6,17,true}}, true, {&rememberedElsewhere, 2, true});
+        require(scene.stats().triangles == 0, "diagnostic mode traced presented world ranges");
+        close(staticOnly[0].info[0], 1, "diagnostic mode kept the presented world ceiling");
         for (auto &p : probes) p.normal[2] = -1;
         auto reversed = execute({{6,6,17,true},{0,6,17,true}});
         close(reversed[0].info[0], closed[0].info[0], "winding changed the geometric bias");

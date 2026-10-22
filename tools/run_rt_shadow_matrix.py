@@ -27,7 +27,7 @@ ARTIFACT = re.compile(r"\(artifacts=(.+)\)\s*$")
 
 
 def variant(kind: str, circuit: int, mode: int, softness: float, rays: int, car: int = 0,
-            sweep: bool = False, hpfb: str | None = None) -> dict:
+            hpfb: str | None = None) -> dict:
     scenario = json.loads((ROOT / "scenarios" / BASES[kind]).read_text(encoding="utf-8"))
     scenario["name"] = f"rt-shadow-matrix-c{circuit}-m{mode}-car{car}-{kind}"
     scenario["warp"] = f"{circuit}:1:{car}:1"
@@ -35,8 +35,6 @@ def variant(kind: str, circuit: int, mode: int, softness: float, rays: int, car:
     scenario["input"]["replay"] = str((ROOT / "scenarios" / scenario["input"]["replay"]).resolve())
     if kind == "soft":
         scenario["graphics"] = {"rt_shadows": True, "rt_shadow_rays": rays, "rt_shadow_softness": softness}
-    if sweep and kind in ("hard", "soft"):
-        scenario["developer_env"] = {"LAMBO_RT_SHADOW_SWEEP": "1"}
     if hpfb:
         # Every control and trace must share one colour format to be compared.
         # The owner buffer forces standard colour, so the pinned unshadowed
@@ -87,8 +85,6 @@ def main() -> int:
     parser.add_argument("--kinds", nargs="+", default=list(BASES), choices=list(BASES))
     parser.add_argument("--softness", type=float, default=0.5)
     parser.add_argument("--rays", type=int, default=8, choices=(4, 8, 16))
-    parser.add_argument("--sweep", action="store_true",
-                        help="developer sweep: let unvalidated race modes reach the production path")
     parser.add_argument("--hpfb", choices=("Auto", "On", "Off"),
                         help="pin the high-precision colour buffer in every run")
     parser.add_argument("--timeout", type=int, default=180)
@@ -105,7 +101,7 @@ def main() -> int:
                 runs = {}
                 for kind in args.kinds:
                     path = scenario_dir / f"{label}-{kind}.json"
-                    document = variant(kind, circuit, mode, args.softness, args.rays, car, args.sweep, args.hpfb)
+                    document = variant(kind, circuit, mode, args.softness, args.rays, car, args.hpfb)
                     path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
                     passed, artifact, line = run(path, args.timeout)
                     runs[kind] = {"passed": passed, "artifact": artifact, "result": line}

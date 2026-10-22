@@ -110,10 +110,11 @@ PresentedScene presented_scene(const RT64::Workload& workload) {
         for (uint32_t i = start; i < start + count; ++i) {
             const auto& light = data.rspLights[i];
             const PresentedLight value{matrix & 0xFFFFu, light.posDir.x, light.posDir.y, light.posDir.z,
-                light.kc == 0 && light.kl == 0 && light.kq == 0};
+                light.kc == 0 && light.kl == 0 && light.kq == 0, light.col.x, light.col.y, light.col.z};
             const bool repeated = !scene.lights.empty() && scene.lights.back().object_id == value.object_id &&
                 scene.lights.back().x == value.x && scene.lights.back().y == value.y &&
-                scene.lights.back().z == value.z && scene.lights.back().directional == value.directional;
+                scene.lights.back().z == value.z && scene.lights.back().directional == value.directional &&
+                scene.lights.back().r == value.r && scene.lights.back().g == value.g && scene.lights.back().b == value.b;
             if (!repeated) scene.lights.push_back(value);
         }
     }
@@ -130,6 +131,7 @@ bool shadow_task(const TaskSunProbe& probe, ShadowTask& task) {
     task.race_mode = probe.race_mode;
     task.model_cursors = probe.model_cursors;
     task.emitters_complete = probe.emitters_complete;
+    task.scene_consistent = probe.scene_consistent;
     task.objects.assign(probe.objects.begin(), probe.objects.end());
     return true;
 }

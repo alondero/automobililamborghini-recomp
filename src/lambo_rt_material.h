@@ -8,21 +8,22 @@ namespace lambo::rt {
 
 enum PhysicalShadowRejection : uint32_t {
     RejectExtendedDraw = 1u << 0,
-    RejectCombiner = 1u << 1,
-    RejectOtherMode = 1u << 2,
-    RejectDepthCompareMode = 1u << 3,
-    RejectShaderModeMismatch = 1u << 4,
-    RejectFogCycle = 1u << 5,
-    RejectCoverageAlphaOrBlending = 1u << 6,
-    RejectDepthBehavior = 1u << 7,
-    RejectShaderFlags = 1u << 8,
-    RejectFogColor = 1u << 9,
+    RejectShaderModeMismatch = 1u << 1,
+    RejectCoverageAlphaOrBlending = 1u << 2,
+    RejectDepthBehavior = 1u << 3,
+    RejectShaderFlags = 1u << 4,
+    // Receiver only: copy and fill cycles are never lit 3D surfaces.
+    RejectCycleType = 1u << 5,
+    // Receiver only: the blender reads fog other than as the standard cycle,
+    // so the fog share of the native colour is unknown.
+    RejectFogBlender = 1u << 6,
+    RejectFogColor = 1u << 7,
     // Receiver only: phase 1 attenuates native output and never relights, so a
     // vertex-lit surface would lose fill/ambient light too and double-darken its
     // light-averted faces. Lit surfaces still cast.
-    RejectVertexLighting = 1u << 10,
+    RejectVertexLighting = 1u << 8,
 };
-inline constexpr uint32_t rejection_bit_count = 11;
+inline constexpr uint32_t rejection_bit_count = 9;
 static_assert((RejectVertexLighting >> (rejection_bit_count - 1)) == 1u, "rejection tally misses a bit");
 
 // USA native car-shadow overlay material (render mode, combiner, geometry
@@ -67,22 +68,34 @@ inline uint32_t caster_material_rejection(const ShadowMaterial& material) {
     return rejection;
 }
 
+// RDP blender mux fields in OtherMode.L bits 16-31 (P/A/M/B for each cycle).
+// P and M select colour 3 for fog colour; A selects 1 for fog alpha.
+inline bool blender_reads_fog(uint32_t other_l) {
+    for (uint32_t cycle = 0; cycle < 2; ++cycle) {
+        const uint32_t shift = cycle ? 16 : 18;
+        const uint32_t p = (other_l >> (shift + 12)) & 3u;
+        const uint32_t a = (other_l >> (shift + 8)) & 3u;
+        const uint32_t m = (other_l >> (shift + 4)) & 3u;
+        if (p == 3u || m == 3u || a == 1u) return true;
+    }
+    return false;
+}
+
+// The composite attenuates the final native colour, C = T * native + (1 - T)
+// * fog, so any opaque surface qualifies once its fog share is known: the
+// standard fog cycle supplies it and a blender that never reads fog has none.
+// The colour combiner and exact render mode are irrelevant to that formula.
 inline uint32_t receiver_material_rejection(const ShadowMaterial& material) {
     uint32_t rejection = caster_material_rejection(material);
-    const bool measuredCombine =
-        (material.combineW0 == 0xFC127FFFu && material.combineW1 == 0xFFFFF238u) ||
-        (material.combineW0 == 0xFC26A004u && material.combineW1 == 0x1FFC93F8u) ||
-        (material.combineW0 == 0xFC327FFFu && material.combineW1 == 0xFFFFF838u) ||
-        (material.combineW0 == 0xFCFFFFFFu && material.combineW1 == 0xFFFE7838u);
-    if (!measuredCombine) rejection |= RejectCombiner;
-    if (material.otherL != 0xC8112078u && material.otherL != 0xC8112230u) rejection |= RejectOtherMode;
-    if (((material.otherH >> 20) & 3u) != 1u) rejection |= RejectDepthCompareMode;
-    if (!material.standardFog) rejection |= RejectFogCycle;
+    if (((material.otherH >> 20) & 3u) > 1u) rejection |= RejectCycleType;
+    if (!material.standardFog && blender_reads_fog(material.otherL)) rejection |= RejectFogBlender;
     // RenderFlags::usesHDR (bit 29) selects the 16-bit UNORM high-precision
     // target, which the receiver and composite follow; MSAA sample counts
     // (bits 30-31) use the receiver's averaged-depth variant.
-    for (float component : material.fog) {
-        if (!std::isfinite(component) || component < 0 || component > 1) rejection |= RejectFogColor;
+    if (material.standardFog) {
+        for (float component : material.fog) {
+            if (!std::isfinite(component) || component < 0 || component > 1) rejection |= RejectFogColor;
+        }
     }
     return rejection;
 }

@@ -4,6 +4,9 @@
 #include "hle/rt64_workload.h"
 
 #include <algorithm>
+#include <atomic>
+#include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -27,8 +30,8 @@ bool inject_as_fault() {
     return enabled;
 }
 
-// Developer validation sweep: lets an unvalidated race mode and circuit pair
-// reach the production path so its scene can be measured. Never a player setting.
+// Developer validation sweep: lets unvalidated race modes and cars reach the
+// production path so their scenes can be measured. Never a player setting.
 bool validation_sweep() {
     static const bool enabled = [] {
         const char* value = std::getenv("LAMBO_RT_SHADOW_SWEEP");
@@ -37,42 +40,29 @@ bool validation_sweep() {
     return enabled;
 }
 
+// Developer tuning: LAMBO_RT_SHADOW_<name> overrides one ambient value.
+float tuned(const char* name, float fallback) {
+    const std::string key = std::string("LAMBO_RT_SHADOW_") + name;
+    const char* value = std::getenv(key.c_str());
+    if (!value || !*value) return fallback;
+    char* end = nullptr;
+    const float parsed = std::strtof(value, &end);
+    return end && *end == 0 ? parsed : fallback;
+}
+
+// Log keys are single words so tools can parse the summary line.
+std::string reason_key(const char* reason) {
+    std::string key;
+    for (const char* c = reason; c && *c; ++c) key += std::isalnum(static_cast<unsigned char>(*c)) ? *c : '_';
+    return key.empty() ? "unknown" : key;
+}
+
 // Appends one formatted field; output longer than a field is truncated.
 template <class... Args>
 void append_format(std::string& text, const char* format, Args... args) {
     char field[96];
     const int length = std::snprintf(field, sizeof(field), format, args...);
     if (length > 0) text.append(field, std::min(size_t(length), sizeof(field) - 1));
-}
-
-// Names the first few unclassified draws so a native-fallback log line says
-// which presented draw and native object kept the scene incomplete.
-std::string describe_unclassified(const RT64::SunShadowWorkload& result, const PresentedScene& scene,
-        const ShadowTask& task) {
-    std::string text;
-    size_t shown = 0;
-    for (const auto& range : result.unclassified) {
-        if (shown++ == 4) {
-            text += " ...";
-            break;
-        }
-        append_format(text, " r%u/p%u/n%u", range.rejection, range.projectionType, range.indexCount);
-        for (const auto& draw : scene.draws) {
-            if (draw.call != range.draw) continue;
-            const uint32_t object_id = presented_object_index(draw.matrix_id);
-            if (object_id < task.objects.size()) {
-                const auto& object = task.objects[object_id];
-                append_format(text, "/obj%u:f%X:l%08X:k%d:p%d", object_id, unsigned(object.flags), object.list,
-                    int(object.kind), int(object.parent));
-            }
-            const auto& m = draw.material;
-            append_format(text, "/m%08X:%08X:%08X:g%X:z%X:%d%d%d%d%d", m.otherL, m.combineW0, m.combineW1,
-                draw.projection.geometry, m.zMode, int(m.alphaBlend), int(m.forceBlend), int(m.coverageAlpha),
-                int(m.zCompare), int(m.zUpdate));
-            break;
-        }
-    }
-    return text;
 }
 
 struct CostPercentiles { double p50 = 0, p95 = 0; };
@@ -93,6 +83,17 @@ ShadowSettings production_shadow_settings(int rays, double softness_degrees) {
     settings.strength = native_overlay_strength;
     settings.samples = uint32_t(rays);
     settings.angular_radius = float(softness_degrees * 3.14159265358979323846 / 180.0);
+    // Renderer world units: the car is about 4.35 long and 1.13 tall. A
+    // receiver with less than half its sky open (tunnel, deep underpass) is
+    // lit by the art's baked lamps, not the sun. docs/rt-shadows.md.
+    settings.ambient.contactStrength = tuned("CONTACT", 0.55f);
+    settings.ambient.contactDistance = tuned("CONTACT_DISTANCE", 1.6f);
+    settings.ambient.skyDistance = tuned("SKY_DISTANCE", 30.0f);
+    settings.ambient.skyOpenFull = tuned("SKY_OPEN", 0.5f);
+    settings.ambient.debugMode = uint32_t(std::clamp(tuned("DEBUG", 0.0f), 0.0f, 255.0f));
+    // Scenery that left the view keeps casting, so shadows do not change with
+    // the camera. 2 traces only the remembered scenery, to check its coverage.
+    settings.ambient.staticCache = uint32_t(std::clamp(tuned("CACHE", 1.0f), 0.0f, 255.0f));
     settings.validation_sweep = validation_sweep();
     return settings;
 }
@@ -129,6 +130,7 @@ std::shared_ptr<const RT64::SunShadowWorkload> SunShadowProduction::sunShadow(co
         if (!pending.admitted) {
             const auto scene = presented_scene(workload);
             AdmissionStats stats;
+            pending.settings.key_luminance = key_luminance_;
             pending.result = admit_sun_shadow(pending.task, scene.draws, scene.lights, pending.settings, stats);
             if (pending.result && inject_as_fault()) {
                 auto faulty = std::make_shared<RT64::SunShadowWorkload>(*pending.result);
@@ -136,17 +138,21 @@ std::shared_ptr<const RT64::SunShadowWorkload> SunShadowProduction::sunShadow(co
                 pending.result = faulty;
             }
             pending.admitted = true;
-            if (!pending.result) {
-                LAMBO_LOG("rt-shadow", "task=%llu native: admission gate %u circuit=%d phase=%d players=%d mode=%d model=%d\n",
-                    static_cast<unsigned long long>(pending.task.sequence), uint32_t(stats.gate),
-                    pending.task.circuit, pending.task.phase, pending.task.players, pending.task.race_mode,
-                    int(pending.task.model_cursors[0]));
+            if (stats.car_key_seen) {
+                const float luminance = light_luminance(stats.car_key);
+                if (std::isfinite(luminance) && luminance > 0) key_luminance_ = luminance;
             }
-            else if (!pending.result->complete) {
-                LAMBO_LOG("rt-shadow", "task=%llu native: incomplete admission rejected=%zu unclassified=%zu overlays=%zu receivers=%zu%s%s\n",
+            log_car_light(pending.task.sequence, stats);
+            if (!pending.result) {
+                log_lap(lap_.count(false, "gate_" + std::to_string(uint32_t(stats.gate))));
+                LAMBO_LOG("rt-shadow", "task=%llu native: admission gate %u circuit=%d phase=%d players=%d mode=%d\n",
+                    static_cast<unsigned long long>(pending.task.sequence), uint32_t(stats.gate),
+                    pending.task.circuit, pending.task.phase, pending.task.players, pending.task.race_mode);
+            }
+            else if (stats.rejected != 0 || stats.unclassified != 0) {
+                LAMBO_LOG_TRACE("rt-shadow", "task=%llu excluded rejected=%zu untraced=%zu receivers=%zu key=%d%s\n",
                     static_cast<unsigned long long>(pending.task.sequence), stats.rejected, stats.unclassified,
-                    stats.overlays, pending.result->receivers.size(), rejection_summary(stats).c_str(),
-                    describe_unclassified(*pending.result, scene, pending.task).c_str());
+                    pending.result->receivers.size(), int(stats.car_key_seen), rejection_summary(stats).c_str());
             }
         }
         return pending.result;
@@ -156,36 +162,107 @@ std::shared_ptr<const RT64::SunShadowWorkload> SunShadowProduction::sunShadow(co
     }
 }
 
+// How the game lights the player's car changes in tunnels and in-car views;
+// one line per change ties those places to the lap's task numbers.
+void SunShadowProduction::log_car_light(uint64_t sequence, const AdmissionStats& stats) {
+    std::string light = "none";
+    if (stats.car_light_seen) {
+        const PresentedLight& l = stats.car_light;
+        light.clear();
+        append_format(light, "dir=%.0f,%.0f,%.0f rgb=%.3f,%.3f,%.3f key=%d", l.x, l.y, l.z, l.r, l.g, l.b,
+            int(stats.car_key_seen));
+    }
+    if (light == last_car_light_) return;
+    last_car_light_ = light;
+    LAMBO_LOG("rt-shadow", "task=%llu car_light %s\n", static_cast<unsigned long long>(sequence), light.c_str());
+}
+
+void SunShadowProduction::log_lap(const std::optional<LapSummary>& summary) {
+    if (!summary) return;
+    std::string reasons;
+    for (const auto& [key, count] : summary->reasons) reasons += " " + key + "=" + std::to_string(count);
+    LAMBO_LOG("rt-shadow", "lap_summary tasks=%zu ready=%zu%s\n", summary->tasks, summary->ready, reasons.c_str());
+}
+
 void SunShadowProduction::sunShadowResult(const RT64::SunShadowFrameResult& result) noexcept {
+    // The renderer thread calls this while queue threads admit tasks, so every
+    // member below is shared under mutex_.
+    std::lock_guard lock(mutex_);
+    // Interpolated presentations re-render a Workload; count each task once.
+    try {
+        log_lap(lap_.record(result.workloadId, result.ready, reason_key(result.reason)));
+    } catch (const std::exception& error) {
+        LAMBO_LOG_WARN("rt-shadow", "task count failed: %s\n", error.what());
+    }
     if (result.ready) {
         build_us_.push_back(result.buildMicroseconds);
         receiver_us_.push_back(result.receiverMicroseconds);
+        cache_us_.push_back(result.cacheMicroseconds);
         if (build_us_.size() >= cost_window) {
             const size_t samples = build_us_.size();
             const CostPercentiles build = cost_percentiles(build_us_);
             const CostPercentiles receiver = cost_percentiles(receiver_us_);
-            LAMBO_LOG("rt-shadow", "gpu_cost samples=%zu build_us_p50=%.1f build_us_p95=%.1f receiver_us_p50=%.1f receiver_us_p95=%.1f triangles=%llu\n",
+            const CostPercentiles cache = cost_percentiles(cache_us_);
+            LAMBO_LOG("rt-shadow", "gpu_cost samples=%zu build_us_p50=%.1f build_us_p95=%.1f receiver_us_p50=%.1f receiver_us_p95=%.1f triangles=%llu static_triangles=%llu static_version=%llu cache_us_p50=%.1f cache_us_p95=%.1f\n",
                 samples, build.p50, build.p95, receiver.p50, receiver.p95,
-                static_cast<unsigned long long>(result.triangles));
+                static_cast<unsigned long long>(result.triangles),
+                static_cast<unsigned long long>(result.staticTriangles),
+                static_cast<unsigned long long>(result.staticVersion), cache.p50, cache.p95);
             build_us_.clear();
             receiver_us_.clear();
+            cache_us_.clear();
         }
     }
     const std::string reason = result.reason ? result.reason : "";
     if (result.ready == last_ready_ && reason == last_reason_ && (result.taskSequence % 60) != 0) return;
     last_ready_ = result.ready;
     last_reason_ = reason;
-    LAMBO_LOG("rt-shadow", "workload=%llu task=%llu epoch=%llu ready=%d reason=\"%s\" casters=%u receivers=%u overlays=%u triangles=%llu as_bytes=%llu scratch_bytes=%llu\n",
+    LAMBO_LOG("rt-shadow", "workload=%llu task=%llu epoch=%llu ready=%d reason=\"%s\" casters=%u receivers=%u overlays=%u triangles=%llu static_triangles=%llu as_bytes=%llu scratch_bytes=%llu\n",
         static_cast<unsigned long long>(result.workloadId), static_cast<unsigned long long>(result.taskSequence),
         static_cast<unsigned long long>(result.sceneEpoch), result.ready ? 1 : 0, reason.c_str(),
         result.casterRanges, result.receiverDraws, result.overlaysReplaced,
-        static_cast<unsigned long long>(result.triangles), static_cast<unsigned long long>(result.asBytes),
-        static_cast<unsigned long long>(result.scratchBytes));
+        static_cast<unsigned long long>(result.triangles), static_cast<unsigned long long>(result.staticTriangles),
+        static_cast<unsigned long long>(result.asBytes), static_cast<unsigned long long>(result.scratchBytes));
 }
 
 void SunShadowProduction::invalidate() {
     std::lock_guard lock(mutex_);
     tasks_.invalidate();
+    // A run's tail is a real part of its lap; log it before the next run starts.
+    try {
+        log_lap(lap_.flush());
+    } catch (const std::exception& error) {
+        LAMBO_LOG_WARN("rt-shadow", "lap summary flush failed: %s\n", error.what());
+    }
+    lap_.reset();
+    key_luminance_ = ShadowSettings{}.key_luminance;
+}
+
+void SunShadowProduction::flush_lap_summary() noexcept {
+    std::lock_guard lock(mutex_);
+    try {
+        log_lap(lap_.flush());
+    } catch (const std::exception& error) {
+        LAMBO_LOG_WARN("rt-shadow", "lap summary flush failed: %s\n", error.what());
+    }
+}
+
+namespace {
+// The one live production object, so process exit can reach it without the renderer.
+std::atomic<SunShadowProduction*> live_production{nullptr};
+} // namespace
+
+SunShadowProduction::SunShadowProduction() {
+    live_production.store(this);
+}
+
+SunShadowProduction::~SunShadowProduction() {
+    SunShadowProduction* self = this;
+    live_production.compare_exchange_strong(self, nullptr);
 }
 
 } // namespace lambo::rt
+
+extern "C" void lambo_rt_flush_lap_summary_at_exit() {
+    if (lambo::rt::SunShadowProduction* production = lambo::rt::live_production.load()) production->flush_lap_summary();
+}

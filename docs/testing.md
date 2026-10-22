@@ -226,7 +226,19 @@ synthetic geometry, including real BLAS/TLAS and GPU readback. Configure with
 `-DLAMBO_RT_GPU_TESTS=ON`, build `lambo_rt_shadow_gpu`, then run
 `ctest --test-dir build -R lambo_rt_shadow_gpu --output-on-failure`. Exit 77
 means skipped hardware. See [groundwork evidence](rt-shadows.md) for toolchain
-and limits; this does not test native game receivers or swapchain pixels.
+and limits; this does not test native game receivers or swapchain pixels. The
+probe also covers the instance masks (moving-only lamp light, remembered
+scenery) and the static layer's rebuild when its snapshot changes.
+`lambo_rt_shadow_cache` checks, on the host, which static scenery the shadow
+cache remembers, publishes and evicts. `lambo_rt_lap_window` checks that the
+lap summary counts each Workload once and keeps a lap's partial tail.
+
+`python tools/check_rt_shadow_lap.py` drives each circuit's recorded
+time-trial lap in a real D3D12 window and fails when more than 1% of race
+tasks fall back to the native shadow. `--env KEY=VALUE` passes a developer
+variable such as `LAMBO_RT_SHADOW_DEBUG=4`, and `--shots-every` saves window
+screenshots. It needs a USA ROM build and DXR 1.1 hardware, so it is not part
+of CTest.
 
 The config test covers captured launch overrides, their precedence and bounds,
 reload, and live settings. The frontend settings test covers the Low hardware

@@ -214,12 +214,14 @@ bool TaskSunProbes::snapshot(const uint8_t* rdram, size_t size) {
         record.players != read<int16_t>(rdram, current_players_address) ||
         record.race_mode != read<int16_t>(rdram, race_mode_address)) {
         record.emitters_complete = false;
+        record.scene_consistent = false;
         return false;
     }
     for (size_t player = 0; player < record.model_cursors.size(); ++player) {
         if (record.model_cursors[player] != read<int16_t>(rdram, LAMBO_GUEST_PLAYER_MODEL_CURSOR_ADDR +
             uint32_t(player) * LAMBO_GUEST_PLAYER_MODEL_CURSOR_STRIDE)) {
             record.emitters_complete = false;
+            record.scene_consistent = false;
             return false;
         }
     }

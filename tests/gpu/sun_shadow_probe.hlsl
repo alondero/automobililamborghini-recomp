@@ -11,7 +11,7 @@ struct Probe {
     uint receiverFace;
     float4 nativeColor;
     float3 fogContribution;
-    uint reserved;
+    uint occluderMask; // 0 traces every instance.
 };
 struct Result {
     float4 color;
@@ -19,6 +19,7 @@ struct Result {
     float4 directionStrength;
     float4 radiusIntervalBias;
     uint4 flags;
+    float4 sky; // Open-sky fraction in x.
 };
 StructuredBuffer<Probe> Probes : register(t2);
 RWStructuredBuffer<Result> Results : register(u0);
@@ -30,8 +31,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     Probe input = Probes[id.x];
     Result result;
     bool coverageValid;
-    float visibility = SunShadowVisibility(Scene, Geometry, input.position,
-        input.normal, input.receiverDraw, input.receiverFace, Params, coverageValid);
+    float visibility = SunShadowVisibilityMasked(Scene, Geometry, input.position,
+        input.normal, input.receiverDraw, input.receiverFace, Params,
+        input.occluderMask == 0 ? 0xFF : input.occluderMask, coverageValid);
     result.color = SunShadowCompose(input.nativeColor, input.fogContribution, visibility, Params);
     float minDot = 1, lengthError = 0;
     for (uint i = 0; i < Params.sampleCount; ++i) {
@@ -43,5 +45,6 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     result.directionStrength = float4(Params.direction, Params.strength);
     result.radiusIntervalBias = float4(Params.angularRadius, Params.rayMin, Params.rayMax, Params.originBias);
     result.flags = uint4(Params.sampleCount, Params.valid, Params.debugMode, Params.reserved);
+    result.sky = float4(SunShadowOpenSky(Scene, input.position, input.normal, 30.0f, 0xFF), 0, 0, 0);
     Results[id.x] = result;
 }
