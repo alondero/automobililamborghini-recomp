@@ -89,7 +89,6 @@ constexpr uint32_t kSpeedUnits = 0x800CE802u;       // 0 KM/H, 1 MPH
 constexpr uint32_t kGlyphMap = 0x8015DA16u;
 constexpr uint32_t kGlyphAdvance = 0x8015DA8Au;
 constexpr uint32_t kGlyphTextures = 0x8013F820u;
-constexpr int kStateMenu = 6;
 constexpr int kScreenCar = 13;
 
 // Preview viewport is x 53-265, y 64-152; strips stay inside its frame.
@@ -182,8 +181,15 @@ size_t glyph_count(const CardText& text) {
 // the finished car-select screen and the stock frame is otherwise unchanged.
 extern "C" void lambo_car_card_draw(uint8_t* rdram) {
     if (!lambo::config::car_select_info()) return;
-    if (read_h(rdram, LAMBO_GUEST_GAME_STATE_ADDR) != kStateMenu ||
-        read_h(rdram, kMenuScreen) != kScreenCar) return;
+    // func_800028D0 dispatches all five steady menu phases to func_80038D6C
+    // (runtime 0x8003816C). Returning from a race keeps phase 10, rather than
+    // returning to the initial menu phase 6. Race/loading phases can retain
+    // the CAR screen value, so checking only the screen would draw over races.
+    switch (read_h(rdram, LAMBO_GUEST_GAME_STATE_ADDR)) {
+        case 6: case 10: case 12: case 14: case 16: break;
+        default: return;
+    }
+    if (read_h(rdram, kMenuScreen) != kScreenCar) return;
     const int player = read_h(rdram, kSelectingPlayer);
     if (player < 1 || player > 4) return;
     const int model = read_h(rdram, LAMBO_GUEST_PLAYER_MODEL_CURSOR_ADDR +

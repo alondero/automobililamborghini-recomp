@@ -94,6 +94,35 @@ int main() {
     require(static_cast<uint32_t>(MEM_W(9 * 8 + 4, address(first_glyph))) == 0x06660666u,
             "name glyphs scale to ten pixels");
 
+    // The dispatcher uses the same menu renderer before racing (6) and in
+    // each return/results phase (10, 12, 14, 16). A stale CAR screen during
+    // racing or loading must not draw a card.
+    const uint32_t card_bytes = static_cast<uint32_t>(15 + glyphs * 10) * 8u;
+    for (int state = 0; state <= 17; ++state) {
+        reset(dl);
+        MEM_H(0, address(0x800CE6ACu)) = static_cast<int16_t>(state);
+        lambo_car_card_draw(rdram);
+        const bool menu = state == 6 || state == 10 || state == 12 || state == 14 || state == 16;
+        require(cursor() == dl + (menu ? card_bytes : 0),
+                "CAR details gate in game state " + std::to_string(state));
+
+        reset(dl);
+        MEM_H(0, address(0x800CE6ACu)) = static_cast<int16_t>(state);
+        MEM_H(0, address(0x80098562u)) = 12;
+        lambo_car_card_draw(rdram);
+        require(cursor() == dl, "other screens must not emit in state " + std::to_string(state));
+
+        reset(dl);
+        MEM_H(0, address(0x800CE6ACu)) = static_cast<int16_t>(state);
+        lambo::config::show_card = false;
+        lambo_car_card_draw(rdram);
+        require(cursor() == dl, "disabled card must not emit in state " + std::to_string(state));
+        lambo::config::show_card = true;
+        lambo_car_card_draw(rdram);
+        require(cursor() == dl + (menu ? card_bytes : 0),
+                "re-enabled card must draw immediately in menu state " + std::to_string(state));
+    }
+
     reset(dl);
     MEM_H(0, address(0x80098562u)) = 12;
     lambo_car_card_draw(rdram);
@@ -115,7 +144,6 @@ int main() {
     require(cursor() == dl, "invalid selecting player must not emit");
 
     // The card plus the game's own FULLSYNC/ENDDL must end at the arena end.
-    const uint32_t card_bytes = static_cast<uint32_t>(15 + glyphs * 10) * 8u;
     const uint32_t last_fit = arena_end - card_bytes - 16u;
     reset(last_fit);
     lambo_car_card_draw(rdram);
