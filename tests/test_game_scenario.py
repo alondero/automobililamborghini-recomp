@@ -190,13 +190,17 @@ class ScenarioRunnerTests(unittest.TestCase):
 
     def test_developer_env_is_allowlisted(self) -> None:
         developer = {"LAMBO_RT_SHADOW_FAULT": "as", "LAMBO_TEST_RESIZE": "300:1280x720",
-                     "LAMBO_RT_SHADOW_SWEEP": "1"}
+                     "LAMBO_RT_SHADOW_DEBUG": "2", "LAMBO_RT_SHADOW_CONTACT": "0.4",
+                     "LAMBO_RT_SHADOW_CONTACT_DISTANCE": "1.2", "LAMBO_RT_SHADOW_SKY_DISTANCE": "40",
+                     "LAMBO_RT_SHADOW_SKY_OPEN": "0.6", "LAMBO_RT_SHADOW_CACHE": "2"}
         completed, artifact = self.run_scenario({"schema": 1, "name": "dev", "developer_env": developer})
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         environment = json.loads((artifact / "harness-environment.json").read_text())
         for key, value in developer.items():
             self.assertEqual(environment[key], value)
         for bad, message in (({"LAMBO_HEADLESS": "0"}, "unsupported scenario developer variable"),
+                             # The retired sweep variable is no longer allow-listed.
+                             ({"LAMBO_RT_SHADOW_SWEEP": "1"}, "unsupported scenario developer variable"),
                              ({"LAMBO_RT_SHADOW_FAULT": 1}, "must be a string")):
             path = self.scenario_dir / "bad-dev.json"
             path.write_text(json.dumps({"schema": 1, "name": "bad", "developer_env": bad}), encoding="utf-8")

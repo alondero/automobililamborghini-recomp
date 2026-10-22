@@ -13,12 +13,13 @@ from run_rt_shadow_matrix import BASES, checker_error, only_inconclusive, varian
 
 class MatrixVariantTests(unittest.TestCase):
     def test_soft_variant_sets_configured_shadow_settings(self) -> None:
-        scenario = variant("soft", 3, 2, 1.5, 16, car=4, sweep=True)
+        scenario = variant("soft", 3, 2, 1.5, 16, car=4)
         self.assertEqual(scenario["warp"], "3:1:4:1")
         self.assertEqual(scenario["warp_mode"], 2)
         self.assertEqual(scenario["graphics"],
                          {"rt_shadows": True, "rt_shadow_rays": 16, "rt_shadow_softness": 1.5})
-        self.assertEqual(scenario["developer_env"], {"LAMBO_RT_SHADOW_SWEEP": "1"})
+        # Every one-player race mode reaches the traced path without a developer gate.
+        self.assertNotIn("developer_env", scenario)
 
     def test_colour_precision_is_pinned_for_every_control_and_trace(self) -> None:
         # Native and traced captures must share one colour format to compare.

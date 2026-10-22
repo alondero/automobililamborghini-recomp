@@ -228,6 +228,8 @@ std::shared_ptr<const RT64::SunShadowWorkload> RenderEvidence::sunShadow(const R
         require(models.size() == 4, "model cursor count");
         for (size_t i = 0; i < 4; ++i) task.model_cursors[i] = models.at(i).get<int16_t>();
         task.emitters_complete = native.at("emitters_complete").get<bool>();
+        // remember() keeps only complete records, which also passed the scene check.
+        task.scene_consistent = task.emitters_complete;
         for (const auto& object : native.at("objects")) {
             const uint32_t flags = object.at("flags").get<uint32_t>();
             const int parent = object.at("parent").get<int>();

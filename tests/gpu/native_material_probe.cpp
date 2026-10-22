@@ -185,7 +185,8 @@ void nativeMaterialProbe(RenderDevice* device, RenderWorker& worker, const char*
     populate(samplers.linear, RenderFilter::LINEAR);
     populate(samplers.nearest, RenderFilter::NEAREST);
     FramebufferRendererDescriptorCommonSet common(samplers, false, device);
-    FramebufferRendererDescriptorTextureSet textures(device, 2), tmem(device, 1);
+    const bool boundless = FramebufferRendererDescriptorTextureSet::usesBoundlessRange(device->getCapabilities());
+    FramebufferRendererDescriptorTextureSet textures(boundless, device, 2), tmem(boundless, device, 1);
     FramebufferRendererDescriptorFramebufferSet framebuffer(device);
     RenderDescriptorSetBuilder probesBuilder;
     probesBuilder.begin();

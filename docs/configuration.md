@@ -214,7 +214,10 @@ most useful ones are:
 | `LAMBO_RT_SHADOW_FAULT=as` | Corrupt one ray-traced shadow caster range to prove the native-shadow fallback. |
 | `LAMBO_RT_CAPTURE_KEEP_MSAA` | Keep the configured anti-aliasing during RT swapchain capture. |
 | `LAMBO_RT_CAPTURE_KEEP_COLOR` | Keep the configured high-precision colour setting during RT swapchain capture. |
-| `LAMBO_RT_SHADOW_SWEEP=1` | Let any one-player race mode, on any circuit, reach ray-traced shadows for a validation sweep. |
+| `LAMBO_RT_SHADOW_DEBUG=<1-4>` | Show one ray-traced shadow term on receivers: 1 transmission, 2 open sky, 3 contact, 4 what remembered scenery changes (red channel with it, green and blue without). |
+| `LAMBO_RT_SHADOW_CONTACT`, `LAMBO_RT_SHADOW_CONTACT_DISTANCE` | Contact shadow strength (default 0.55) and reach in renderer units (default 1.6). |
+| `LAMBO_RT_SHADOW_SKY_DISTANCE`, `LAMBO_RT_SHADOW_SKY_OPEN` | Reach of the open-sky test (default 30, 0 disables it) and the open-sky fraction that keeps the full sun shadow (default 0.5). |
+| `LAMBO_RT_SHADOW_CACHE=<0-2>` | Remembered static scenery: 0 off, 1 on (default), 2 trace only remembered scenery in place of the presented world, to check its coverage. |
 | `LAMBO_TEST_RESIZE=<frame>:<W>x<H>` | Resize the window once at an input-replay frame. |
 
 These variables are for developers. They are not a stable player settings

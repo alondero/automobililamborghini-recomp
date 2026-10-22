@@ -42,9 +42,17 @@ lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 00
 # Later RT64 patches change earlier patches' context. Recognize the newest
 # applied patch first, then replay only what is missing.
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0030-rt64-sun-shadow-receiver.patch"
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0038-rt64-sun-shadow-robust-scene.patch"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
-    RESULT_VARIABLE rt64_sun_shadow_receiver_patch_applied OUTPUT_QUIET ERROR_QUIET)
+    RESULT_VARIABLE rt64_robust_shadow_patch_applied OUTPUT_QUIET ERROR_QUIET)
+if(rt64_robust_shadow_patch_applied EQUAL 0)
+    set(rt64_sun_shadow_receiver_patch_applied 0)
+else()
+    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0030-rt64-sun-shadow-receiver.patch"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
+        RESULT_VARIABLE rt64_sun_shadow_receiver_patch_applied OUTPUT_QUIET ERROR_QUIET)
+endif()
 if(rt64_sun_shadow_receiver_patch_applied EQUAL 0)
     set(rt64_native_alpha_patch_applied 0)
 else()
@@ -80,8 +88,11 @@ endif()
 if(NOT rt64_sun_shadow_receiver_patch_applied EQUAL 0)
     lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0029-rt64-native-game-alpha-evidence.patch)
 endif()
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0030-rt64-sun-shadow-receiver.patch)
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0033-rt64-fixed-texture-table-without-descriptor-indexing.patch)
+if(NOT rt64_robust_shadow_patch_applied EQUAL 0)
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0030-rt64-sun-shadow-receiver.patch)
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0033-rt64-fixed-texture-table-without-descriptor-indexing.patch)
+endif()
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0038-rt64-sun-shadow-robust-scene.patch)
 
 # --- RT64 renderer boundary; see patches/README.md ---
 # recomp/lib/rt64 is a pinned git submodule; RT64 is always compiled in and is the
@@ -132,6 +143,10 @@ if(BUILD_TESTING)
     target_include_directories(lambo_rt_admission_tests PRIVATE src lib/rt64/src)
     target_link_libraries(lambo_rt_admission_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_rt_admission_policy COMMAND lambo_rt_admission_tests)
+    add_executable(lambo_rt_shadow_cache_tests tests/test_rt_shadow_cache.cpp
+        lib/rt64/src/render/rt64_sun_shadow_cache.cpp)
+    target_include_directories(lambo_rt_shadow_cache_tests PRIVATE lib/rt64/src)
+    add_test(NAME lambo_rt_shadow_cache COMMAND lambo_rt_shadow_cache_tests)
     add_executable(lambo_rt_binding_tests tests/test_rt_binding.cpp)
     target_include_directories(lambo_rt_binding_tests PRIVATE src)
     add_test(NAME lambo_rt_workload_binding COMMAND lambo_rt_binding_tests)

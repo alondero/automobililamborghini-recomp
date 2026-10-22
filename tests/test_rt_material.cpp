@@ -48,6 +48,33 @@ int main() {
         auto hdr = opaque;
         hdr.shaderFlags = 1u << 29; // RenderFlags::usesHDR.
         require(receiver_material_rejection(hdr) == 0, "high-precision receiver rejected");
+        // The composite attenuates the final native colour, so the colour
+        // combiner and the exact opaque render mode do not matter; only how
+        // the blender uses fog does.
+        auto otherCombiner = opaque;
+        otherCombiner.combineW0 = 0xFC121603u;
+        otherCombiner.combineW1 = 0xFF5BFFF8u;
+        require(receiver_material_rejection(otherCombiner) == 0, "an unlisted combiner stopped a fogged road receiving");
+        auto unfogged = opaque;
+        unfogged.otherL = unfogged.shaderOtherL = 0x00552078u; // Opaque surface, blender never reads fog.
+        unfogged.otherH = unfogged.shaderOtherH = 0x0008ACFFu; // One cycle.
+        unfogged.standardFog = false;
+        unfogged.fog[0] = std::numeric_limits<float>::quiet_NaN(); // Unused without fog.
+        require(!blender_reads_fog(unfogged.otherL), "opaque surface blender read as fog");
+        require(receiver_material_rejection(unfogged) == 0, "an unfogged opaque surface could not receive");
+        auto stray = unfogged;
+        stray.otherL = stray.shaderOtherL = 0x30552078u; // Fog colour selected in cycle 2.
+        require(blender_reads_fog(stray.otherL), "cycle-2 fog colour missed");
+        require(receiver_material_rejection(stray) & RejectFogBlender, "non-standard fog use received a shadow");
+        stray.otherL = stray.shaderOtherL = 0x04552078u; // Fog alpha selected in cycle 1.
+        require(blender_reads_fog(stray.otherL), "cycle-1 fog alpha missed");
+        auto copy = unfogged;
+        copy.otherH = copy.shaderOtherH = 0x0028ACFFu;
+        require(receiver_material_rejection(copy) & RejectCycleType, "copy cycle received a shadow");
+        auto fill = unfogged;
+        fill.otherH = fill.shaderOtherH = 0x0038ACFFu;
+        require(receiver_material_rejection(fill) & RejectCycleType, "fill cycle received a shadow");
+
         opaque.shaderOtherH &= ~63u;
         require(caster_material_rejection(opaque) == 0, "unused native mode bits changed admission");
 

@@ -122,21 +122,34 @@ def artistic_car_glass(call: dict) -> bool:
             and m["z_compare"] and not m["z_update"] and m["z_mode"] == 0x800 and m["z_source"] == 0)
 
 
+def blender_reads_fog(other_lo: int) -> bool:
+    """RDP blender mux, OtherMode.L bits 16-31: P or M = 3 is fog colour, A = 1 fog alpha."""
+    for shift in (18, 16):
+        p, a, m = (other_lo >> (shift + 12)) & 3, (other_lo >> (shift + 8)) & 3, (other_lo >> (shift + 4)) & 3
+        if p == 3 or m == 3 or a == 1:
+            return True
+    return False
+
+
 def receiver_material(call: dict) -> bool:
-    """Bounded measured two-cycle standard-fog paths, with finite native fog."""
+    """Opaque surface whose fog share is known: the standard fog cycle or no fog read.
+
+    Mirrors receiver_material_rejection in src/lambo_rt_material.h. The
+    composite attenuates the final colour, so the combiner does not matter.
+    """
     m = call["material"]
-    cc = (m["combine_w0"], m["combine_w1"])
-    return (opaque_coverage(m) and m["standard_fog"] is True
-            and m["other_lo"] in (0xC8112078, 0xC8112230)
-            and (m["other_hi"] >> 20) & 3 == 1
-            and cc in {(0xFC127FFF, 0xFFFFF238), (0xFC26A004, 0x1FFC93F8),
-                       (0xFC327FFF, 0xFFFFF838), (0xFCFFFFFF, 0xFFFE7838)}
+    if m.get("standard_fog") is True:
+        fog_known = (len(m["fog_rgba"]) == 4
+                     and all(math.isfinite(v) and 0 <= v <= 1 for v in m["fog_rgba"]))
+    else:
+        fog_known = not blender_reads_fog(m["other_lo"])
+    return (opaque_coverage(m) and fog_known
+            and (m["other_hi"] >> 20) & 3 <= 1
+            and call.get("extended_type", 0) == 0
             and call["shader_other_lo"] == m["other_lo"]
-            and call["shader_other_hi"] == m["other_hi"]
+            and call["shader_other_hi"] & ~63 == m["other_hi"] & ~63
             and not call["shader_flags"] & 1
-            and not m.get("geometry", 0) & F3DEX_LIGHTING
-            and len(m["fog_rgba"]) == 4
-            and all(math.isfinite(v) and 0 <= v <= 1 for v in m["fog_rgba"]))
+            and not m.get("geometry", 0) & F3DEX_LIGHTING)
 
 
 def trail_decal_reason(call: dict) -> int:
@@ -199,7 +212,8 @@ def validate_shadow_admission(render: dict) -> None:
                 or type(item.get("projection_type")) is not int or item["projection_type"] not in (1, 2)):
             raise CaptureError("invalid indexed shadow rejected range")
     for item in unclassified:
-        if not isinstance(item, dict) or type(item.get("reason")) is not int or not 1 <= item["reason"] <= 6:
+        # 1 untraceable projection, 2 unaddressable face range, 5 face-count overflow.
+        if not isinstance(item, dict) or item.get("reason") not in (1, 2, 5) or type(item["reason"]) is not int:
             raise CaptureError("unknown shadow unclassified reason")
         if (type(item.get("first")) is not int or type(item.get("count")) is not int
                 or item["first"] < 0 or item["count"] < 0
@@ -207,17 +221,21 @@ def validate_shadow_admission(render: dict) -> None:
                 or item["projection_type"] not in (0, 1, 2, 3, 4)):
             raise CaptureError("invalid shadow unclassified metadata")
         if item["reason"] == 1:
-            if item["projection_type"] not in (0, 3, 4) or item["first"] != 0 or item["count"] != 0:
+            # Indexed orthographic draws keep their range; they never trace.
+            if item["projection_type"] == 1:
+                raise CaptureError("a perspective draw was reported as an untraceable projection")
+            if item["projection_type"] != 2 and (item["first"] != 0 or item["count"] != 0):
                 raise CaptureError("non-indexed projection invented an indexed face range")
         elif item["projection_type"] not in (1, 2):
             raise CaptureError("indexed shadow rejection has a non-indexed projection type")
         if item["reason"] == 5 and item["count"] != 0:
             raise CaptureError("overflowed shadow face count is not represented as zero")
+    # Rejected and untraced draws only miss the shadow, and a view without a
+    # native overlay still traces, so neither makes a complete claim invalid.
     if shadow.get("complete") is True:
         if (shadow.get("authenticated") is not True or shadow.get("params_abi_valid") is not True
-                or shadow.get("geometry", 0) <= 0 or shadow.get("overlays", 0) <= 0
-                or rejected or unclassified):
-            raise CaptureError("shadow workload claims completeness with missing or rejected admission")
+                or shadow.get("geometry", 0) <= 0):
+            raise CaptureError("shadow workload claims completeness without authenticated casters")
     elif shadow.get("complete") is not False:
         raise CaptureError("shadow workload completeness must be boolean")
     if "policy_schema" in shadow and (type(shadow["policy_schema"]) is not int or shadow["policy_schema"] != 2):

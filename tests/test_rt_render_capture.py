@@ -9,7 +9,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from check_rt_overlay_capture import filter_taps, inside
-from check_rt_render_capture import (area, belongs_to_physical_car, non_caster_reason, opaque_coverage, procedural_world_object, receiver_material, validate_overlay_count,
+from check_rt_render_capture import (area, belongs_to_physical_car, blender_reads_fog, non_caster_reason, opaque_coverage, procedural_world_object, receiver_material, validate_overlay_count,
                                      world_cutout_reason, artistic_car_glass, trail_decal_reason,
                                      screen_face, topology, uncovered_area, validate_draw_metadata, validate_pair,
                                      validate_shadow_admission, validate_generated_material_inputs)
@@ -222,12 +222,28 @@ class MaterialTests(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertFalse(opaque_coverage(dict(material(), **{field: value})))
 
-    def test_receiver_requires_measured_shader_and_finite_fog(self):
+    def test_receiver_needs_opaque_coverage_and_a_known_fog_share(self):
+        # Mirrors receiver_material_rejection in src/lambo_rt_material.h: the
+        # composite works for any combiner once the fog share is known.
         call = {"material": material(), "shader_other_lo": 0xC8112230,
                 "shader_other_hi": 0x18ACFF, "shader_flags": 0}
         self.assertTrue(receiver_material(call))
-        for field, value in (("combine_w0", 0), ("standard_fog", False),
-                             ("fog_rgba", [0, 0, math.nan, 1]), ("fog_rgba", [0, 0, 2, 1])):
+        unlisted = copy.deepcopy(call)
+        unlisted["material"].update(combine_w0=0, combine_w1=0)
+        self.assertTrue(receiver_material(unlisted), "an unlisted combiner was refused")
+        unfogged = {"material": dict(material(), other_lo=0x00552078, other_hi=0x0008ACFF, standard_fog=False),
+                    "shader_other_lo": 0x00552078, "shader_other_hi": 0x0008ACFF, "shader_flags": 0}
+        self.assertTrue(receiver_material(unfogged), "an unfogged opaque surface was refused")
+        for other_lo in (0x30552078, 0x04552078):
+            changed = copy.deepcopy(unfogged)
+            changed["material"]["other_lo"] = changed["shader_other_lo"] = other_lo
+            self.assertFalse(receiver_material(changed), "a non-standard fog reader received")
+        for other_hi in (0x0028ACFF, 0x0038ACFF):
+            changed = copy.deepcopy(unfogged)
+            changed["material"]["other_hi"] = changed["shader_other_hi"] = other_hi
+            self.assertFalse(receiver_material(changed), "a copy or fill cycle received")
+        for field, value in (("fog_rgba", [0, 0, math.nan, 1]), ("fog_rgba", [0, 0, 2, 1]),
+                             ("alpha_blend", True), ("z_update", False)):
             with self.subTest(field=field):
                 changed = copy.deepcopy(call)
                 changed["material"][field] = value
@@ -236,6 +252,13 @@ class MaterialTests(unittest.TestCase):
             self.assertFalse(receiver_material(dict(call, **{field: value})))
         self.assertTrue(receiver_material(dict(call, shader_flags=1 << 30)), "MSAA receiver rejected")
         self.assertTrue(receiver_material(dict(call, shader_flags=1 << 29)), "high-precision receiver rejected")
+        self.assertTrue(receiver_material(dict(call, shader_other_hi=0x18ACC0)), "RSP low OtherMode.H bits mattered")
+
+    def test_blender_fog_reads_follow_the_rdp_mux_layout(self):
+        self.assertTrue(blender_reads_fog(0xC8112078))   # Standard fog cycle: cycle 1 P = fog colour.
+        self.assertTrue(blender_reads_fog(0x30552078))   # Cycle 2 P = fog colour.
+        self.assertTrue(blender_reads_fog(0x04552078))   # Cycle 1 A = fog alpha.
+        self.assertFalse(blender_reads_fog(0x00552078))
 
     def test_edge_incidence_is_diagnostic_not_caster_policy(self):
         report = topology([[[0, 0, 0], [1, 0, 0], [0, 1, 0]]])
@@ -338,15 +361,27 @@ class PresentationTests(unittest.TestCase):
                              raw_vertex_count=6)
         validate_draw_metadata([raw_triangles])
 
-    def test_unknown_shadow_workload_ranges_block_complete_claim(self):
-        workload = {"authenticated": True, "complete": False, "params_abi_valid": True,
-                    "geometry": 2, "overlays": 1, "rejected": 0, "unclassified": 1}
+    def test_untraced_ranges_do_not_block_a_complete_claim(self):
+        # An unmeasured draw only misses the shadow; it must not veto the frame.
+        workload = {"authenticated": True, "complete": True, "params_abi_valid": True,
+                    "geometry": 2, "overlays": 0, "rejected": 0, "unclassified": 1}
         render = dict(self.render, sun_shadow=workload, sun_shadow_rejected_ranges=[],
-                      sun_shadow_unclassified_ranges=[{"reason": 3, "first": 0, "count": 12,
+                      sun_shadow_unclassified_ranges=[{"reason": 2, "first": 0, "count": 12,
                                                        "projection_type": 1}])
         validate_shadow_admission(render)
-        workload["complete"] = True
-        with self.assertRaises(CaptureError):
+        render["sun_shadow_unclassified_ranges"][0]["reason"] = 3
+        with self.assertRaises(CaptureError, msg="retired unclassified reason accepted"):
+            validate_shadow_admission(render)
+
+    def test_indexed_orthographic_draw_keeps_its_range_but_never_traces(self):
+        workload = {"authenticated": True, "complete": True, "params_abi_valid": True,
+                    "geometry": 2, "overlays": 1, "rejected": 0, "unclassified": 1}
+        render = dict(self.render, sun_shadow=workload, sun_shadow_rejected_ranges=[],
+                      sun_shadow_unclassified_ranges=[{"reason": 1, "first": 30, "count": 6,
+                                                       "projection_type": 2}])
+        validate_shadow_admission(render)
+        render["sun_shadow_unclassified_ranges"][0]["projection_type"] = 1
+        with self.assertRaises(CaptureError, msg="a perspective draw was called untraceable"):
             validate_shadow_admission(render)
 
     def test_nonindexed_shadow_rejection_keeps_projection_identity_without_face_range(self):
@@ -360,17 +395,15 @@ class PresentationTests(unittest.TestCase):
         with self.assertRaises(CaptureError):
             validate_shadow_admission(render)
 
-    def test_complete_shadow_workload_requires_empty_rejections_and_valid_params(self):
+    def test_complete_shadow_workload_requires_casters_and_valid_params(self):
         workload = {"authenticated": True, "complete": True, "params_abi_valid": True,
-                    "geometry": 2, "overlays": 1, "rejected": 0, "unclassified": 0}
-        render = dict(self.render, sun_shadow=workload, sun_shadow_rejected_ranges=[],
-                      sun_shadow_unclassified_ranges=[])
+                    "geometry": 2, "overlays": 1, "rejected": 1, "unclassified": 0}
+        render = dict(self.render, sun_shadow=workload, sun_shadow_unclassified_ranges=[],
+                      sun_shadow_rejected_ranges=[{"first": 0, "count": 3, "projection_type": 1}])
         validate_shadow_admission(render)
-        render["sun_shadow_unclassified_ranges"].append({"reason": 4, "first": 0, "count": 3,
-                                                          "projection_type": 1})
-        workload["unclassified"] = 1
-        with self.assertRaises(CaptureError):
-            validate_shadow_admission(render)
+        for field, value in (("geometry", 0), ("params_abi_valid", False), ("authenticated", False)):
+            with self.subTest(field=field), self.assertRaises(CaptureError):
+                validate_shadow_admission(dict(render, sun_shadow=dict(workload, **{field: value})))
 
     def test_non_caster_list_cannot_hide_unknown_draws_or_fabricate_faces(self):
         m = dict(material(), z_compare=False, z_update=False, geometry=0)

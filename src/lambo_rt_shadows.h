@@ -40,6 +40,9 @@ struct TaskSunProbe {
     };
     std::vector<EmitterSpan> emitters;
     bool emitters_complete = true;
+    // False when the scene selection changed between task begin and queue
+    // publication. Unlike emitters_complete, this gates production shadows.
+    bool scene_consistent = true;
     struct ObjectIdentity {
         uint16_t flags = 0;
         uint32_t list = 0;
