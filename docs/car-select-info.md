@@ -1,8 +1,8 @@
 # Car select info
 
 Status: implemented for the USA ROM; checked in RT64 on the one-player car
-select screen. Acceleration figures are port measurements, not reference-emulator
-measurements.
+select screen, including the menu reached after a race. Acceleration figures
+are port measurements, not reference-emulator measurements.
 
 Enable **Show car details on car select** in **Enhancements**. It is off by
 default and is saved as `car_select_info` in `graphics.json`. Changes apply
@@ -90,9 +90,15 @@ All reads and writes happen on the game thread in one hook,
 dispatcher paths join there just before the frame's `G_RDPFULLSYNC` and
 `G_ENDDL`, so the card draws over the finished screen.
 
-The hook does nothing unless the option is on, game state `0x800CE6AC` is 6
-(menu) and menu screen `0x80098562` is 13 (CAR). It reads the selecting player
-at `0x800CE6A6` (1-4), that player's model cursor at
+The hook does nothing unless the option is on, game state `0x800CE6AC` is one
+of the menu phases 6, 10, 12, 14 or 16, and menu screen `0x80098562` is 13
+(CAR). The dispatcher sends all five phases to `func_80038D6C` (runtime
+`0x8003816C`). Returning to the menu after a race keeps phase 10; the original
+phase-6-only check incorrectly hid the card there. Race and loading phases
+remain excluded even when they retain the CAR screen value.
+
+It reads the selecting player at `0x800CE6A6` (1-4), that player's model
+cursor at
 `0x800CE7E8 + (player - 1) * 2` (0-23; the shared vehicle-layout address), the category from model descriptor `0x8013D490 + model*24`,
 difficulty `0x800CE7A4` and speed units `0x800CE802`. Any value out of range
 skips the card. These are all signed halfwords.
@@ -124,8 +130,10 @@ the stats.
 ## Tests
 
 - `tests/test_car_card.cpp` (`lambo_car_card`) checks the card text, the
-  rounding of times, every gate and the display-list overrun guard against
-  RDRAM-backed fixtures.
+  rounding of times, every menu phase, immediate option toggling, exclusion
+  during races/loading and the display-list overrun guard against RDRAM-backed
+  fixtures.
 - `tests/test_car_card_rom.py` (`lambo_car_card_rom`) pins the hook location,
-  the instructions it relies on, the font table addresses, the derived stats
-  and line widths. The ROM checks skip when the ROM is absent.
+  the instructions it relies on, the shared renderer for all five menu phases,
+  the font table addresses, the derived stats and line widths. The ROM checks
+  skip when the ROM is absent.

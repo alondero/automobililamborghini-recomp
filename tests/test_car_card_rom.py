@@ -80,6 +80,18 @@ class CarCardRomTests(unittest.TestCase):
         self.assertEqual([(hook["func"], hook["before_vram"]) for hook in hooks],
                          [(DISPATCHER, HOOK_VRAM)])
 
+    @unittest.skipUnless(ROM.is_file(), "USA ROM required for menu dispatcher")
+    def test_menu_phases_share_car_screen_renderer(self):
+        rom = ROM.read_bytes()
+        # func_800028D0 indexes this jump table with game_state - 1.
+        # All steady menu phases call func_80038D6C (runtime 0x8003816C).
+        # In particular, a post-race menu remains in phase 10.
+        for state in (6, 10, 12, 14, 16):
+            with self.subTest(state=state):
+                target, = struct.unpack_from(">I", rom, 0x8D610 + 0xC00 + (state - 1) * 4)
+                instruction, = struct.unpack_from(">I", rom, target - 0x80000000 + 0xC00)
+                self.assertEqual(instruction, 0x0C00E05B)  # jal 0x8003816C
+
     def test_source_table_shape(self):
         cars = source_cars()
         self.assertEqual(len(cars), 8, "one row per physics category")
