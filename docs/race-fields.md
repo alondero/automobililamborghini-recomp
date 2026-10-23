@@ -96,6 +96,27 @@ physical cars by flag 8 and route those channels through the existing AI path,
 preserving special non-car dispatch. Audio/collision channel gates use the same
 physical-car test.
 
+The AI pace controller also has two fixed eight-entrant tuning tables. At
+`0x80088F58`, nine floats hold gap thresholds indexed by race position (0-8).
+At `0x80088F7C`, two rows of nine floats hold pace caps indexed by difficulty
+and starting-grid seed (0-8). These are tuning values, not entrant storage.
+Lookups for positions or seeds 9-16 reuse entry 8; the actual race position,
+grid seed, and difficulty remain unchanged. Existing lookups 0-8 are unchanged.
+The hooks bound only the three index temporaries before their native shifts,
+on the game thread in `func_80009158`. Native MEM_W loads retain float bit
+patterns and guest byte order. No additional snapshot storage is required.
+These values use native AI pace/gap units; no physical speed/distance unit
+conversion is established here. The controller runs in active-race phase 3.
+Decompiled, explicitly sized tuning tables should eventually replace these
+ROM-addressed hooks.
+
+A stopped-car snapshot exposed the missing bounds: racer 8 had grid seed 9
+and race position 16. On difficulty 0 its cap lookup read the next difficulty
+row's zero entry. Each frame computed a positive target, clamped it to zero,
+and kept throttle at zero. Position-based gap reads could also run into the
+adjacent cap table. The fix bounds these tuning reads rather than detecting
+stopped cars or overriding their throttle.
+
 ## Snapshots and renderer boundary
 
 Relocation is unconditional, including default-six races, so all host readers
@@ -147,6 +168,20 @@ is sampled headroom, not a guarantee for every possible effects-heavy frame.
 
 No Android device performance claim is made. Larger fields increase simulation
 and rendering work; field-size selection does not change difficulty tuning.
+
+The pace regression runs the generated speed controller for both native
+difficulties and fields of 2/6/8/9/16. It checks the catch-up caps, the separate
+position-based gap lookup, and preservation of real positions/grid seeds.
+Before the bounds fix, grid seed 9 in a 16-car fixture produced a zero cap
+instead of 85. The fixture uses synthetic RAM and does not require a saved
+race at test runtime. This supplements the short fresh-race movement checks,
+which did not run long enough for the incorrect cap to stop a car.
+Windows x64 headless replay of the reported snapshot kept racer 8 at exactly
+the same position and zero speed for 300 frames before the fix. With the fix,
+it moved within 300 frames and reached a native speed-field value of 165 after
+1,500 frames, with a valid pace cap of 85. A longer replay needed a 120-frame
+startup delay before loading to avoid the developer save-state loader's known
+intermittent startup stall. Fresh 6- and 16-car circuit-1 races also passed.
 
 Follow-up HUD regression checks execute the generated minimap and large-font
 emitters. Separated route points yield one distinct dot per entrant for counts

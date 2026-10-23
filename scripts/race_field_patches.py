@@ -78,6 +78,14 @@ def patch_blocks(rom, functions):
                       f'\n[[patches.hook]]\nfunc = "{name}"\nbefore_vram = {pc:#x}\ntext = "{text}"\n')
     def hook(name, pc, text):
         result.append(f'\n[[patches.hook]]\nfunc = "{name}"\nbefore_vram = {pc:#x}\ntext = "{{ {text} }}"\n')
+    # USA AI pace tables: 0x80088F58 has nine float gap entries (rank 0-8);
+    # 0x80088F7C has two nine-float difficulty rows indexed by grid seed.
+    # Extra ranks/seeds reuse entry 8. Clamp only the lookup temporaries on
+    # the game thread, preserving real ranks/seeds for the rest of the AI.
+    # Seed 9 otherwise reads the next row's zero and permanently stops a car.
+    # Units, active-race phase and evidence: docs/race-fields.md.
+    for pc, reg in ((0x80008E9C, 10), (0x80009118, 8), (0x80009160, 11)):
+        hook('func_80009158', pc, f'if (ctx->r{reg} > 8) ctx->r{reg} = 8;')
     # The minimap uses zero-based entrants via a second-record AI alias and
     # eight-entry RGB palettes. Repeat the palette without reading its neighbours.
     hook('func_80054FFC', 0x800553AC, 'ctx->r24 &= 7;')

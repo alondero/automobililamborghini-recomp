@@ -26309,6 +26309,24 @@ text = "ctx->f16.u32l = MEM_W(0, ADD32(ctx->r1, 8790104));"
 
 
 [[patches.hook]]
+func = "func_80009158"
+before_vram = 0x80008e9c
+text = "{ if (ctx->r10 > 8) ctx->r10 = 8; }"
+
+
+[[patches.hook]]
+func = "func_80009158"
+before_vram = 0x80009118
+text = "{ if (ctx->r8 > 8) ctx->r8 = 8; }"
+
+
+[[patches.hook]]
+func = "func_80009158"
+before_vram = 0x80009160
+text = "{ if (ctx->r11 > 8) ctx->r11 = 8; }"
+
+
+[[patches.hook]]
 func = "func_80054FFC"
 before_vram = 0x800553ac
 text = "{ ctx->r24 &= 7; }"

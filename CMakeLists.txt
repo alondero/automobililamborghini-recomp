@@ -226,7 +226,7 @@ if(BUILD_TESTING)
             COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_race_field_funcs.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs ${CMAKE_CURRENT_BINARY_DIR}/race_field_funcs.c
             DEPENDS tests/extract_race_field_funcs.py ${ROM_RECOMP_SOURCES} VERBATIM)
-        add_executable(lambo_race_field_tests tests/test_race_field.cpp src/lambo_race_field.cpp
+        add_executable(lambo_race_field_tests tests/test_race_field.cpp tests/test_ai_speed_limits.cpp src/lambo_race_field.cpp
             ${CMAKE_CURRENT_BINARY_DIR}/race_field_funcs.c)
         target_include_directories(lambo_race_field_tests PRIVATE src RecompiledFuncs
             ${N64MR}/N64Recomp/include ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
