@@ -5,6 +5,12 @@
 
 namespace {
 constexpr uint32_t clamp = 0x00080200u;
+constexpr uint32_t clamp_t = 0x00080000u;
+constexpr uint32_t title_image = 0xfd1000ffu;
+constexpr uint32_t title_tile0 = 0xf5102000u;
+constexpr uint32_t title_tile1 = 0x00014060u;
+constexpr uint32_t title_bounds = 0x000fc03cu;
+constexpr uint32_t title_column_mask = 0x00300000u;
 enum class Kind { Dial, Map, Suffix };
 struct TileContract {
     uint32_t source, tile0, tile1, bounds;
@@ -38,15 +44,17 @@ void lambo::HudTextureBounds::command(uint32_t offset, uint32_t w0, uint32_t w1)
         // Title wordmark rows use four 64x16 slices of a 256-wide RGBA16
         // image. S already wraps at 64; bound only T, excluding unloaded TMEM.
         // Preserve each column's nonzero S origin and all UV/draw commands.
-        if (tile && image == 0xfd1000ff &&
+        if (tile && image == title_image &&
             (source == 0x1ebbc0 || source == 0x1edbc0 || source == 0x1efbc0) &&
-            (w0 & ~0x00300000u) == 0xf2000000 &&
-            w1 == ((w0 & 0x00300000u) | 0x000fc03c) &&
-            f3dex::read(ram, tile) == 0xf5102000) {
+            (w0 & ~title_column_mask) == 0xf2000000 &&
+            w1 == ((w0 & title_column_mask) | title_bounds) &&
+            f3dex::read(ram, tile) == title_tile0) {
             const auto t1 = f3dex::read(ram, tile + 4);
-            if ((t1 & ~0x00080000u) == 0x00014060) {
-                f3dex::write(ram, tile + 4, t1 | 0x00080000u);
+            if ((t1 & ~clamp_t) == title_tile1) {
+                f3dex::write(ram, tile + 4, t1 | clamp_t);
                 ++logo;
+                tile = 0; // This F2 consumed the pending render-tile command.
+                break;
             }
         }
         if (w0 != 0xf2000000 || !tile) break;

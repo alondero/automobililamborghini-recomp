@@ -320,6 +320,13 @@ Unknown sources, image widths/formats, strides, masks, mirrored variants,
 tile indices and bounds pass through. Both task slots use the existing
 producer gate and walk; there is no title-state or texture-pack gate.
 
+Each matched F2 consumes the pending render-tile offset immediately, including
+columns with nonzero S origins. Another F2 without a fresh FD/F5 cannot count
+the previous logo slice again. The traversal regression emits all three rows
+and four columns in one list, adds repeated F2 commands after each draw, and
+checks both task slots. Its public match-count assertion catches repeated
+consumption even when setting the same clamp bit twice leaves RAM unchanged.
+
 These are the measured bounded RT64 v5 identities. Column headings are native
 S origins; the source rows correspond to artwork Y offsets 0, 16 and 32.
 
