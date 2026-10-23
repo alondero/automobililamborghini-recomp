@@ -58,7 +58,8 @@ public final class DriverImportInstrumentation extends Instrumentation {
             DriverImport.install(context, Uri.fromFile(valid));
             require(driverCount(files) == 1, "failed startup releases driver lock");
             DriverImport.configure(context);
-            result.putString("stream", "\n" + checks + " Android driver import checks passed.\n");
+            GameDiagnosticsChecks.run(getTargetContext(), sandbox);
+            result.putString("stream", "\n" + checks + " Android driver import checks and diagnostics checks passed.\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("stream", "\nFAILED: " + android.util.Log.getStackTraceString(error));
