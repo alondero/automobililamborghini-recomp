@@ -1,4 +1,4 @@
-// Exact USA texture contracts. Only the two clamp bits in render tile 0 are
+// Exact USA texture contracts. Only clamp bits in render tile 0 are
 // rewritten, on the guest producer before publication. See docs/HUD.md.
 #include "lambo_f3dex.h"
 #include "lambo_hud_texture_bounds.h"
@@ -28,12 +28,27 @@ void lambo::HudTextureBounds::command(uint32_t offset, uint32_t w0, uint32_t w1)
     case 0xfd:
         // These USA emitters use direct physical/KSEG0 source pointers.
         source = w1 & 0x1fffffff;
+        image = w0;
         tile = 0;
         break;
     case 0xf5:
         if ((w1 >> 24) == 0) tile = offset;
         break;
     case 0xf2:
+        // Title wordmark rows use four 64x16 slices of a 256-wide RGBA16
+        // image. S already wraps at 64; bound only T, excluding unloaded TMEM.
+        // Preserve each column's nonzero S origin and all UV/draw commands.
+        if (tile && image == 0xfd1000ff &&
+            (source == 0x1ebbc0 || source == 0x1edbc0 || source == 0x1efbc0) &&
+            (w0 & ~0x00300000u) == 0xf2000000 &&
+            w1 == ((w0 & 0x00300000u) | 0x000fc03c) &&
+            f3dex::read(ram, tile) == 0xf5102000) {
+            const auto t1 = f3dex::read(ram, tile + 4);
+            if ((t1 & ~0x00080000u) == 0x00014060) {
+                f3dex::write(ram, tile + 4, t1 | 0x00080000u);
+                ++logo;
+            }
+        }
         if (w0 != 0xf2000000 || !tile) break;
         for (const auto& contract : tiles) {
             const auto t0 = f3dex::read(ram, tile), t1 = f3dex::read(ram, tile + 4);

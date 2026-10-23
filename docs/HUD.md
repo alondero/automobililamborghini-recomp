@@ -275,7 +275,7 @@ native hook to a file and decode offline (F3DEX v1 decoder in session scratch;
 region PAST the cursor is the previous frame's tail — same layout, already-complete.
 
 
-## Stable HUD texture identities (2026-10-15)
+## Stable HUD texture identities (2026-10-23)
 
 Status: the tile and ownership contracts below are checked in source and host
 fixtures. Runtime measurements are recorded separately below.
@@ -286,7 +286,7 @@ The six circuit maps load 80x80 texels with 128x128 masks. Rank suffixes load
 those masks exceed the loaded rectangle. A later load can change the identity
 without changing the texture's loaded bytes.
 
-One exact-match table in `src/lambo_hud_texture_bounds.cpp` covers both dial
+Exact-match corrections in `src/lambo_hud_texture_bounds.cpp` cover both dial
 sources (physical 0x160140/0x160508), all six map sources (0x121A88, 0x122710,
 0x123398, 0x124020, 0x124CA8, 0x125930), and suffix source 0x165028.
 Direct physical/KSEG0 source pointers are normalized before matching.
@@ -296,6 +296,78 @@ Mirror bits survive. Unknown contracts pass through unchanged; matching is
 idempotent. Geometry commands, texture bytes and UV coordinates are untouched.
 Clamp changes sampler addressing, so filtering at the loaded rectangle's edge
 may change pixels. Pixel equivalence has not been measured and is not claimed.
+
+### Title wordmark
+
+The title logo has twelve RGBA16 slices, each 64x16 texels. Its 32-row wrap
+mask previously made RT64 hash all 4096 TMEM bytes, including 2048 unused
+bytes left by earlier rendering. Returning from the attract demo could change
+those bytes and lose a replacement without changing any loaded logo texels.
+
+USA title-task snapshots show `FD1000FF` (256-wide RGBA16) at physical sources
+0x1EBBC0, 0x1EDBC0 and 0x1EFBC0. Each row uses four columns. Column `c` uses
+`F4000000 | (c << 20)`, `070FC03C | (c << 20)` for the tile load, followed by
+render tile `F5102000 00014060` and bounds
+`F2000000 | (c << 20)`, `000FC03C | (c << 20)`. Columns are 0 through 3.
+The captured emitter selects point filtering (`BA000C02 00000000`) and emits
+64x16 texture rectangles with unit S/T increments (`B3000000 04000400`).
+
+The correction matches the image word, source, render-tile words and both
+bounds words, including each nonzero S origin. It changes only T clamp
+(`00014060` to `00094060`). S already wraps at the loaded width of 64.
+No load, origin, texture byte, UV, rectangle or filtering command changes.
+Unknown sources, image widths/formats, strides, masks, mirrored variants,
+tile indices and bounds pass through. Both task slots use the existing
+producer gate and walk; there is no title-state or texture-pack gate.
+
+These are the measured bounded RT64 v5 identities. Column headings are native
+S origins; the source rows correspond to artwork Y offsets 0, 16 and 32.
+
+| Physical source | S=0 | S=64 | S=128 | S=192 |
+| --- | --- | --- | --- | --- |
+| 0x1EBBC0 | `4dff69e757025433` | `f544e2718a786af2` | `1bde6268d11e9322` | `29e010871216553b` |
+| 0x1EDBC0 | `67fc74a9758c0014` | `3d9a37f4f394e1e8` | `ddccc812a5e9c916` | `9609ad75b9ccdac2` |
+| 0x1EFBC0 | `858604f4a83570b4` | `212f47ed09f795a2` | `3e8689b04101c9f6` | `ed0731f50fc2d1c1` |
+
+Replacement packs need aliases for these 64x16 identities. Preserve their
+texel scale: crop the loaded upper half of each old 64x32 replacement, rather
+than resizing its padded allocation. Keep older aliases for older ports.
+The companion texture pack adds twelve 512x128 crops from its existing
+wordmark recipe and retains all sixty legacy 512x256 entries.
+
+Title-logo verification on Windows x64, GCC 15.2.0, RT64/D3D12, GeForce
+RTX 3080, USA ROM SHA-256
+`cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c`:
+
+- The baseline reproduced the original logo after an attract demo. A title
+  RAM snapshot supplied the load/render contracts above; no game data is
+  included in the regression fixtures or companion pack.
+- The producer regression failed before the correction and passed after it.
+  The four focused walker, hasher, pin and save-state CTests passed in an
+  isolated CMake harness. The Python suite ran 214 tests: 205 passed and nine
+  optional tests skipped. The headless smoke completed 600 replay frames and
+  601 swaps.
+- Loose replacements retained the script logo through two attract returns,
+  and through a single-race Pause > Quit return. A twelve-entry PNG `.rtz`
+  retained it through an attract return. Each dump contained exactly the same
+  twelve bounded logo identities, matched to legacy visible bytes.
+- A local adaptation of the existing UI acceptance driver delayed its next
+  action to capture the full title after a confirmed reset from state 8.
+  That reset displayed the script logo and emitted the same twelve hashes.
+  The adaptation was validation-only and is not part of the port change.
+- Title captures showed intact joins, lettering edges and placement after
+  demo, race and reset transitions. Exact pixel equivalence to the original
+  sampler, other graphics backends, Android and a completed race were not
+  tested; the actual race-return check used Pause > Quit.
+
+Build limitation: `build.ps1 -PreserveSubmodules` was attempted but rejected
+borrowed dependency junctions whose relative Git paths did not resolve in
+the worktree. Validation instead recompiled all 61 hand-written application
+units using the existing CMake MinGW flags and linked an isolated executable
+against existing dependency archives and ROM-generated objects. Generated
+output was reused, not freshly regenerated. This was not a successful full
+supported build. Dependency files were preserved and temporary junctions
+removed. Captures and RAM/texture dumps remain outside source control.
 
 ### Producer ownership and microcode gate
 

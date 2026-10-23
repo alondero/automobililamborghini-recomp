@@ -33,6 +33,12 @@ Texture identity is the **TMEM content hash**, not an RDRAM address. A replaceme
 hash survives the source asset moving in memory, but a different palette or tile state can
 produce another hash for artwork that otherwise looks identical.
 
+The port bounds known HUD and title-logo tiles so unused TMEM padding cannot
+change their identities. See [stable texture identities](HUD.md#stable-hud-texture-identities-2026-10-23)
+for the exact contracts and twelve 64x16 title-logo hashes. Packs should retain
+old aliases and add the bounded entries at the same texel scale; a 64x16 logo
+entry uses the upper half of its old 64x32 allocation.
+
 ## Loading a pack
 
 Players install a pack as a mod. Copy the `.rtz` into the `mods/` directory, or

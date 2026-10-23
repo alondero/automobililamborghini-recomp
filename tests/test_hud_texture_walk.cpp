@@ -62,6 +62,59 @@ int main() {
         cmd(at + 24, 0xf2000000, t.bounds);
         cmd(at + 32, 0xb8000000, 0);
     };
+    // USA title wordmark: a 256-wide RGBA16 image, loaded/drawn in four
+    // 64x16 columns per row. Nonzero F2 origins must survive unchanged.
+    for (auto source : {0x1ebbc0u, 0x1edbc0u, 0x1efbc0u}) {
+        for (unsigned column = 0; column < 4; ++column) {
+            init();
+            cmd(root, 0x06000000, 0x80001000);
+            cmd(root + 8, 0xb8000000, 0);
+            const auto origin = column << 20;
+            cmd(0x1000, 0xfd1000ff, source | 0x80000000);
+            cmd(0x1008, 0xf5102000, 0x07014060);
+            cmd(0x1010, 0xe6000000, 0);
+            cmd(0x1018, 0xf4000000 | origin, 0x070fc03c | origin);
+            cmd(0x1020, 0xe7000000, 0);
+            cmd(0x1028, 0xf5102000, 0x00014060);
+            cmd(0x1030, 0xf2000000 | origin, 0x000fc03c | origin);
+            cmd(0x1038, 0xe4190090, 0x00090050);
+            cmd(0x1040, 0xb4000000, 0);
+            cmd(0x1048, 0xb3000000, 0x04000400);
+            cmd(0x1050, 0xb8000000, 0);
+            const auto original = memory;
+            auto expected = original;
+            write(expected.data(), 0x102c, 0x00094060); // T clamp only
+            prepare();
+            assert(memory == expected);
+            prepare();
+            assert(memory == expected);
+
+            // Unknown source, image format/width, stride, masks, mirror, tile,
+            // origins and bounds must retain their authored addressing.
+            const uint32_t mutations[][2] = {
+                {0x1004, 4}, {0x1000, 0x80000}, {0x1000, 1},
+                {0x1028, 0x200}, {0x1028, 1}, {0x102c, 0x10},
+                {0x102c, 0x4000}, {0x102c, 0x01000000}, {0x102c, 0x200},
+                {0x1030, 4}, {0x1030, 0x00400000}, {0x1034, 4},
+            };
+            for (const auto& mutation : mutations) {
+                memory = original;
+                write(ram, mutation[0], read(ram, mutation[0]) ^ mutation[1]);
+                const auto unknown = memory;
+                prepare();
+                assert(memory == unknown);
+            }
+            memory = original;
+            write(ram, 0x102c, 0x00054160); // mirrored S/T
+            const auto mirrored = memory;
+            prepare();
+            assert(memory == mirrored);
+            memory = original;
+            write(ram, 0x1004, source); // physical pointers are also accepted
+            prepare();
+            assert(read(ram, 0x102c) == 0x00094060);
+        }
+    }
     // All HUD contracts are reachable from the submitted root, without any
     // widescreen bracket. Calls/branches share source and render-tile state.
     for (auto tile : tiles) {
