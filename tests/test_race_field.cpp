@@ -36,7 +36,9 @@ extern "C" void func_80013328(uint8_t*, recomp_context*) {}
 extern "C" void func_80054BCC(uint8_t*, recomp_context*) {}
 namespace { int requested = 6; }
 namespace lambo::config { int race_cars() { return requested; } }
+void test_ai_speed_limits();
 int main() {
+    test_ai_speed_limits();
     std::vector<uint8_t> memory(0x924000);
     auto* rdram = memory.data();
     auto h = [&](uint32_t a) -> int16_t& { return MEM_H(0, (gpr)(int32_t)a); };
