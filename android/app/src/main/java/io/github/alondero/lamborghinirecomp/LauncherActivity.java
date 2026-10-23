@@ -21,6 +21,7 @@ import java.util.concurrent.Executors;
 public final class LauncherActivity extends Activity {
     private static final int IMPORT_ROM = 1;
     private static final int IMPORT_DRIVER = 2;
+    private static final int EXPORT_DIAGNOSTICS = 3;
     private static final String ROM = "Automobili Lamborghini (USA).z64";
     private static final String SHA256 = "cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c";
     private static final ExecutorService IMPORTS = Executors.newSingleThreadExecutor();
@@ -30,6 +31,7 @@ public final class LauncherActivity extends Activity {
     private Button select;
     private Button driver;
     private Button systemDriver;
+    private Button diagnostics;
     private boolean resumed;
 
     @Override protected void onResume() { super.onResume(); resumed = true; }
@@ -80,6 +82,15 @@ public final class LauncherActivity extends Activity {
             catch (Exception error) { status.setText(error.getMessage()); }
         });
         layout.addView(systemDriver);
+        diagnostics = new Button(this);
+        diagnostics.setText("Export diagnostics ZIP");
+        diagnostics.setOnClickListener(v -> {
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip")
+                .putExtra(Intent.EXTRA_TITLE, "lamborghini-diagnostics.zip");
+            startActivityForResult(intent, EXPORT_DIAGNOSTICS);
+        });
+        layout.addView(diagnostics);
         ScrollView scroll = new ScrollView(this);
         scroll.addView(layout);
         setContentView(scroll);
@@ -87,7 +98,27 @@ public final class LauncherActivity extends Activity {
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        if (request == IMPORT_ROM && result == RESULT_OK && data != null && data.getData() != null)
+        if (request == EXPORT_DIAGNOSTICS && result == RESULT_OK && data != null && data.getData() != null) {
+            setBusy(true);
+            status.setText("Exporting diagnostics...");
+            Uri uri = data.getData();
+            IMPORTS.execute(() -> {
+                String message;
+                try (java.io.OutputStream output = getContentResolver().openOutputStream(uri, "wt")) {
+                    if (output == null) throw new java.io.IOException("Cannot open destination");
+                    GameDiagnostics.write(this, output);
+                    message = "Diagnostics saved. Attach the ZIP to your bug report.";
+                } catch (Exception error) {
+                    message = "Could not export diagnostics: " + error.getMessage();
+                }
+                final String resultMessage = message;
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    status.setText(resultMessage);
+                    setBusy(false);
+                });
+            });
+        } else if (request == IMPORT_ROM && result == RESULT_OK && data != null && data.getData() != null)
             prepare(data.getData());
         else if (request == IMPORT_DRIVER && result == RESULT_OK && data != null && data.getData() != null) {
             setBusy(true);
@@ -116,6 +147,7 @@ public final class LauncherActivity extends Activity {
         play.setEnabled(!busy && new File(getFilesDir(), ROM).isFile());
         driver.setEnabled(!busy);
         systemDriver.setEnabled(!busy);
+        diagnostics.setEnabled(!busy);
     }
 
     private void prepare(Uri uri) {

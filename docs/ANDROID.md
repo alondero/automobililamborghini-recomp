@@ -62,6 +62,53 @@ SDL and the renderer share an app-local Vulkan loader so they use the same drive
 and surface. Native libraries must be extracted by Android (`useLegacyPackaging`)
 for AdrenoTools hooks. NDK 28 supplies 16 KiB-aligned native libraries.
 
+## Export diagnostics after a failed launch
+
+Return to the launcher and select **Export diagnostics ZIP**. Choose where to
+save it, then attach the ZIP to your bug report. If Android shows an app-not-
+responding dialog, close the game and reopen the launcher first. Export before
+pressing **Play** again: the next game launch replaces the native logs. Do not
+clear app data or reinstall before exporting.
+
+The export works in release APKs without root or `run-as`. It includes:
+
+- Native output (`native.log` and `native-errors.log`).
+- Up to ten recent session logs and three crash reports.
+- Graphics settings and device, Android, app-version and selected-driver details.
+- On Android 11+, retained game-process exit records and up to three available
+  traces. Android may no longer have a trace. Native crash traces use protobuf;
+  ANR traces use text.
+
+Each file is limited to 512 KiB. Logs retain their last 512 KiB; system traces
+retain their first 512 KiB. `report.txt` records missing files and truncation.
+The ZIP excludes ROMs, saves, imported driver libraries and texture packs.
+Older logs and exit records may come from a different app version or driver
+selection; compare their timestamps with the failed launch.
+
+### Black screen or exit during startup
+
+[Issue 329](https://github.com/alondero/automobililamborghini-recomp/issues/329)
+reports system-driver exits with status 1 and Turnip black screens or an ANR on
+an Adreno 730 device running Android 15. The root cause remains unverified.
+The supplied logcat lacks native startup diagnostics. The shared
+`AHardwareBuffer` format-allocation errors also occur during successful startup
+on the older Adreno 650 test phone; they do not establish a missing Vulkan
+feature or the cause of the hang.
+
+On 2026-10-23, a fresh ARM64 build based on `2046bb5` reached the title and
+attract race with both drivers on the Android 13 / Adreno 650 test phone,
+using its existing configuration. The system driver also responded to the
+touch Menu button. The export checks and Save dialog passed with a
+non-debuggable package, where `run-as` was rejected. No retained ANR trace was
+available to verify trace copying. Selection of an older available trace after
+newer trace-free exits was code-reviewed, without a deterministic device test.
+The Adreno 730 / Android 15 failure and a clean-configuration run remain untested.
+
+For a useful report, export immediately after each driver test and name the
+driver and time of the attempt. A system-driver exit and a Turnip ANR need
+separate captures. A UI-thread stack in `HardwareRenderer` identifies where
+the UI waited; it does not by itself identify the underlying driver fault.
+
 ## Build locally
 
 Requirements: Python 3.11 or newer, Git, CMake 3.22+, Ninja, JDK 17, Android SDK platform 35,
@@ -105,6 +152,21 @@ repackages an already compiled native build. `--install` uses `adb install -r`;
 connect one device and authorize USB debugging first. Open **Lamborghini
 Recompiled**, import your ROM through Android's file picker, and select Play.
 No broad storage permission is needed.
+
+The Android instrumentation checks use isolated cache fixtures to exercise
+driver import and diagnostic ZIP export, including missing logs, size limits,
+game-data exclusions, symlinks and destination failures. After building and
+installing the debug APK, run:
+
+```sh
+android/gradlew -p android assembleDebugAndroidTest
+adb install -r android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb shell am instrument -w io.github.alondero.lamborghinirecomp.test/io.github.alondero.lamborghinirecomp.DriverImportInstrumentation
+```
+
+Use `android/gradlew.bat` on Windows. These fixtures do not induce an ANR or
+verify retrieval of a retained system trace. Check the Save dialog separately
+on a device, including a non-debuggable package, before releasing export changes.
 
 Generated dependencies, native objects, packaging inputs, and logs live under
 `build-android/`; Gradle output lives under `android/app/build/`. Neither directory
@@ -197,3 +259,5 @@ alignment. Only the packaged APK is uploaded; build inputs and generated C are n
 - [Android shader compilation](https://developer.android.com/ndk/guides/graphics/shader-compilers)
 
 - [AdrenoTools integration](https://github.com/bylaws/libadrenotools)
+- [Android process exit records and retained traces](https://developer.android.com/reference/android/app/ApplicationExitInfo)
+- [Android document export](https://developer.android.com/training/data-storage/shared/documents-files)
