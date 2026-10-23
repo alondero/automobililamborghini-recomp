@@ -195,7 +195,7 @@ ctest --test-dir build -R "lambo_sky_(projection|panorama)|lambo_camera_(project
 
 The HUD group covers producer-side display-list walking, RT64's unused-padding
 hash behavior, and the reviewed RT64 dependency contract. See the [HUD texture
-identity notes](HUD.md#stable-hud-texture-identities-2026-10-15) for fixture
+identity notes](HUD.md#stable-hud-texture-identities-2026-10-23) for fixture
 coverage and the bounds that the producer applies.
 The save-state case starts separate native processes around the real F7/F8
 file I/O, covering four restart cycles for each of 1P/2P, same-process policy

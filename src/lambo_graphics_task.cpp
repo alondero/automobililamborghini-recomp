@@ -61,7 +61,7 @@ extern "C" void lambo_graphics_task_prepare(uint8_t* ram, uint32_t task_address)
     }
     if (timed) {
         const double us = std::chrono::duration<double, std::micro>(Clock::now() - start).count();
-        LAMBO_LOG("gfx-policy", "prepare commands=%u dial=%u maps=%u suffix=%u elapsed_us=%.3f\n",
-            result.commands, hud.dial, hud.maps, hud.suffix, us);
+        LAMBO_LOG("gfx-policy", "prepare commands=%u dial=%u maps=%u suffix=%u logo=%u elapsed_us=%.3f\n",
+            result.commands, hud.dial, hud.maps, hud.suffix, hud.logo, us);
     }
 }

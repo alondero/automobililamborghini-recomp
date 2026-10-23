@@ -8,6 +8,7 @@
 #include <vector>
 #include "lambo_f3dex.h"
 #include "lambo_graphics_task.h"
+#include "lambo_hud_texture_bounds.h"
 #include "lambo_log.h"
 
 extern "C" void lambo_graphics_task_prepare(uint8_t*, uint32_t);
@@ -62,6 +63,110 @@ int main() {
         cmd(at + 24, 0xf2000000, t.bounds);
         cmd(at + 32, 0xb8000000, 0);
     };
+    // USA title wordmark: a 256-wide RGBA16 image, loaded/drawn in four
+    // 64x16 columns per row. Nonzero F2 origins must survive unchanged.
+    for (auto source : {0x1ebbc0u, 0x1edbc0u, 0x1efbc0u}) {
+        for (unsigned column = 0; column < 4; ++column) {
+            init();
+            cmd(root, 0x06000000, 0x80001000);
+            cmd(root + 8, 0xb8000000, 0);
+            const auto origin = column << 20;
+            cmd(0x1000, 0xfd1000ff, source | 0x80000000);
+            cmd(0x1008, 0xf5102000, 0x07014060);
+            cmd(0x1010, 0xe6000000, 0);
+            cmd(0x1018, 0xf4000000 | origin, 0x070fc03c | origin);
+            cmd(0x1020, 0xe7000000, 0);
+            cmd(0x1028, 0xf5102000, 0x00014060);
+            cmd(0x1030, 0xf2000000 | origin, 0x000fc03c | origin);
+            cmd(0x1038, 0xe4190090, 0x00090050);
+            cmd(0x1040, 0xb4000000, 0);
+            cmd(0x1048, 0xb3000000, 0x04000400);
+            cmd(0x1050, 0xb8000000, 0);
+            const auto original = memory;
+            auto expected = original;
+            write(expected.data(), 0x102c, 0x00094060); // T clamp only
+            prepare();
+            assert(memory == expected);
+            prepare();
+            assert(memory == expected);
+
+            // Unknown source, image format/width, stride, masks, mirror, tile,
+            // origins and bounds must retain their authored addressing.
+            const uint32_t mutations[][2] = {
+                {0x1004, 4}, {0x1000, 0x80000}, {0x1000, 1},
+                {0x1028, 0x200}, {0x1028, 1}, {0x102c, 0x10},
+                {0x102c, 0x4000}, {0x102c, 0x01000000}, {0x102c, 0x200},
+                {0x1030, 4}, {0x1030, 0x00400000}, {0x1034, 4},
+            };
+            for (const auto& mutation : mutations) {
+                memory = original;
+                write(ram, mutation[0], read(ram, mutation[0]) ^ mutation[1]);
+                const auto unknown = memory;
+                prepare();
+                assert(memory == unknown);
+            }
+            memory = original;
+            write(ram, 0x102c, 0x00054160); // mirrored S/T
+            const auto mirrored = memory;
+            prepare();
+            assert(memory == mirrored);
+            memory = original;
+            write(ram, 0x1004, source); // physical pointers are also accepted
+            prepare();
+            assert(read(ram, 0x102c) == 0x00094060);
+        }
+    }
+    // Traverse all twelve slices in one list, in both task slots. A repeated
+    // F2 without a fresh FD/F5 must not consume the previous slice again.
+    for (const auto task_offset : {0u, 0x7a50u}) {
+        init();
+        const auto slot = task + task_offset, slot_root = root + task_offset;
+        if (task_offset) {
+            for (unsigned offset = 0; offset < 0x40; offset += 4)
+                write(ram, slot + offset, read(ram, task + offset));
+            write(ram, slot + 0x30, slot_root);
+        }
+        cmd(slot_root, 0x06000000, 0x80001000);
+        cmd(slot_root + 8, 0xb8000000, 0);
+        uint32_t at = 0x1000;
+        std::vector<uint32_t> render_words;
+        for (auto source : {0x1ebbc0u, 0x1edbc0u, 0x1efbc0u}) {
+            const auto row_offset = (source - 0x1ebbc0) / 0x2000 * 64;
+            for (unsigned column = 0; column < 4; ++column) {
+                const auto origin = column << 20;
+                cmd(at, 0xfd1000ff, source | 0x80000000);
+                cmd(at + 8, 0xf5102000, 0x07014060);
+                cmd(at + 16, 0xe6000000, 0);
+                cmd(at + 24, 0xf4000000 | origin, 0x070fc03c | origin);
+                cmd(at + 32, 0xe7000000, 0);
+                cmd(at + 40, 0xf5102000, 0x00014060);
+                cmd(at + 48, 0xf2000000 | origin, 0x000fc03c | origin);
+                cmd(at + 56, 0xe4190090 + origin + row_offset,
+                    0x00090050 + origin + row_offset);
+                cmd(at + 64, 0xb4000000, 0);
+                cmd(at + 72, 0xb3000000, 0x04000400);
+                cmd(at + 80, 0xf2000000 | origin, 0x000fc03c | origin);
+                render_words.push_back(at + 44);
+                at += 88;
+            }
+        }
+        cmd(at, 0xb8000000, 0);
+        auto expected = memory;
+        for (const auto word : render_words) write(expected.data(), word, 0x00094060);
+        for (unsigned pass = 0; pass < 2; ++pass) {
+            lambo_graphics_task_prepare(ram, slot | 0x80000000);
+            assert(memory == expected); // only the twelve T-clamp bits change
+            // Public task counters expose duplicate consumption even though
+            // OR-ing clamp twice leaves the corrected command bytes identical.
+            lambo::HudTextureBounds hud(ram);
+            const auto walked = lambo::f3dex::walk(ram, slot_root | 0x80000000,
+                [&](auto offset, auto w0, auto w1) { hud.command(offset, w0, w1); });
+            assert(!walked.budget_limit && !walked.depth_limit);
+            assert(hud.logo == 12);
+            assert(hud.dial == 0 && hud.maps == 0 && hud.suffix == 0);
+            assert(memory == expected);
+        }
+    }
     // All HUD contracts are reachable from the submitted root, without any
     // widescreen bracket. Calls/branches share source and render-tile state.
     for (auto tile : tiles) {
