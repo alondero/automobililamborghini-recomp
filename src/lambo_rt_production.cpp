@@ -30,16 +30,6 @@ bool inject_as_fault() {
     return enabled;
 }
 
-// Developer validation sweep: lets unvalidated race modes and cars reach the
-// production path so their scenes can be measured. Never a player setting.
-bool validation_sweep() {
-    static const bool enabled = [] {
-        const char* value = std::getenv("LAMBO_RT_SHADOW_SWEEP");
-        return value && std::strcmp(value, "1") == 0;
-    }();
-    return enabled;
-}
-
 // Developer tuning: LAMBO_RT_SHADOW_<name> overrides one ambient value.
 float tuned(const char* name, float fallback) {
     const std::string key = std::string("LAMBO_RT_SHADOW_") + name;
@@ -94,7 +84,6 @@ ShadowSettings production_shadow_settings(int rays, double softness_degrees) {
     // Scenery that left the view keeps casting, so shadows do not change with
     // the camera. 2 traces only the remembered scenery, to check its coverage.
     settings.ambient.staticCache = uint32_t(std::clamp(tuned("CACHE", 1.0f), 0.0f, 255.0f));
-    settings.validation_sweep = validation_sweep();
     return settings;
 }
 

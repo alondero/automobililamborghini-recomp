@@ -30,14 +30,12 @@ turns the setting off. See [configuration](configuration.md#graphics-file).
 
 ## Where shadows are used
 
-- One player, race state 8, in a validated race mode and car. Fail closed:
-  anything outside the table keeps the native shadow.
-  - Race modes 0 (time trial) and 2 (single race) on all six circuits.
-  - Race modes 1 (menu Arcade) and 3 (Championship) on Circuit 1 only, because
-    warping into them always loads Circuit 1.
-  - Attract (mode 4) is not validated.
-  - Car 0 follows the race-mode table. Cars 1-23 are validated on Circuit 1 time
-    trial only.
+- One player, race state 8, in Time Trial, Arcade, Single Race or Championship
+  (modes 0-3), on all six circuits.
+  - Every car and colour selection (model cursors 0-23) is eligible. Draw
+    materials and object ancestry determine shadow geometry; car selection
+    and race progression do not restrict eligibility.
+  - Attract/demo races (mode 4) keep the original shadow.
 - D3D12 with DXR 1.1 and Shader Model 6.5 inline ray queries.
 
 Standard and high-precision colour (`hpfb_option`) and MSAA are all handled by the code.
@@ -187,6 +185,36 @@ strength is 0.757 (framebuffer transmission 0.243). See
 
 ## Validation
 
+### Car selection admission
+
+The host admission regression covers all 24 model/colour selectors across all
+six circuits and player race modes 0-3. Every supported combination retains
+the car caster, road receiver and native-overlay replacement. Invalid selectors
+and unsupported scenes still fall back. This test varies selection metadata
+on the same scene fixture; it does not validate each car's actual geometry.
+
+Earlier GPU captures measured car 0 in Time Trial and Single Race on all six
+circuits, Arcade and Championship on Circuit 1, and cars 1-23 on Circuit 1
+time trial with hard shadows. Enabling all selections and player race modes
+elsewhere does not extend that recorded visual evidence. Those combinations
+still need game captures, including soft shadows.
+
+### Circuit 4 Arcade regression
+
+On 2026-10-23, a Porsche in a normally entered Circuit 4 Arcade race was
+rejected on every frame: `gate=1 circuit=3 mode=1 players=1 phase=8`.
+The car-selection fix alone still hit the older mode/circuit whitelist.
+Production now admits all player race modes on all six circuits; the
+measurement-only sweep override was removed.
+
+A developer snapshot preserved that paused race (model cursor 7, 16 cars).
+Restoring it in the updated Windows/D3D12 build with eight rays and 0.5-degree
+softness passed the scenario check: 600 VIs, 228 swaps, and 105/105 shadow
+tasks ready. Each ready view replaced all 16 native car-shadow overlays.
+The interactive build was also restored to that snapshot, and its logs and
+window capture confirmed the traced path. This is one restored scene, not a
+full Arcade or Championship progression test.
+
 ### Lap validation
 
 `tools/check_rt_shadow_lap.py` replays each circuit's recorded time-trial
@@ -264,8 +292,10 @@ These earlier results were measured on the patch 0030 build, through
 | Warped modes 1 and 3, Circuit 1, hard and soft | standard | 4/4 pass; p1 within 0.0045; no brightened pixel. |
 | Cars 1-23, Circuit 1 time trial, hard | standard | 23/23 pass; p1 within 0.0045. |
 
-Warping into modes 1 and 3 always loads Circuit 1, whatever circuit is
-requested, so modes 1 and 3 on other circuits have not been seen.
+Those earlier warp captures loaded Circuit 1 for modes 1 and 3 regardless of
+the requested circuit, so that matrix did not cover Arcade or Championship
+on the other circuits. The later Circuit 4 regression above uses a snapshot
+from a normally entered Arcade race.
 
 ## GPU cost
 
@@ -398,10 +428,7 @@ consumes it; see [sky ownership](sky-panorama.md).
 ## Not covered
 
 - Two to four players: those views keep the native shadow.
-- Cars 1 to 23 outside Circuit 1 time trial, modes 1 and 3 outside Circuit 1,
-  and attract mode. These draw the native shadow until a capture run is
-  recorded. `LAMBO_RT_SHADOW_SWEEP=1` lets them reach the traced path for that
-  measurement only; it is never a player setting.
+- Attract/demo races keep the native shadow.
 - Scenery no earlier view of the scene has drawn. The cache only remembers
   what the camera has seen, so the first view after a warp, reset or new race
   still misses casters behind it. Course-asset caster submission remains a

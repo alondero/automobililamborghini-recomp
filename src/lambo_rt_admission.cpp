@@ -57,14 +57,11 @@ std::shared_ptr<RT64::SunShadowWorkload> admit_sun_shadow(const ShadowTask& task
         const std::vector<PresentedDraw>& draws, const std::vector<PresentedLight>& lights,
         const ShadowSettings& settings, AdmissionStats& stats) {
     stats = {};
-    // Fail closed: one-player races in the validated race modes and cars only.
-    // Anything else keeps the native shadow until its capture run is recorded.
+    // All one-player race modes and native car selections use the same draw
+    // classification on every circuit. Attract mode (4) keeps native shadows.
     const int model = task.model_cursors[0];
-    const bool mode_admitted = task.race_mode >= 0 && task.race_mode <= 3 &&
-        (settings.validation_sweep || validated_race_mode(task.race_mode, task.circuit));
-    const bool model_admitted = settings.validation_sweep
-        ? model >= 0 && model <= last_player_model
-        : validated_player_model(model, task.race_mode, task.circuit);
+    const bool mode_admitted = task.race_mode >= 0 && task.race_mode <= 3;
+    const bool model_admitted = model >= 0 && model <= last_player_model;
     if (task.circuit < 0 || task.circuit >= 6 || task.phase != 8 || task.players != 1 ||
         !mode_admitted || !model_admitted || !task.scene_consistent) {
         stats.gate = ShadowGate::UnsupportedScene;

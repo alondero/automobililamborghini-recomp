@@ -345,7 +345,7 @@ void create_frontend_settings() {
         "Pre-alpha: expect bugs and lighting issues at this stage. "
         "Replaces the car's shadow with sunlight shadows from the car and solid scenery. "
         "Needs DirectX 12 and a graphics card with ray tracing. "
-        "Works in one-player races. Other scenes keep the original shadow.");
+        "Works with every car on all six circuits in one-player races. Other scenes keep the original shadow.");
     // Each row's description is read on its own, so the warning repeats here
     // rather than relying on the toggle above.
     debug.add_enum_option("rt_shadow_rays", "Shadow quality",
