@@ -354,27 +354,24 @@ int main() {
                 result->ambient.skyDistance == 30 && !stats.lamp_light, "sunlit frame lost world occluders");
         }
 
-        // Modes 0 and 2 are measured on all six circuits; modes 1 and 3 only on
-        // Circuit 1, because warping into them always loads Circuit 1.
+        // Car selection must not change shadow eligibility in any supported race.
+        // Exercise production admission so the car caster, road receiver and native
+        // overlay replacement are preserved for every model/colour selection.
         for (int circuit = 0; circuit < 6; ++circuit) {
             for (int16_t mode = 0; mode < 4; ++mode) {
-                Scene candidate = measured_scene();
-                candidate.task.circuit = circuit;
-                candidate.task.race_mode = mode;
-                const bool expected = mode == 0 || mode == 2 || circuit == 0;
-                require(validated_race_mode(mode, circuit) == expected, "validated race mode table changed");
-                require((admit(candidate, stats) != nullptr) == expected, "race mode admission differs from table");
-            }
-        }
-        // Car 0 is measured on every circuit; cars 1-23 only on Circuit 1 time trial.
-        for (int circuit = 0; circuit < 6; ++circuit) {
-            for (int16_t model = 0; model <= 23; ++model) {
-                Scene candidate = measured_scene();
-                candidate.task.circuit = circuit;
-                candidate.task.race_mode = 0; // Cars 1-23 were measured in time trial only.
-                candidate.task.model_cursors[0] = model;
-                const bool expected = model == 0 || circuit == 0;
-                require((admit(candidate, stats) != nullptr) == expected, "player model admission differs from table");
+                for (int16_t model = 0; model <= 23; ++model) {
+                    Scene candidate = measured_scene();
+                    candidate.task.circuit = circuit;
+                    candidate.task.race_mode = mode;
+                    candidate.task.model_cursors[0] = model;
+                    result = admit(candidate, stats);
+                    require(result && result->complete && stats.gate == ShadowGate::Admitted,
+                        "a player race was blocked by its car, mode or circuit selection");
+                    const auto* car = find(result->geometry, 3);
+                    require(car && car->dynamicCaster, "a supported car selection lost its moving caster");
+                    require(find(result->receivers, 1) != nullptr, "a supported car selection lost its road receiver");
+                    require(find(result->overlays, 4) != nullptr, "a supported car selection kept its native overlay");
+                }
             }
         }
         const auto gated = [&](auto mutate, const char* message) {
@@ -386,28 +383,8 @@ int main() {
         gated([](ShadowTask& t) { t.race_mode = 5; }, "unknown race mode admitted");
         gated([](ShadowTask& t) { t.race_mode = -1; }, "missing race mode admitted");
         gated([](ShadowTask& t) { t.race_mode = 4; }, "attract mode admitted");
-        gated([](ShadowTask& t) { t.race_mode = 1; t.circuit = 1; }, "mode 1 admitted on unvalidated circuit");
-        gated([](ShadowTask& t) { t.race_mode = 3; t.circuit = 5; }, "mode 3 admitted on unvalidated circuit");
         gated([](ShadowTask& t) { t.model_cursors[0] = 24; }, "out-of-range player model admitted");
         gated([](ShadowTask& t) { t.model_cursors[0] = -1; }, "negative player model admitted");
-        gated([](ShadowTask& t) { t.model_cursors[0] = 1; t.circuit = 1; }, "unmeasured car admitted on circuit 2");
-        {
-            // Developer validation sweeps may exercise any player race mode and car.
-            Scene sweep = measured_scene();
-            sweep.task.circuit = 3;
-            sweep.task.race_mode = 3;
-            ShadowSettings any = {native_overlay_strength, 0, 8};
-            any.validation_sweep = true;
-            require(!admit(sweep, stats), "mode 3 admitted on an unmeasured circuit");
-            require(admit(sweep, stats, any) != nullptr, "validation sweep could not reach mode 3 on circuit 4");
-            sweep.task.model_cursors[0] = 5;
-            require(admit(sweep, stats, any) != nullptr, "validation sweep could not reach an unmeasured car");
-            sweep.task.model_cursors[0] = 24;
-            require(!admit(sweep, stats, any), "validation sweep admitted an out-of-range model");
-            sweep.task.model_cursors[0] = 0;
-            sweep.task.race_mode = 4;
-            require(!admit(sweep, stats, any), "validation sweep admitted attract mode");
-        }
         gated([](ShadowTask& t) { t.phase = 6; }, "menu phase admitted");
         gated([](ShadowTask& t) { t.circuit = 6; }, "unknown circuit admitted");
         gated([](ShadowTask& t) { t.scene_consistent = false; }, "a task whose scene changed mid-build admitted");

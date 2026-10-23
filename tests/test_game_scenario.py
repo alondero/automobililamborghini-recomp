@@ -207,13 +207,6 @@ class ScenarioRunnerTests(unittest.TestCase):
             self.assertEqual(rejected.returncode, 2, bad)
             self.assertIn(message, rejected.stderr)
 
-    def test_validation_sweep_is_allowlisted(self) -> None:
-        completed, artifact = self.run_scenario({"schema": 1, "name": "sweep",
-                                                 "developer_env": {"LAMBO_RT_SHADOW_SWEEP": "1"}})
-        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-        environment = json.loads((artifact / "harness-environment.json").read_text())
-        self.assertEqual(environment["LAMBO_RT_SHADOW_SWEEP"], "1")
-
     def test_warp_mode_accepts_player_race_modes_only(self) -> None:
         for mode in (0, 1, 2, 3):
             with self.subTest(mode=mode):
