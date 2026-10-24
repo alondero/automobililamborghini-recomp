@@ -56,6 +56,8 @@ offsets into the emulated RDRAM image and use N64 byte order.
 | RecompiledFuncs/ | Generated and ignored | Change ROM/config inputs. Do not edit. |
 | src/aspMain.cpp | Generated and ignored | Change the RSP input or generation config. Do not edit. |
 | lamborghini.syms.toml, lamborghini.us.toml | Checked-in generated configuration copies | Regenerate with scripts/gen_syms_toml.py when the source symbol data changes. Review the diff. |
+| RecompiledFuncsJP/ | Generated and ignored; not linked yet | Change the Japanese inputs. Do not edit. |
+| lamborghini.jp.syms.toml, lamborghini.jp.toml | Checked-in generated configuration for the [Japanese cartridge](japanese-rom.md) | Regenerate with scripts/gen_jp_syms_toml.py after a USA symbol or patch-list change. Review the diff. |
 | dump.toml, scripts/n64recomp_race.toml | Hand-maintained generation inputs | Record evidence for every symbol, hook, split, stub, or ignored function. |
 | src/ | Hand-written port and tests | Preserve guest layout, units, ownership, and thread assumptions. |
 | patches/ | Hand-written dependency deltas | Apply through the build scripts. Do not edit a dependency checkout and forget to update the patch. |

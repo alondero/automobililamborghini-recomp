@@ -6,7 +6,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
-import check_field_championship as championship
+import check_field_championship as championship  # noqa: E402 -- path set above
 
 
 class ChampionshipSnapshotTests(unittest.TestCase):

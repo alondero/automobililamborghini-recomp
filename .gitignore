@@ -8,6 +8,8 @@
 # --- Recompiler output (regenerated from your ROM at build time) -----------
 # `scripts/gen_syms_toml.py` + the N64Recomp CLI produce these from the ROM.
 RecompiledFuncs/
+# The Japanese cartridge's output (scripts/gen_jp_syms_toml.py, lamborghini.jp.toml):
+RecompiledFuncsJP/
 data_dump.toml
 # RSP audio microcode, RSPRecomp'd from your ROM (BUILDING.md step 3):
 src/aspMain.cpp

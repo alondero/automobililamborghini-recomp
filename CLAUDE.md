@@ -5,7 +5,9 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) and the
 
 ## Project facts
 
-- The supported input is the North American USA ROM.
+- The supported input is the North American USA ROM. The Japanese ROM is
+  experimental and not linked yet; see [docs/japanese-rom.md](docs/japanese-rom.md).
+  Rerun `scripts/gen_jp_syms_toml.py` after changing USA symbols or patch lists.
 - The build runs N64Recomp and RSPRecomp, then compiles generated output with
   the hand-written port, N64ModernRuntime, RT64, and RecompFrontend.
 - `RecompiledFuncs/` and `src/aspMain.cpp` are generated and ignored. Never

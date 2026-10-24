@@ -22,8 +22,10 @@ def run(suite, *, require_all=False, required=()):
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     missing = [(test, reason) for test, reason in result.skipped
                if require_all or any(test.id().startswith(module + ".") for module in required)]
+    for test, reason in missing:
+        # The skip reason names what is missing, such as NumPy, lib/rt64 or a ROM.
+        print(f"Required host check skipped: {test.id()}: {reason}", file=sys.stderr)
     if missing:
-        print("Required host checks skipped; install NumPy and initialize lib/rt64.", file=sys.stderr)
         return 1
     return 0 if result.wasSuccessful() else 1
 

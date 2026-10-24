@@ -44,6 +44,7 @@ RecompiledFuncs/ or src/aspMain.cpp by hand.
 Generated files are:
 
 - RecompiledFuncs/;
+- RecompiledFuncsJP/, from the Japanese cartridge;
 - src/aspMain.cpp.
 
 The source inputs are the symbol/config files, dump.toml,

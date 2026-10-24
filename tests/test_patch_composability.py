@@ -18,7 +18,6 @@ CMake series is shared. Plume patches (0004/0014/0023/0028) are out of scope:
 they target the nested plume submodule identically on all platforms, so they
 cannot cause platform divergence.
 """
-import re
 import subprocess
 import tempfile
 import unittest
@@ -47,7 +46,7 @@ class PatchCompositionTests(unittest.TestCase):
     def replay(self, platform):
         """Apply a platform's full rt64 order in a throwaway worktree."""
         sha = subprocess.check_output(
-            ["git", "rev-parse", f"HEAD:lib/rt64"], cwd=ROOT, text=True
+            ["git", "rev-parse", "HEAD:lib/rt64"], cwd=ROOT, text=True
         ).strip()
         tmp = tempfile.TemporaryDirectory(prefix="lambo-patch-compose-")
         self.addCleanup(tmp.cleanup)

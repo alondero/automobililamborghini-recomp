@@ -11,6 +11,9 @@ name: Build & Release
 # (ROM_ASSETS_PAT) scoped to read-only access on that one repo. It is never uploaded
 # as part of any artifact or release asset: downstream users must supply their own
 # legally dumped copy of "Automobili Lamborghini (USA).z64" to run the released binary.
+# The same repo holds the experimental Japanese cartridge, "Super Speed Race 64
+# (Japan).z64"; the Linux job uses it to check the Japanese recompile inputs
+# (docs/japanese-rom.md). It is not packaged either.
 
 on:
   workflow_dispatch:
@@ -32,6 +35,7 @@ permissions:
 
 env:
   ROM_FILENAME: "Automobili Lamborghini (USA).z64"
+  JP_ROM_FILENAME: "Super Speed Race 64 (Japan).z64"
 
 jobs:
   build-linux:
@@ -71,6 +75,7 @@ jobs:
       - name: Place ROM
         run: |
           cp "rom-assets/$ROM_FILENAME" "./$ROM_FILENAME"
+          cp "rom-assets/$JP_ROM_FILENAME" "./$JP_ROM_FILENAME"
           rm -rf rom-assets
 
       - name: Build via shared script
@@ -89,9 +94,18 @@ jobs:
           ctest --test-dir build --output-on-failure --no-tests=error
           python tools/run_runtime_acceptance.py --headless
 
+      - name: Check the Japanese recompile inputs
+        # Regenerates the checked-in Japanese symbol table and runs N64Recomp on
+        # it with the tool build.sh just built. --check logs the ROM hashes and
+        # counts. The runner fails the step if any Japanese check skips, and names
+        # the skip reason in the log.
+        run: |
+          python scripts/gen_jp_syms_toml.py --check
+          python tools/run_host_tests.py --require tests.test_jp_recompile
+
       - name: Remove ROM before packaging
         if: always()
-        run: rm -f "$ROM_FILENAME"
+        run: rm -f "$ROM_FILENAME" "$JP_ROM_FILENAME"
 
       - name: Package
         run: |

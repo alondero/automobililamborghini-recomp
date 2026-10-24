@@ -65,6 +65,21 @@ runtime acceptance suite before packaging. These jobs have the private ROM and
 fresh generated output. Pull-request host jobs do not compile or play the full
 game. Repository branch rules determine whether these checks block merging.
 
+The Linux release job also fetches the [Japanese cartridge](japanese-rom.md)
+and runs:
+
+~~~text
+python scripts/gen_jp_syms_toml.py --check
+python tools/run_host_tests.py --require tests.test_jp_recompile
+~~~
+
+The first command prints the ROM hashes it verified. The second fails the job
+if any of those tests skip, and prints each skip with its reason. The ROM tests
+need both ROMs; the recompile tests also need a
+built N64Recomp and gcc. Locally they skip without them. One test needs no ROM
+and runs in the host suite on every pull request: it fails when the USA symbol
+table or configuration changed after the Japanese tables were generated.
+
 For dependency changes, run `python tools/check_patch_series.py`. It checks
 the RT64 replay order against each platform's script and shared CMake calls,
 and checks that every patch has a build application site. CI uses
@@ -325,6 +340,10 @@ headless CI job unless the job supplies a suitable display.
   `CAB2467684A58BC19C787423D704A961AA497629763367D9FE691172DE58591C`.
   This identifies the test input; it is not a ROM download or a release
   requirement for players.
+- The Japanese recompile tests use an 8 MiB *Super Speed Race 64 (Japan)*
+  ROM with SHA-256
+  `06C9C992014DA5982E747117C690C1590A011C0C6756B0522DF126366BF8B9A1`.
+  The port does not run it yet.
 - A ROM-backed test must record the ROM identity or SHA-256 in its report.
 - A test that uses RecompiledFuncs/ must say whether those files were freshly
   generated.
