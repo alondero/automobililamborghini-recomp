@@ -1,5 +1,6 @@
 // ROM-free GPU validation of the reusable AS builder and shared HLSL kernel.
 // The raster receiver integration is deliberately gated; this is not a game capture.
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -65,7 +66,7 @@ struct Probe {
 struct Result {
     float color[4], info[4], directionStrength[4], radiusIntervalBias[4];
     uint32_t flags[4];
-    float sky[4];
+    float sky[4]; // Raw sky and sky-faded occlusion, independently compared below.
 };
 static_assert(sizeof(Probe) == 64 && sizeof(Result) == 96);
 using Vertex = std::array<float, 4>;
@@ -278,6 +279,9 @@ int main(int argc, char **argv) {
                     std::memcmp(result.flags, reinterpret_cast<const char *>(&params) + 32, 16) == 0,
                     "CPU/HLSL ABI mismatch");
                 require(result.info[0] >= 0 && result.info[0] <= 1, "visibility out of bounds");
+                const float t = std::clamp((result.sky[0] - 0.125f) / 0.375f, 0.0f, 1.0f);
+                const float faded = (1.0f - result.info[0]) * t * t * (3.0f - 2.0f * t);
+                close(result.sky[1], faded, "sky early termination changed receiver attenuation");
                 require(result.info[1] >= std::cos(params.angularRadius) - 1e-5f && result.info[2] < 1e-5f,
                     "direction outside unit emitter cone");
             }
@@ -363,6 +367,23 @@ int main(int argc, char **argv) {
         for (auto &p : probes) p.normal[1] = -1;
         auto skyDown = execute({{6,6,17,true}});
         close(skyDown[0].sky[0], 0, "a downward receiver counted as open sky");
+        // A large roof closes every upward ray. The sunlight sampler must
+        // produce the same zero attenuation even with a soft emitter.
+        const auto savedVertices = vertices;
+        vertices[0] = {-100, 1, -100, 1}; vertices[1] = {100, 1, -100, 1};
+        vertices[2] = {100, 1, 100, 1}; vertices[3] = {-100, 1, 100, 1};
+        for (auto &p : probes) { p.normal[1] = 1; p.normal[2] = 0; }
+        params.direction[1] = 1; params.direction[2] = 0;
+        for (uint32_t quality : {4u, 8u, 16u}) {
+            params.sampleCount = quality;
+            params.angularRadius = 0.08f;
+            const auto tunnel = execute(ceiling);
+            close(tunnel[0].sky[0], 0, "closed tunnel saw open sky");
+            close(tunnel[0].sky[1], 0, "closed tunnel retained sunlight attenuation");
+        }
+        vertices = savedVertices;
+        params.direction[1] = 0; params.direction[2] = 1;
+        params.angularRadius = 0;
         probes = savedProbes;
         // Remembered scenery: a ceiling no longer presented still casts, as
         // world geometry, and a new snapshot replaces the old structure.

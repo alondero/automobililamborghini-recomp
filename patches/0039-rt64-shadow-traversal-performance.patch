@@ -1,0 +1,119 @@
+diff --git a/src/render/rt64_sun_shadow_scene.cpp b/src/render/rt64_sun_shadow_scene.cpp
+--- a/src/render/rt64_sun_shadow_scene.cpp
++++ b/src/render/rt64_sun_shadow_scene.cpp
+@@ -106,7 +106,7 @@
+             return fail("Static shadow upload failed");
+         const RenderBottomLevelASMesh mesh(staticIndices_->at(0), staticPositions_->at(0), RenderFormat::R32_UINT,
+             RenderFormat::R32G32B32_FLOAT, count, count, 12, false);
+-        device->setBottomLevelASBuildInfo(static_.info, &mesh, 1, true, false);
++        device->setBottomLevelASBuildInfo(static_.info, &mesh, 1, false, true);
+         if (!static_.info.accelerationStructureSize || !static_.info.scratchSize ||
+             static_.info.accelerationStructureSize > 128u * 1024u * 1024u)
+             return fail("Invalid static BLAS size or memory budget exceeded");
+@@ -128,7 +128,9 @@
+     for (uint32_t index = 0; index < LayerCount; ++index) {
+         Layer &layer = layers_[index];
+         if (meshes[index].empty()) continue;
+-        device->setBottomLevelASBuildInfo(layer.info, meshes[index].data(), uint32_t(meshes[index].size()), true, false);
++        // These small structures serve millions of receiver queries per presentation.
++        // Spend more on construction to reduce the much larger traversal cost.
++        device->setBottomLevelASBuildInfo(layer.info, meshes[index].data(), uint32_t(meshes[index].size()), false, true);
+         if (!layer.info.accelerationStructureSize || !layer.info.scratchSize ||
+             layer.info.accelerationStructureSize > 128u * 1024u * 1024u)
+             return fail("Invalid BLAS size or memory budget exceeded");
+@@ -156,7 +158,7 @@
+         stats_.asBytes += static_.info.accelerationStructureSize;
+         if (!staticBuilt_) stats_.scratchBytes = std::max(stats_.scratchBytes, static_.info.scratchSize);
+     }
+-    device->setTopLevelASBuildInfo(top_, instances.data(), uint32_t(instances.size()), true, false);
++    device->setTopLevelASBuildInfo(top_, instances.data(), uint32_t(instances.size()), false, true);
+     stats_.asBytes += top_.accelerationStructureSize;
+     stats_.scratchBytes = std::max(stats_.scratchBytes, top_.scratchSize);
+     if (!top_.accelerationStructureSize || !top_.scratchSize || top_.instancesBufferData.empty() ||
+diff --git a/src/shaders/SunShadow.hlsli b/src/shaders/SunShadow.hlsli
+--- a/src/shaders/SunShadow.hlsli
++++ b/src/shaders/SunShadow.hlsli
+@@ -29,15 +29,22 @@
+     return p.direction*cosTheta + (tangent*cos(phi) + bitangent*sin(phi))*sinTheta;
+ }
+ 
++// Declared here because sunlight can stop as soon as the sky term is zero.
++float SunShadowOpenSky(RaytracingAccelerationStructure scene, float3 origin, float3 normal,
++    float distance, uint worldMask);
++
+ // All admitted triangles are non-opaque in the AS for exact face exclusion.
+ // Metadata is {faceStart, draw, indexCount, nativeAlphaCoverage}. The optional
+ // candidate evaluator must distinguish unsupported input from an alpha hole.
+ // occluderMask selects the instances that block the light.
+-float SunShadowVisibilityMasked(RaytracingAccelerationStructure scene,
+-    StructuredBuffer<uint4> geometry, float3 position, float3 geometricNormal,
+-    uint receiverDraw, uint receiverFaceStart, SunShadowParams p, uint occluderMask, out bool coverageValid)
++float SunShadowVisibilityWithSkyMasked(RaytracingAccelerationStructure scene,
++    StructuredBuffer<uint4> geometry, float3 position, float3 geometricNormal,
++    uint receiverDraw, uint receiverFaceStart, SunShadowParams p, uint occluderMask, out bool coverageValid,
++    float3 skyOrigin, float3 skyNormal, float skyDistance, uint skyMask, float skyOpenFull, out float skyLight)
+ {
+     coverageValid = true;
++    skyLight = 1.0f;
++    bool skyTested = false;
+     if (!SunShadowValid(p) || !all(isfinite(position)) || !all(isfinite(geometricNormal)) ||
+         dot(geometricNormal, geometricNormal) < 1e-12) return 1;
+     uint count = p.angularRadius == 0 ? 1 : p.sampleCount;
+@@ -78,9 +85,30 @@
+             }
+             query.CommitNonOpaqueTriangleHit();
+         }
+-        visibility += query.CommittedStatus() == COMMITTED_NOTHING ? 1 : 0;
++        const bool visible = query.CommittedStatus() == COMMITTED_NOTHING;
++        // Sky only matters when at least one sunlight sample is blocked. In a
++        // closed tunnel it cancels the entire sun term, so the remaining soft
++        // shadow samples cannot affect the pixel. Keep the original sample set.
++        if (!visible && skyDistance > 0 && !skyTested) {
++            const float sky = SunShadowOpenSky(scene, skyOrigin, skyNormal, skyDistance, skyMask);
++            skyLight = smoothstep(skyOpenFull * 0.25f, skyOpenFull, sky);
++            skyTested = true;
++            if (skyLight == 0.0f) return 0.0f;
++        }
++        visibility += visible ? 1 : 0;
+     }
+     return visibility / float(count);
++}
++
++// Callers without sky fading retain the original visibility and coverage contract.
++float SunShadowVisibilityMasked(RaytracingAccelerationStructure scene,
++    StructuredBuffer<uint4> geometry, float3 position, float3 geometricNormal,
++    uint receiverDraw, uint receiverFaceStart, SunShadowParams p, uint occluderMask, out bool coverageValid)
++{
++    float skyLight;
++    return SunShadowVisibilityWithSkyMasked(scene, geometry, position, geometricNormal,
++        receiverDraw, receiverFaceStart, p, occluderMask, coverageValid,
++        0.0f, 0.0f, 0.0f, 0, 0.5f, skyLight);
+ }
+ 
+ // Fixed cosine-weighted directions on a Fibonacci spiral about +Z. Fixed
+diff --git a/src/shaders/SunShadowReceiverPS.hlsl b/src/shaders/SunShadowReceiverPS.hlsl
+--- a/src/shaders/SunShadowReceiverPS.hlsl
++++ b/src/shaders/SunShadowReceiverPS.hlsl
+@@ -54,18 +54,12 @@
+     uint sunMask, uint skyMask, float contactDarken)
+ {
+     bool coverageValid;
+-    float visibility = sunMask == 0 ? 1.0f : SunShadowVisibilityMasked(gShadowScene, gShadowGeometry, position,
+-        geometric, gReceiver.draw, face, gSunParams, sunMask, coverageValid);
++    float sunlit = 1.0f;
++    float visibility = sunMask == 0 ? 1.0f : SunShadowVisibilityWithSkyMasked(gShadowScene, gShadowGeometry, position,
++        geometric, gReceiver.draw, face, gSunParams, sunMask, coverageValid,
++        origin, normal, gReceiver.skyDistance, skyMask, gReceiver.skyOpenFull, sunlit);
+     if (sunMask != 0 && !coverageValid) visibility = 1.0f;
+ 
+-    // The art bakes its own lamps into prelit colour. Where scenery hides
+-    // most of the sky (tunnels, underpasses) that colour is not sunlight, so
+-    // the sun shadow fades out instead of darkening the lamps' work.
+-    float sky = 1.0f;
+-    if (visibility < 1.0f && gReceiver.skyDistance > 0) {
+-        sky = SunShadowOpenSky(gShadowScene, origin, normal, gReceiver.skyDistance, skyMask);
+-    }
+-    const float sunlit = smoothstep(gReceiver.skyOpenFull * 0.25f, gReceiver.skyOpenFull, sky);
+     const float sunDarken = saturate(gSunParams.strength) * sunlit * (1.0f - saturate(visibility));
+     return 1.0f - max(sunDarken, contactDarken);
+ }

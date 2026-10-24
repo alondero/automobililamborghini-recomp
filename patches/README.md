@@ -51,6 +51,7 @@ significant single-space lines from `git diff --check`;
 | 0036 | N64ModernRuntime | Defines ModHandle and its code-handle interface before ModContext instantiates deque<ModHandle>. Android NDK 28's libc++ requires a complete element type here; GCC accepted the earlier declaration order. The definitions and stable-storage behavior are unchanged. Applied after 0035. Compared with the pinned header, which places ModHandle after ModContext and originally used vector. An Android ARM64 header compile reproduces the incomplete-type error before this patch and passes after it. |
 | 0037 | RecompFrontend | Gates RmlUi debugger initialization, F8 visibility, and shutdown on the existing default-off `general.json` `debug_mode` option. Diagnostics still reach the system logger. Applied through shared CMake on all platforms. Headless tests inject a real diagnostic in both modes and inspect the beacon. The tests exercise the host path only: no full game build, top-level configure, or rendered launcher/settings navigation was run, and other platforms remain unverified. |
 | 0038 | RT64 | Makes the sunlight shadow scene robust to view and light. Static scenery, moving casters and remembered static scenery build separate bottom-level structures under instance masks `0x1`, `0x2` and `0x4`, each reading its own metadata. The receiver pass fades the sun shadow where scenery hides most of the sky, adds a short-range contact shadow from moving casters, and takes an occluder mask so a light the art already bakes (tunnel lamps) is blocked by moving casters only. `SunShadowStaticCache` remembers triangles whose exact world positions repeat in nearby tasks and traces those the view no longer presents, so shadows no longer change with the camera; drawn copies are left out so no triangle is traced twice. Debug views show transmission, open sky, contact, and what the remembered scenery changes. Applied by CMake after 0033; configure recognizes 0038 first. Generic renderer behaviour, kept local. Compared 2026-10-22 with RT64 upstream `main` at `de343a53c703f2fc7fdd64ac6ff9e5a3f41e66f3`, whose tree has no shadow source (only `src/shared/rt64_raytracing_params.h`), so there is nothing to upstream against. The tuning defaults (`radius=400`, `keepTasks=300`, `maxTriangles=131072`) are in renderer units measured on this game's tracks. Host tests cover the cache, the D3D12 probe covers masks, the static layer and its rebuild on an RTX 3080, and recorded laps on all six circuits stay on the traced path for every race task. |
+| 0039 | RT64 | Reduces shadow traversal work without changing quality settings. Builds the small shadow acceleration structures for fast tracing, and evaluates sky fading after the first blocked sunlight sample so enclosed receivers skip the remaining soft-shadow rays. The original visibility-only kernel retains its exact-face and alpha-coverage contract. Applied by shared CMake after 0038; CMake and Windows preserve mode recognize 0039 first. Compared on 2026-10-24 with upstream `main` at `d9817c68ffd7328cd0af383af124971489366e18`, whose tree contains no SunShadow sources. GPU probes compare sky-faded occlusion against the ungated calculation, including a closed tunnel at every ray quality. Measurements and limits are in [RT shadows](../docs/rt-shadows.md). |
 
 ## Application matrix
 
@@ -83,7 +84,7 @@ still references the conditional full RT path; its
 does not implement this angular-query kernel. This local groundwork is not an
 upstream-supported feature or dependency upgrade. No upstream issue was opened.
 
-Patches **0022/0023/0024/0025/0026/0027/0028/0029/0030/0038** are applied idempotently by CMake on all supported build
+Patches **0022/0023/0024/0025/0026/0027/0028/0029/0030/0038/0039** are applied idempotently by CMake on all supported build
 paths. Readback is an explicit D3D12 developer diagnostic; normal rendering has
 no observer or capture GPU allocations. The observer registers before queues
 start and is cleared after they join. Its scoped raster activation prevents
@@ -195,7 +196,7 @@ No upstream issue was opened.
 
 For an initialized Windows checkout with local dependency edits, use
 `./build.ps1 -PreserveSubmodules`. It verifies recursive dependency pins and
-skips checkout/clean operations. Like CMake, it recognizes 0038, 0030, 0029, 0027 or 0025 before
+skips checkout/clean operations. Like CMake, it recognizes 0039, 0038, 0030, 0029, 0027 or 0025 before
 revisiting earlier RT64 patches whose contexts have changed. The continuation
 replayed the nine Windows RT64 patches in a separate clean pinned worktree:
 all 31 modified/new files matched the active patched dependency byte-for-byte.
@@ -203,9 +204,9 @@ No patch content or dependency pin changed in that continuation.
 
 | Build path | Applies |
 | --- | --- |
-| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0038 in CMake. |
-| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0038 in CMake. |
-| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0038 in CMake. |
+| Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0039 in CMake. |
+| Windows script | The Linux set plus 0005 and 0004, then 0016 through 0039 in CMake. |
+| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, 0014, and 0015, then 0016 through 0039 in CMake. |
 
 If a patch no longer applies to its pinned submodule, stop and update the
 patch or pin as a deliberate change. Do not reset a developer's unrelated

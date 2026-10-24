@@ -461,8 +461,8 @@ public:
         // afterwards. Production binds to the id RT64 reports as it publishes.
         const uint64_t next_workload = app->state->workloadId + 1;
         if (RT64::GetRenderEvidenceObserver()) evidence.remember(next_workload, probe);
-        shadows.remember(probe, rt_shadows, lambo::rt::production_shadow_settings(
-            lambo::config::rt_shadow_rays(), lambo::config::rt_shadow_softness()));
+        shadows.remember(probe, rt_shadows, rt_shadows ? lambo::rt::production_shadow_settings(
+            lambo::config::rt_shadow_rays(), lambo::config::rt_shadow_softness()) : lambo::rt::ShadowSettings{});
         app->processDisplayLists(app->core.RDRAM, task->t.data_ptr & 0x3FFFFFF, 0, true);
         shadows.finish_task();
         if (RT64::GetRenderEvidenceObserver()) evidence.processed(next_workload, app->state->workloadId);
