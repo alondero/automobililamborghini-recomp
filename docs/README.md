@@ -78,6 +78,7 @@ status line before relying on a historical measurement.
 | [Gyro steering research](gyro-steering-research.md) | Racing recomp comparison, Android sensors, and race-only gates. |
 | [Player names](player-names.md) | Driver-name persistence notes. |
 | [Android guide](ANDROID.md) | ARM64 build, launcher, signing, and device limits. |
+| [Japanese cartridge](japanese-rom.md) | Experimental *Super Speed Race 64* identity, code layout and symbol table. |
 
 ## Reference pages
 
