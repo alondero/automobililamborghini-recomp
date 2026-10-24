@@ -76,14 +76,21 @@ ShadowSettings production_shadow_settings(int rays, double softness_degrees) {
     // Renderer world units: the car is about 4.35 long and 1.13 tall. A
     // receiver with less than half its sky open (tunnel, deep underpass) is
     // lit by the art's baked lamps, not the sun. docs/rt-shadows.md.
-    settings.ambient.contactStrength = tuned("CONTACT", 0.55f);
-    settings.ambient.contactDistance = tuned("CONTACT_DISTANCE", 1.6f);
-    settings.ambient.skyDistance = tuned("SKY_DISTANCE", 30.0f);
-    settings.ambient.skyOpenFull = tuned("SKY_OPEN", 0.5f);
-    settings.ambient.debugMode = uint32_t(std::clamp(tuned("DEBUG", 0.0f), 0.0f, 255.0f));
-    // Scenery that left the view keeps casting, so shadows do not change with
-    // the camera. 2 traces only the remembered scenery, to check its coverage.
-    settings.ambient.staticCache = uint32_t(std::clamp(tuned("CACHE", 1.0f), 0.0f, 255.0f));
+    // Launch-only developer overrides are immutable during play. Avoid six
+    // environment lookups/string constructions for every display-list task;
+    // rays and softness above still follow live graphics settings.
+    static const RT64::SunShadowAmbient ambient = [] {
+        RT64::SunShadowAmbient value;
+        value.contactStrength = tuned("CONTACT", 0.55f);
+        value.contactDistance = tuned("CONTACT_DISTANCE", 1.6f);
+        value.skyDistance = tuned("SKY_DISTANCE", 30.0f);
+        value.skyOpenFull = tuned("SKY_OPEN", 0.5f);
+        value.debugMode = uint32_t(std::clamp(tuned("DEBUG", 0.0f), 0.0f, 255.0f));
+        // 2 traces remembered scenery alone, to check its coverage.
+        value.staticCache = uint32_t(std::clamp(tuned("CACHE", 1.0f), 0.0f, 255.0f));
+        return value;
+    }();
+    settings.ambient = ambient;
     return settings;
 }
 

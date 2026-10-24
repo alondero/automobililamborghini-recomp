@@ -42,9 +42,17 @@ lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 00
 # Later RT64 patches change earlier patches' context. Recognize the newest
 # applied patch first, then replay only what is missing.
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0038-rt64-sun-shadow-robust-scene.patch"
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0039-rt64-shadow-traversal-performance.patch"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
-    RESULT_VARIABLE rt64_robust_shadow_patch_applied OUTPUT_QUIET ERROR_QUIET)
+    RESULT_VARIABLE rt64_shadow_performance_patch_applied OUTPUT_QUIET ERROR_QUIET)
+if(rt64_shadow_performance_patch_applied EQUAL 0)
+    set(rt64_robust_shadow_patch_applied 0)
+else()
+    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0038-rt64-sun-shadow-robust-scene.patch"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
+        RESULT_VARIABLE rt64_robust_shadow_patch_applied OUTPUT_QUIET ERROR_QUIET)
+endif()
 if(rt64_robust_shadow_patch_applied EQUAL 0)
     set(rt64_sun_shadow_receiver_patch_applied 0)
 else()
@@ -92,7 +100,10 @@ if(NOT rt64_robust_shadow_patch_applied EQUAL 0)
     lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0030-rt64-sun-shadow-receiver.patch)
     lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0033-rt64-fixed-texture-table-without-descriptor-indexing.patch)
 endif()
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0038-rt64-sun-shadow-robust-scene.patch)
+if(NOT rt64_shadow_performance_patch_applied EQUAL 0)
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0038-rt64-sun-shadow-robust-scene.patch)
+endif()
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0039-rt64-shadow-traversal-performance.patch)
 
 # --- RT64 renderer boundary; see patches/README.md ---
 # recomp/lib/rt64 is a pinned git submodule; RT64 is always compiled in and is the

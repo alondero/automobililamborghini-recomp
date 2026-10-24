@@ -3,7 +3,7 @@
 Status: experimental, and pre-alpha. It is opt-in and off by default, and the
 user-facing setting is labelled "(pre-alpha)" because bugs and lighting issues
 are still expected. Measured on Windows, D3D12, NVIDIA RTX 3080, through
-2026-10-22. "Ray-traced shadows (pre-alpha)" on the Debug tab replaces the
+2026-10-25. "Ray-traced shadows (pre-alpha)" on the Debug tab replaces the
 native car shadow with a ray-traced sun shadow in one-player races. It is a
 development feature, not a finished one, so it stays off the Enhancements tab.
 A frame draws the original shadow only when the device cannot trace it or the
@@ -13,7 +13,8 @@ Earlier groundwork, art provenance and material evidence live in
 [RT provenance](rt-provenance.md) and
 [presented RT material evidence](rt-material-evidence.md). The renderer side
 is [patch 0030](../patches/0030-rt64-sun-shadow-receiver.patch), then
-[patch 0038](../patches/0038-rt64-sun-shadow-robust-scene.patch).
+[patch 0038](../patches/0038-rt64-sun-shadow-robust-scene.patch), and
+[patch 0039](../patches/0039-rt64-shadow-traversal-performance.patch).
 
 ## Player settings
 
@@ -337,6 +338,80 @@ Receiver and composite p50 by resolution and quality, one run each of
 
 Run-to-run spread is large on this one machine, so treat these as an order of
 magnitude. A second GPU vendor is not yet measured.
+
+### Tunnel performance investigation (2026-10-25)
+
+[Issue 342](https://github.com/alondero/automobililamborghini-recomp/issues/342)
+was reproduced with a local developer snapshot paused inside Circuit 4's
+16-car Arcade race. The snapshot stays local. At 2560x1440, 16 rays,
+0.5-degree softness and MSAA 4x, shadow queries dominate the cost. Expanded
+geometry on every circuit, unlimited draw distance and disabled fog match the
+local graphics profile; windowed presentation isolates the benchmark. The
+scene admits 5,668 drawn triangles, 152 receiver draws and 11 car overlays.
+
+Previously, a receiver traced every soft sunlight sample, then tested whether
+the sky term cancels sunlight altogether. A pixel could issue up to 40 queries
+(16 sunlight, 12 sky, 12 contact) even when sunlight contributes nothing.
+Patch 0039 tests the unchanged sky term after the first blocked sunlight
+sample. If it is zero, the remaining sunlight samples cannot affect the pixel
+and are skipped. Otherwise every original sunlight sample is retained. Contact
+shadows, sample directions, quality settings and native fallback rules remain
+unchanged. The visibility-only kernel used by other callers disables this
+optimization and retains its original coverage contract.
+
+The small shadow acceleration structures now favor fast traversal. This had
+only a small measured effect in isolation; the sky cancellation is the main
+saving. Launch-only RT tuning values are parsed once on first use, while ray
+count and softness still update live. Disabled RT also skips unused shadow
+settings preparation.
+
+Measurements use GPU timestamps, with the first 120-sample window excluded;
+the table reports medians of subsequent windows' p50 values. These are shadow
+pass timings, not overall frame times or an FPS speedup. The original and
+modified executables restore the same local snapshot into isolated profiles.
+
+| Full profile, 2560x1440 / 16 rays / MSAA 4x | Receiver and composite | AS build |
+| --- | --- | --- |
+| Original, run 1 | 15.22 ms | 0.48 ms |
+| Original, run 2 | 14.98 ms | 0.48 ms |
+| Updated, run 1 | 8.26 ms | 0.51 ms |
+| Updated, run 2 | 8.11 ms | 0.52 ms |
+
+At default scenery settings, 1600x900 / 8 rays / MSAA 2x, separate runs measured
+4.73 ms before and 3.53-3.94 ms after. An initial baseline run was much slower
+and was excluded as unstable. GPU clocks and presentation cadence are not
+locked, so the repeated full-profile comparison is the more useful evidence.
+No quality settings or the user's stored configuration were changed.
+
+Verification on Windows, MinGW GCC 15.2, D3D12, RTX 3080:
+
+- Fresh ROM-derived output and the supported Windows build sequence, with
+  compilation capped at four jobs in a temporary copy of the build script.
+  Repeated CMake configuration recognizes the new patch idempotently.
+- All 13 RT-related CTests pass, including the real D3D12 probe: 20,430 checks,
+  D3D12 debug layer enabled and no validation errors. Sky-faded attenuation is
+  compared against the original ungated visibility calculation, including a
+  closed roof at all three ray qualities. Existing face exclusion, material
+  coverage, fog/alpha, masks, soft penumbrae and fenced rebuild tests still pass.
+- Python discovery: 229 tests, 10 skips, no failures. Patch-series and
+  documentation checks pass.
+- Original and changed tunnel swapchain captures are byte-identical at tasks
+  300 and 420, with no ubershader draws. Task 60 also matched, but its control
+  still used ubershaders. These captures use 1600x900, eight rays and no MSAA.
+- Windowed frontend replay and clean-build snapshot restores pass. One snapshot
+  run during build activity stopped at two swaps; reruns after the build
+  completed passed. Its cause was not established and it is excluded from
+  timing results.
+- The headless 600-frame replay, an RT-disabled snapshot restore, and a
+  600-frame soft-shadow camera replay with render captures pass.
+  The GPU tests guard rendering behavior; timing comparisons require the
+  local snapshot and are not deterministic CI performance thresholds.
+
+The USA ROM identity is
+`CAB2467684A58BC19C787423D704A961AA497629763367D9FE691172DE58591C`.
+Raw scenarios, isolated profiles, captures and logs remain under ignored
+`artifacts/tunnel-perf/`. Other GPUs, backends, full race progression and a
+fresh six-circuit lap sweep were not verified in this investigation.
 
 ## Logging
 

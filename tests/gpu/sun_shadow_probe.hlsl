@@ -46,5 +46,12 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     result.radiusIntervalBias = float4(Params.angularRadius, Params.rayMin, Params.rayMax, Params.originBias);
     result.flags = uint4(Params.sampleCount, Params.valid, Params.debugMode, Params.reserved);
     result.sky = float4(SunShadowOpenSky(Scene, input.position, input.normal, 30.0f, 0xFF), 0, 0, 0);
+    float skyLight;
+    bool skyCoverage;
+    const float gated = SunShadowVisibilityWithSkyMasked(Scene, Geometry, input.position,
+        input.normal, input.receiverDraw, input.receiverFace, Params,
+        input.occluderMask == 0 ? 0xFF : input.occluderMask, skyCoverage,
+        input.position, input.normal, 30.0f, 0xFF, 0.5f, skyLight);
+    result.sky.y = (1.0f - gated) * skyLight;
     Results[id.x] = result;
 }

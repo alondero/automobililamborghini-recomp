@@ -134,3 +134,14 @@ improvement, a played or visually inspected preset/menu session, four-player
 performance, Linux, Vulkan or Android hardware. The smoke trace verifies
 movement and replay completion, not a completed lap. The seven follow-up
 issues require measurements before committing to their proposed optimisations.
+
+## Tunnel ray-tracing follow-up
+
+The October 2026 [tunnel investigation](rt-shadows.md#tunnel-performance-investigation-2026-10-25)
+measures the receiver shader as the main cost in a paused 16-car tunnel scene.
+It removes sunlight queries whose sky-faded contribution is already zero,
+keeps the same sample quality and contact shadows, and compares traversal-first
+acceleration structures. RT developer overrides are cached on first use and
+disabled RT skips unused settings preparation. The linked evidence separates
+GPU shadow-pass savings from whole-frame performance and records validation
+and hardware limits.
