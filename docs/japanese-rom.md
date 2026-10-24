@@ -102,9 +102,14 @@ their USA counterparts.
    Repeated or short bodies are accepted only where a neighbouring match
    predicts the same displacement, or where the raw bytes occur once.
 2. **Discover.** The remaining code is split into functions by call targets,
-   returns, jumps and resolved switch tables. A body that falls through into a
-   matched function makes that function an alternate entry sharing its
-   epilogue, the same shape as the USA `BootLoadInitialAssets` pieces.
+   returns, jumps and resolved switch tables. A switch's case targets stop at
+   the count in its range check. Before that cap, the scan read past the check
+   at 20 switch sites (for example 12 targets where the check allowed 7). A
+   jump with no range check, a table of function pointers, also had 9 targets,
+   which are now dropped. Only one function boundary moved, at
+   `0x8020D0AC`. A body that falls through into a matched function makes that
+   function an alternate entry sharing its epilogue, the same shape as the USA
+   `BootLoadInitialAssets` pieces.
 3. **Align.** A discovered function takes the USA name of a changed function
    when their instruction sequences clearly correspond, or when a weaker
    sequence match is confirmed by the named functions both bodies call.
@@ -125,10 +130,10 @@ The generator prints these counts:
 | USA functions | 1047 |
 | Matched (same opcodes and registers) | 791 |
 | ... of which every non-address immediate also agrees | 762 |
-| Discovered | 396 |
-| ... named by alignment (inferred) | 53 |
-| ... named by link-order slot (inferred) | 25 |
-| Japanese functions | 1187 |
+| Discovered | 397 |
+| ... named by alignment (inferred) | 55 |
+| ... named by link-order slot (inferred) | 26 |
+| Japanese functions | 1188 |
 | USA stubs carried | 167 of 244 |
 | USA ignored functions carried | 34 of 48 |
 | USA hooked or patched functions with no Japanese name | 13 of 74 |

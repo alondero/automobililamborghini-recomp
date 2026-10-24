@@ -48,7 +48,7 @@ def analyze_trace(file_path, limit=20):
     
     if first_crash:
         output.append("\n[!] FIRST CRASH/ERROR DETECTED:")
-        output.extend([f"  {l.strip()}" for l in first_crash])
+        output.extend([f"  {line.strip()}" for line in first_crash])
     
     # Frequency Analysis
     output.append("\nTop 5 Most Frequent Lines:")
@@ -71,7 +71,7 @@ def analyze_trace(file_path, limit=20):
     output.append(f"  - FRAME_SUMMARY (PC port): {'PRESENT (' + str(len(results['FRAME_SUMMARY'])) + 'x)' if results['FRAME_SUMMARY'] else 'ABSENT'}")
     # Show last FRAME_SUMMARY for quick geometry check
     if results['FRAME_SUMMARY']:
-        last_frame_lines = [l for l in lines if '[FRAME_SUMMARY]' in l]
+        last_frame_lines = [line for line in lines if '[FRAME_SUMMARY]' in line]
         if last_frame_lines:
             output.append(f"  Last frame: {last_frame_lines[-1].strip()}")
 

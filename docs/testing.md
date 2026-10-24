@@ -70,11 +70,12 @@ and runs:
 
 ~~~text
 python scripts/gen_jp_syms_toml.py --check
-python -m unittest -v tests.test_jp_recompile
+python tools/run_host_tests.py --require tests.test_jp_recompile
 ~~~
 
-The first command prints the ROM hashes it verified. The job fails if any of
-those tests skip. The ROM tests need both ROMs; the recompile tests also need a
+The first command prints the ROM hashes it verified. The second fails the job
+if any of those tests skip, and prints each skip with its reason. The ROM tests
+need both ROMs; the recompile tests also need a
 built N64Recomp and gcc. Locally they skip without them. One test needs no ROM
 and runs in the host suite on every pull request: it fails when the USA symbol
 table or configuration changed after the Japanese tables were generated.

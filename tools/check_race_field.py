@@ -14,13 +14,15 @@ def inspect(path, count, reverse=None, players=1):
         offset = address & 0xffffff
         if offset >= 0x900000:
             offset -= 0x100000
-        if fmt == 'h': offset ^= 2
+        if fmt == 'h':
+            offset ^= 2
         return struct.unpack_from('<' + fmt, blob, 32 + offset)[0]
     task, cursor = read(0x800a2bfc, 'I'), read(0x800a39cc, 'I')
     assert task in (0x800bf240, 0x800c6c90)
     assert task + 0x1c0 <= cursor <= task + 0x79c0, (hex(task), hex(cursor))
     assert read(0x800ce7ac, 'h') == count
-    if reverse is not None: assert read(0x800ce7a8, 'h') == reverse
+    if reverse is not None:
+        assert read(0x800ce7a8, 'h') == reverse
     cars = []
     for racer in range(1, count + 1):
         body = read(0x80901100 + racer * 2, 'h')

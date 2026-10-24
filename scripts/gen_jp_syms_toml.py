@@ -90,7 +90,8 @@ JP_SECTIONS = (JP_MAIN, JP_OVERLAY)
 
 NOP = 0x00000000
 JR_RA = 0x03E00008
-OP_J, OP_JAL, OP_LUI, OP_LW = 0x02, 0x03, 0x0F, 0x23
+OP_J, OP_JAL, OP_SLTIU, OP_LUI, OP_LW = 0x02, 0x03, 0x0B, 0x0F, 0x23
+REG_AT = 1
 
 
 def word(rom: bytes, off: int) -> int:
@@ -120,7 +121,9 @@ def rt(w: int) -> int:
     return (w >> 16) & 31
 
 
-def jump_target(w: int, pc: int = 0x80000000) -> int:
+def jump_target(w: int, pc: int) -> int:
+    """Target of a `j` or `jal` at address `pc`. The top four bits come from `pc`, so a
+    jump's region is never assumed."""
     return (pc & 0xF0000000) | ((w & 0x03FFFFFF) << 2)
 
 
@@ -287,12 +290,13 @@ def match_functions(us: bytes, jp: bytes, us_funcs: list[Func]) -> dict[str, tup
         if not changed:
             break
 
-    # One Japanese function cannot carry two USA names; identical USA copies keep the
-    # first name in address order.
-    by_addr: dict[tuple[int, int], list[str]] = collections.defaultdict(list)
+    # One Japanese function cannot carry two USA names. Keying on the address alone also
+    # covers a short body that is a prefix of a longer one, which differs in size. The
+    # first name in USA address order is kept.
     us_by_name = {f.name: f for f in us_funcs}
-    for name, v in result.items():
-        by_addr[(v, us_by_name[name].size)].append(name)
+    by_addr: dict[int, list[str]] = collections.defaultdict(list)
+    for name, v in sorted(result.items(), key=lambda item: us_by_name[item[0]].vram):
+        by_addr[v].append(name)
     for names in by_addr.values():
         for extra in names[1:]:
             del result[extra]
@@ -326,12 +330,26 @@ def branch_target(w: int, pc: int) -> int | None:
     return None
 
 
-# How far back from a `jr` to look for the jump-table load that feeds it.
+# How far back from a `jr` to look for the jump-table load and its range check.
 SWITCH_LOOKBACK = 0x40
 
 
+def switch_entry_count(jp: bytes, sec: Section, start: int, pc: int) -> int | None:
+    """Return N from the nearest range check `sltiu at,reg,N` before `pc`; the table has
+    entries 0 to N-1. Without it the table's length is unknown."""
+    v = pc - 4
+    while v >= max(start, pc - SWITCH_LOOKBACK):
+        w = word(jp, sec.rom_of(v))
+        if opcode(w) == OP_SLTIU and rt(w) == REG_AT:
+            return w & 0xFFFF
+        v -= 4
+    return None
+
+
 def jump_table_targets(jp: bytes, sec: Section, start: int, pc: int, end_limit: int) -> list[int]:
-    """Resolve an IDO switch: `lui at,%hi(T); addu at,at,r; lw r,%lo(T)(at); jr r`."""
+    """Resolve an IDO switch: `sltiu at,r,N; ...; lui at,%hi(T); addu at,at,r;
+    lw r,%lo(T)(at); jr r`. A jump with no range check is not a switch the scan can
+    size, so it contributes no targets rather than reading whatever follows the table."""
     reg = rs(word(jp, sec.rom_of(pc)))
     lo = hi = None
     base = None
@@ -347,10 +365,13 @@ def jump_table_targets(jp: bytes, sec: Section, start: int, pc: int, end_limit: 
         v -= 4
     if lo is None or hi is None:
         return []
+    count = switch_entry_count(jp, sec, start, pc)
+    if count is None:
+        return []
     table = ((hi << 16) + lo) & 0xFFFFFFFF
     rom = sec.image_rom_of(table)
     out = []
-    while rom is not None and rom + 4 <= sec.data_end_rom:
+    while rom is not None and rom + 4 <= sec.data_end_rom and len(out) < count:
         t = word(jp, rom)
         if not (start <= t < end_limit) or t % 4:
             break
@@ -410,9 +431,10 @@ def follows_exit(jp: bytes, sec: Section, v: int, floor: int) -> bool:
 def jal_targets(jp: bytes) -> set[int]:
     out = set()
     for s in JP_SECTIONS:
-        for w in code_words(jp, s.rom, s.size):
-            if opcode(w) == OP_JAL and section_of(jump_target(w)):
-                out.add(jump_target(w))
+        for v in range(s.vram, s.vram + s.size, 4):
+            w = word(jp, s.rom_of(v))
+            if opcode(w) == OP_JAL and section_of(jump_target(w, v)):
+                out.add(jump_target(w, v))
     return out
 
 
@@ -502,8 +524,14 @@ def fuzzy_mask(w: int) -> int:
     return m
 
 
-def callees(buf: bytes, rom: int, size: int) -> set[int]:
-    return {jump_target(w) for w in code_words(buf, rom, size) if opcode(w) == OP_JAL}
+def callees(buf: bytes, rom: int, vram: int, size: int) -> set[int]:
+    """Targets of the `jal` calls in a body that starts at `vram` in the code."""
+    out = set()
+    for i in range(0, size, 4):
+        w = word(buf, rom + i)
+        if opcode(w) == OP_JAL:
+            out.add(jump_target(w, vram + i))
+    return out
 
 
 def fuzzy_names(us: bytes, jp: bytes, us_funcs: list[Func], matched: dict,
@@ -517,12 +545,12 @@ def fuzzy_names(us: bytes, jp: bytes, us_funcs: list[Func], matched: dict,
             continue
         rom = US_TEXT.rom_of(f.vram)
         us_bodies[f.name] = (f.size, code_words(us, rom, f.size, fuzzy_mask),
-                             callees(us, rom, f.size))
+                             callees(us, rom, f.vram, f.size))
     jp_bodies = []
     for f in found:
         rom = section_of(f.vram).rom_of(f.vram)
         jp_bodies.append((f.vram, f.size, code_words(jp, rom, f.size, fuzzy_mask),
-                          callees(jp, rom, f.size)))
+                          callees(jp, rom, f.vram, f.size)))
 
     low, high = FUZZY_SIZE_BAND
     out: dict[int, str] = {}

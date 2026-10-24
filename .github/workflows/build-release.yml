@@ -96,18 +96,12 @@ jobs:
 
       - name: Check the Japanese recompile inputs
         # Regenerates the checked-in Japanese symbol table and runs N64Recomp on
-        # it with the tool build.sh just built. --check repeats one test, but its
-        # output records the ROM hashes and counts in the job log. A skipped test
-        # is a failure here.
-        # An explicit bash shell adds pipefail, so a failure is not lost in tee.
-        shell: bash
+        # it with the tool build.sh just built. --check logs the ROM hashes and
+        # counts. The runner fails the step if any Japanese check skips, and names
+        # the skip reason in the log.
         run: |
           python scripts/gen_jp_syms_toml.py --check
-          python -m unittest -v tests.test_jp_recompile 2>&1 | tee jp-recompile.log
-          if grep -q "skipped" jp-recompile.log; then
-            echo "::error::Japanese recompile checks were skipped"
-            exit 1
-          fi
+          python tools/run_host_tests.py --require tests.test_jp_recompile
 
       - name: Remove ROM before packaging
         if: always()

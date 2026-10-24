@@ -23,7 +23,9 @@ class ResetHookTests(unittest.TestCase):
 class ResetRomTests(unittest.TestCase):
     def test_retail_title_initializer_and_audio_transition(self):
         rom = ROM.read_bytes()
-        jal = lambda target: 0x0C000000 | ((target >> 2) & 0x03FFFFFF)
+        def jal(target):
+            return 0x0C000000 | ((target >> 2) & 0x03FFFFFF)
+
         # Dispatcher case 3 stops audio, initializes title assets, clears the
         # attract cursor (0x800CE794), advances state to 4, then updates the title.
         expected = {

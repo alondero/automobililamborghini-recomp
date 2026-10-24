@@ -12,6 +12,7 @@ import sys
 import tempfile
 import tomllib
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -24,6 +25,14 @@ US_NAMES = {f["name"] for f in tomllib.loads(
     (ROOT / "lamborghini.syms.toml").read_text(encoding="utf-8"))["section"][0]["functions"]}
 FUNCS = [(s["name"], f) for s in SYMS["section"] for f in s["functions"]]
 RUNTIME = ROOT / "lib/N64ModernRuntime"
+
+
+def word_bytes(words):
+    return b"".join(w.to_bytes(4, "big") for w in words)
+
+
+def addu(rd, rs, rt):
+    return (rs << 21) | (rt << 16) | (rd << 11) | 0x21
 
 
 def rom_problem():
@@ -77,10 +86,18 @@ class JapaneseInputStructureTests(unittest.TestCase):
     def test_patch_lists_name_existing_functions_once(self):
         names = {f["name"] for _, f in FUNCS}
         stubs, ignored = CONFIG["patches"]["stubs"], CONFIG["patches"]["ignored"]
+        self.assertEqual(len(stubs), len(set(stubs)), "duplicate entries in stubs")
+        self.assertEqual(len(ignored), len(set(ignored)), "duplicate entries in ignored")
         self.assertFalse(set(stubs) & set(ignored))
         for name in stubs + ignored:
             with self.subTest(name):
                 self.assertIn(name, names)
+
+    def test_function_start_addresses_are_unique(self):
+        # Two functions starting at one address would give the recompiler two bodies
+        # for one jump target. Alternate entries inside a body start elsewhere.
+        vrams = [f["vram"] for _, f in FUNCS]
+        self.assertEqual(len(vrams), len(set(vrams)), "two functions start at one address")
 
     def test_derived_from_the_current_usa_inputs(self):
         # Pull requests run without ROMs, so this is what catches a USA symbol or
@@ -90,6 +107,54 @@ class JapaneseInputStructureTests(unittest.TestCase):
                          if line.startswith(gen.USA_INPUTS_PREFIX)), None)
         self.assertEqual(recorded, gen.usa_inputs_digest(),
                          "USA inputs changed; run scripts/gen_jp_syms_toml.py")
+
+
+class GeneratorRuleTests(unittest.TestCase):
+    """Generator rules checked on small synthetic code, so they run without the ROMs."""
+
+    def patch_layout(self, jp_section, us_text):
+        for name, value in (("JP_SECTIONS", (jp_section,)), ("US_TEXT", us_text)):
+            patcher = mock.patch.object(gen, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_two_usa_functions_never_share_an_entry_address(self):
+        # The short body is a prefix of the long one, so both match the same Japanese
+        # entry. Only one USA name may keep it.
+        short = [addu(1, 2, 3), addu(4, 5, 6), addu(7, 8, 9), addu(10, 11, 12)]
+        long_extra = [addu(13, 14, 15), addu(16, 17, 18), addu(19, 20, 21), addu(22, 23, 24)]
+        self.patch_layout(gen.Section(".test", 0, 0x80000000, 0x40, 0x40),
+                          gen.Section(".text", 0, 0x80000000, 0x30, 0x30))
+        us = word_bytes(short + short + long_extra)
+        jp = word_bytes(short + long_extra + [0] * 8)
+        us_funcs = [gen.Func("func_short", 0x80000000, 16), gen.Func("func_long", 0x80000010, 32)]
+        matched = gen.match_functions(us, jp, us_funcs)
+        entries = [v for v, _ in matched.values()]
+        self.assertEqual(len(entries), len(set(entries)), matched)
+        self.assertEqual(set(matched), {"func_short"})
+
+    def test_switch_table_stops_at_its_range_check(self):
+        # The compiler range-checks the index with `sltiu at,v0,2`, so the table has two
+        # entries. The two valid words after them must not be read as cases.
+        code = [
+            (0x0B << 26) | (2 << 21) | (1 << 16) | 2,   # sltiu at,v0,2
+            (0x04 << 26) | (1 << 21) | 4,               # beq at,zero,...
+            (2 << 16) | (2 << 11) | (2 << 6),           # sll v0,v0,2
+            (0x0F << 26) | (1 << 16) | 0x8000,          # lui at,0x8000
+            addu(1, 1, 2),                              # addu at,at,v0
+            (0x23 << 26) | (1 << 21) | (25 << 16) | 0x80,  # lw t9,0x80(at)
+            0x03200008,                                 # jr t9
+        ]
+        table = [0x80000040, 0x80000044, 0x80000048, 0x8000004C]
+        rom = word_bytes(code).ljust(0x80, b"\0") + word_bytes(table).ljust(0x80, b"\0")
+        sec = gen.Section(".test", 0, 0x80000000, 0x100, 0x100)
+        got = gen.jump_table_targets(rom, sec, sec.vram, 0x80000018, sec.vram + sec.size)
+        self.assertEqual(got, [0x80000040, 0x80000044])
+
+    def test_jump_target_takes_its_region_from_the_jump_address(self):
+        self.assertEqual(gen.jump_target(0x0C000001, 0x90000000), 0x90000004)
+        with self.assertRaises(TypeError):
+            gen.jump_target(0x0C000001)
 
 
 @unittest.skipIf(ROM_PROBLEM, ROM_PROBLEM)

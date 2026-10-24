@@ -30,3 +30,16 @@ class RequiredChecksTests(unittest.TestCase):
 
     def test_strict_suite_skip_fails(self):
         self.assertEqual(self.run_case(require_all=True), 1)
+
+    def test_required_skip_report_names_the_check_and_reason(self):
+        class RequiredFixture(unittest.TestCase):
+            @unittest.skip("needs the Japanese dump")
+            def test_required_check(self):
+                pass
+        report = io.StringIO()
+        with contextlib.redirect_stderr(report), contextlib.redirect_stdout(io.StringIO()):
+            status = run(unittest.TestSuite([RequiredFixture("test_required_check")]),
+                         required=(__name__,))
+        self.assertEqual(status, 1)
+        self.assertIn("test_required_check", report.getvalue())
+        self.assertIn("needs the Japanese dump", report.getvalue())

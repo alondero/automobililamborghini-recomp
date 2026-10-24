@@ -6,7 +6,7 @@ import tomllib
 import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
-import race_field_patches as fields
+import race_field_patches as fields  # noqa: E402 -- path set above
 
 class RaceFieldPatchTests(unittest.TestCase):
     def test_rejects_unverified_rom(self):
