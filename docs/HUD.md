@@ -521,6 +521,16 @@ validation for this change. Related investigation:
 
 ### Fog density follow-up verification
 
+Fog correction tracking also keeps a 128 KiB bitmap of aligned command slots
+in native 8 MiB RAM. The guest producer uses it to avoid hash-table lookups for
+non-fog commands with no correction. The sparse table still owns authored and
+rewritten words; insert, erase and reset update the index together. Snapshot
+normalization still reads the table and never modifies live RAM. The walker
+validates offsets before calling the rewriter. The host fixture checks the
+first and last slots, neighboring slots, reuse and reset as well as the existing
+shared-list and save/load cases. The optional `lambo_fog_benchmark` isolates the
+lookup cost; it does not measure rendering or game frame time.
+
 The Release producer fixture reproduced the compounding bug before the fix:
 a second prepare at density 0.5 changed 0x3200CE80 to 0x1900E740. With authored
 word tracking, the second prepare preserves the entire RAM image. The extended

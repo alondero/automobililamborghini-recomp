@@ -1,0 +1,64 @@
+diff --git a/recompui/include/recompui/recompui.h b/recompui/include/recompui/recompui.h
+--- a/recompui/include/recompui/recompui.h
++++ b/recompui/include/recompui/recompui.h
+@@ -59,6 +59,9 @@
+     bool is_context_capturing_input();
+     bool is_context_capturing_mouse();
+     bool is_any_context_shown();
++    // Match a queued input that can open config. Uses the same controller
++    // profile and bindings as event dispatch; does not open or change contexts.
++    bool is_config_open_event(const SDL_Event& event);
+     ContextId try_close_current_context();
+ 
+     ContextId get_launcher_context_id();
+diff --git a/recompui/src/base/ui_state.cpp b/recompui/src/base/ui_state.cpp
+--- a/recompui/src/base/ui_state.cpp
++++ b/recompui/src/base/ui_state.cpp
+@@ -599,6 +599,18 @@
+     return recompinput::profiles::get_controller_profile_index_from_sdl_controller(controller);
+ }
+ 
++bool recompui::is_config_open_event(const SDL_Event& event) {
++    switch (event.type) {
++    case SDL_KEYDOWN:
++        return event.key.keysym.scancode == SDL_SCANCODE_ESCAPE;
++    case SDL_CONTROLLERBUTTONDOWN:
++        return check_menu_button_pressed(controller_menu_profile_index(event.cbutton.which),
++            recompinput::GameInput::TOGGLE_MENU, event.cbutton.button);
++    default:
++        return false;
++    }
++}
++
+ int cont_button_to_key(SDL_ControllerButtonEvent& button) {
+     const int profile_index = controller_menu_profile_index(button.which);
+ 
+@@ -827,27 +839,7 @@
+ 
+         // If the config menu isn't open and the game has been started and either the escape key or select button are pressed, open the config menu.
+         if (!config_was_open && ultramodern::is_game_started()) {
+-            bool open_config = false;
+-
+-            switch (cur_event.type) {
+-            case SDL_EventType::SDL_KEYDOWN:
+-                if (cur_event.key.keysym.scancode == SDL_Scancode::SDL_SCANCODE_ESCAPE) {
+-                    open_config = true;
+-                }
+-                break;
+-            case SDL_EventType::SDL_CONTROLLERBUTTONDOWN: {
+-                SDL_ControllerButtonEvent* button_event = &cur_event.cbutton;
+-                SDL_JoystickID joystick_id = button_event->which;
+-                const int profile_index = controller_menu_profile_index(joystick_id);
+-
+-                if (check_menu_button_pressed(profile_index, recompinput::GameInput::TOGGLE_MENU, cur_event.cbutton.button)) {
+-                    open_config = true;
+-                }
+-                break;
+-            }
+-            }
+-
+-            if (open_config) {
++            if (recompui::is_config_open_event(cur_event)) {
+                 recompui::config::open();
+             }
+         }

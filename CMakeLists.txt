@@ -125,6 +125,10 @@ if(BUILD_TESTING)
     target_include_directories(lambo_hud_texture_walk_tests PRIVATE src
         ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
     add_test(NAME lambo_hud_texture_walk COMMAND lambo_hud_texture_walk_tests)
+    add_executable(lambo_fog_benchmark EXCLUDE_FROM_ALL
+        tests/benchmark_fog.cpp src/lambo_fog_widescreen.cpp)
+    target_include_directories(lambo_fog_benchmark PRIVATE src
+        ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
     add_executable(lambo_hud_savestate_tests tests/test_hud_savestate.cpp
         src/lambo_graphics_task.cpp src/lambo_hud_texture_bounds.cpp
         src/lambo_fog_widescreen.cpp src/lambo_savestate.c)
