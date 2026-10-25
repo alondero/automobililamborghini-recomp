@@ -271,7 +271,10 @@ class ScenarioRunnerTests(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("RT task 60 capture rejected", completed.stdout)
         environment = json.loads((artifact / "harness-environment.json").read_text())
-        self.assertEqual(environment["LAMBO_RT_CAPTURE_DIR"], str(artifact / "rt-tasks"))
+        # The harness resolves its artifact paths, so compare resolved paths:
+        # a Windows temp directory can be reached through a short 8.3 name.
+        self.assertEqual(Path(environment["LAMBO_RT_CAPTURE_DIR"]).resolve(),
+                         (artifact / "rt-tasks").resolve())
 
     def test_missing_render_capture_fails_even_with_native_success(self) -> None:
         scenario = {"schema": 1, "name": "render-capture", "headless": False,
@@ -281,7 +284,10 @@ class ScenarioRunnerTests(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("RT rendered task 60 capture rejected", completed.stdout)
         environment = json.loads((artifact / "harness-environment.json").read_text())
-        self.assertEqual(environment["LAMBO_RT_RENDER_CAPTURE_DIR"], str(artifact / "rt-render"))
+        # The harness resolves its artifact paths, so compare resolved paths:
+        # a Windows temp directory can be reached through a short 8.3 name.
+        self.assertEqual(Path(environment["LAMBO_RT_RENDER_CAPTURE_DIR"]).resolve(),
+                         (artifact / "rt-render").resolve())
 
     def test_render_diagnostic_dependencies_fail_before_launch(self) -> None:
         for diagnostics, expect in (({"rt_render_capture": True}, {}),
