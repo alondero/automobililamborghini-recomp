@@ -7,6 +7,7 @@
 #include <cstring>
 #include <vector>
 #include "lambo_f3dex.h"
+#include "lambo_fog_widescreen.h"
 #include "lambo_graphics_task.h"
 #include "lambo_hud_texture_bounds.h"
 #include "lambo_log.h"
@@ -349,4 +350,29 @@ int main() {
         const auto result = lambo::f3dex::walk(ram, address, [](auto, auto, auto) {});
         assert(result.commands == 0);
     }
+
+    // Sparse correction tracking must cover every command slot, including the
+    // first/last bit and adjacent bits in one word. Snapshot/reset and address
+    // reuse must keep the same authored baseline as ordinary traversal.
+    lambo::FogRewriter fog;
+    fog.begin(ram);
+    for (auto offset : {0u, 8u, 0x1f8u, 0x7ffff8u}) {
+        cmd(offset, 0xbc000008, 0x64009d00);
+        fog.command(ram, offset, 0xbc000008, 0x64009d00, {false, 0.5});
+    }
+    auto normalized = memory;
+    fog.snapshot(ram, normalized.data());
+    for (auto offset : {0u, 8u, 0x1f8u, 0x7ffff8u}) {
+        assert(read(ram, offset + 4) == 0x3200ce80);
+        assert(read(normalized.data(), offset + 4) == 0x64009d00);
+    }
+    fog.command(ram, 16, 0xe7000000, 0, {false, 0.5});
+    fog.command(ram, 0, 0xe7000000, 0, {false, 0.5});
+    fog.command(ram, 0, 0xbc000008, 0x3200ce80, {false, 0.5});
+    assert(read(ram, 4) == 0x1900e740); // The reused slot gets a fresh baseline.
+    fog.command(ram, 8, 0xbc000008, 0x3200ce80, {false, 1.0});
+    assert(read(ram, 12) == 0x64009d00); // Adjacent slot retains its old baseline.
+    fog.reset(ram);
+    fog.command(ram, 0x7ffff8, 0xbc000008, 0x3200ce80, {false, 0.5});
+    assert(read(ram, 0x7ffffc) == 0x1900e740); // Reset forgets every correction.
 }

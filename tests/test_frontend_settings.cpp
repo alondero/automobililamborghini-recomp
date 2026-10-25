@@ -1,3 +1,4 @@
+#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -53,9 +54,35 @@ static uint32_t window_size_choice(const recomp::config::Config& graphics, const
 // resolver's controller bindings can be checked without a render context.
 int cont_button_to_key(SDL_ControllerButtonEvent& button);
 
+// Optional measurement of the old/new hidden-settings trigger. This excludes
+// rendering and event polling, so it measures schema work, not frame times.
+static void benchmark_hidden_settings() {
+    SDL_Event event{};
+    event.type = SDL_KEYDOWN;
+    event.key.keysym.scancode = SDL_SCANCODE_X;
+    constexpr int iterations = 10000;
+    for (bool narrowed : {false, true}) {
+        int refreshes = 0;
+        const auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < iterations; ++i) {
+            const bool refresh = narrowed ? recompui::is_config_open_event(event) :
+                (event.type == SDL_KEYDOWN && !event.key.repeat) || event.type == SDL_CONTROLLERBUTTONDOWN;
+            if (refresh) {
+                lambo::ui::refresh_frontend_settings();
+                ++refreshes;
+            }
+        }
+        const double ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - start).count();
+        std::cout << (narrowed ? "menu inputs" : "all presses") << ": " << iterations
+                  << " gameplay keydowns; refreshes=" << refreshes << " elapsed_ms=" << ms << '\n';
+    }
+}
+
 int main(int argc, char** argv) {
     try {
-        require(argc == 2, "pass an isolated test directory");
+        require(argc == 2 || (argc == 3 && std::string(argv[2]) == "--benchmark"),
+                "pass an isolated test directory, optionally followed by --benchmark");
         const std::filesystem::path path = argv[1];
         std::filesystem::create_directories(path);
         lambo::paths::set_executable_dir(path);
@@ -98,6 +125,10 @@ int main(int argc, char** argv) {
         require(!recompui::config::general::get_debug_mode_enabled(),
                 "the frontend debugger option must default off");
         recompui::config::finalize();
+        if (argc == 3) {
+            benchmark_hidden_settings();
+            return 0;
+        }
         // The hand-edited flag is what the frontend reads at startup to decide
         // whether to initialise the RmlUi debugger.
         require(recompui::config::general::get_debug_mode_enabled(),
@@ -656,6 +687,52 @@ int main(int argc, char** argv) {
         // Back has to move the action with it rather than leave it on that button.
         const int menu_profile = profiles::get_controller_profile_index_from_sdl_controller(menu_controller);
         require(menu_profile >= 0, "menu controller profile not resolved");
+
+        // The host's pre-draw refresh decision and queued menu opening share
+        // this production resolver, including both bindings and profile modes.
+        SDL_Event open_event{};
+        open_event.type = SDL_KEYDOWN;
+        open_event.key.keysym.scancode = SDL_SCANCODE_X;
+        require(!recompui::is_config_open_event(open_event), "gameplay key refreshes hidden settings");
+        open_event.key.keysym.scancode = SDL_SCANCODE_ESCAPE;
+        require(recompui::is_config_open_event(open_event), "Escape lost opening-frame refresh");
+        open_event.type = SDL_KEYUP;
+        require(!recompui::is_config_open_event(open_event), "release opens config");
+        open_event.type = SDL_CONTROLLERAXISMOTION;
+        require(!recompui::is_config_open_event(open_event), "axis motion opens config");
+        open_event.type = SDL_CONTROLLERBUTTONDOWN;
+        open_event.cbutton.which = menu_instance;
+        const auto check_open_button = [&](int button) {
+            open_event.cbutton.button = Uint8(button);
+            return recompui::is_config_open_event(open_event);
+        };
+        for (int button = 0; button < SDL_CONTROLLER_BUTTON_MAX; ++button) {
+            const auto primary = profiles::get_input_binding(menu_profile, GameInput::TOGGLE_MENU, 0);
+            const auto secondary = profiles::get_input_binding(menu_profile, GameInput::TOGGLE_MENU, 1);
+            const bool expected = (primary.input_type != InputType::None && primary.input_id == button) ||
+                (secondary.input_type != InputType::None && secondary.input_id == button);
+            require(check_open_button(button) == expected, "default menu event mismatch");
+        }
+        profiles::set_input_binding(menu_profile, GameInput::TOGGLE_MENU, 0,
+            InputField::controller_digital(SDL_CONTROLLER_BUTTON_Y));
+        profiles::set_input_binding(menu_profile, GameInput::TOGGLE_MENU, 1,
+            InputField::controller_digital(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER));
+        require(check_open_button(SDL_CONTROLLER_BUTTON_Y), "primary remap lost refresh");
+        require(check_open_button(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER), "secondary remap lost refresh");
+        require(!check_open_button(SDL_CONTROLLER_BUTTON_BACK), "old binding still refreshes");
+        open_event.cbutton.which = 9999;
+        require(!check_open_button(SDL_CONTROLLER_BUTTON_Y), "unknown multiplayer pad opens config");
+        players::set_single_player_mode(true);
+        const int single_profile = profiles::get_sp_controller_profile_index();
+        for (int button = 0; button < SDL_CONTROLLER_BUTTON_MAX; ++button) {
+            const auto primary = profiles::get_input_binding(single_profile, GameInput::TOGGLE_MENU, 0);
+            const auto secondary = profiles::get_input_binding(single_profile, GameInput::TOGGLE_MENU, 1);
+            const bool expected = (primary.input_type != InputType::None && primary.input_id == button) ||
+                (secondary.input_type != InputType::None && secondary.input_id == button);
+            require(check_open_button(button) == expected, "single-player profile resolution changed");
+        }
+        players::set_single_player_mode(false);
+        profiles::reset_input_binding(menu_profile, InputDevice::Controller, GameInput::TOGGLE_MENU);
         SDL_ControllerButtonEvent back_button{};
         back_button.which = menu_instance;
         back_button.button = SDL_CONTROLLER_BUTTON_WEST;

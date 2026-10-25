@@ -250,11 +250,10 @@ void install_render_hooks() {
 bool handle_event(const SDL_Event& event) {
     // SDL owns dropped text; the shared installer owns file-drop payloads.
     if (event.type == SDL_DROPTEXT) { SDL_free(event.drop.file); return true; }
-    // RecompFrontend can open settings from a remapped menu binding inside
-    // draw_hook, after the host request check. Refresh ahead of those queued
-    // presses so the opening frame uses current values. Coalesce presses and
-    // leave held input, motion and idle gameplay on the cheap path.
-    if ((event.type == SDL_KEYDOWN && !event.key.repeat) || event.type == SDL_CONTROLLERBUTTONDOWN)
+    // RecompFrontend opens config while draining queued events in draw_hook.
+    // Ask its own resolver before queueing so remapped menu presses refresh
+    // the opening frame without charging ordinary gameplay buttons.
+    if (!(event.type == SDL_KEYDOWN && event.key.repeat) && recompui::is_config_open_event(event))
         settings_refresh_requested.store(true, std::memory_order_release);
     SDL_Event copy = event;
     recompinput::handle_event(copy);

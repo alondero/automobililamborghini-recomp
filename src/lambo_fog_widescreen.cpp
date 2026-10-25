@@ -37,6 +37,7 @@ void lambo::FogRewriter::begin(const uint8_t* ram) {
 
 void lambo::FogRewriter::reset(const uint8_t* ram) {
     words.clear();
+    corrected.reset();
     memory_identity = reinterpret_cast<uintptr_t>(ram);
 }
 
@@ -57,7 +58,10 @@ void lambo::FogRewriter::command(uint8_t* ram, uint32_t offset, uint32_t w0, uin
     const bool position = (w0 >> 24) == 0xbc && (w0 & 255) == 8;
     if (!position && (w0 >> 24) != 0xf8) {
         // A rebuilt arena can reuse the address for another command entirely.
-        if (!words.empty()) words.erase(offset);
+        if (!words.empty() && corrected[offset / 8]) {
+            words.erase(offset);
+            corrected[offset / 8] = false;
+        }
         return;
     }
     auto previous = words.find(offset);
@@ -74,9 +78,13 @@ void lambo::FogRewriter::command(uint8_t* ram, uint32_t offset, uint32_t w0, uin
         value = policy.match_1p ? FOG_RGB_1P | (authored & 255) : authored;
     }
     if (value == authored) {
-        if (previous != words.end()) words.erase(previous);
+        if (previous != words.end()) {
+            words.erase(previous);
+            corrected[offset / 8] = false;
+        }
     } else {
         words.insert_or_assign(offset, Word{w0, authored, value});
+        corrected[offset / 8] = true;
     }
     if (value != w1) f3dex::write(ram, offset + 4, value);
 }

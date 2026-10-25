@@ -308,6 +308,13 @@ context, so this is a patch-content check, not a played confirmation.
 `lambo_frontend_settings_tests` covers the binding side: that the pressing
 controller's default and remapped Back both produce the Back menu action. A
 controller playthrough is still the only way to confirm the prompt visually.
+The same fixture checks the menu-opening query used for hidden settings
+refresh: Escape, both menu bindings, remapping, single-player and multiplayer
+profile resolution, unknown devices, and unrelated gameplay inputs. Pass an
+isolated data directory followed by `--benchmark` to measure the old and new
+refresh triggers instead of running assertions. `lambo_fog_benchmark` is a
+separate opt-in target for correction-table lookup cost. These measurements
+do not replace a rendered menu or fog check; see [Performance](performance.md).
 
 ## End-to-end scenario
 

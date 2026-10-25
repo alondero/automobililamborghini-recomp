@@ -17,9 +17,9 @@ for less work.
 | --- | --- | --- | --- |
 | 1 | Optional low-hardware preset | Defaults select window-scaled rendering, MSAA2X, display-rate presentation, expanded geometry and 1.5x draw distance. Reduce pixels, samples, presentations and scenery together. | Implemented in Graphics, with Apply/Discard. |
 | 2 | Capture drawing/camera environment overrides at startup | `lambo_config.cpp` previously searched the environment at every `no_lod`, draw-distance, fog and camera read, and parsed numeric overrides repeatedly. Drawing invokes several of these getters inside loops. | Implemented; live JSON-backed settings retain their atomics. |
-| 3 | Skip hidden settings synchronisation | `lambo_frontend.cpp::render` refreshed the whole settings schema on every presentation, including ordinary gameplay. This includes string construction/lookups, variants, and the player-name mutex. | Implemented; hidden idle/motion frames skip refresh, but any key/controller-button press still triggers it. |
+| 3 | Skip hidden settings synchronisation | `lambo_frontend.cpp::render` refreshed the whole settings schema on every presentation, including ordinary gameplay. This includes string construction/lookups, variants, and the player-name mutex. | Implemented; hidden gameplay inputs skip refresh too. Menu-opening events use the frontend's own resolver. |
 | 4 | Cache synthesized visibility rows | `lambo_no_lod.cpp` builds a row on each viewport walk; the policy scans the track records again even when the camera segment has not changed. | [Issue 266](https://github.com/alondero/automobililamborghini-recomp/issues/266). Track reload, savestate, Track Lab and viewport invalidation are essential. |
-| 5 | Remove the separate active-fog display-list walk | `lambo_fog_widescreen.cpp::rewrite` walks commands and nested lists before RT64 walks them again. The normal 1P/2P identity path already skips this. | [Issue 267](https://github.com/alondero/automobililamborghini-recomp/issues/267). Target custom fog and 3P/4P; preserve segmented addressing and avoid cumulative scaling. |
+| 5 | Reduce fog preparation work | The earlier renderer-side rewrite is now part of the shared HUD/fog producer walk. Active custom fog still made sparse correction-table lookups for unrelated commands. | A private correction bitmap skips unrelated lookups; authored-word tracking and restoration remain intact. [Issue 267](https://github.com/alondero/automobililamborghini-recomp/issues/267) records the original traversal proposal. |
 | 6 | Control rendering against a frame budget | Auto resolution and Display interpolation follow output demands, including high-resolution/high-refresh displays. Original resolutions and Manual refresh already exist. | [Issue 268](https://github.com/alondero/automobililamborghini-recomp/issues/268). Measure CPU/GPU separately before adaptive resolution or a presentation ceiling. |
 | 7 | Reduce Windows guest-memory commit further | Patch 0012 already avoids committing the 4 GiB reservation, but the runtime still commits a 512 MiB accessible prefix on Windows. This is commit charge, not a measured physical working set. | [Issue 269](https://github.com/alondero/automobililamborghini-recomp/issues/269). Audit runtime/mod allocations and guards before smaller or demand commitment. |
 | 8 | Evaluate PGO and selective LTO | Release optimisation is already enabled. No root PGO/IPO workflow exists. Generated functions deliberately preserve patchable, distinct entrypoints for mods. | [Issue 270](https://github.com/alondero/automobililamborghini-recomp/issues/270). Train representative replays and prove hook identity and floating-point behavior. |
@@ -56,12 +56,15 @@ stored settings, and an active environment override retains precedence.
 
 Only port settings synchronisation is skipped while hidden. The frontend's
 draw/event processing still runs so queued context opens and prompts work.
-Refresh happens before a requested open, on every non-repeat keydown or
-controller-button press (any may open settings through a remapped binding),
-and while a context captures input; existing protection for pending text/graphics
-edits is retained. Ordinary gameplay button presses still pay for a schema
-refresh. Narrowing this trigger to actual menu bindings remains follow-up work
-([issue 274](https://github.com/alondero/automobililamborghini-recomp/issues/274)).
+Refresh happens before a requested open, before a queued Escape or mapped
+controller menu press, and while a context captures input. Existing protection
+for pending text/graphics edits is retained. The host and frontend dispatch use
+the same read-only menu-event resolver, supplied by patch 0040. This retains
+both controller bindings, the single-player profile and multiplayer device
+profiles without copying the binding rules into the port. Repeated keydowns,
+releases, axes and unrelated gameplay presses do not request hidden refreshes.
+F1 and Android menu requests still use the explicit page-request path.
+This addresses [issue 274](https://github.com/alondero/automobililamborghini-recomp/issues/274).
 
 ## Measurement and verification
 
@@ -145,3 +148,95 @@ acceleration structures. RT developer overrides are cached on first use and
 disabled RT skips unused settings preparation. The linked evidence separates
 GPU shadow-pass savings from whole-frame performance and records validation
 and hardware limits.
+
+## Gameplay CPU review (2026-10-25)
+
+The review began at `127e9c5`. Two focused changes preserve the existing
+features and their defaults:
+
+- Hidden settings refresh uses the same menu-event query as frontend dispatch.
+  The query owns controller-profile resolution and both menu bindings. The port
+  keeps ownership of refresh timing, explicit page requests and pending edits.
+- Fog preparation keeps its sparse authored-word table, with a private bitmap
+  of corrected command slots. Non-fog commands consult the table only when their
+  own slot has a correction. The index costs 128 KiB, retains no guest pointers,
+  and resets with the table on memory changes or loads. Empty-table gameplay
+  retains its original early exit. Fog policy, fixed-point scaling, shared-list
+  idempotence, address-reuse invalidation and snapshot normalization are unchanged.
+
+The native settings fixture has an opt-in measurement mode:
+
+~~~text
+build/lambo_frontend_settings_tests artifacts/settings-benchmark --benchmark
+cmake --build build --target lambo_fog_benchmark
+build/lambo_fog_benchmark
+~~~
+
+The first command compares the old and new hidden-refresh triggers for 10,000
+unrelated gameplay keydowns using the production settings schema. The second
+fixture submits 20 million non-fog commands with either an empty correction
+table or one persistent fog correction. It isolates correction-table lookup
+cost, without display-list traversal or rendering. Neither fixture measures
+game-wide FPS. For fog comparisons, compile the same benchmark against the
+matching `.h` and `.cpp` from `127e9c5`, with the baseline header first on the
+include path, and the same compiler and `-O3 -DNDEBUG` options.
+
+Windows measurements used MinGW GCC 15.2.0 and a Ryzen 9 3900X. Compilation
+and game runs had stopped; baseline/current fog samples were interleaved.
+
+| Workload | Baseline median (ms) | Current median (ms) |
+| --- | --- | --- |
+| 20 million non-fog commands, empty table | 73.55 | 69.90 |
+| 20 million non-fog commands, custom fog | 119.47 | 72.27 |
+| 10,000 unrelated keydowns, settings trigger | 13.32 | 0.024 |
+
+Each median uses three samples. Custom-fog lookup time fell about 40% in this
+fixture, or about 47 microseconds per synthetic 20,000-command frame. The
+settings comparison performs 10,000 refreshes before and zero after; it does
+not measure the controller-profile lookup or menu-opening frames. These are
+small isolated CPU savings, not a measured whole-game speedup or a hardware
+minimum. Neither change reduces geometry, fog quality, resolution or effects.
+
+Verification on this checkout:
+
+- `./build.ps1 -PreserveSubmodules`: Release build passed with freshly generated
+  USA game and RSP output; no generated inputs or dependency pins changed.
+- `cmake --build build --target lambo_host_tests lambo_fog_benchmark -j 4`
+  and `ctest --test-dir build --output-on-failure`: all 73 CTest checks passed.
+  This includes the frontend resolver, fog walk and fresh-process save/load
+  regressions. The added index tests cover both end slots, adjacent slots,
+  reused commands and reset.
+- `python -m unittest discover tests`: 229 tests ran successfully, with ten
+  prerequisite skips (four Japanese-ROM checks and six NumPy-dependent shadow
+  capture checks).
+- `python tools/check_docs.py`, `python tools/check_patch_series.py`,
+  `python tools/check_branch.py --base origin/main --worktree`, and
+  `git diff --check`: passed.
+- `python tools/run_game_scenario.py scenarios/harness-smoke.json`: headless
+  run passed with 600/600 replay frames, 601 swaps, movement and a capture.
+- `python tools/run_game_scenario.py scenarios/frontend-rt64-smoke.json`:
+  Windows D3D12 on an RTX 3080 passed with 600/600 replay frames and 601 swaps.
+  The same scenario with its isolated graphics fixture seeded to
+  `fog_scale: 0.5` and `widescreen_fog_match: false` also passed. The runner's
+  fixture-staging step supplied these extra fields; the checked-in scenario
+  schema does not expose fog controls.
+- `python tools/run_game_scenario.py scenarios/repeated-reset.json`: D3D12
+  menu/reset acceptance passed, including cancelling a reset and completing two
+  resets in the same process. This exercises UI callbacks, not physical inputs.
+- Independent standards and behavior reviews found no remaining findings.
+
+ROM-backed checks used the USA input with SHA-256
+`CAB2467684A58BC19C787423D704A961AA497629763367D9FE691172DE58591C`.
+Generated output, ROM data, profiles and captures remain ignored. Logs and
+scenario reports are local under `scratch/` and `artifacts/`. Physical
+controller menu navigation, pixel equivalence, a full lap, four-player game
+performance, Linux, Vulkan and Android were not verified in this review.
+
+A separate synthetic visibility prototype compared uncached row construction
+with validation of every segment's renderability and reuse of an unchanged row.
+At 55 segments, one million uncached rows took 149 ms and validation/reuse took
+72 ms, with equal checksums. That is about 0.15 versus 0.07 microseconds per
+row on this workstation. This does not establish the cost across actual tracks,
+nor implement all cache invalidations. The small absolute saving did not justify
+adding a persistent visibility cache in this session. Full replay profiling
+remains the next step for [issue 266](https://github.com/alondero/automobililamborghini-recomp/issues/266).
