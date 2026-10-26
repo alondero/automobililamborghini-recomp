@@ -51,6 +51,15 @@ class PatchSeriesTests(unittest.TestCase):
         self.assertEqual(personal.read_text(), "keep me\n")
         self.assertEqual(self.git("diff", "--cached"), b"")
 
+    def test_following_patches_are_recognized_but_left_for_cmake(self):
+        prefix, following = self.patches
+        android.apply_patch_series(self.repo, [prefix], [following])
+        self.assertEqual(self.file.read_text(), "desktop\n")
+        self.git("apply", str(following))
+        android.apply_patch_series(self.repo, [prefix], [following])
+        self.assertEqual(self.file.read_text(), "android\n")
+        self.assertEqual(self.git("diff", "--cached"), b"")
+
     def test_conflict_is_reported_without_modifying_index_or_files(self):
         self.file.write_text("my conflicting edit\n")
         self.git("add", ".")

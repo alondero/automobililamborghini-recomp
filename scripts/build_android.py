@@ -22,13 +22,19 @@ PATCHES = {
     "lib/rt64": ["0006", "0009", "0010", "0011", "0013"],
     "lib/rt64/src/contrib/plume": ["0014"],
 }
+# CMake owns application of these patches. Source preparation must also
+# recognize their composed states, since they change the script prefix's hunks.
+# tools/check_patch_series.py checks this list against the actual CMake order.
+CMAKE_PATCHES = {
+    "lib/rt64": ["0021", "0022", "0024", "0025", "0026", "0027", "0029", "0030", "0033", "0038", "0039", "0042"],
+}
 
 
 def run(*args, cwd=ROOT):
     subprocess.run([str(a) for a in args], cwd=cwd, check=True)
 
 
-def apply_patch_series(directory, patches):
+def apply_patch_series(directory, patches, following_patches=()):
     # Later patches can change earlier hunks. Validate the composed result,
     # using a temporary index without modifying the user's index or files.
     git = ["git", "-C", str(directory)]
@@ -36,7 +42,8 @@ def apply_patch_series(directory, patches):
         environment = dict(os.environ, GIT_INDEX_FILE=str(Path(temporary) / "index"))
         subprocess.run(git + ["read-tree", "HEAD"], env=environment, check=True)
         trees = [subprocess.check_output(git + ["write-tree"], env=environment).decode().strip()]
-        for patch in patches:
+        required = len(patches)
+        for patch in [*patches, *following_patches]:
             subprocess.run(git + ["apply", "--cached", "--ignore-whitespace", str(patch)], env=environment, check=True)
             trees.append(subprocess.check_output(git + ["write-tree"], env=environment).decode().strip())
         prefix = Path(temporary) / "prefix.patch"
@@ -44,11 +51,20 @@ def apply_patch_series(directory, patches):
         command = git + ["apply", "--ignore-whitespace"]
         for index in range(len(trees) - 1, -1, -1):
             prefix.write_bytes(subprocess.check_output(git + ["diff", "--binary", trees[0], trees[index]]))
-            remaining.write_bytes(subprocess.check_output(git + ["diff", "--binary", trees[index], trees[-1]]))
             prefix_present = index == 0 or subprocess.run(command + ["--reverse", "--check", str(prefix)], capture_output=True).returncode == 0
             if prefix_present:
-                if index == len(trees) - 1:
+                # Validate the entire composed prefix, rather than trusting a
+                # later patch marker that could hide missing or edited hunks.
+                if following_patches and index < len(trees) - 1:
+                    # A damaged later patch must not look like an earlier
+                    # valid state. Check the missing suffix without applying it.
+                    remaining.write_bytes(subprocess.check_output(git + ["diff", "--binary", trees[index], trees[-1]]))
+                    if subprocess.run(command + ["--check", str(remaining)], capture_output=True).returncode != 0:
+                        continue
+                if index >= required:
                     break
+                # Leave the shared suffix for CMake on clean/partial builds.
+                remaining.write_bytes(subprocess.check_output(git + ["diff", "--binary", trees[index], trees[required]]))
                 if subprocess.run(command + ["--check", str(remaining)], capture_output=True).returncode == 0:
                     run(*command, remaining)
                     break
@@ -60,10 +76,10 @@ def prepare_sources():
     run("git", "submodule", "update", "--init", "--recursive")
     for submodule, numbers in PATCHES.items():
         patches = []
-        for number in numbers:
+        for number in numbers + CMAKE_PATCHES.get(submodule, []):
             patch, = (ROOT / "patches").glob(f"{number}-*.patch")
             patches.append(patch)
-        apply_patch_series(ROOT / submodule, patches)
+        apply_patch_series(ROOT / submodule, patches[:len(numbers)], patches[len(numbers):])
     for name, (url, revision) in DEPS.items():
         destination = WORK / "deps" / name
         if not destination.exists():

@@ -256,12 +256,17 @@ workaround, and this result does not claim a validation-clean renderer.
 Long play sessions and other system-driver versions remain untested.
 The remaining validation errors are tracked in
 [issue 350](https://github.com/alondero/automobililamborghini-recomp/issues/350).
-Repeating the full Android source-preparation script on an already composed
-RT64 checkout can reject its own patch state; this was reproduced without
-0042 and is tracked in
-[issue 351](https://github.com/alondero/automobililamborghini-recomp/issues/351).
 The candidate used the successful initial clean build followed by incremental
-CMake compilation and packaging.
+CMake compilation and packaging. At that point, repeating source preparation
+rejected the composed RT64 patches, including without 0042
+([issue 351](https://github.com/alondero/automobililamborghini-recomp/issues/351)).
+Source preparation now validates the full composed Android and shared CMake
+series in a temporary Git index. It recognizes each shared patch prefix and
+leaves those patches for CMake to apply on a clean build. Conflicting edits
+to patch hunks still fail; existing files and the real index are preserved
+when the composed series is already present. ROM-free patch replay tests
+cover repeat preparation and conflict rejection. This preparation fix has
+not been verified with an APK build or a device run.
 
 ## Build locally
 
