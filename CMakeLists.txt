@@ -39,6 +39,7 @@ set(N64MR ${CMAKE_CURRENT_SOURCE_DIR}/lib/N64ModernRuntime)
 include(cmake/Frontend.cmake)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0023-plume-texture-readback.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0028-plume-d3d12-pipeline-failure.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0041-plume-variable-descriptor-pool-retry.patch)
 # Later RT64 patches change earlier patches' context. Recognize the newest
 # applied patch first, then replay only what is missing.
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check

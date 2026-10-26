@@ -89,8 +89,11 @@ selection; compare their timestamps with the failed launch.
 
 [Issue 329](https://github.com/alondero/automobililamborghini-recomp/issues/329)
 reports system-driver exits with status 1 and Turnip black screens or an ANR on
-an Adreno 730 device running Android 15. The root cause remains unverified.
-The supplied logcat lacks native startup diagnostics. The shared
+an Adreno 730 device running Android 15. The v0.10.0 diagnostic exports identify
+descriptor-pool exhaustion followed by a native crash with the system driver.
+Patch 0041 retries the variable descriptor allocation with a larger pool; see
+the [investigation below](#adreno-descriptor-pool-investigation). The Turnip
+ANR remains a separate, unresolved failure. The shared
 `AHardwareBuffer` format-allocation errors also occur during successful startup
 on the older Adreno 650 test phone; they do not establish a missing Vulkan
 feature or the cause of the hang.
@@ -108,6 +111,76 @@ For a useful report, export immediately after each driver test and name the
 driver and time of the attempt. A system-driver exit and a Turnip ANR need
 separate captures. A UI-thread stack in `HardwareRenderer` identifies where
 the UI waited; it does not by itself identify the underlying driver fault.
+
+### Adreno descriptor-pool investigation
+
+The two ZIPs attached to issue 329 were reviewed on 2026-10-26. Both report
+v0.10.0 on the Xiaomi `diting` device, Android 15. Match the logs to their
+timestamps: historical exits and crashes are also included.
+
+- The first export selects Turnip v25.3.0-R11. Its native output names
+  `Turnip Adreno (TM) 725`, vendor `0x5143`, version `0x6402063`. Process
+  14108 starts at 23:33:41 UTC and ends in an ANR. Its retained trace shows
+  Android's UI thread waiting for HWUI. HWUI's RenderThread and RT64 Present
+  both wait on priority-inheritance mutexes in Qualcomm gralloc. Present's
+  call chain includes `AHardwareBuffer_isSupported` and Turnip's
+  `vk_android_get_ahb_image_properties`. RT64 Idle is inside
+  `kgsl_queue_submit`. This locates the graphics-buffer stall but does not
+  identify the lock owner or prove a fix. It is not evidence of a missing
+  scalar-layout feature.
+- The second export selects the system driver. Process 14830 starts at
+  23:34:27 UTC. Its output names `Adreno (TM) 730`, vendor `0x5143`, version
+  `0x8026705f`. Three allocations fail with `0xC4642878`, signed decimal
+  `-1000069000`: `VK_ERROR_OUT_OF_POOL_MEMORY`. The subsequent SIGSEGV is
+  captured by the native handler, which exits with status 1. Thus Android's
+  `EXIT_SELF` record does not mean the launch ended without a native fault.
+
+Plume sizes a variable descriptor binding's pool to the requested count, while
+its layout declares a larger upper bound. Some Adreno drivers account the
+upper bound against the pool. An independent
+[Castlevania port patch](https://github.com/sergiomanzur/cvlod_recomp/blob/master/patches/plume.patch)
+documents the same allocation failure. The original Plume code also returns a
+set object after allocation failure, allowing callers to pass a null set to
+the driver.
+
+Patch 0041 keeps the small pool on the first attempt. Only a variable-count
+allocation returning `VK_ERROR_OUT_OF_POOL_MEMORY`, with a requested count
+below the layout capacity, gets a fresh pool sized for that capacity. The
+retry preserves the layout and requested count and accumulates other bindings
+of the same descriptor type. A persistent failure stops immediately with a
+flushed diagnostic instead of continuing with the failed set.
+
+The ROM-free regression compiles Plume's real constructor and pool builder
+against a recording Vulkan boundary. The driver model charges layout capacity
+and reproduces the same hexadecimal error before the fix; the retry passes.
+It also covers ordinary driver allocation, fixed tables, zero and nonzero
+variable counts, persistent failure, and failure at full capacity. Run:
+
+```sh
+python -m unittest tests.test_vulkan_descriptor_pool -v
+```
+
+This establishes the allocation workaround in isolation. The Xiaomi's system
+driver still needs a device retest, and the Turnip gralloc stall is not fixed
+by this patch. A separate SM-T720 / Android 11 / Adreno 615 baseline check with
+the unmodified v0.10.0 APK stayed black and repeatedly logged
+`VK_ERROR_DEVICE_LOST`; it did not reproduce descriptor-pool exhaustion.
+The locally rebuilt APK with 0041 displayed the opening screen, then also
+lost the device and produced incomplete title graphics on that system driver
+(`0x801f6000`, Qualcomm build `4fb6cde`, dated 2020-12-15). This is a separate
+failure tracked in [issue 345](https://github.com/alondero/automobililamborghini-recomp/issues/345),
+not a successful validation of the pool retry.
+
+On the same tablet with Turnip v25.3.0-R11 (`0x6402063`), the patched APK
+reached an attract race and its touch Menu button opened the settings overlay.
+No Vulkan allocation, submission or fence error appeared in the captured
+native output. The driver library and selection were staged in the debug
+app's private files using ADB; this check does not validate the ZIP importer.
+Neither driver logged the pool-retry message, so the Xiaomi's allocation
+workaround remains validated by the host fixture rather than this tablet.
+The APK was built on Windows with the supported Android build script, NDK
+28.2.13676358, CMake 3.22.1, MinGW host tools and JBR 21.0.9; generated USA
+and RSP output was freshly created. No modified generated output was committed.
 
 ## Build locally
 

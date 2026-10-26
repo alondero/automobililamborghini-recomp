@@ -43,13 +43,14 @@ checks its changes rather than rechecking every historical file.
 ## Continuous integration
 
 The Host checks workflow runs on every push and pull request. It installs NumPy,
-initializes the pinned RT64 checkout, checks the complete branch diff, then runs:
+initializes the pinned RT64 and Plume checkouts, checks the complete branch diff,
+then runs:
 
 ~~~text
-python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture
+python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool
 ~~~
 
-Skipping a test in either required module, or failing to discover the module,
+Skipping a test in a required module, or failing to discover the module,
 fails the job. ROM-dependent tests may still skip: public pull requests do not
 receive the private ROM. Locally,
 `--require-all` requires every Python test, including ROM checks, to execute.
