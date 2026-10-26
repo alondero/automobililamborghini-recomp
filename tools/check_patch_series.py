@@ -21,13 +21,17 @@ def resolve_patch(root, number):
     return matches[0]
 
 
+def android_series(root, name):
+    tree = ast.parse((root / "scripts/build_android.py").read_text(encoding="utf-8"))
+    return next(ast.literal_eval(node.value) for node in tree.body
+                if isinstance(node, ast.Assign)
+                and any(isinstance(target, ast.Name) and target.id == name
+                        for target in node.targets))
+
+
 def script_series(root, platform):
     if platform == "android":
-        tree = ast.parse((root / "scripts/build_android.py").read_text(encoding="utf-8"))
-        numbers = next(ast.literal_eval(node.value) for node in tree.body
-                       if isinstance(node, ast.Assign)
-                       and any(isinstance(target, ast.Name) and target.id == "PATCHES"
-                               for target in node.targets))
+        numbers = android_series(root, "PATCHES")
         return {directory: [resolve_patch(root, number).name for number in series]
                 for directory, series in numbers.items()}
     if platform == "windows":
@@ -56,6 +60,9 @@ def validate(root=ROOT):
     actual = re.findall(r'lambo_frontend_patch\("\$\{CMAKE_CURRENT_SOURCE_DIR\}/lib/rt64"\s+(\d{4})-[^\s)]+\)', source)
     if actual != CMAKE_SERIES:
         raise ValueError(f"CMake RT64 replay matrix {CMAKE_SERIES} != build order {actual}")
+    recognized = android_series(root, "CMAKE_PATCHES").get("lib/rt64", [])
+    if recognized != actual:
+        raise ValueError(f"Android recognized CMake series {recognized} != build order {actual}")
     for path in (root / "CMakeLists.txt", root / "cmake/Frontend.cmake"):
         wired.update(re.findall(r'lambo_frontend_patch\("[^"\n]+"\s+([^\s)]+\.patch)\)',
                                 path.read_text(encoding="utf-8")))

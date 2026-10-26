@@ -87,12 +87,27 @@ and checks that every patch has a build application site. CI uses
 `--apply-script linux` to prepare a clean checkout before its first CMake
 configure, without needing a ROM. This command refuses conflicting changes.
 The replay matrix lives in `tools/check_patch_series.py`; its platform orders
-must match the supported build inputs.
+must match the supported build inputs. The checker also verifies Android's
+recognized CMake suffix against the shared application order. Android source
+preparation replays that suffix in a temporary index to recognize an already
+composed checkout without relying on a later patch marker.
+
+~~~text
+python -m unittest tests.test_android_build tests.test_patch_composability tests.test_patch_wiring -v
+~~~
+
+The real-patch tests repeat preparation after each shared CMake patch,
+including the complete series before and after 0042. They check source and
+index preservation with staged, unstaged and untracked edits, and rejection
+of conflicting early and late patch edits even when a later marker or older
+composed state still matches.
+No ROM, Android SDK or device is needed; initialize `lib/rt64` first.
 
 Skip counts depend on the environment. `ShadowCaptureTests` skips its six tests
-when NumPy is unavailable. `PatchCompositionTests` skips three platform replay
-tests without an initialized RT64 submodule. The HUD gitlink audit additionally
-skips in a source archive without the top-level `.git` metadata; in a Git
+when NumPy is unavailable. `PatchCompositionTests` skips the platform replay
+and Android preparation tests without an initialized RT64 submodule. The HUD
+gitlink audit additionally skips in a source archive without the top-level
+`.git` metadata; in a Git
 checkout, a changed RT64 pin still fails the audit. Use `python -m unittest
 discover tests -v` to see each skipped test and its reason.
 

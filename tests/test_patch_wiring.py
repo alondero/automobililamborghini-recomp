@@ -42,6 +42,13 @@ class PatchWiringChecks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unwired=.*9999-unwired.patch'):
             validate(self.root)
 
+    def test_android_composed_series_drift_fails(self):
+        path = self.root / 'scripts/build_android.py'
+        source = path.read_text(encoding='utf-8').replace('"0038", "0039", "0042"', '"0038", "0039"', 1)
+        path.write_text(source, encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'Android recognized CMake series'):
+            validate(self.root)
+
     def test_removed_shared_patch_fails(self):
         (self.root / 'patches/0037-recompfrontend-optional-ui-debugger.patch').unlink()
         with self.assertRaisesRegex(ValueError, 'missing=.*0037'):
