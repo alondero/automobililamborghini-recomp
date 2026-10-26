@@ -319,7 +319,7 @@ Verification on this checkout:
 - `./build.ps1` from reset submodules: Release build passed with the
   regenerated patch 0001 and freshly generated USA output. `ctest --test-dir
   build`: all 75 checks passed.
-- `python -m unittest discover tests`: 235 tests ran successfully, with four
+- `python -m unittest discover tests`: 236 tests ran successfully, with four
   Japanese-ROM skips. `python tools/check_docs.py`,
   `python tools/check_patch_series.py`,
   `python tools/check_branch.py --base origin/main --worktree` and
