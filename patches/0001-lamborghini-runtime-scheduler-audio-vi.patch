@@ -31,6 +31,67 @@ index e0d367e..cc52950 100644
  }
  
  extern "C" void __osDisableInt_recomp(uint8_t * rdram, recomp_context * ctx) {
+diff --git a/ultramodern/include/ultramodern/dp_pacing.hpp b/ultramodern/include/ultramodern/dp_pacing.hpp
+new file mode 100644
+index 0000000..36e4b1f
+--- /dev/null
++++ b/ultramodern/include/ultramodern/dp_pacing.hpp
+@@ -0,0 +1,55 @@
++#ifndef __ULTRAMODERN_DP_PACING_HPP__
++#define __ULTRAMODERN_DP_PACING_HPP__
++
++#include <atomic>
++#include <cstdint>
++
++namespace ultramodern {
++    // Local patch (lamborghini #58): RDP completion paced like hardware. The RDP never
++    // finishes inside the retrace that submitted its task, so completion waits for a later
++    // retrace; once one has passed, it completes as soon as the renderer finishes. Only one
++    // graphics task is in flight (the osScheduler holds the next until DP completion).
++    //
++    // Only the VI thread signals completion. External messages from different threads are
++    // not delivered in order, and DP completion must follow the retrace message after which
++    // it happened, or the game would start its next frame one retrace early.
++    class DpCompletionPacer {
++    public:
++        explicit DpCompletionPacer(const std::atomic<uint64_t>& vi_ticks) : vi_ticks_(vi_ticks) {}
++
++        // Game thread: a graphics task was submitted during the current retrace.
++        void submitted() {
++            submit_tick_.store(vi_ticks_.load());
++            finished_.store(false);
++            in_flight_.store(true);
++        }
++
++        // Graphics thread: the renderer finished the task.
++        void finished() {
++            finished_.store(true);
++        }
++
++        // VI thread: true once per task, when completion must be signalled now.
++        bool take_completion() {
++            return retrace_passed() && finished_.load() && in_flight_.exchange(false);
++        }
++
++        // VI thread: a retrace has passed and the renderer is still busy, so completion
++        // should be checked again before the next retrace.
++        bool late() const {
++            return retrace_passed() && in_flight_.load() && !finished_.load();
++        }
++
++    private:
++        bool retrace_passed() const {
++            return vi_ticks_.load() > submit_tick_.load();
++        }
++
++        const std::atomic<uint64_t>& vi_ticks_;
++        std::atomic<uint64_t> submit_tick_{0};
++        std::atomic<bool> finished_{false};
++        std::atomic<bool> in_flight_{false};
++    };
++}
++
++#endif
 diff --git a/ultramodern/include/ultramodern/ultramodern.hpp b/ultramodern/include/ultramodern/ultramodern.hpp
 index 46aea61..c9ab245 100644
 --- a/ultramodern/include/ultramodern/ultramodern.hpp
@@ -49,28 +110,34 @@ index 46aea61..c9ab245 100644
  // Thread scheduling.
  void check_running_queue(RDRAM_ARG1);
 diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
-index 518529d..bdde8e2 100644
+index 17d7a47..faa46ef 100644
 --- a/ultramodern/src/events.cpp
 +++ b/ultramodern/src/events.cpp
-@@ -50,6 +50,17 @@ struct ViState {
+@@ -16,6 +16,7 @@
+ #include "ultramodern/extensions.h"
+ 
+ #include "ultramodern/rsp.hpp"
++#include "ultramodern/dp_pacing.hpp"
+ #include "ultramodern/renderer_context.hpp"
+ 
+ static ultramodern::events::callbacks_t events_callbacks{};
+@@ -54,6 +55,15 @@ struct ViState {
  #define VI_STATE_BLACK 0x20
  #define VI_STATE_REPEATLINE 0x40
  
 +// Local patch (lamborghini #58, 0003): retrace-aligned DP completion. On hardware the RDP never
 +// finishes inside the retrace that submitted it, so the game's swap -> next task cycle spans two
 +// VIs (30fps for this game). An instant native send_dl erases that latency and the game free-runs
-+// (~40fps measured). The gfx thread ARMS the completion here instead of signalling it, recording
-+// the VI tick at arm time; the VI thread FIRES dp_complete() at the end of the first later tick.
-+// Only one gfx task is ever in flight (the osScheduler holds new gfx tasks until DP-done), so a
-+// single slot suffices.
++// (~40fps measured). Completion is signalled by the VI thread once a retrace has passed since
++// submission and the renderer has finished; a renderer slower than one retrace completes within
++// a millisecond of finishing instead of waiting for another retrace (see dp_pacing.hpp).
 +static std::atomic<uint64_t> lambo_vi_ticks{0};
-+static std::atomic<uint64_t> lambo_dp_armed_at_tick{0};
-+static std::atomic<bool> lambo_dp_pending{false};
++static ultramodern::DpCompletionPacer lambo_dp_pacer{lambo_vi_ticks};
 +
  static struct {
      struct {
          std::thread thread;
-@@ -174,6 +185,7 @@ extern std::atomic_bool exited;
+@@ -183,6 +193,7 @@ extern std::atomic_bool exited;
  extern moodycamel::LightweightSemaphore graphics_shutdown_ready;
  
  void set_dummy_vi(bool odd);
@@ -78,7 +145,22 @@ index 518529d..bdde8e2 100644
  
  void vi_thread_func() {
      ultramodern::set_native_thread_name("VI Thread");
-@@ -208,9 +220,18 @@ void vi_thread_func() {
+@@ -209,6 +220,14 @@ void vi_thread_func() {
+             // printf("Skipping the next VI wait\n");
+             next = std::chrono::high_resolution_clock::now();
+         }
++        // Local patch 0003: a renderer that missed the previous retrace completes within a
++        // millisecond of finishing rather than at the next retrace.
++        while (lambo_dp_pacer.late() && std::chrono::high_resolution_clock::now() + 1ms < next) {
++            ultramodern::sleep_until(std::chrono::high_resolution_clock::now() + 1ms);
++            if (lambo_dp_pacer.take_completion()) {
++                dp_complete();
++            }
++        }
+         ultramodern::sleep_until(next);
+         auto time_now = ultramodern::time_since_start();
+         // Calculate how many VIs have passed
+@@ -217,9 +236,18 @@ void vi_thread_func() {
              //printf("Skipped % " PRId64 " frames in VI interupt thread!\n", new_total_vis - total_vis - 1);
          }
          total_vis = new_total_vis;
@@ -98,39 +180,38 @@ index 518529d..bdde8e2 100644
              static bool odd = false;
              set_dummy_vi(odd);
              odd = !odd;
-@@ -246,6 +267,18 @@ void vi_thread_func() {
+@@ -257,6 +285,13 @@ void vi_thread_func() {
          if (events_callbacks.vi_callback != nullptr) {
              events_callbacks.vi_callback();
          }
 +
-+        // Local patch 0003: fire the deferred DP completion only once a full retrace boundary
-+        // has passed since it was armed (tick counter strictly greater), and only after this
-+        // tick's context promote (vi_callback above) -- both orderings mirror real RDP latency,
-+        // and the strict comparison closes the race where send_dl finishes between this tick's
-+        // retrace message and this flush point (which would otherwise complete same-tick and
-+        // let the game run 60fps).
-+        if (lambo_dp_pending.load(std::memory_order_acquire) &&
-+            lambo_vi_ticks.load(std::memory_order_relaxed) > lambo_dp_armed_at_tick.load(std::memory_order_relaxed)) {
-+            lambo_dp_pending.store(false, std::memory_order_release);
++        // Local patch 0003: signal DP completion only after this tick's retrace message and
++        // context promote (vi_callback above), so the game never sees a task submitted in this
++        // retrace complete before the retrace itself (which would let it run at 60fps).
++        if (lambo_dp_pacer.take_completion()) {
 +            dp_complete();
 +        }
      }
  }
  
-@@ -372,7 +405,12 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
+@@ -378,7 +413,8 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
                  renderer_context->send_dl(&task_action->task);
                  [[maybe_unused]] auto renderer_end = std::chrono::high_resolution_clock::now();
  
 -                dp_complete();
-+                // Local patch 0003: arm the retrace-aligned DP completion instead of signalling
-+                // it instantly (see lambo_dp_pending above). Order matters: record the arm tick
-+                // before publishing the pending flag.
-+                lambo_dp_armed_at_tick.store(lambo_vi_ticks.load(std::memory_order_relaxed),
-+                                             std::memory_order_relaxed);
-+                lambo_dp_pending.store(true, std::memory_order_release);
++                // Local patch 0003: the VI thread signals completion (see lambo_dp_pacer above).
++                lambo_dp_pacer.finished();
                  // TODO hook the parsed event up to the actual parsing point when a callback is added to RT64.
                  ultramodern::extensions::on_displaylist_parsed(displaylist);
                  ultramodern::extensions::on_displaylist_completed(displaylist);
+@@ -567,6 +603,7 @@ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
+ 
+     // Send gfx tasks to the graphics action queue
+     if (task->t.type == M_GFXTASK) {
++        lambo_dp_pacer.submitted();
+         events_context.action_queue.enqueue(SpTaskAction{ *task });
+     }
+     // Set all other tasks as the RSP task
 diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
 index 9944a02..25702b1 100644
 --- a/ultramodern/src/mesgqueue.cpp

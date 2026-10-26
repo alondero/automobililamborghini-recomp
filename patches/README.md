@@ -16,7 +16,7 @@ significant single-space lines from `git diff --check`;
 
 | Patch | Dependency | Purpose and current status |
 | --- | --- | --- |
-| 0001 | N64ModernRuntime | Scheduler dispatch, audio/VI runtime behavior, and port runtime integration. Required on desktop and Android. Separate generic runtime behavior from game policy before proposing a fix. |
+| 0001 | N64ModernRuntime | Scheduler dispatch, audio/VI runtime behavior, RDP completion pacing (`dp_pacing.hpp`), and port runtime integration. Required on desktop and Android. Separate generic runtime behavior from game policy before proposing a fix. |
 | 0004 | Plume inside RT64 | MinGW/D3D12 COM ABI struct-return compatibility. Windows-only. Compare with current Plume before proposing a generic fix. |
 | 0005 | RT64 | MinGW compiler compatibility in the texture hasher. Windows-only. Compare with current RT64 before proposing a generic fix. |
 | 0006 | RT64 | Frame-interpolation transform matching used by this port. All desktop/Android paths that use the patch series. Needs a generic reproducer before proposing a fix. |

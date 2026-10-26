@@ -49,6 +49,9 @@ screen and attract races on three tracks rendered correctly. With
 [Mesa Turnip v25.3.0-R11](https://github.com/K11MCH1/AdrenoToolsDrivers/releases/tag/v25.3.0-rc.11),
 the title, attract race, and player/car selection have been reached. Both
 drivers presented roughly 24 to 30 frames per second in the attract race.
+A Galaxy Tab S5e (Snapdragon 670, Adreno 615) on Android 11 with that Turnip
+driver presented 29 to 30 frames per second in the attract race. See
+[Android frame pacing](performance.md#android-frame-pacing-2026-10-26).
 Other GPUs and driver versions have not been validated.
 
 With the Khronos validation layer on the system driver, the only texture errors
