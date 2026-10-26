@@ -254,6 +254,14 @@ clear validation errors remain; opening settings also reported
 `VUID-vkCmdDrawIndexed-renderPass-02684`. These are outside this resolution
 workaround, and this result does not claim a validation-clean renderer.
 Long play sessions and other system-driver versions remain untested.
+The remaining validation errors are tracked in
+[issue 350](https://github.com/alondero/automobililamborghini-recomp/issues/350).
+Repeating the full Android source-preparation script on an already composed
+RT64 checkout can reject its own patch state; this was reproduced without
+0042 and is tracked in
+[issue 351](https://github.com/alondero/automobililamborghini-recomp/issues/351).
+The candidate used the successful initial clean build followed by incremental
+CMake compilation and packaging.
 
 ## Build locally
 
