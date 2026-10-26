@@ -21,8 +21,9 @@ jobs:
       - name: Initialize patch replay dependency
         run: |
           git submodule update --init --depth 1 lib/rt64
-          git -C lib/rt64 submodule update --init --depth 1 src/contrib/plume
+          git -C lib/rt64 submodule update --init --depth 1 src/contrib/plume src/contrib/dxc
+          git submodule update --init --depth 1 lib/RecompFrontend
       - name: Check complete branch diff
         run: python tools/check_branch.py --event-file "$GITHUB_EVENT_PATH" --head "$GITHUB_SHA"
       - run: python tools/check_docs.py
-      - run: python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool
+      - run: python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool --require tests.test_vulkan_clear_bounds --require tests.test_vulkan_shader_nonuniform --require tests.test_android_swapchain_format

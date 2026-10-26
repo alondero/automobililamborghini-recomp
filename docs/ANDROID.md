@@ -59,11 +59,12 @@ is limited to 2x native resolution. The normal window-sized scale loses the
 device during startup on this tablet. A compatible Turnip driver keeps the
 normal automatic scale. See the [startup investigation](#adreno-615-startup-device-loss).
 
-With the Khronos validation layer on the system driver, the only texture errors
-are that RT64's shaders declare non-uniform texture indexing without the
-matching extension. The driver accepts these shaders and renders them
-correctly on the tested phone. Other drivers without descriptor indexing may
-not. To check a device, see
+RT64's shaders declare non-uniform texture indexing, which these older drivers
+do not support. On drivers without descriptor indexing,
+[patch 0044](../patches/0044-plume-vulkan-shader-nonuniform-without-descriptor-indexing.patch)
+removes those declarations before the driver sees them. This is safe for this
+game: each draw uses the same texture index for every pixel, because the game
+never enables N64 texture LOD ([audit](no_lod_audit.md)). To check a device, see
 [Validate a driver without descriptor indexing](#validate-a-driver-without-descriptor-indexing).
 
 SDL and the renderer share an app-local Vulkan loader so they use the same driver
@@ -254,8 +255,9 @@ clear validation errors remain; opening settings also reported
 `VUID-vkCmdDrawIndexed-renderPass-02684`. These are outside this resolution
 workaround, and this result does not claim a validation-clean renderer.
 Long play sessions and other system-driver versions remain untested.
-The remaining validation errors are tracked in
-[issue 350](https://github.com/alondero/automobililamborghini-recomp/issues/350).
+Patches 0043 to 0045 later removed these validation errors
+([issue 350](https://github.com/alondero/automobililamborghini-recomp/issues/350));
+see the [validation result](#validate-a-driver-without-descriptor-indexing).
 The candidate used the successful initial clean build followed by incremental
 CMake compilation and packaging. At that point, repeating source preparation
 rejected the composed RT64 patches, including without 0042
@@ -349,12 +351,31 @@ adb logcat -c
 adb logcat -d | grep -o 'Validation [A-Za-z]*: \[ [A-Za-z0-9_-]*' | sort | uniq -c
 ```
 
-On the tested phone, the errors are `VUID-VkShaderModuleCreateInfo-pCode-08740`
-and `-08742` for the shaders' non-uniform indexing. The
-`VUID-vkCmdClearAttachments-pRects-00016` error (a clear one pixel wider than
-the render area) and storage-image format warnings come from other RT64
-passes, not the texture table. Any error that names the texture descriptor set
-is a regression. Remove the settings afterwards with
+To check the settings overlay too, select **Menu** during the attract race
+before reading the log.
+
+Result on the SM-T720 system driver (Adreno 615, `0x801f6000`) with layer
+1.3.290.0, Original2x resolution and MSAA2X, on 2026-10-26. Each run went from
+launch to the attract race, then opened settings with the touch **Menu**
+button. The baseline was the debug APK already installed, built before
+patches 0043 to 0045:
+
+| Error | Baseline | With 0043–0045 | Cause |
+| --- | --- | --- | --- |
+| `VUID-VkShaderModuleCreateInfo-pCode-08740` | 102 | 0 | Non-uniform indexing capabilities in RT64 shaders; fixed by 0044. |
+| `VUID-VkShaderModuleCreateInfo-pCode-08742` | 51 | 0 | `SPV_EXT_descriptor_indexing` in the same shaders; fixed by 0044. |
+| `VUID-vkCmdClearAttachments-pRects-00016` | 2 | 0 | A fill rectangle one pixel wider than the target: 321x241 on 320x241 and 642x482 on 640x482. Fixed by 0043. |
+| `VUID-vkCmdDrawIndexed-renderPass-02684` | 2065 | 0 | The settings overlay used a BGRA pipeline on the RGBA swap chain. Fixed by 0045. |
+
+The layer loaded in both runs. With the patches it reported no validation
+messages. Screenshots from both runs show the textured race and the settings
+overlay drawn correctly.
+Turnip bypasses Android debug layers, so Turnip was not checked this way. A
+clean validation run does not explain the device loss at automatic 6x; see the
+[startup investigation](#adreno-615-startup-device-loss).
+
+Any new error is a regression, especially one that names the texture
+descriptor set. Remove the settings afterwards with
 `adb shell settings delete global <name>` for each of the three names.
 
 ## Release signing (one-time repository setup)

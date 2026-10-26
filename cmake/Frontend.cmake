@@ -40,3 +40,4 @@ lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0032-recom
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0034-recompfrontend-live-mod-refresh.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0037-recompfrontend-optional-ui-debugger.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0040-recompfrontend-config-open-event.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend" 0045-recompfrontend-android-swap-chain-format.patch)
