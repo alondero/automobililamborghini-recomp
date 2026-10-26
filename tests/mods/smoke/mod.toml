@@ -2,10 +2,18 @@
 id = "lambo_mod_smoke"
 version = "1.0.0"
 display_name = "Mod execution smoke test"
-description = "Writes one boot-hook marker to the log. Developer test only."
+description = "Checks a boot hook, UI import and per-mod configuration. Developer test only."
 authors = ["Lamborghini Recompiled contributors"]
 game_id = "lamborghini"
 minimum_recomp_version = "0.5.0"
+
+[[manifest.config_options]]
+id = "mode"
+name = "Smoke test mode"
+description = "Selects the configuration-read marker. Does not change gameplay."
+type = "Enum"
+options = ["Default", "Override"]
+default = "Default"
 
 [inputs]
 elf_path = "../../../build/mod-smoke/smoke.elf"

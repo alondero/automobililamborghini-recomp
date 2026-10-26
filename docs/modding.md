@@ -3,6 +3,8 @@
 Status: experimental. The port uses N64ModernRuntime packages and the shared
 RecompFrontend mod manager, following Banjo and Donkey Kong Recompiled.
 See the [source comparison](mod-support-research.md).
+The [mod loader audit](mod-loader-audit.md) separates the existing loader from
+the remaining A21 APIs and the JP mods' game-specific prerequisites.
 
 ## Install and manage mods
 
@@ -97,6 +99,24 @@ bypasses replacement conflicts; authors then own the removed port behavior.
 There is no general named game-data API, game-specific event API, or guarantee
 that arbitrary guest-memory edits remain compatible with future releases.
 
+The runtime supplies per-mod enum, bool, number and string configuration.
+Declare options in `manifest.config_options`; the Mods tab renders and saves
+them under `mod_config/`. Guest code imports `recomp_get_config_u32`,
+`recomp_get_config_double` or `recomp_get_config_string` from `*` to read its
+own settings. Enum values are zero-based option indices. A persisted difficulty
+or weather choice needs no separate cartridge-save extension.
+
+Startup also registers the frontend's `recompui_*` guest UI exports. They use
+the pinned RecompFrontend API; the smoke checks import resolution and a symbolic
+root ID, not a rendered custom mod menu.
+
+The runtime's `native_libraries` manifest field can load a platform-specific
+library beside the package. Its exports use the runtime guest-context ABI and
+must declare a matching `recomp_api_version`. This is separate from a base-port
+native override: importing a native function does not replace a stock function
+until the package supplies the hook or replacement. Native module execution
+has not been verified here.
+
 CMake derives protected function metadata from the checked-in symbol and
 recompiler configuration files. Generated native functions reserve entry space
 for runtime replacement jumps and retain distinct function identities.
@@ -110,7 +130,8 @@ Guest byte order is handled by the export. Use `--verbose` to include info logs.
 ## Developer smoke package
 
 [The smoke fixture](../tests/mods/smoke/smoke.c) is original test code. It hooks
-the first game-thread entry and logs `[mod-smoke] boot hook executed` once. Building
+the first game-thread entry and logs `[mod-smoke] boot hook executed` once. It
+also calls a UI export and reads its own `mode` enum. Building
 the package needs MIPS-capable Clang, LLD, and the pinned `RecompModTool`; it does
 not need a ROM. Running it requires the matching USA ROM.
 
@@ -157,6 +178,12 @@ the same fixture with `BootIdleThread` changed to `BootLoadInitialAssets`.
 ~~~text
 python tools/check_mod_support.py --exe build/lamborghini_modern.exe --package build/mod-smoke/lambo_mod_smoke.nrm --rom "Automobili Lamborghini (USA).z64"
 ~~~
+
+Add `--check-api` with a freshly rebuilt smoke package to check the UI import,
+the default enum value, and a saved `Override` choice in a second isolated
+profile. The checker requires distinct default/override log markers, so an
+ignored configuration file fails the check. This proves loading saved choices;
+it does not exercise changing and saving a choice through the rendered UI.
 
 Add `--protected-package PATH` to check the guarded-hook variant. The checker
 requires a test executable without a `portable.txt` marker beside it. It writes

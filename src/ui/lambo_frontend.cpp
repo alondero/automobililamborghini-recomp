@@ -175,6 +175,9 @@ void set_window(SDL_Window* value) { window = value; }
 void set_startup_controller(lambo::StartupController* value) { startup = value; }
 
 void install_render_hooks() {
+    // Guest UI imports must resolve even for headless runs. The Mods tab only
+    // creates the manager; it does not register the mod-facing UI functions.
+    recompui::register_ui_exports();
     recompui::programconfig::set_program_name("Automobili Lamborghini Recompiled");
     recompui::programconfig::set_program_id(u8"LamborghiniRecomp");
     recompui::register_primary_font("LatoLatin-Regular.ttf", "LatoLatin");

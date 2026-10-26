@@ -88,6 +88,50 @@ class ModSupportTests(unittest.TestCase):
                 raise
         return result, run
 
+    def test_saved_mod_config_is_staged_in_isolated_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "smoke.nrm"
+            with zipfile.ZipFile(package, "w") as archive:
+                archive.writestr("mod.json", json.dumps({"id": "code_smoke", "version": "1.0.0"}))
+
+            def run(command, *, cwd, **kwargs):
+                saved = cwd / "LamborghiniRecomp/mod_config/code_smoke.json"
+                self.assertEqual(json.loads(saved.read_text()), {
+                    "mod_id": "code_smoke", "mod_version": "1.0.0",
+                    "storage": {"mode": "Override"},
+                })
+                return subprocess.CompletedProcess(command, 0, b"", b"")
+
+            with patch.object(checker.subprocess, "run", side_effect=run):
+                checker.run_case(root / "game", package, root / "rom", True,
+                                 mod_config={"mode": "Override"})
+
+    def test_api_checks_require_ui_and_correct_config_markers(self):
+        boot = checker.MARKER + "\ngame thread #1 started\n"
+        default = boot + checker.UI_MARKER + "\n" + checker.CONFIG_DEFAULT_MARKER
+        override = boot + checker.UI_MARKER + "\n" + checker.CONFIG_OVERRIDE_MARKER
+        cases = [
+            (default, override, 0),
+            (default.replace(checker.UI_MARKER, ""), override, 1),
+            (default.replace(checker.CONFIG_DEFAULT_MARKER, ""), override, 1),
+            (default, default, 1),  # A silently ignored saved choice must fail.
+            (default, override + "\n" + checker.CONFIG_DEFAULT_MARKER, 1),
+            (default, override + "\n" + checker.UI_MARKER, 1),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = ["checker", "--exe", str(root / "game"), "--package", str(root / "smoke.nrm"),
+                    "--rom", str(root / "rom"), "--output", str(root / "logs"), "--check-api"]
+            for default_log, override_log, expected in cases:
+                with self.subTest(default=default_log, override=override_log):
+                    results = [(0, boot), (0, "game thread #1 started"),
+                               (2, "Error loading mods:"), (0, default_log), (0, override_log)]
+                    with patch.object(sys, "argv", args), patch.object(checker, "run_case", side_effect=results) as run, contextlib.redirect_stdout(io.StringIO()):
+                        self.assertEqual(checker.main(), expected)
+                        if expected == 0:
+                            self.assertEqual(run.call_args.kwargs["mod_config"], {"mode": "Override"})
+
     def test_texture_requires_loaded_identity_and_successful_boot(self):
         good = "Loading mod texture_smoke\ngame thread #1 started\n"
         for code, output, expected in [
