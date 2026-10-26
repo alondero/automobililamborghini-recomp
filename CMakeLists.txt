@@ -105,6 +105,7 @@ if(NOT rt64_shadow_performance_patch_applied EQUAL 0)
     lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0038-rt64-sun-shadow-robust-scene.patch)
 endif()
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0039-rt64-shadow-traversal-performance.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0042-rt64-adreno-615-automatic-resolution-limit.patch)
 
 # --- RT64 renderer boundary; see patches/README.md ---
 # recomp/lib/rt64 is a pinned git submodule; RT64 is always compiled in and is the

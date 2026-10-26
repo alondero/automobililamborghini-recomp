@@ -74,7 +74,7 @@ The standard renderer fields are written by the shared runtime schema:
 
 | Key | Default or role |
 | --- | --- |
-| res_option | Auto; internal resolution follows the window. |
+| res_option | Auto; internal resolution follows the window, with a [2x limit on one Adreno 615 system driver](ANDROID.md#adreno-615-startup-device-loss). |
 | wm_option | Windowed. |
 | hr_option | Clamp16x9; HUD edge behavior in widescreen. |
 | api_option | Auto; the backend is selected at startup. |

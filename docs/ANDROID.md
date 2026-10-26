@@ -54,6 +54,11 @@ driver presented 29 to 30 frames per second in the attract race. See
 [Android frame pacing](performance.md#android-frame-pacing-2026-10-26).
 Other GPUs and driver versions have not been validated.
 
+On the SM-T720's Adreno 615 system driver `0x801f6000`, automatic resolution
+is limited to 2x native resolution. The normal window-sized scale loses the
+device during startup on this tablet. A compatible Turnip driver keeps the
+normal automatic scale. See the [startup investigation](#adreno-615-startup-device-loss).
+
 With the Khronos validation layer on the system driver, the only texture errors
 are that RT64's shaders declare non-uniform texture indexing without the
 matching extension. The driver accepts these shaders and renders them
@@ -184,6 +189,79 @@ workaround remains validated by the host fixture rather than this tablet.
 The APK was built on Windows with the supported Android build script, NDK
 28.2.13676358, CMake 3.22.1, MinGW host tools and JBR 21.0.9; generated USA
 and RSP output was freshly created. No modified generated output was committed.
+
+## Adreno 615 startup device loss
+
+Status: a resolution-dependent system-driver fault is reproduced. Patch 0042
+limits automatic resolution on the measured driver; its internal fault is
+unverified. This is separate from the descriptor-pool exhaustion above.
+
+The 2026-10-26 checks used Samsung SM-T720 / `gts4lvwifi`, Android 11,
+Adreno 615, system driver `0x801f6000` (Qualcomm build `4fb6cde`, 2020-12-15),
+and the supported USA ROM with SHA-256
+`cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c`.
+A fresh debug APK was built from `aebda1d` using the supported Android script,
+NDK 28.2.13676358, CMake 3.22.1, MinGW host tools and JBR 21.0.9.
+USA and RSP output was freshly generated. Candidate changes were rebuilt with
+CMake and packaged with `scripts/build_android.py --package-only`.
+
+Automatic resolution selected a 6x internal scale for the 2560x1438 surface
+and 320x240 VI. This was measured at the renderer's scale-selection boundary.
+The tests changed graphics settings independently of the existing user
+configuration; no texture packs or mods were active.
+
+| Driver and settings | Observed result before 0042 |
+| --- | --- |
+| System, default Auto resolution and MSAA2X | Black or incomplete startup graphics, then repeated `VK_ERROR_DEVICE_LOST`, fence timeouts and unavailable query results. Reproduced with and without validation. |
+| System, only resolution changed to Original2x | Reached an attract race with no Vulkan submission or fence errors in the capture. |
+| System, Auto with MSAA disabled | Still lost the device. |
+| System, Auto with an experimental clear-rectangle clamp | Clear validation errors disappeared; device loss remained. Experiment reverted. |
+| Turnip v25.3.0-R11, default Auto and MSAA2X | Reached an attract race without Vulkan submission or fence errors. Driver selection was staged through ADB, not the ZIP importer. |
+
+Khronos validation layer 1.3.290.0 reported unsupported shader non-uniform
+indexing (`VUID-VkShaderModuleCreateInfo-pCode-08740` and `-08742`) and
+oversized clear rectangles (`VUID-vkCmdClearAttachments-pRects-00016`).
+The latter also occur on Turnip. Neither establishes the cause of device
+loss: clipping the clears did not fix it, and the system driver also renders
+at 2x with the shader declarations unchanged. The first KGSL submission
+failure preceded the command-buffer reuse, fence reuse and descriptor-update
+validation errors. Those later errors do not explain the initial fault.
+No minimized GPU reproducer or driver debugger capture was obtained.
+
+Patch 0042 matches Android, vendor `0x5143`, version `0x801f6000`, and the exact
+name `Adreno (TM) 615`. It bounds only automatic scale to at most 2x, retains
+1x on small or unavailable surfaces, and logs the workaround at startup.
+The saved Auto setting is preserved. Explicit native/manual choices and
+supersampling keep their existing meaning; higher manual scales have not been
+validated on this driver. Other GPU/driver combinations, including Turnip,
+keep their existing automatic scale. Use a compatible Turnip driver when
+window-sized rendering is needed on this tablet.
+
+The ROM-free fixture compiles the production scale-selection switch for
+Android and desktop. It fails against the original code (`expected 2, got 6`)
+and covers the measured combination, other models/versions/vendors, Turnip,
+manual/native settings and small surfaces:
+
+```sh
+python -m unittest tests.test_android_resolution_limit tests.test_patch_composability -v
+```
+
+The candidate with 0042 reached the attract race with the system driver and
+default Auto/MSAA2X settings, both with and without validation enabled. The
+touch Menu button opened settings. Captures contained the startup workaround
+message and no Vulkan submission, fence or allocation failures. Shader and
+clear validation errors remain; opening settings also reported
+`VUID-vkCmdDrawIndexed-renderPass-02684`. These are outside this resolution
+workaround, and this result does not claim a validation-clean renderer.
+Long play sessions and other system-driver versions remain untested.
+The remaining validation errors are tracked in
+[issue 350](https://github.com/alondero/automobililamborghini-recomp/issues/350).
+Repeating the full Android source-preparation script on an already composed
+RT64 checkout can reject its own patch state; this was reproduced without
+0042 and is tracked in
+[issue 351](https://github.com/alondero/automobililamborghini-recomp/issues/351).
+The candidate used the successful initial clean build followed by incremental
+CMake compilation and packaging.
 
 ## Build locally
 
