@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-GAME_ACTIVITY = ROOT / "android/app/src/main/java/io/github/alondero/lamborghinirecomp/GameActivity.java"
+TOUCH_OVERLAY = ROOT / "android/app/src/main/java/io/github/alondero/lamborghinirecomp/TouchOverlay.java"
 MAIN_CPP = ROOT / "src/main.cpp"
 
 # Android KeyEvent constants the touch overlay can send, mapped to the SDL
@@ -24,9 +24,9 @@ ANDROID_TO_SDL = {
 
 
 def read_menu_button_keycode():
-    text = GAME_ACTIVITY.read_text(encoding="utf-8")
-    match = re.search(r'button\("Menu",\s*KeyEvent\.(KEYCODE_\w+)', text)
-    assert match is not None, "Menu button declaration not found in GameActivity"
+    text = TOUCH_OVERLAY.read_text(encoding="utf-8")
+    match = re.search(r"MENU_KEY\s*=\s*KeyEvent\.(KEYCODE_\w+)", text)
+    assert match is not None, "MENU_KEY declaration not found in TouchOverlay"
     return match.group(1)
 
 
