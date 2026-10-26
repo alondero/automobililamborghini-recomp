@@ -12,7 +12,7 @@ compatibility. The APK contains no ROM. Import your own USA cartridge dump using
 the launcher; `.z64`, `.v64`, and `.n64` byte orders are accepted and the complete
 ROM is validated before replacing an existing import.
 
-Touch controls provide steering, A/B/Z, Start, and Menu (the port settings). SDL gamepads and
+Touch controls provide a steering stick, A and B, a small C pad for the camera, Start, and Menu (the port settings, top right). Z is not shown. It is a second accelerator button in the game, so A covers it. SDL gamepads and
 keyboards use the desktop control mappings. Importing a ROM does not replace
 your saves. Configuration, Controller Pak, and logs live in app-private storage;
 uninstalling or clearing the app's data removes them. An APK update signed with

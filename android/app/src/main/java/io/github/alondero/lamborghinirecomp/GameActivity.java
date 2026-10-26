@@ -2,16 +2,13 @@ package io.github.alondero.lamborghinirecomp;
 
 import android.os.Bundle;
 import android.system.Os;
-import android.view.KeyEvent;
-import android.view.MotionEvent;
-import android.view.View;
-import android.widget.Button;
 import android.widget.RelativeLayout;
 import java.util.HashSet;
 import org.libsdl.app.SDLActivity;
 
 public final class GameActivity extends SDLActivity {
     private final HashSet<Integer> held = new HashSet<>();
+    private TouchOverlay overlay;
 
     @Override protected String[] getLibraries() { return new String[]{"c++_shared", "SDL2", "main"}; }
 
@@ -32,45 +29,16 @@ public final class GameActivity extends SDLActivity {
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         if (mLayout == null) return;
-        button("◀", KeyEvent.KEYCODE_DPAD_LEFT, 16, 90, false);
-        button("▶", KeyEvent.KEYCODE_DPAD_RIGHT, 152, 90, false);
-        button("▲", KeyEvent.KEYCODE_DPAD_UP, 84, 158, false);
-        button("▼", KeyEvent.KEYCODE_DPAD_DOWN, 84, 22, false);
-        button("A", KeyEvent.KEYCODE_X, 16, 90, true);
-        button("B", KeyEvent.KEYCODE_C, 94, 22, true);
-        button("Z", KeyEvent.KEYCODE_Z, 172, 22, true);
-        button("Start", KeyEvent.KEYCODE_ENTER, 16, 180, true);
-        // The menu toggle (F1), not Escape: the native loop toggles Settings on F1
-        // before the frontend sees it, while Escape also reaches the modal and closes it.
-        button("Menu", KeyEvent.KEYCODE_F1, 16, 260, true);
-    }
-
-    private void button(String label, int key, int x, int y, boolean right) {
-        float density = getResources().getDisplayMetrics().density;
-        Button button = new Button(this);
-        button.setText(label);
-        button.setAlpha(0.60f);
-        button.setFocusable(false);
-        RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams((int)(78*density), (int)(64*density));
-        params.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
-        params.addRule(right ? RelativeLayout.ALIGN_PARENT_RIGHT : RelativeLayout.ALIGN_PARENT_LEFT);
-        params.bottomMargin = (int)(y*density);
-        if (right) params.rightMargin = (int)(x*density); else params.leftMargin = (int)(x*density);
-        button.setOnTouchListener((view, event) -> {
-            switch (event.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
-                    held.add(key); onNativeKeyDown(key); return true;
-                case MotionEvent.ACTION_UP:
-                    held.remove(key); onNativeKeyUp(key); view.performClick(); return true;
-                case MotionEvent.ACTION_CANCEL:
-                    held.remove(key); onNativeKeyUp(key); return true;
-                default: return true;
-            }
+        overlay = new TouchOverlay(this, (key, down) -> {
+            if (down) { held.add(key); onNativeKeyDown(key); }
+            else { held.remove(key); onNativeKeyUp(key); }
         });
-        mLayout.addView(button, params);
+        mLayout.addView(overlay, new RelativeLayout.LayoutParams(
+            RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT));
     }
 
     @Override protected void onPause() {
+        if (overlay != null) overlay.reset();
         for (int key : held) onNativeKeyUp(key);
         held.clear();
         super.onPause();
