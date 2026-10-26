@@ -1,0 +1,69 @@
+diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -12,6 +12,27 @@
+ #define ENABLE_HIGH_RESOLUTION_RENDERER 1
+ 
+ namespace RT64 {
++    static bool needsAdreno615ResolutionLimit(const RenderDeviceDescription &deviceDescription) {
++#if defined(__ANDROID__)
++        // Only this system-driver combination has been reproduced. Turnip and
++        // other Adreno devices must retain their normal automatic scale.
++        return (uint32_t(deviceDescription.vendor) == 0x5143)
++            && (deviceDescription.driverVersion == 0x801f6000)
++            && (deviceDescription.name == "Adreno (TM) 615");
++#else
++        return false;
++#endif
++    }
++
++    static float automaticResolutionScale(uint32_t height, uint32_t referenceHeight, const RenderDeviceDescription &deviceDescription) {
++        float scale = (height > 0) ? std::max(float((height + referenceHeight - 1) / referenceHeight), 1.0f) : 1.0f;
++        // A 6x window scale loses the device during startup on the SM-T720's
++        // 2020 system driver; 2x reaches the attract race. This is a bounded
++        // workaround, not a diagnosis of the driver's internal GPU fault.
++        // See docs/ANDROID.md in the port for the measurements and limits.
++        return needsAdreno615ResolutionLimit(deviceDescription) ? std::min(scale, 2.0f) : scale;
++    }
++
+     // WorkloadQueue
+ 
+     WorkloadQueue::WorkloadQueue() {
+@@ -98,6 +119,11 @@
+ 
+     void WorkloadQueue::setup(const External &ext) {
+         this->ext = ext;
++        deviceDescription = ext.device->getDescription();
++        if (needsAdreno615ResolutionLimit(deviceDescription)) {
++            fprintf(stdout, "Adreno 615 system-driver workaround: automatic resolution is limited to 2x.\n");
++            fflush(stdout);
++        }
+ 
+         rspProcessor = std::make_unique<RSPProcessor>(ext.device);
+         vertexProcessor = std::make_unique<VertexProcessor>(ext.device);
+@@ -188,13 +214,7 @@
+         const auto resolutionMode = ext.sharedResources->userConfig.resolution;
+         switch (resolutionMode) {
+         case UserConfiguration::Resolution::WindowIntegerScale:
+-            if (ext.sharedResources->swapChainHeight > 0) {
+-                resolutionMultiplier = std::max(float((ext.sharedResources->swapChainHeight + referenceHeight - 1) / referenceHeight), 1.0f);
+-            }
+-            else {
+-                resolutionMultiplier = 1.0f;
+-            }
+-
++            resolutionMultiplier = automaticResolutionScale(ext.sharedResources->swapChainHeight, referenceHeight, deviceDescription);
+             break;
+         case UserConfiguration::Resolution::Manual:
+             resolutionMultiplier = float(ext.sharedResources->userConfig.resolutionMultiplier);
+diff --git a/src/hle/rt64_workload_queue.h b/src/hle/rt64_workload_queue.h
+--- a/src/hle/rt64_workload_queue.h
++++ b/src/hle/rt64_workload_queue.h
+@@ -61,6 +61,7 @@
+         };
+ 
+         External ext;
++        RenderDeviceDescription deviceDescription;
+         std::array<Workload, WORKLOAD_QUEUE_SIZE> workloads;
+         int threadCursor;
+         int writeCursor;
