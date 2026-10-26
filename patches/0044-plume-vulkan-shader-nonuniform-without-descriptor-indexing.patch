@@ -1,0 +1,95 @@
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+index 584a76a..041fac5 100644
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -1283,6 +1283,76 @@ namespace plume {
+ 
+     // VulkanShader
+ 
++    // Drivers without descriptor indexing reject shaders that declare non-uniform resource
++    // indexing. Without those declarations, an index that varies within a draw is undefined.
++    static bool removeNonUniformIndexing(const void *data, uint64_t size, std::vector<uint32_t> &code) {
++        const uint32_t SpvMagicNumber = 0x07230203;
++        const uint32_t SpvOpExtension = 10;
++        const uint32_t SpvOpCapability = 17;
++        const uint32_t SpvOpDecorate = 71;
++        const uint32_t SpvOpMemberDecorate = 72;
++        const uint32_t SpvDecorationNonUniform = 5300;
++        const uint32_t SpvCapabilityShaderNonUniform = 5301;
++        const uint32_t SpvCapabilityRuntimeDescriptorArray = 5302;
++        const uint32_t SpvCapabilityStorageTexelBufferArrayDynamicIndexing = 5305;
++        const uint32_t SpvCapabilityUniformBufferArrayNonUniformIndexing = 5306;
++        const uint32_t SpvCapabilityStorageTexelBufferArrayNonUniformIndexing = 5312;
++        const char DescriptorIndexingExtension[] = "SPV_EXT_descriptor_indexing";
++        const size_t HeaderWordCount = 5;
++
++        const size_t wordCount = size / sizeof(uint32_t);
++        if (((size % sizeof(uint32_t)) != 0) || (wordCount < HeaderWordCount)) {
++            return false;
++        }
++
++        std::vector<uint32_t> words(wordCount);
++        memcpy(words.data(), data, size);
++        if (words[0] != SpvMagicNumber) {
++            return false;
++        }
++
++        // The extension also enables runtime arrays and dynamic indexing, which stay declared.
++        bool extensionRequired = false;
++        for (size_t i = HeaderWordCount; i < wordCount; i += (words[i] >> 16)) {
++            const uint32_t instructionWordCount = words[i] >> 16;
++            if ((instructionWordCount == 0) || (instructionWordCount > (wordCount - i))) {
++                return false;
++            }
++
++            if (((words[i] & 0xFFFFU) == SpvOpCapability) && (instructionWordCount >= 2)) {
++                const uint32_t capability = words[i + 1];
++                extensionRequired |= (capability >= SpvCapabilityRuntimeDescriptorArray) && (capability <= SpvCapabilityStorageTexelBufferArrayDynamicIndexing);
++            }
++        }
++
++        code.assign(words.begin(), words.begin() + HeaderWordCount);
++        for (size_t i = HeaderWordCount; i < wordCount; i += (words[i] >> 16)) {
++            const uint32_t instructionWordCount = words[i] >> 16;
++            const uint32_t opcode = words[i] & 0xFFFFU;
++            const uint32_t *operands = words.data() + i + 1;
++            bool removed = false;
++            if ((opcode == SpvOpCapability) && (instructionWordCount >= 2)) {
++                const uint32_t capability = operands[0];
++                removed = (capability == SpvCapabilityShaderNonUniform) || ((capability >= SpvCapabilityUniformBufferArrayNonUniformIndexing) && (capability <= SpvCapabilityStorageTexelBufferArrayNonUniformIndexing));
++            }
++            else if ((opcode == SpvOpDecorate) && (instructionWordCount >= 3)) {
++                removed = (operands[1] == SpvDecorationNonUniform);
++            }
++            else if ((opcode == SpvOpMemberDecorate) && (instructionWordCount >= 4)) {
++                removed = (operands[2] == SpvDecorationNonUniform);
++            }
++            else if ((opcode == SpvOpExtension) && !extensionRequired) {
++                removed = (((instructionWordCount - 1) * sizeof(uint32_t)) >= sizeof(DescriptorIndexingExtension)) && (memcmp(operands, DescriptorIndexingExtension, sizeof(DescriptorIndexingExtension)) == 0);
++            }
++
++            if (!removed) {
++                code.insert(code.end(), words.begin() + i, words.begin() + i + instructionWordCount);
++            }
++        }
++
++        return code.size() != wordCount;
++    }
++
+     VulkanShader::VulkanShader(VulkanDevice *device, const void *data, uint64_t size, const char *entryPointName, RenderShaderFormat format) {
+         assert(device != nullptr);
+         assert(data != nullptr);
+@@ -1298,6 +1368,13 @@ namespace plume {
+         shaderInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+         shaderInfo.pCode = reinterpret_cast<const uint32_t *>(data);
+         shaderInfo.codeSize = size;
++
++        std::vector<uint32_t> compatibleCode;
++        if (!device->capabilities.descriptorIndexing && removeNonUniformIndexing(data, size, compatibleCode)) {
++            shaderInfo.pCode = compatibleCode.data();
++            shaderInfo.codeSize = compatibleCode.size() * sizeof(uint32_t);
++        }
++
+         VkResult res = vkCreateShaderModule(device->vk, &shaderInfo, nullptr, &vk);
+         if (res != VK_SUCCESS) {
+             fprintf(stderr, "vkCreateShaderModule failed with error code 0x%X.\n", res);

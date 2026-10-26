@@ -1,0 +1,50 @@
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+index 85a88ae..584a76a 100644
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -3136,11 +3136,21 @@ namespace plume {
+ 
+         if (clearRectsCount > 0) {
+             for (uint32_t i = 0; i < clearRectsCount; i++) {
++                // Vulkan requires clear rectangles inside the render area. Callers may pass
++                // larger ones, such as RT64's inclusive N64 fill rectangles.
++                const int32_t left = std::max(clearRects[i].left, 0);
++                const int32_t top = std::max(clearRects[i].top, 0);
++                const int32_t right = std::min(clearRects[i].right, int32_t(width));
++                const int32_t bottom = std::min(clearRects[i].bottom, int32_t(height));
++                if ((right <= left) || (bottom <= top)) {
++                    continue;
++                }
++
+                 VkClearRect clearRect;
+-                clearRect.rect.offset.x = clearRects[i].left;
+-                clearRect.rect.offset.y = clearRects[i].top;
+-                clearRect.rect.extent.width = clearRects[i].right - clearRects[i].left;
+-                clearRect.rect.extent.height = clearRects[i].bottom - clearRects[i].top;
++                clearRect.rect.offset.x = left;
++                clearRect.rect.offset.y = top;
++                clearRect.rect.extent.width = right - left;
++                clearRect.rect.extent.height = bottom - top;
+                 clearRect.baseArrayLayer = 0;
+                 clearRect.layerCount = 1;
+                 rectVector.emplace_back(clearRect);
+@@ -3167,6 +3177,9 @@ namespace plume {
+ 
+         thread_local std::vector<VkClearRect> rectVector;
+         clearCommonRectVector(targetFramebuffer->getWidth(), targetFramebuffer->getHeight(), clearRects, clearRectsCount, rectVector);
++        if (rectVector.empty()) {
++            return;
++        }
+ 
+         VkClearAttachment attachment = {};
+         auto &rgba = attachment.clearValue.color.float32;
+@@ -3187,6 +3200,9 @@ namespace plume {
+ 
+         thread_local std::vector<VkClearRect> rectVector;
+         clearCommonRectVector(targetFramebuffer->getWidth(), targetFramebuffer->getHeight(), clearRects, clearRectsCount, rectVector);
++        if (rectVector.empty()) {
++            return;
++        }
+ 
+         VkClearAttachment attachment = {};
+         attachment.clearValue.depthStencil.depth = depthValue;
