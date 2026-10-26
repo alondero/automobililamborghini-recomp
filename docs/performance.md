@@ -240,3 +240,100 @@ row on this workstation. This does not establish the cost across actual tracks,
 nor implement all cache invalidations. The small absolute saving did not justify
 adding a persistent visibility cache in this session. Full replay profiling
 remains the next step for [issue 266](https://github.com/alondero/automobililamborghini-recomp/issues/266).
+
+## Android frame pacing (2026-10-26)
+
+The review began at `d1ab307`. It used a Samsung Galaxy Tab S5e (`SM-T720`,
+Snapdragon 670, Adreno 615, Android 11) with Mesa Turnip v25.3.0-R11 and the
+tester's own graphics settings. The attract race showed 20 frames per second.
+The game targets 30, one frame every two vertical retraces (VIs).
+
+The cause was frame pacing, not a lack of CPU or GPU capacity:
+
+- The runtime reported RDP (N64 graphics processor) completion at the first
+  retrace after the renderer finished. On hardware the RDP finishes during the
+  retrace after submission, so the game starts its next frame two retraces
+  later. On the tablet, RT64's display-list processing (`send_dl`) took about
+  21 ms of wall time. It finished just after the next retrace, so completion
+  waited for a third retrace: 20 frames per second.
+- Only about 8 ms of that time was CPU work. The rest was waiting for the CPU:
+  about 14 involuntary pre-emptions per frame. The game's boot thread
+  (`BootLoadInitialAssets`) polls two message queues without blocking. On
+  hardware nothing lower-priority may run there. Natively, the loop occupied a
+  whole fast core and competed with the renderer.
+
+Two changes keep the game's timing:
+
+- Patch 0001's `DpCompletionPacer` still never completes a graphics task within
+  the retrace that submitted it, so fast machines remain at 30 frames per
+  second. Once that retrace has passed, a busy renderer completes within about a
+  millisecond of finishing. Only the VI thread signals completion, so it stays
+  after its retrace message; external messages from different threads are not
+  delivered in order.
+- A hook at the loop's back-edge (`0x80001CA4`) waits up to 1 ms for the next
+  external message when both queues are empty. Only an interrupt-style message
+  can fill either queue while the boot thread holds the guest CPU.
+
+The idle hook alone made `send_dl` slower: the CPU governor lowered the fast
+cores' clock and the renderer moved to the small cores. Pinning the graphics
+thread to the fast cores made it worse. The pacing change gave the gain.
+
+| Attract race, original settings | Before | After |
+| --- | --- | --- |
+| Presented frames per second | 20 | 29.3 to 30.0 |
+| Frames taking two VIs | 1 of 105 | 156 of 157 |
+| `send_dl` wall time (median) | 21.7 ms | 22.8 ms |
+| `send_dl` thread CPU time (median) | 8.3 ms | 13.2 ms |
+| Involuntary pre-emptions per `send_dl` (median) | 14 | 1 |
+| GPU busy | not recorded | 57% to 77% |
+
+`send_dl` still takes longer than one retrace (16.7 ms). The game reaches 30
+frames per second because completion no longer waits for a retrace after the
+renderer finishes. Thread CPU time rose because the fast cores now run at a
+lower clock.
+
+Measurements used SurfaceFlinger presentation times, temporary log points in
+`events.cpp`, `simpleperf` and `atrace`. The log points are not committed.
+The second attract track measured 29.3 frames per second; 16 of 127 frames took
+three VIs. The GPU was then about 75% busy.
+
+RT64 CPU time in `send_dl` on the tablet, from `simpleperf`:
+
+| Work | Share of `send_dl` |
+| --- | --- |
+| Framebuffer synchronisation (`fullSync`) | 56% |
+| TMEM loads replayed per draw (`loadBlockOperation`) | 19.6% |
+| TMEM hashing (XXH3) | 11% |
+| Triangle and vertex processing | about 15% |
+
+A word-at-a-time TMEM (texture memory) copy for aligned, non-RGBA32, non-TLUT
+loads matched the byte loop on 4,194,304 cases. It ran 2.4 times faster on the
+tablet's Cortex-A75 in an isolated benchmark. It is not applied. Texture hashes
+define texture-pack identity, so a hashing change must keep every value.
+
+Verification on this checkout:
+
+- Unit tests failed before the changes and passed after:
+  `lambo_dp_completion_pacing` covers early, late and repeated completion;
+  `lambo_main_loop_idle` covers both queues and the empty-queue wait.
+- `./build.ps1` from reset submodules: Release build passed with the
+  regenerated patch 0001 and freshly generated USA output. `ctest --test-dir
+  build`: all 75 checks passed.
+- `python -m unittest discover tests`: 235 tests ran successfully, with four
+  Japanese-ROM skips. `python tools/check_docs.py`,
+  `python tools/check_patch_series.py`,
+  `python tools/check_branch.py --base origin/main --worktree` and
+  `git diff --check`: passed.
+- Desktop pacing is unchanged. `harness-smoke.json` passed with 1257 VIs for
+  601 swaps, and `frontend-rt64-smoke.json` (D3D12) with 1246 VIs for 601
+  swaps. Both match earlier runs at two VIs per frame.
+- `scripts/build_android.py` from reset submodules built a debug APK without
+  the log points. On the tablet the attract race presented 29.5 frames per
+  second with the GPU 67% to 74% busy. A screenshot showed it rendering
+  correctly.
+
+Not verified: a full 16-car player race, four-player performance, other
+Android devices, Linux and a measured energy saving. The Japanese
+configuration's USA-input digest was updated with the generator's digest
+function, because the Japanese ROM was not available. Hooks are not carried to
+the Japanese configuration, so no other generated line changes.

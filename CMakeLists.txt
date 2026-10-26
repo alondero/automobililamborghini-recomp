@@ -486,6 +486,18 @@ if(BUILD_TESTING)
     target_include_directories(lambo_driving_assists_tests PRIVATE src)
     add_test(NAME lambo_input_driving_assists COMMAND lambo_driving_assists_tests)
 
+    add_executable(lambo_main_loop_idle_tests tests/test_main_loop_idle.cpp src/lambo_main_loop_idle.cpp)
+    target_include_directories(lambo_main_loop_idle_tests PRIVATE src
+        ${N64MR}/ultramodern/include
+        ${N64MR}/thirdparty
+        ${N64MR}/thirdparty/concurrentqueue)
+    add_test(NAME lambo_main_loop_idle COMMAND lambo_main_loop_idle_tests)
+
+    # dp_pacing.hpp is added by patches/0001.
+    add_executable(lambo_dp_completion_pacing_tests tests/test_dp_completion_pacing.cpp)
+    target_include_directories(lambo_dp_completion_pacing_tests PRIVATE ${N64MR}/ultramodern/include)
+    add_test(NAME lambo_dp_completion_pacing COMMAND lambo_dp_completion_pacing_tests)
+
     add_executable(lambo_input_replay_tests
         tests/test_lambo_replay.cpp
         src/lambo_replay.cpp
@@ -885,6 +897,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/ui/lambo_frontend_settings.cpp
         src/ui/lambo_frontend_input.cpp
         src/lambo_driving_assists.cpp
+        src/lambo_main_loop_idle.cpp
         src/lambo_crash.cpp    # native crash backtrace: Win32 EXCEPTION_POINTERS +
                                # POSIX sigaction handler printing KSEG0/RDRAM offset + a 32-entry
                                # function-lookup trace ring. No deps beyond libc + DbgHelp (Win) /

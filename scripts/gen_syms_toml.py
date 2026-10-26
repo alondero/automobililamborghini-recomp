@@ -1082,6 +1082,13 @@ func = "BootLoadInitialAssets"
 before_vram = 0x8000193C
 text = "{ extern void lambo_driving_assists_tick(uint8_t*); extern void lambo_replay_input_tick(uint8_t*); lambo_driving_assists_tick(rdram); lambo_replay_input_tick(rdram); }"
 
+# The dispatch loop's back-edge: both message queues were polled. On hardware the thread
+# spins here; natively wait for the next external message instead of occupying a core.
+[[patches.hook]]
+func = "BootLoadInitialAssets"
+before_vram = 0x80001CA4
+text = "{ extern void lambo_main_loop_idle(uint8_t*); lambo_main_loop_idle(rdram); }"
+
 # Issue #128 — true analog throttle. Capture the pedal demand immediately before the
 # stock human-driver A/Z branch, then apply the selected native port's continuous target
 # at the common merge. The two hooks preserve the ROM's +/-10 pedal ramp, including exact
