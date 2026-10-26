@@ -1,0 +1,46 @@
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -12,6 +12,7 @@
+ 
+ #include <algorithm>
+ #include <cmath>
++#include <cstdlib>
+ #include <climits>
+ #include <unordered_map>
+ 
+@@ -1930,8 +1931,32 @@
+         }
+ 
+         VkResult res = vkAllocateDescriptorSets(device->vk, &allocateInfo, &vk);
++        if ((res == VK_ERROR_OUT_OF_POOL_MEMORY) && desc.lastRangeIsBoundless) {
++            const RenderDescriptorRange &lastRange = desc.descriptorRanges[desc.descriptorRangesCount - 1];
++            if (boundlessRangeSize < lastRange.count) {
++                // Some Adreno drivers charge the declared layout capacity to the pool,
++                // even for a smaller variable-count allocation. Retry with that capacity
++                // while keeping the requested descriptor count and set layout unchanged.
++                fprintf(stderr, "Vulkan descriptor pool exhausted; retrying with layout capacity %u (requested %u).\n",
++                    lastRange.count, boundlessRangeSize);
++                vkDestroyDescriptorPool(device->vk, descriptorPool, nullptr);
++                typeCounts[toVk(lastRange.type)] += lastRange.count - boundlessRangeSize;
++                descriptorPool = createDescriptorPool(device, typeCounts, true);
++                vk = VK_NULL_HANDLE;
++                if (descriptorPool != VK_NULL_HANDLE) {
++                    allocateInfo.descriptorPool = descriptorPool;
++                    res = vkAllocateDescriptorSets(device->vk, &allocateInfo, &vk);
++                }
++            }
++        }
++
+         if (res != VK_SUCCESS) {
+-            fprintf(stderr, "vkAllocateDescriptorSets failed with error code 0x%X.\n", res);
+-            return;
++            fprintf(stderr, "vkAllocateDescriptorSets failed with error code 0x%X (%d); variable=%u, requested=%u.\n",
++                res, int(res), unsigned(desc.lastRangeIsBoundless), boundlessRangeSize);
++            // Callers immediately populate and bind the set. Continuing with a null
++            // handle crashes inside the driver and hides the allocation failure.
++            fprintf(stderr, "Vulkan descriptor set allocation failed; cannot continue.\n");
++            fflush(stderr);
++            std::abort();
+         }
+     }

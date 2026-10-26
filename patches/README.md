@@ -53,8 +53,28 @@ significant single-space lines from `git diff --check`;
 | 0038 | RT64 | Makes the sunlight shadow scene robust to view and light. Static scenery, moving casters and remembered static scenery build separate bottom-level structures under instance masks `0x1`, `0x2` and `0x4`, each reading its own metadata. The receiver pass fades the sun shadow where scenery hides most of the sky, adds a short-range contact shadow from moving casters, and takes an occluder mask so a light the art already bakes (tunnel lamps) is blocked by moving casters only. `SunShadowStaticCache` remembers triangles whose exact world positions repeat in nearby tasks and traces those the view no longer presents, so shadows no longer change with the camera; drawn copies are left out so no triangle is traced twice. Debug views show transmission, open sky, contact, and what the remembered scenery changes. Applied by CMake after 0033; configure recognizes 0038 first. Generic renderer behaviour, kept local. Compared 2026-10-22 with RT64 upstream `main` at `de343a53c703f2fc7fdd64ac6ff9e5a3f41e66f3`, whose tree has no shadow source (only `src/shared/rt64_raytracing_params.h`), so there is nothing to upstream against. The tuning defaults (`radius=400`, `keepTasks=300`, `maxTriangles=131072`) are in renderer units measured on this game's tracks. Host tests cover the cache, the D3D12 probe covers masks, the static layer and its rebuild on an RTX 3080, and recorded laps on all six circuits stay on the traced path for every race task. |
 | 0039 | RT64 | Reduces shadow traversal work without changing quality settings. Builds the small shadow acceleration structures for fast tracing, and evaluates sky fading after the first blocked sunlight sample so enclosed receivers skip the remaining soft-shadow rays. The original visibility-only kernel retains its exact-face and alpha-coverage contract. Applied by shared CMake after 0038; CMake and Windows preserve mode recognize 0039 first. Compared on 2026-10-24 with upstream `main` at `d9817c68ffd7328cd0af383af124971489366e18`, whose tree contains no SunShadow sources. GPU probes compare sky-faded occlusion against the ungated calculation, including a closed tunnel at every ray quality. Measurements and limits are in [RT shadows](../docs/rt-shadows.md). |
 | 0040 | RecompFrontend | Extracts the existing config-open event test into a read-only query shared by frontend dispatch and the port's pre-draw settings refresh. Ordinary gameplay presses avoid schema work; Escape and both remapped menu buttons retain opening-frame freshness. Applied by CMake after 0037. Compared 2026-10-25 with the pinned source and [upstream main](https://github.com/N64Recomp/RecompFrontend/blob/main/recompui/src/base/ui_state.cpp), which keep the test inside event dispatch and expose no query in recompui.h. No upstream issue is opened. The native frontend settings fixture covers keyboard events, both controller bindings, remapping, single-player and multiplayer profiles, and unknown devices. |
+| 0041 | Plume inside RT64 | Retries variable descriptor-pool exhaustion using the declared layout capacity; stops on persistent allocation failure. Applied by shared CMake. See the comparison and tests below. |
 
 ## Application matrix
+
+Patch 0041 (`0041-plume-variable-descriptor-pool-retry.patch`) changes Plume's
+Vulkan descriptor allocation on every platform through shared CMake. A
+variable-count pool exhaustion gets one retry using the layout's declared
+capacity, preserving the requested count. Other allocations keep their small
+pools. A persistent allocation failure logs and stops before callers can use
+the failed set. See the [Android investigation](../docs/ANDROID.md#adreno-descriptor-pool-investigation)
+and `tests/test_vulkan_descriptor_pool.py` for the captured failure and the
+recording-driver regression.
+
+Compared on 2026-10-26 with pinned Plume `51b1ad4` and
+[upstream main](https://github.com/renderbag/plume/blob/main/plume_vulkan.cpp):
+both size variable pools to the requested count and return after allocation
+failure. The independent
+[Castlevania port patch](https://github.com/sergiomanzur/cvlod_recomp/blob/master/patches/plume.patch)
+instead always reserves the layout capacity. This port retries only when the
+driver reports pool exhaustion, preserving normal allocation cost. No upstream
+issue was opened. The failure model is tested without a GPU; the reporting
+Xiaomi device and its separate Turnip ANR remain unverified on the fix.
 
 Run `python tools/check_patch_series.py` after changing the patch stack. It
 checks that each patch is wired into a build path and that the RT64 replay
