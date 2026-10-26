@@ -12,9 +12,13 @@ import zipfile
 
 MARKER = "[mod-smoke] boot hook executed"
 TEXTURE_ID = "texture_smoke"
+UI_MARKER = "[mod-smoke] UI import executed"
+CONFIG_DEFAULT_MARKER = "[mod-smoke] config default read"
+CONFIG_OVERRIDE_MARKER = "[mod-smoke] config override read"
 
 
-def run_case(executable, package, rom, enabled, minimum_version=None, *, texture=False):
+def run_case(executable, package, rom, enabled, minimum_version=None, *, texture=False,
+             mod_config=None):
     with tempfile.TemporaryDirectory(prefix="lambo-mod-") as directory:
         root = Path(directory)
         config = root / "LamborghiniRecomp"
@@ -37,6 +41,13 @@ def run_case(executable, package, rom, enabled, minimum_version=None, *, texture
                                 else source.read(entry.filename))
                         output.writestr(entry, data)
             mod_id = manifest["id"]
+        if mod_config is not None:
+            settings = config / "mod_config"
+            settings.mkdir()
+            (settings / f"{mod_id}.json").write_text(json.dumps({
+                "mod_id": mod_id, "mod_version": manifest["version"],
+                "storage": mod_config,
+            }), encoding="utf-8")
         (config / "mods.json").write_text(json.dumps({
             "enabled_mods": [mod_id] if enabled else [], "mod_order": [mod_id],
         }), encoding="utf-8")
@@ -62,6 +73,8 @@ def main():
     parser.add_argument("--exe", required=True, type=Path)
     parser.add_argument("--package", required=True, type=Path)
     parser.add_argument("--protected-package", type=Path)
+    parser.add_argument("--check-api", action="store_true",
+                        help="check the current smoke fixture's UI import and default/persisted config reads")
     parser.add_argument("--texture-package", type=Path,
                         help="optional RT64 .rtz with rt64.json and no mod.json")
     parser.add_argument("--rom", required=True, type=Path)
@@ -102,6 +115,19 @@ def main():
         print(f"{'PASS' if passed else 'FAIL'} {name}: exit={code}, markers={output.count(MARKER)}")
         if not passed:
             return 1
+    if args.check_api:
+        for name, settings, expected_marker, absent_marker in (
+                ("api-default", None, CONFIG_DEFAULT_MARKER, CONFIG_OVERRIDE_MARKER),
+                ("api-config-override", {"mode": "Override"}, CONFIG_OVERRIDE_MARKER, CONFIG_DEFAULT_MARKER)):
+            code, output = run_case(executable, package, rom, True, mod_config=settings)
+            (args.output / f"{name}.log").write_text(output, encoding="utf-8")
+            passed = (code == 0 and output.count(MARKER) == 1
+                      and output.count(UI_MARKER) == 1 and output.count(expected_marker) == 1
+                      and absent_marker not in output and "game thread #1 started" in output
+                      and "Error loading mods:" not in output)
+            print(f"{'PASS' if passed else 'FAIL'} {name}: exit={code}")
+            if not passed:
+                return 1
     if args.texture_package:
         code, output = run_case(executable, args.texture_package.resolve(), rom, True,
                                 texture=True)

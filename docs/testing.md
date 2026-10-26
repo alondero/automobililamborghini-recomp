@@ -126,6 +126,11 @@ rendered texture replacement. `tests/test_check_mod_support.py` checks the
 runner's staging, isolation, and rejection of incomplete or skipped load logs
 without a ROM.
 
+Add `--check-api` with the rebuilt smoke package to exercise a frontend guest
+import and default/persisted per-mod configuration reads. See
+[the smoke package contract](modding.md#developer-smoke-package). These cases
+run headlessly and do not prove rendered mod UI or native-library execution.
+
 The native `lambo_frontend_settings` fixture works only with the virtual
 controllers it attaches. It keeps physical controllers out of its own process
 by setting SDL hints before SDL starts, so it passes with a gamepad connected
