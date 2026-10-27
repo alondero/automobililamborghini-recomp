@@ -279,6 +279,69 @@ setting. A thread whose `syscall` file still cannot be read is marked
 without the dumpable flag. Before the fix that case reproduced the Xiaomi
 output; it now names the holder. Verified on a Pixel 5, Android 13.
 
+### SDL surface callback logs
+
+The game window is a Vulkan window. Pinned SDL 2 still ran OpenGL work for it.
+On Android's UI thread, each surface change tried to create an EGL surface,
+and each surface loss waited, up to 490 ms, for the game thread to release an
+EGL context. On the game thread, each pause and resume backed up and restored
+a GL context. For this window the restore failed and reported a spurious
+`SDL_RENDER_DEVICE_RESET`. An EGL surface would stop Vulkan from using the
+window.
+[Patch 0048](../patches/0048-sdl-android-vulkan-surface-lifecycle.patch)
+limits all of this to OpenGL windows, as upstream SDL 3 does. See the
+[patch notes](../patches/README.md) for the upstream comparison.
+
+SDL's external-context hint is therefore not needed. It is process-wide and
+would change OpenGL handling too; the window flag scopes the change to the
+one window that is not OpenGL.
+
+To log each surface decision, set a debug property before starting the game:
+
+```sh
+adb shell setprop debug.lambo.sdl_logging video=debug
+adb logcat -s SDL:V SDL/VIDEO:D
+```
+
+The value is passed to SDL as `SDL_LOGGING`. The lines also go to
+`native-errors.log`, so a diagnostics ZIP contains them. Clear the property
+with `adb shell setprop debug.lambo.sdl_logging "''"`, or reboot.
+
+```text
+DEBUG: onNativeSurfaceChanged: window flags 0x10001625, EGL surface skipped
+DEBUG: onNativeSurfaceDestroyed: window flags 0x10001465, EGL backup wait skipped, 0 ms
+```
+
+`0x10000000` in the flags is `SDL_WINDOW_VULKAN`; an OpenGL window has `0x2`.
+
+On 2026-10-27 the Android 13 / Adreno 650 test phone with Turnip ran a cold
+start, Home and resume, and both landscape rotations. Debug APKs with and
+without the patch differed only in SDL. The window never had the OpenGL flag.
+Without the patch every surface change tried EGL and failed, because SDL had
+not loaded EGL, and every surface loss waited at most 40 ms. With the patch
+both were skipped. The game looked the same in both builds. The run details
+are in [issue 358](https://github.com/alondero/automobililamborghini-recomp/issues/358).
+
+The final patched build then ran the same steps plus screen off and on, in
+one game process. The screen-off surface loss and the surface change after
+unlocking were both skipped, like the earlier ones. The game did not crash.
+
+With the system driver, both builds crashed on the first surface loss (Home
+or screen off) with the same native backtrace. The patched build logged
+"skipped" before each crash, so the crash is not caused by this patch. A
+fix for that crash was then in review in
+[pull request 363](https://github.com/alondero/automobililamborghini-recomp/pull/363).
+
+In both builds the game area stayed black after Home and resume, while RT64
+repeated `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR` from `vkCreateSwapchainKHR`.
+Recovering the renderer after a surface loss is
+[issue 359](https://github.com/alondero/automobililamborghini-recomp/issues/359).
+
+The game thread's pause and resume steps have no log line; the host test
+covers them. Not yet tested: the issue 329 Xiaomi phone, a system-driver run
+past the first surface loss, and a release APK reading the property. Whether the old work played any part in
+issue 329's gralloc stall is unknown.
+
 ## Adreno 615 startup device loss
 
 Status: a resolution-dependent system-driver fault is reproduced. Patch 0042

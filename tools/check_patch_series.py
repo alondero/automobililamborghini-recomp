@@ -67,8 +67,7 @@ def validate(root=ROOT):
         wired.update(re.findall(r'lambo_frontend_patch\("[^"\n]+"\s+([^\s)]+\.patch)\)',
                                 path.read_text(encoding="utf-8")))
     # SDL is fetched separately by Android rather than being a port submodule.
-    android = (root / "scripts/build_android.py").read_text(encoding="utf-8")
-    wired.update(re.findall(r'ROOT / "patches/([^"\n]+\.patch)"', android))
+    wired.update(resolve_patch(root, number).name for number in android_series(root, "SDL_PATCHES"))
     patches = {path.name for path in (root / "patches").glob("*.patch")}
     if patches != wired:
         raise ValueError(f"patch wiring mismatch: unwired={sorted(patches - wired)}, missing={sorted(wired - patches)}")

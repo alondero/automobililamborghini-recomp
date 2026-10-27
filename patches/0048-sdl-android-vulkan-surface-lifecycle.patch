@@ -1,0 +1,91 @@
+diff --git a/src/core/android/SDL_android.c b/src/core/android/SDL_android.c
+index 86f272e..71b371a 100644
+--- a/src/core/android/SDL_android.c
++++ b/src/core/android/SDL_android.c
+@@ -1057,16 +1057,25 @@ JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(onNativeSurfaceChanged)(JNIEnv *env, j
+     SDL_LockMutex(Android_ActivityMutex);
+ 
+ #ifdef SDL_VIDEO_OPENGL_EGL
+-    if (Android_Window) {
++    /* As in Android_CreateWindow, an EGL surface would make a Vulkan window
++       incompatible with vkCreateAndroidSurfaceKHR */
++    if (Android_Window && (Android_Window->flags & SDL_WINDOW_OPENGL)) {
+         SDL_VideoDevice *_this = SDL_GetVideoDevice();
+         SDL_WindowData *data = (SDL_WindowData *)Android_Window->driverdata;
++        const char *action = "kept";
+ 
+         /* If the surface has been previously destroyed by onNativeSurfaceDestroyed, recreate it here */
+         if (data->egl_surface == EGL_NO_SURFACE) {
+             data->egl_surface = SDL_EGL_CreateSurface(_this, (NativeWindowType)data->native_window);
++            action = data->egl_surface != EGL_NO_SURFACE ? "created" : "failed";
+         }
++        SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "onNativeSurfaceChanged: window flags 0x%x, EGL surface %s",
++                     (unsigned int)Android_Window->flags, action);
+ 
+         /* GL Context handling is done in the event loop because this function is run from the Java thread */
++    } else if (Android_Window) {
++        SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "onNativeSurfaceChanged: window flags 0x%x, EGL surface skipped",
++                     (unsigned int)Android_Window->flags);
+     }
+ #endif
+ 
+@@ -1077,6 +1086,7 @@ JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(onNativeSurfaceChanged)(JNIEnv *env, j
+ JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(onNativeSurfaceDestroyed)(JNIEnv *env, jclass jcls)
+ {
+     int nb_attempt = 50;
++    int waited_ms = 0;
+ 
+ retry:
+ 
+@@ -1085,18 +1095,24 @@ retry:
+     if (Android_Window) {
+         SDL_VideoDevice *_this = SDL_GetVideoDevice();
+         SDL_WindowData *data = (SDL_WindowData *)Android_Window->driverdata;
++        /* Only a GL context that SDL owns must be released before its egl_surface.
++           The event loop never backs up an external context, so that wait could only time out */
++        SDL_bool backup_expected = ((Android_Window->flags & SDL_WINDOW_OPENGL) && !SDL_IsVideoContextExternal()) ? SDL_TRUE : SDL_FALSE;
+ 
+         /* Wait for Main thread being paused and context un-activated to release 'egl_surface' */
+-        if (!data->backup_done) {
++        if (backup_expected && !data->backup_done) {
+             nb_attempt -= 1;
+             if (nb_attempt == 0) {
+                 SDL_SetError("Try to release egl_surface with context probably still active");
+             } else {
+                 SDL_UnlockMutex(Android_ActivityMutex);
+                 SDL_Delay(10);
++                waited_ms += 10;
+                 goto retry;
+             }
+         }
++        SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "onNativeSurfaceDestroyed: window flags 0x%x, EGL backup wait %s, %d ms",
++                     (unsigned int)Android_Window->flags, backup_expected ? "required" : "skipped", waited_ms);
+ 
+ #ifdef SDL_VIDEO_OPENGL_EGL
+         if (data->egl_surface != EGL_NO_SURFACE) {
+diff --git a/src/video/android/SDL_androidevents.c b/src/video/android/SDL_androidevents.c
+index cbe7dd1..80e549e 100644
+--- a/src/video/android/SDL_androidevents.c
++++ b/src/video/android/SDL_androidevents.c
+@@ -70,9 +70,11 @@ static int SDL_NumberOfEvents(Uint32 type)
+ }
+ 
+ #ifdef SDL_VIDEO_OPENGL_EGL
++/* Only an OpenGL window has a context to back up and restore; for a Vulkan
++   window restore would fail and report a spurious SDL_RENDER_DEVICE_RESET */
+ static void android_egl_context_restore(SDL_Window *window)
+ {
+-    if (window) {
++    if (window && (window->flags & SDL_WINDOW_OPENGL)) {
+         SDL_Event event;
+         SDL_WindowData *data = (SDL_WindowData *)window->driverdata;
+         SDL_GL_MakeCurrent(window, NULL);
+@@ -89,7 +91,7 @@ static void android_egl_context_restore(SDL_Window *window)
+ 
+ static void android_egl_context_backup(SDL_Window *window)
+ {
+-    if (window) {
++    if (window && (window->flags & SDL_WINDOW_OPENGL)) {
+         /* Keep a copy of the EGL Context so we can try to restore it when we resume */
+         SDL_WindowData *data = (SDL_WindowData *)window->driverdata;
+         data->egl_context = SDL_GL_GetCurrentContext();

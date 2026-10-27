@@ -44,15 +44,17 @@ checks its changes rather than rechecking every historical file.
 
 The Host checks workflow runs on every push and pull request. It installs NumPy,
 initializes the pinned RT64, Plume, RT64 shader compiler and RecompFrontend
-checkouts, checks the complete branch diff, then runs:
+checkouts, fetches the pinned Android SDL source, checks the complete branch
+diff, then runs:
 
 ~~~text
-python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool --require tests.test_vulkan_clear_bounds --require tests.test_vulkan_shader_nonuniform --require tests.test_android_swapchain_format
+python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool --require tests.test_vulkan_clear_bounds --require tests.test_vulkan_shader_nonuniform --require tests.test_android_swapchain_format --require tests.test_android_sdl_surface
 ~~~
 
 Skipping a test in a required module, or failing to discover the module,
 fails the job. ROM-dependent tests may still skip: public pull requests do not
-receive the private ROM. Locally,
+receive the private ROM. To run the SDL tests locally, fetch SDL first:
+`python -c "from scripts.build_android import fetch_dependency; fetch_dependency('SDL')"`. Locally,
 `--require-all` requires every Python test, including ROM checks, to execute.
 
 Native host checks configure the port without ROM-derived output, build
