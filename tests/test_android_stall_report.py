@@ -33,7 +33,8 @@ def device_attached():
 @unittest.skipUnless(CLANG.exists(), f"NDK {NDK_VERSION} needed for the device probe")
 @unittest.skipUnless(device_attached(), "exactly one adb device needed")
 class AndroidStallReportTests(unittest.TestCase):
-    def test_report_names_priority_inheritance_holder(self):
+    @classmethod
+    def setUpClass(cls):
         with tempfile.TemporaryDirectory(prefix="lambo-stall-probe-") as temporary:
             binary = Path(temporary) / "probe"
             subprocess.run([str(CLANG), "--target=aarch64-linux-android28", "-std=c++20", "-static-libstdc++",
@@ -41,8 +42,21 @@ class AndroidStallReportTests(unittest.TestCase):
                             str(ROOT / "src/lambo_stall_report.cpp"), "-o", str(binary)],
                            check=True, capture_output=True)
             subprocess.run([ADB, "push", str(binary), REMOTE], check=True, capture_output=True)
-        self.addCleanup(subprocess.run, [ADB, "shell", "rm", "-f", REMOTE], capture_output=True)
-        result = subprocess.run([ADB, "shell", f"chmod 755 {REMOTE} && {REMOTE}"],
+
+    @classmethod
+    def tearDownClass(cls):
+        subprocess.run([ADB, "shell", "rm", "-f", REMOTE], capture_output=True)
+
+    def test_report_names_priority_inheritance_holder(self):
+        self.assertIn("dumpable after report 1", self.assert_names_holder(""))
+
+    # Issue 329: a release app is non-dumpable, so the kernel gives its owner-only
+    # /proc files (syscall, mem) to root and the report lost every lock word.
+    def test_non_dumpable_process_still_names_holder(self):
+        self.assertIn("dumpable after report 0", self.assert_names_holder("undumpable"))
+
+    def assert_names_holder(self, mode):
+        result = subprocess.run([ADB, "shell", f"chmod 755 {REMOTE} && {REMOTE} {mode}"],
                                 capture_output=True, text=True, timeout=30)
         output = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0, output)
@@ -54,6 +68,7 @@ class AndroidStallReportTests(unittest.TestCase):
         self.assertIn("futex LOCK_PI", line, output)
         self.assertIn(f"owner={holder} holder: tid {holder} 'PI Holder'", line, output)
         self.assertIn("End of present stall report.", output)
+        return output
 
 
 if __name__ == "__main__":

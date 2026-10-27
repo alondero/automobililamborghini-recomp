@@ -259,8 +259,25 @@ Run it with a single device attached:
 python -m unittest tests.test_android_stall_report -v
 ```
 
-The Xiaomi stall itself has not been reproduced locally. The next export from
-that device should name the gralloc lock holder.
+The Xiaomi stall itself has not been reproduced locally.
+
+The three v0.10.2 exports attached to issue 329 were reviewed on 2026-10-27.
+The system driver no longer exits: it logs the descriptor-pool retry, presents
+133 frames, and then stalls. Both Turnip drivers stall after 98 frames. Every
+ANR trace shows the same wait as v0.10.1. RT64 Present is rebuilding the swap
+chain and waits on the gralloc `BufferManager` lock. HWUI's RenderThread waits
+on the same lock. No other thread has gralloc on its stack.
+
+None of the three reports gave a lock word. Each line had only the thread
+name, state, CPU and wait channel. A release app is not dumpable. The kernel
+then gives root the owner-only files under `/proc/<pid>/`, such as `syscall`
+and `mem`, so the app cannot read them. The SM-T720 probe above ran as a
+dumpable `adb shell` binary and did not show this. The report now makes the
+process dumpable while it reads these files, then restores the previous
+setting. A thread whose `syscall` file still cannot be read is marked
+`syscall=unreadable`. The device test above runs the probe a second time
+without the dumpable flag. Before the fix that case reproduced the Xiaomi
+output; it now names the holder. Verified on a Pixel 5, Android 13.
 
 ## Adreno 615 startup device loss
 
