@@ -42,6 +42,7 @@ lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 00
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0041-plume-variable-descriptor-pool-retry.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0043-plume-vulkan-clear-rect-bounds.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0044-plume-vulkan-shader-nonuniform-without-descriptor-indexing.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0047-plume-vulkan-surface-capabilities.patch)
 # Later RT64 patches change earlier patches' context. Recognize the newest
 # applied patch first, then replay only what is missing.
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
