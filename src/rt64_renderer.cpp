@@ -35,6 +35,7 @@
 #include "lambo_rt_shadows.h"
 #include "lambo_rt_evidence.h"
 #include "lambo_rt_production.h"
+#include "lambo_stall_report.h"
 
 
 namespace {
@@ -526,6 +527,7 @@ public:
             else app->textureCache->loadReplacementDirectories(directories);
         }
         app->updateScreen();
+        lambo::stall::beat();
     }
 
     void shutdown() override {
@@ -647,6 +649,7 @@ create_render_context(uint8_t* rdram, ultramodern::renderer::WindowHandle window
     if (!ctx->valid()) {
         return nullptr;
     }
+    lambo::stall::start();
     return ctx;
 }
 

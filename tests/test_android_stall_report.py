@@ -1,0 +1,60 @@
+"""Run the present stall report on a connected Android device.
+
+Optional: needs NDK 28.2 and one `adb` device. The host-side decoding is
+covered by tests/test_stall_report.cpp on every platform.
+"""
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+from scripts.build_android import NDK_VERSION
+
+ROOT = Path(__file__).resolve().parents[1]
+SDK = Path(os.environ.get("ANDROID_HOME") or Path.home() / "AppData/Local/Android/Sdk")
+HOST = "windows-x86_64" if os.name == "nt" else "linux-x86_64"
+CLANG = SDK / "ndk" / NDK_VERSION / "toolchains/llvm/prebuilt" / HOST / "bin" / (
+    "clang++.exe" if os.name == "nt" else "clang++")
+ADB = shutil.which("adb") or str(SDK / "platform-tools" / ("adb.exe" if os.name == "nt" else "adb"))
+REMOTE = "/data/local/tmp/lambo_stall_report_probe"
+
+
+def device_attached():
+    try:
+        output = subprocess.run([ADB, "devices"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return len([line for line in output.splitlines()[1:] if line.endswith("\tdevice")]) == 1
+
+
+@unittest.skipUnless(CLANG.exists(), f"NDK {NDK_VERSION} needed for the device probe")
+@unittest.skipUnless(device_attached(), "exactly one adb device needed")
+class AndroidStallReportTests(unittest.TestCase):
+    def test_report_names_priority_inheritance_holder(self):
+        with tempfile.TemporaryDirectory(prefix="lambo-stall-probe-") as temporary:
+            binary = Path(temporary) / "probe"
+            subprocess.run([str(CLANG), "--target=aarch64-linux-android28", "-std=c++20", "-static-libstdc++",
+                            "-I", str(ROOT / "src"), str(ROOT / "tests/android/stall_report_probe.cpp"),
+                            str(ROOT / "src/lambo_stall_report.cpp"), "-o", str(binary)],
+                           check=True, capture_output=True)
+            subprocess.run([ADB, "push", str(binary), REMOTE], check=True, capture_output=True)
+        self.addCleanup(subprocess.run, [ADB, "shell", "rm", "-f", REMOTE], capture_output=True)
+        result = subprocess.run([ADB, "shell", f"chmod 755 {REMOTE} && {REMOTE}"],
+                                capture_output=True, text=True, timeout=30)
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, output)
+        holder = re.search(r"holder tid (\d+)", output).group(1)
+        waiter = re.search(r"waiter tid (\d+)", output).group(1)
+        self.assertIn("Present stall: no frame for 3000 ms after 1 frames.", output)
+        line = next((line for line in output.splitlines() if line.strip().startswith(f"tid {waiter} ")), "")
+        self.assertIn("'PI Waiter'", line, output)
+        self.assertIn("futex LOCK_PI", line, output)
+        self.assertIn(f"owner={holder} holder: tid {holder} 'PI Holder'", line, output)
+        self.assertIn("End of present stall report.", output)
+
+
+if __name__ == "__main__":
+    unittest.main()
