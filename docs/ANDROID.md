@@ -81,7 +81,9 @@ clear app data or reinstall before exporting.
 
 The export works in release APKs without root or `run-as`. It includes:
 
-- Native output (`native.log` and `native-errors.log`).
+- Native output (`native.log` and `native-errors.log`). If no frame is
+  presented for 3 seconds, `native-errors.log` also gets a
+  [present stall report](#present-stall-report).
 - Up to ten recent session logs and three crash reports.
 - Graphics settings and device, Android, app-version and selected-driver details.
 - On Android 11+, retained game-process exit records and up to three available
@@ -101,8 +103,11 @@ reports system-driver exits with status 1 and Turnip black screens or an ANR on
 an Adreno 730 device running Android 15. The v0.10.0 diagnostic exports identify
 descriptor-pool exhaustion followed by a native crash with the system driver.
 Patch 0041 retries the variable descriptor allocation with a larger pool; see
-the [investigation below](#adreno-descriptor-pool-investigation). The Turnip
-ANR remains a separate, unresolved failure. The shared
+the [investigation below](#adreno-descriptor-pool-investigation). The v0.10.1
+exports show that retry working: the system driver no longer crashes. All three
+tested drivers now end in the same ANR, with RT64 Present and Android's UI
+renderer waiting on a Qualcomm gralloc lock. See the
+[present stall investigation](#present-stall-report). The shared
 `AHardwareBuffer` format-allocation errors also occur during successful startup
 on the older Adreno 650 test phone; they do not establish a missing Vulkan
 feature or the cause of the hang.
@@ -190,6 +195,71 @@ workaround remains validated by the host fixture rather than this tablet.
 The APK was built on Windows with the supported Android build script, NDK
 28.2.13676358, CMake 3.22.1, MinGW host tools and JBR 21.0.9; generated USA
 and RSP output was freshly created. No modified generated output was committed.
+
+### Present stall report
+
+The three v0.10.1 exports attached to issue 329 were reviewed on 2026-10-27.
+Each reports app 0.10.1 on the Xiaomi `diting`, Android 15:
+
+| Driver | Process | Native output | Result |
+| --- | --- | --- | --- |
+| System, `0x8026705f` | 25122 | Three `Vulkan descriptor pool exhausted; retrying` lines, no crash | ANR |
+| Turnip T30, `0x6802063` | 25410 | No error | ANR |
+| Turnip v25.3.0-R11, `0x6402063` | 25641 | No error | ANR |
+
+Patch 0041's retry therefore worked on the device. The retained ANR traces
+then show the same stall for every driver:
+
+- HWUI's RenderThread waits on a priority-inheritance mutex in
+  `gralloc::BufferManager::SetMetadata`, during `eglSwapBuffers`. Android's
+  UI thread waits for that frame, so touch input times out.
+- RT64 Present waits on a priority-inheritance mutex in Qualcomm gralloc while
+  RT64 rebuilds the swap chain. With the system driver it is in
+  `vkCreateSwapchainKHR`, then `BufferManager::RetainBuffer`. With Turnip it is
+  in `AHardwareBuffer_isSupported`, then `BufferManager::AllocateBuffer`.
+- The graphics thread (`Thread-7`, `gfx_thread_func`) is runnable and had used
+  about 17.5 s of CPU. Its frames in the stripped v0.10.1 `libmain.so`
+  (build ID `995e24d2`) disassemble to RT64's
+  `PresentQueue::advanceToNextPresent`. That loop locked and unlocked
+  `cursorMutex` until Present released a queue slot.
+- No dumped thread has gralloc on its stack, so the trace does not show which
+  thread holds the lock.
+
+Two changes follow from this. Neither is shown to release the gralloc stall.
+
+[Patch 0046](../patches/0046-rt64-queue-barrier-wait.patch) makes RT64's
+present and workload producers sleep on a condition variable instead of
+spinning. A host fixture compiles the patched methods, holds each barrier for
+400 ms, and requires the producer to use under 100 ms of CPU. Before the patch
+it used 375 to 422 ms.
+
+`src/lambo_stall_report.cpp` writes a thread report to `native-errors.log`
+when no frame has been presented for 3 seconds. It writes at most three
+reports per launch. For each thread it lists name, state, CPU ticks and kernel
+wait channel. For a futex wait it also gives the lock word. For a
+priority-inheritance lock it names the holder from the lock word:
+
+```text
+Present stall: no frame for 3000 ms after 1 frames. Thread waits:
+  tid 23709 'PI Waiter' S cpu=0 wchan=rt_mutex_timed_futex_lock futex LOCK_PI 0x5ea89d5e10 word=0x80005c94 owner=23700 holder: tid 23700 'PI Holder' S cpu=0 wchan=hrtimer_nanosleep
+End of present stall report.
+```
+
+Match the holder's thread ID against `sysTid` in the ANR trace for its stack.
+`holder: not a thread of this process` means the lock word names a thread
+outside the game process. Moving the app to the background also stops frames,
+so a report then is expected.
+
+The example above is from the on-device probe on the SM-T720 (Android 11),
+where one thread holds a priority-inheritance mutex and another blocks on it.
+Run it with a single device attached:
+
+```sh
+python -m unittest tests.test_android_stall_report -v
+```
+
+The Xiaomi stall itself has not been reproduced locally. The next export from
+that device should name the gralloc lock holder.
 
 ## Adreno 615 startup device loss
 

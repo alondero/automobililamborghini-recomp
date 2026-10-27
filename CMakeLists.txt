@@ -108,6 +108,7 @@ if(NOT rt64_shadow_performance_patch_applied EQUAL 0)
 endif()
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0039-rt64-shadow-traversal-performance.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0042-rt64-adreno-615-automatic-resolution-limit.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0046-rt64-queue-barrier-wait.patch)
 
 # --- RT64 renderer boundary; see patches/README.md ---
 # recomp/lib/rt64 is a pinned git submodule; RT64 is always compiled in and is the
@@ -495,6 +496,10 @@ if(BUILD_TESTING)
         ${N64MR}/thirdparty
         ${N64MR}/thirdparty/concurrentqueue)
     add_test(NAME lambo_main_loop_idle COMMAND lambo_main_loop_idle_tests)
+
+    add_executable(lambo_stall_report_tests tests/test_stall_report.cpp src/lambo_stall_report.cpp)
+    target_include_directories(lambo_stall_report_tests PRIVATE src)
+    add_test(NAME lambo_stall_report COMMAND lambo_stall_report_tests)
 
     # dp_pacing.hpp is added by patches/0001.
     add_executable(lambo_dp_completion_pacing_tests tests/test_dp_completion_pacing.cpp)
@@ -901,6 +906,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/ui/lambo_frontend_input.cpp
         src/lambo_driving_assists.cpp
         src/lambo_main_loop_idle.cpp
+        src/lambo_stall_report.cpp  # Android present-stall thread report; see docs/ANDROID.md
         src/lambo_crash.cpp    # native crash backtrace: Win32 EXCEPTION_POINTERS +
                                # POSIX sigaction handler printing KSEG0/RDRAM offset + a 32-entry
                                # function-lookup trace ring. No deps beyond libc + DbgHelp (Win) /
