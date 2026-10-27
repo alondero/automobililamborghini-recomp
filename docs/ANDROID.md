@@ -364,7 +364,8 @@ Vulkan swap chain created: extent 2400x1080 (window 2400x1080), images 3 (reques
 The surface's current extent matched SDL's window size. The current transform
 was a 90 degree rotation (`0x2`) when the launcher had been in portrait, and
 identity (`0x1`) otherwise. The chain uses the identity transform in both
-cases, and the race rendered upright in every cold start.
+cases, and the race rendered upright in every cold start. With 0047, the
+Menu overlay also drew over the race on both drivers.
 
 | Build | Driver | Runs | Cold start | After Home and resume |
 | --- | --- | --- | --- | --- |
@@ -407,13 +408,14 @@ Vulkan swap chain created: extent 1280x720 (window 1280x720), images 3 (requeste
 
 Resizing to 1578x844 and then 778x544 each created one swap chain at the new
 size, and the race filled the window. Minimizing created none; restoring
-created one. D3D12 also rendered the attract race.
+created one. The settings overlay (F1) then drew over the race. D3D12 also
+rendered the attract race.
 
 Some desktop Vulkan starts on this PC exit before the first frame, with
 `0xC0000374` (heap corruption) or `0xC0000409`, or never present. The pinned
 build does this too. In 10 alternating cold starts of each build, the build
 without 0047 failed 7 times and the build with it failed twice. The final
-build with 0047, used for the checks above, failed 2 of 3 starts. The cause
+build with 0047, used for the checks above, failed 3 of 5 starts. The cause
 has not been found.
 
 ## Adreno 615 startup device loss
