@@ -114,6 +114,9 @@ Vulkan swap chain on every platform through shared CMake:
   `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR` and returns `VK_ERROR_OUT_OF_DATE_KHR`
   from acquire. Before this patch, one failed replacement left Plume holding
   the retired chain, so every later attempt failed the same way.
+- Without a chain, the refresh rate is reported as unknown (zero) instead of
+  being queried. RT64 reads it every frame, even after a failed resize, and
+  Android's loader dereferences the swap chain handle in that query.
 - Each creation logs the surface capabilities and the chosen extent, window
   size, image count, usage, transform, alpha, format and present mode. RT64
   retries a failed resize on every frame, so each distinct failure reason is
@@ -132,8 +135,10 @@ The Android loader behaviour above was read from
 on 2026-10-27. That loader reports inherit alpha only, extents from 1x1 to
 4096x4096 and a full usage set. The usage and transform changes therefore do
 not alter Android's request. Its current extent is the native window's default
-buffer size, not SDL's window size. The two are expected to match, but this has
-not been checked on a device. No upstream issue was opened.
+buffer size, not SDL's window size. On the tested Adreno 650 phone the two
+matched (2400x1080) with both drivers. No upstream issue was opened. Device and
+desktop results are in
+[Android swap chain checks](../docs/ANDROID.md#swap-chain-checks-issue-357).
 
 `tests/test_vulkan_swapchain.py` compiles the patched swap chain against a
 recording Vulkan boundary, without a ROM or GPU. It replaces only the
@@ -149,10 +154,14 @@ recovery, and at resize. It also covers:
 - colour-only usage and all four alpha modes;
 - transform refusal and present-mode changes;
 - too few returned images;
-- a failed replacement followed by recovery.
+- a failed replacement followed by recovery;
+- an abandoned Android surface (Home), where acquire and creation both fail
+  and RT64 keeps asking for the refresh rate.
 
-Before the patch, 15 of its 22 scenarios failed. The failed replacement
-reproduced the repeated `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR`.
+Before the patch, 15 of the first 22 scenarios failed. The failed replacement
+reproduced the repeated `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR`. The abandoned
+surface scenario was added after the first device run of the patch crashed on
+Home; it failed until the refresh-rate guard above was added.
 
 Run `python tools/check_patch_series.py` after changing the patch stack. It
 checks that each patch is wired into a build path and that the RT64 replay

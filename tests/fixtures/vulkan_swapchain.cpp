@@ -146,6 +146,7 @@ namespace driver {
     std::vector<VkSurfaceFormatKHR> formats;
     std::vector<VkPresentModeKHR> presentModes;
     VkResult createResult = VK_SUCCESS;
+    VkResult acquireResult = VK_SUCCESS;
     uint32_t extraImages = 0;
     uint32_t missingImages = 0;
     uint32_t windowWidth = 0, windowHeight = 0;
@@ -318,6 +319,7 @@ VkResult vkAcquireNextImageKHR(VkDevice, VkSwapchainKHR handle, uint64_t, VkSema
             ((chain->state == driver::State::Retired) ? "retired" : "destroyed"), (unsigned long long)handle);
         return VK_ERROR_OUT_OF_DATE_KHR;
     }
+    if (driver::acquireResult != VK_SUCCESS) return driver::acquireResult;
     *index = 0;
     return VK_SUCCESS;
 }
@@ -333,7 +335,14 @@ VkResult vkQueuePresentKHR(VkQueue, const VkPresentInfoKHR *info) {
 
 VkResult vkWaitForPresentKHR(VkDevice, VkSwapchainKHR, uint64_t, uint64_t) { return VK_SUCCESS; }
 
-VkResult vkGetRefreshCycleDurationGOOGLE(VkDevice, VkSwapchainKHR, VkRefreshCycleDurationGOOGLE *cycle) {
+// Android's loader dereferences the handle without checking it.
+VkResult vkGetRefreshCycleDurationGOOGLE(VkDevice, VkSwapchainKHR handle, VkRefreshCycleDurationGOOGLE *cycle) {
+    driver::Chain *chain = driver::find(handle);
+    if ((chain == nullptr) || (chain->state == driver::State::Destroyed)) {
+        driver::violation("refresh cycle query on %s chain %llu", (chain == nullptr) ? "unknown" : "destroyed",
+                          (unsigned long long)handle);
+        return VK_ERROR_SURFACE_LOST_KHR;
+    }
     cycle->refreshDuration = 16666667;
     return VK_SUCCESS;
 }

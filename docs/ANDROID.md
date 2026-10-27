@@ -342,6 +342,80 @@ covers them. Not yet tested: the issue 329 Xiaomi phone, a system-driver run
 past the first surface loss, and a release APK reading the property. Whether the old work played any part in
 issue 329's gralloc stall is unknown.
 
+## Swap chain checks (issue 357)
+
+[Patch 0047](../patches/0047-plume-vulkan-surface-capabilities.patch) makes
+the Vulkan swap chain follow what the surface reports. These checks ran on
+2026-10-27 on the Adreno 650 phone above (Android 13).
+
+The APK was built with `scripts/build_android.py`. The USA ROM had SHA-256
+`cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c`. The build
+regenerated `RecompiledFuncs/` and `src/aspMain.cpp` from it. The baseline APK
+was the same build with patch 0047 left out of Plume.
+
+Each run did a cold start, waited 30 s in the attract race, then pressed Home
+and resumed twice. A cold start logged this on both drivers:
+
+```text
+Vulkan surface capabilities: extent current 2400x1080 min 1x1 max 4096x4096, images min 3 max 64, transforms 0x1FF current 0x2, alpha 0x8, usage 0x9F.
+Vulkan swap chain created: extent 2400x1080 (window 2400x1080), images 3 (requested 3), usage 0x10, transform 0x1, alpha 0x8, format 37, color space 0, present mode 2.
+```
+
+The surface's current extent matched SDL's window size. The current transform
+was a 90 degree rotation (`0x2`) when the launcher had been in portrait, and
+identity (`0x1`) otherwise. The chain uses the identity transform in both
+cases, and the race rendered upright in every cold start.
+
+| Build | Driver | Runs | Cold start | After Home and resume |
+| --- | --- | --- | --- | --- |
+| Baseline | System, `0x801ea000` | 1 | Race renders | Exits after a failed `vkCreateSwapchainKHR` (`0xC4653600`) on Home; the relaunched game exited the same way on resume, logging `SIGSEGV` |
+| Baseline | Turnip v25.3.0-R11 | 1 | Race renders | Running, game area black; 134 `vkCreateSwapchainKHR` failures with `0xC46535FF` |
+| 0047 | System, `0x801ea000` | 2 | Race renders | Running, game area black; one logged `0xC4653600` refusal |
+| 0047 | Turnip v25.3.0-R11 | 2 | Race renders | Running, game area black; one logged `0xC4653600` refusal |
+
+`0xC46535FF` is `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR`: the baseline kept
+passing the retired chain as `oldSwapchain`. `0xC4653600` is
+`VK_ERROR_SURFACE_LOST_KHR`. With 0047 every retry fails because the surface
+is gone; the message is written once, but RT64 still retries every frame.
+
+The first device build of 0047 crashed on every Home with Turnip. After a
+failed replacement Plume holds no chain. RT64 still asked for the refresh rate
+each frame, and Android's loader dereferenced the empty handle. Plume now
+reports an unknown refresh rate without a chain. The host fixture's abandoned
+surface scenario reproduces this.
+
+The game area stays black after resume with either build. RT64's Vulkan
+surface belongs to the window Android destroyed on Home, so a new swap chain
+needs a new surface. That is
+[issue 359](https://github.com/alondero/automobililamborghini-recomp/issues/359).
+
+On the system driver, every cold start (baseline and 0047) wrote one present
+stall report before the first frame. RT64 Present was idle and no swap chain
+had been created yet, so it is not a swap chain wait.
+
+The Xiaomi phone from [issue 329](https://github.com/alondero/automobililamborghini-recomp/issues/329)
+was not available. Its swap chain behaviour with 0047 is unverified.
+
+The patch also changes desktop Vulkan. On Windows 11 with an NVIDIA GeForce
+RTX 3080 (driver 32.0.16.3020), a `build.ps1` build from the same ROM started
+the attract race in a 1280x720 window:
+
+```text
+Vulkan surface capabilities: extent current 1280x720 min 1280x720 max 1280x720, images min 2 max 8, transforms 0x1 current 0x1, alpha 0x3, usage 0x9F.
+Vulkan swap chain created: extent 1280x720 (window 1280x720), images 3 (requested 3), usage 0x10, transform 0x1, alpha 0x1, format 44, color space 0, present mode 2.
+```
+
+Resizing to 1578x844 and then 778x544 each created one swap chain at the new
+size, and the race filled the window. Minimizing created none; restoring
+created one. D3D12 also rendered the attract race.
+
+Some desktop Vulkan starts on this PC exit before the first frame, with
+`0xC0000374` (heap corruption) or `0xC0000409`, or never present. The pinned
+build does this too. In 10 alternating cold starts of each build, the build
+without 0047 failed 7 times and the build with it failed twice. The final
+build with 0047, used for the checks above, failed 2 of 3 starts. The cause
+has not been found.
+
 ## Adreno 615 startup device loss
 
 Status: a resolution-dependent system-driver fault is reproduced. Patch 0042

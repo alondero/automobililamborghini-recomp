@@ -20,7 +20,7 @@ SCENARIOS = (
     "variable-extent", "zero-window", "zero-surface-extent", "unbounded-count", "bounded-count",
     "minimum-count", "count-stable", "usage-color-only", "alpha-opaque", "alpha-inherit",
     "alpha-premultiplied", "alpha-postmultiplied", "transform-refusal", "replacement-failure",
-    "short-image-count", "present-mode",
+    "abandoned-surface", "short-image-count", "present-mode",
 )
 
 

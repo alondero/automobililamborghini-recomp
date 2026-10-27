@@ -20,6 +20,7 @@ struct Harness {
     VulkanCommandQueue commandQueue;
     std::unique_ptr<VulkanSwapChain> swapChain;
     bool valid = false;
+    uint32_t refreshRate = 0;
 
     explicit Harness(uint32_t textureCount) {
         device.renderInterface = &renderInterface;
@@ -38,6 +39,9 @@ struct Harness {
         if (swapChain->needsResize() || !valid) {
             valid = swapChain->resize();
         }
+        // RT64 reads the refresh rate every frame, even after a failed resize, when the
+        // device has display timing (always on Android).
+        refreshRate = swapChain->getRefreshRate();
         if (swapChain->isEmpty() || !valid) {
             return false;
         }
@@ -300,6 +304,23 @@ static void run(const std::string &scenario) {
         CHECK(liveViews.size() == h.swapChain->getTextureCount());
         h.frames(3);
         CHECK(created.size() == 2);
+    }
+    else if (scenario == "abandoned-surface") {
+        // Android Home: the surface's buffer queue is abandoned at the same window size.
+        Harness h(2);
+        CHECK(h.frame());
+        CHECK(h.refreshRate == 60);
+        acquireResult = VK_ERROR_OUT_OF_DATE_KHR;
+        createResult = VK_ERROR_SURFACE_LOST_KHR;
+        CHECK(!h.frame());
+        h.frames(5);
+        checkNoLiveChain(*h.swapChain);
+        CHECK(h.refreshRate == 0);
+        acquireResult = VK_SUCCESS;
+        createResult = VK_SUCCESS;
+        CHECK(h.frame());
+        CHECK(h.refreshRate == 60);
+        CHECK(lastCreated().oldSwapchain == VK_NULL_HANDLE);
     }
     else if (scenario == "short-image-count") {
         missingImages = 1;

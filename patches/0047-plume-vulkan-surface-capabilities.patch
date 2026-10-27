@@ -1,5 +1,5 @@
 diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
-index 041fac5..9b23f4a 100644
+index 041fac5..e24e648 100644
 --- a/plume_vulkan.cpp
 +++ b/plume_vulkan.cpp
 @@ -2175,6 +2175,27 @@ namespace plume {
@@ -348,6 +348,18 @@ index 041fac5..9b23f4a 100644
      }
  
      void VulkanSwapChain::setVsyncEnabled(bool vsyncEnabled) {
+@@ -2543,6 +2654,11 @@ namespace plume {
+     }
+ 
+     uint32_t VulkanSwapChain::getRefreshRate() const {
++        // RT64 asks every frame, including after a failed resize; Android's loader dereferences the handle.
++        if (vk == VK_NULL_HANDLE) {
++            return 0;
++        }
++
+         VkRefreshCycleDurationGOOGLE refreshCycle = {};
+         VkResult res = vkGetRefreshCycleDurationGOOGLE(commandQueue->device->vk, vk, &refreshCycle);
+         if (res != VK_SUCCESS) {
 diff --git a/plume_vulkan.h b/plume_vulkan.h
 index 0a1edbe..c007a80 100644
 --- a/plume_vulkan.h
