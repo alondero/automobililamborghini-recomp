@@ -322,14 +322,24 @@ not loaded EGL, and every surface loss waited at most 40 ms. With the patch
 both were skipped. The game looked the same in both builds. The run details
 are in [issue 358](https://github.com/alondero/automobililamborghini-recomp/issues/358).
 
+The final patched build then ran the same steps plus screen off and on, in
+one game process. The screen-off surface loss and the surface change after
+unlocking were both skipped, like the earlier ones. The game did not crash.
+
+With the system driver, both builds crashed on the first surface loss (Home
+or screen off) with the same native backtrace. The patched build logged
+"skipped" before each crash, so the crash is not caused by this patch. A
+fix for that crash was then in review in
+[pull request 363](https://github.com/alondero/automobililamborghini-recomp/pull/363).
+
 In both builds the game area stayed black after Home and resume, while RT64
 repeated `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR` from `vkCreateSwapchainKHR`.
 Recovering the renderer after a surface loss is
 [issue 359](https://github.com/alondero/automobililamborghini-recomp/issues/359).
 
 The game thread's pause and resume steps have no log line; the host test
-covers them. Not yet tested: the issue 329 Xiaomi phone, the system driver,
-and a release APK reading the property. Whether the old work played any part in
+covers them. Not yet tested: the issue 329 Xiaomi phone, a system-driver run
+past the first surface loss, and a release APK reading the property. Whether the old work played any part in
 issue 329's gralloc stall is unknown.
 
 ## Adreno 615 startup device loss
