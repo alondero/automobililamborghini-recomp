@@ -288,7 +288,7 @@ EGL context. On the game thread, each pause and resume backed up and restored
 a GL context. For this window the restore failed and reported a spurious
 `SDL_RENDER_DEVICE_RESET`. An EGL surface would stop Vulkan from using the
 window.
-[Patch 0047](../patches/0047-sdl-android-vulkan-surface-lifecycle.patch)
+[Patch 0048](../patches/0048-sdl-android-vulkan-surface-lifecycle.patch)
 limits all of this to OpenGL windows, as upstream SDL 3 does. See the
 [patch notes](../patches/README.md) for the upstream comparison.
 

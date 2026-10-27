@@ -1309,7 +1309,7 @@ int main(int argc, char** argv) {
     std::setvbuf(stderr, nullptr, _IONBF, 0);
     // Android apps get no environment from adb, so take SDL_LOGGING from a
     // debug property instead. "video=debug" logs the surface callbacks
-    // (patch 0047) to logcat; see docs/ANDROID.md.
+    // (patch 0048) to logcat; see docs/ANDROID.md.
     char sdl_logging[PROP_VALUE_MAX] = {};
     if (__system_property_get("debug.lambo.sdl_logging", sdl_logging) > 0) {
         SDL_SetHint(SDL_HINT_LOGGING, sdl_logging);

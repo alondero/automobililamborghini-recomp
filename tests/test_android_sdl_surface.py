@@ -5,7 +5,7 @@ No ROM or device needed, only the pinned SDL checkout that
 on every Android surface change, makes the UI thread wait for an EGL context
 backup on every surface loss, and backs up and restores a GL context on every
 pause and resume, whatever the window type. For a Vulkan window the restore
-fails and reports a spurious render device reset. Patch 0047 limits all of it
+fails and reports a spurious render device reset. Patch 0048 limits all of it
 to OpenGL windows, and skips the backup wait for an external context, which
 the event loop never backs up. The production code is compiled from the
 patched source and run against a recording SDL/EGL boundary.
@@ -118,7 +118,7 @@ class SdlPatchPreparationTests(unittest.TestCase):
         android.apply_patch_series(self.tree, self.patches)
         self.assert_series_applied()
 
-    def test_checkout_prepared_before_0047_is_completed(self):
+    def test_checkout_prepared_before_0048_is_completed(self):
         # Earlier builds applied only the USB receiver patch.
         usb_receiver, = android.resolve_patches(["0015"])
         self.git("-C", str(self.tree), "apply", "--ignore-whitespace", str(usb_receiver))

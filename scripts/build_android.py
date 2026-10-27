@@ -23,7 +23,7 @@ PATCHES = {
     "lib/rt64/src/contrib/plume": ["0014"],
 }
 # SDL is fetched rather than a submodule, so CMake never patches it.
-SDL_PATCHES = ["0015", "0047"]
+SDL_PATCHES = ["0015", "0048"]
 # CMake owns application of these patches. Source preparation must also
 # recognize their composed states, since they change the script prefix's hunks.
 # tools/check_patch_series.py checks this list against the actual CMake order.
