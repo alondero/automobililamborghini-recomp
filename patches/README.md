@@ -97,7 +97,10 @@ Vulkan swap chain on every platform through shared CMake:
   The result is then kept inside the surface's minimum and maximum. A zero
   extent, such as a minimized Win32 window, creates nothing. The chain
   remembers the window size it was built for, so a surface size that differs
-  from the window does not cause a rebuild on every frame.
+  from the window does not cause a rebuild on every frame. While the chain's
+  size differs from the window, each frame reads the surface again and
+  rebuilds once its extent changes. Android can report a new window size a
+  frame before the surface follows.
 - A maximum image count of zero means no upper limit. Replacements request the
   caller's count again, not the larger count a driver may have returned.
 - Images request colour-attachment use only. RT64's final pass, its inspector
@@ -148,6 +151,7 @@ every creation against the reported capabilities and follows Android's
 recovery, and at resize. It also covers:
 
 - a fixed current extent inside wider bounds;
+- a surface extent that follows the window a frame late;
 - fixed bounds that differ from the window;
 - variable and zero extents;
 - bounded, unbounded and minimum image counts;

@@ -16,7 +16,7 @@ from tests.patched_source import PLUME, ROOT, method, patched_file, patched_plum
 
 SCENARIOS = (
     "android-defaults", "query-failure-create", "query-failure-resize", "fixed-extent",
-    "zero-current-extent", "fixed-bounds",
+    "zero-current-extent", "surface-extent-lag", "fixed-bounds",
     "variable-extent", "zero-window", "zero-surface-extent", "unbounded-count", "bounded-count",
     "minimum-count", "count-stable", "usage-color-only", "alpha-opaque", "alpha-inherit",
     "alpha-premultiplied", "alpha-postmultiplied", "transform-refusal", "replacement-failure",

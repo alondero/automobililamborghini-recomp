@@ -144,6 +144,23 @@ static void run(const std::string &scenario) {
         CHECK(created.size() == 2);
         CHECK((lastCreated().imageExtent.width == 640) && (lastCreated().imageExtent.height == 480));
     }
+    else if (scenario == "surface-extent-lag") {
+        // Android: SDL reports the new window size before the surface's current extent follows.
+        Harness h(2);
+        CHECK(h.frame());
+        windowWidth = 1000;
+        windowHeight = 500;
+        CHECK(h.frame());
+        CHECK((lastCreated().imageExtent.width == 1280) && (lastCreated().imageExtent.height == 720));
+        h.frames(5);
+        CHECK(created.size() == 2);
+        caps.currentExtent = {1000, 500};
+        CHECK(h.frame());
+        CHECK((lastCreated().imageExtent.width == 1000) && (lastCreated().imageExtent.height == 500));
+        CHECK(!h.swapChain->needsResize());
+        h.frames(5);
+        CHECK(created.size() == 3);
+    }
     else if (scenario == "zero-current-extent") {
         caps.currentExtent = {0, 0};
         caps.minImageExtent = {0, 0};

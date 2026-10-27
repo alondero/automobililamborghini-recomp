@@ -1,8 +1,8 @@
 diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
-index 041fac5..e24e648 100644
+index 041fac5..4472ad8 100644
 --- a/plume_vulkan.cpp
 +++ b/plume_vulkan.cpp
-@@ -2175,6 +2175,27 @@ namespace plume {
+@@ -2175,6 +2175,39 @@ namespace plume {
  
      // VulkanSwapChain
  
@@ -27,10 +27,22 @@ index 041fac5..e24e648 100644
 +        return (capabilities.maxImageCount > 0) ? std::min(count, capabilities.maxImageCount) : count;
 +    }
 +
++    static VkExtent2D chooseSwapChainExtent(const VkSurfaceCapabilitiesKHR &capabilities, uint32_t windowWidth, uint32_t windowHeight) {
++        // A defined current extent is the surface's size. The special value lets the swap chain choose it.
++        VkExtent2D extent = capabilities.currentExtent;
++        if ((extent.width == 0xFFFFFFFFU) && (extent.height == 0xFFFFFFFFU)) {
++            extent = { windowWidth, windowHeight };
++        }
++
++        extent.width = std::clamp(extent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
++        extent.height = std::clamp(extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
++        return extent;
++    }
++
      VulkanSwapChain::VulkanSwapChain(VulkanCommandQueue *commandQueue, const RenderSwapChainDesc &desc) {
          assert(commandQueue != nullptr);
          assert(desc.textureCount > 0);
-@@ -2261,38 +2282,61 @@ namespace plume {
+@@ -2261,38 +2294,61 @@ namespace plume {
              return;
          }
  
@@ -114,7 +126,7 @@ index 041fac5..e24e648 100644
          immediatePresentModeSupported = std::find(presentModes.begin(), presentModes.end(), VK_PRESENT_MODE_IMMEDIATE_KHR) != presentModes.end();
          mailboxPresentModeSupported = std::find(presentModes.begin(), presentModes.end(), VK_PRESENT_MODE_MAILBOX_KHR) != presentModes.end();
  
-@@ -2307,39 +2351,25 @@ namespace plume {
+@@ -2307,39 +2363,25 @@ namespace plume {
          }
  
          if (compatibleSurfaceFormats.empty()) {
@@ -166,7 +178,7 @@ index 041fac5..e24e648 100644
      }
  
      VulkanSwapChain::~VulkanSwapChain() {
-@@ -2412,29 +2442,99 @@ namespace plume {
+@@ -2412,29 +2454,94 @@ namespace plume {
      }
  
      bool VulkanSwapChain::resize() {
@@ -214,14 +226,9 @@ index 041fac5..e24e648 100644
 +            return refuse("vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed", res);
 +        }
 +
-+        // A defined current extent is the surface's size. The special value lets the swap chain choose it.
-+        VkExtent2D imageExtent = surfaceCapabilities.currentExtent;
-+        if ((imageExtent.width == 0xFFFFFFFFU) && (imageExtent.height == 0xFFFFFFFFU)) {
-+            imageExtent = { windowWidth, windowHeight };
-+        }
-+
-+        const uint32_t imageWidth = std::clamp(imageExtent.width, surfaceCapabilities.minImageExtent.width, surfaceCapabilities.maxImageExtent.width);
-+        const uint32_t imageHeight = std::clamp(imageExtent.height, surfaceCapabilities.minImageExtent.height, surfaceCapabilities.maxImageExtent.height);
++        const VkExtent2D imageExtent = chooseSwapChainExtent(surfaceCapabilities, windowWidth, windowHeight);
++        const uint32_t imageWidth = imageExtent.width;
++        const uint32_t imageHeight = imageExtent.height;
 +
 +        // Win32 reports a zero extent while the window is minimized.
 +        if ((imageWidth == 0) || (imageHeight == 0)) {
@@ -276,7 +283,7 @@ index 041fac5..e24e648 100644
          createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
          createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
          createInfo.compositeAlpha = pickedAlphaFlag;
-@@ -2442,28 +2542,29 @@ namespace plume {
+@@ -2442,28 +2549,29 @@ namespace plume {
          createInfo.clipped = VK_TRUE;
          createInfo.oldSwapchain = vk;
  
@@ -316,7 +323,7 @@ index 041fac5..e24e648 100644
          }
  
          desc.textureCount = retrievedImageCount;
-@@ -2472,10 +2573,20 @@ namespace plume {
+@@ -2472,10 +2580,20 @@ namespace plume {
          res = vkGetSwapchainImagesKHR(commandQueue->device->vk, vk, &desc.textureCount, images.data());
          if (res != VK_SUCCESS) {
              releaseSwapChain();
@@ -339,16 +346,32 @@ index 041fac5..e24e648 100644
          // Assign the swap chain images to the buffer resources.
          textures.resize(desc.textureCount);
  
-@@ -2499,7 +2610,7 @@ namespace plume {
+@@ -2499,7 +2617,23 @@ namespace plume {
      bool VulkanSwapChain::needsResize() const {
          uint32_t windowWidth, windowHeight;
          getWindowSize(windowWidth, windowHeight);
 -        return (vk == VK_NULL_HANDLE) || (windowWidth != width) || (windowHeight != height) || (requiredPresentMode != createdPresentMode);
-+        return (vk == VK_NULL_HANDLE) || (windowWidth != requestedWidth) || (windowHeight != requestedHeight) || (requiredPresentMode != createdPresentMode);
++        if ((vk == VK_NULL_HANDLE) || (windowWidth != requestedWidth) || (windowHeight != requestedHeight) || (requiredPresentMode != createdPresentMode)) {
++            return true;
++        }
++
++        // Android can report the new window size before the surface's extent follows. A chain built
++        // at another size than the window is rebuilt once the surface's extent changes.
++        if ((width == windowWidth) && (height == windowHeight)) {
++            return false;
++        }
++
++        VkSurfaceCapabilitiesKHR surfaceCapabilities = {};
++        if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(commandQueue->device->physicalDevice, surface, &surfaceCapabilities) != VK_SUCCESS) {
++            return false;
++        }
++
++        const VkExtent2D imageExtent = chooseSwapChainExtent(surfaceCapabilities, windowWidth, windowHeight);
++        return (imageExtent.width != width) || (imageExtent.height != height);
      }
  
      void VulkanSwapChain::setVsyncEnabled(bool vsyncEnabled) {
-@@ -2543,6 +2654,11 @@ namespace plume {
+@@ -2543,6 +2677,11 @@ namespace plume {
      }
  
      uint32_t VulkanSwapChain::getRefreshRate() const {
