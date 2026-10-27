@@ -8,6 +8,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -220,11 +221,17 @@ void report_thread(long tid) {
         line += " running";
     } else if (call) {
         line += " syscall=" + std::to_string(call->number);
+    } else if (raw.empty()) {
+        line += " syscall=unreadable";
     }
     std::fprintf(stderr, "  %s\n", line.c_str());
 }
 
 void report(uint64_t beats, std::chrono::milliseconds threshold) {
+    // A release app is not dumpable, so the kernel gives root its owner-only
+    // /proc files (syscall, mem) and every lock word reads as missing.
+    const int dumpable = prctl(PR_GET_DUMPABLE);
+    if (dumpable == 0) prctl(PR_SET_DUMPABLE, 1);
     std::fprintf(stderr, "Present stall: no frame for %lld ms after %llu frames. Thread waits:\n",
                  (long long)threshold.count(), (unsigned long long)beats);
     if (DIR* tasks = opendir("/proc/self/task")) {
@@ -234,6 +241,7 @@ void report(uint64_t beats, std::chrono::milliseconds threshold) {
         }
         closedir(tasks);
     }
+    if (dumpable == 0) prctl(PR_SET_DUMPABLE, 0);
     std::fprintf(stderr, "End of present stall report.\n");
     std::fflush(stderr);
 }
