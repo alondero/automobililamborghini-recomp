@@ -58,6 +58,14 @@ class QueueBarrierTests(unittest.TestCase):
         result = self.run_queue("workload")
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_present_producer_wakes_on_shutdown(self):
+        result = self.run_queue("present-shutdown")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_workload_producer_wakes_on_shutdown(self):
+        result = self.run_queue("workload-shutdown")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

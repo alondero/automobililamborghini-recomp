@@ -1,8 +1,22 @@
 diff --git a/src/hle/rt64_present_queue.cpp b/src/hle/rt64_present_queue.cpp
-index 6bcc22f..a048fe8 100644
+index 6bcc22f..4dcf2a0 100644
 --- a/src/hle/rt64_present_queue.cpp
 +++ b/src/hle/rt64_present_queue.cpp
-@@ -39,11 +39,13 @@ namespace RT64 {
+@@ -17,8 +17,12 @@ namespace RT64 {
+     }
+ 
+     PresentQueue::~PresentQueue() {
+-        presentThreadRunning = false;
++        {
++            const std::scoped_lock lock(cursorMutex);
++            presentThreadRunning = false;
++        }
+         cursorCondition.notify_all();
++        barrierCondition.notify_all();
+ 
+         if (presentThread != nullptr) {
+             presentThread->join();
+@@ -39,18 +43,16 @@ namespace RT64 {
          int nextWriteCursor = (writeCursor + 1) % presents.size();
  
          // Stall the thread until the barrier is lifted if we're trying to write on a present being used by the GPU.
@@ -11,16 +25,22 @@ index 6bcc22f..a048fe8 100644
 -            const std::scoped_lock lock(cursorMutex);
 -            waitForBarrier = (nextWriteCursor == barrierCursor);
 -        } while (waitForBarrier);
-+        // Sleep rather than spin: the consumer can block for seconds inside the driver.
-+        {
+-
+-        // Modify the cursor and notify anything waiting on the queue.
++        // Sleep rather than spin: the consumer can block for seconds inside the driver. Shutdown also ends the wait.
+         {
+-            const std::scoped_lock lock(cursorMutex);
 +            std::unique_lock<std::mutex> cursorLock(cursorMutex);
 +            barrierCondition.wait(cursorLock, [&]() {
-+                return nextWriteCursor != barrierCursor;
++                return (nextWriteCursor != barrierCursor) || !presentThreadRunning;
 +            });
-+        }
+             writeCursor = nextWriteCursor;
+         }
  
-         // Modify the cursor and notify anything waiting on the queue.
-         {
++        // Notify anything waiting on the queue.
+         cursorCondition.notify_all();
+     }
+ 
 @@ -454,8 +456,12 @@ namespace RT64 {
      }
      
@@ -49,10 +69,24 @@ index e08b02c..2726157 100644
          std::mutex presentIdMutex;
          std::condition_variable presentIdCondition;
 diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
-index 81109b2..b1239f4 100644
+index 81109b2..e47f233 100644
 --- a/src/hle/rt64_workload_queue.cpp
 +++ b/src/hle/rt64_workload_queue.cpp
-@@ -73,11 +73,13 @@ namespace RT64 {
+@@ -40,8 +40,12 @@ namespace RT64 {
+     }
+ 
+     WorkloadQueue::~WorkloadQueue() {
+-        threadsRunning = false;
++        {
++            const std::scoped_lock lock(cursorMutex);
++            threadsRunning = false;
++        }
+         cursorCondition.notify_all();
++        barrierCondition.notify_all();
+         idleCondition.notify_all();
+ 
+         if (renderThread != nullptr) {
+@@ -73,18 +77,16 @@ namespace RT64 {
          int nextWriteCursor = (writeCursor + 1) % workloads.size();
  
          // Stall the thread until the barrier is lifted if we're trying to write on a workload being used by the GPU.
@@ -61,16 +95,22 @@ index 81109b2..b1239f4 100644
 -            const std::scoped_lock lock(cursorMutex);
 -            waitForBarrier = (nextWriteCursor == barrierCursor);
 -        } while (waitForBarrier);
-+        // Sleep rather than spin: the consumer can block for seconds inside the driver.
-+        {
+-
+-        // Modify the cursor and notify anything waiting on the queue.
++        // Sleep rather than spin: the consumer can block for seconds inside the driver. Shutdown also ends the wait.
+         {
+-            const std::scoped_lock lock(cursorMutex);
 +            std::unique_lock<std::mutex> cursorLock(cursorMutex);
 +            barrierCondition.wait(cursorLock, [&]() {
-+                return nextWriteCursor != barrierCursor;
++                return (nextWriteCursor != barrierCursor) || !threadsRunning;
 +            });
-+        }
+             writeCursor = nextWriteCursor;
+         }
  
-         // Modify the cursor and notify anything waiting on the queue.
-         {
++        // Notify anything waiting on the queue.
+         cursorCondition.notify_all();
+     }
+ 
 @@ -913,8 +915,12 @@ namespace RT64 {
      }
  

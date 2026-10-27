@@ -35,6 +35,8 @@ struct FutexWait {
 std::optional<FutexWait> futex_wait(const Syscall& call, long futex_number);
 uint32_t pi_owner(uint32_t word);
 std::string format_futex(const FutexWait& wait, std::optional<uint32_t> word);
+// `holder` describes the owner thread, or is nullopt when this process has no such thread.
+std::string format_holder(uint32_t owner, const std::optional<std::string>& holder);
 
 // /proc/<pid>/task/<tid>/stat
 struct ThreadStat {

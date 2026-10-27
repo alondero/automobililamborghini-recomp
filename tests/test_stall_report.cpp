@@ -46,6 +46,14 @@ int main() {
     expect(format_futex(*lock_pi, std::nullopt) == "futex LOCK_PI 0x73ab10c0 word=unreadable",
            "unreadable lock word");
 
+    // An unowned lock has owner 0; thread 0 is the kernel's idle task, not a holder.
+    expect(format_holder(0, std::nullopt) == " holder: none", "unowned lock has no holder");
+    expect(format_holder(27196, std::nullopt) == " holder: not a thread of this process",
+           "holder outside this process");
+    expect(format_holder(27196, std::string("tid 27196 'RT64 Present' S cpu=1 wchan=0")) ==
+               " holder: tid 27196 'RT64 Present' S cpu=1 wchan=0",
+           "holder inside this process");
+
     // The command name can contain spaces and parentheses.
     const auto stat = parse_stat("25582 (RT64 Present (2)) S 25122 1 0 0 -1 4194368 0 0 0 0 1750 12 0 0 13 -4");
     expect(stat && stat->name == "RT64 Present (2)", "thread name");

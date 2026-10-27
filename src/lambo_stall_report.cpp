@@ -117,6 +117,11 @@ std::string format_futex(const FutexWait& wait, std::optional<uint32_t> word) {
     return text;
 }
 
+std::string format_holder(uint32_t owner, const std::optional<std::string>& holder) {
+    if (owner == 0) return " holder: none";
+    return holder ? " holder: " + *holder : " holder: not a thread of this process";
+}
+
 std::optional<ThreadStat> parse_stat(std::string_view line) {
     // The name is the text between the first '(' and the last ')'.
     const size_t open = line.find('(');
@@ -168,14 +173,17 @@ std::string read_proc(const std::string& path) {
 }
 
 // /proc/self/mem turns an unmapped address into a failed read, not a fault.
+// Opened per read so a failed open (for example, out of descriptors) is retried next time.
 std::optional<uint32_t> read_word(uint64_t address) {
-    static const int memory = open("/proc/self/mem", O_RDONLY | O_CLOEXEC);
+    const int memory = open("/proc/self/mem", O_RDONLY | O_CLOEXEC);
     if (memory < 0) return std::nullopt;
 #if defined(__aarch64__)
     address &= 0x00ffffffffffffffull; // Drop the heap pointer tag (top-byte ignore).
 #endif
     uint32_t word;
-    if (pread64(memory, &word, sizeof word, off64_t(address)) != ssize_t(sizeof word)) return std::nullopt;
+    const ssize_t got = pread64(memory, &word, sizeof word, off64_t(address));
+    close(memory);
+    if (got != ssize_t(sizeof word)) return std::nullopt;
     return word;
 }
 
@@ -203,10 +211,10 @@ void report_thread(long tid) {
         const auto word = read_word(wait->address);
         line += " " + format_futex(*wait, word);
         if (word && wait->priority_inheritance) {
-            const long owner = long(pi_owner(*word));
-            line += read_proc(task_path(owner, "stat")).empty()
-                ? " holder: not a thread of this process"
-                : " holder: " + describe_thread(owner);
+            const uint32_t owner = pi_owner(*word);
+            std::optional<std::string> holder;
+            if (owner != 0 && !read_proc(task_path(owner, "stat")).empty()) holder = describe_thread(owner);
+            line += format_holder(owner, holder);
         }
     } else if (call && call->running) {
         line += " running";

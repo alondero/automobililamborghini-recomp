@@ -247,8 +247,9 @@ End of present stall report.
 
 Match the holder's thread ID against `sysTid` in the ANR trace for its stack.
 `holder: not a thread of this process` means the lock word names a thread
-outside the game process. Moving the app to the background also stops frames,
-so a report then is expected.
+outside the game process. `holder: none` means the lock word has no owner, so
+the lock is free or being released. Moving the app to the background also stops
+frames, so a report then is expected.
 
 The example above is from the on-device probe on the SM-T720 (Android 11),
 where one thread holds a priority-inheritance mutex and another blocks on it.
