@@ -353,8 +353,12 @@ The APK was built with `scripts/build_android.py`. The USA ROM had SHA-256
 regenerated `RecompiledFuncs/` and `src/aspMain.cpp` from it. The baseline APK
 was the same build with patch 0047 left out of Plume.
 
-Each run did a cold start, waited 30 s in the attract race, then pressed Home
-and resumed twice. A cold start logged this on both drivers:
+Two kinds of run were used. A Home run did a cold start, waited 30 s in the
+attract race, then pressed Home and resumed twice. A resize run did a cold
+start, then shrank the display with `adb shell wm size 900x2000` and restored
+it with `adb shell wm size reset`, twice, then opened the Menu. Android resizes
+the game's surface in place, so each change replaces the swap chain on the
+same surface. A cold start logged this on both drivers:
 
 ```text
 Vulkan surface capabilities: extent current 2400x1080 min 1x1 max 4096x4096, images min 3 max 64, transforms 0x1FF current 0x2, alpha 0x8, usage 0x9F.
@@ -385,6 +389,34 @@ each frame, and Android's loader dereferenced the empty handle. Plume now
 reports an unknown refresh rate without a chain. The host fixture's abandoned
 surface scenario reproduces this.
 
+### Replacing the chain on a live surface
+
+| Build | Driver | Resize runs | Result |
+| --- | --- | --- | --- |
+| 0047 | System, `0x801ea000` | 3 | Every change replaced the chain (4 or 5 replacements per run, see below); game content after each change; Menu overlay drawn |
+| 0047 | Turnip v25.3.0-R11 | 2 | Every change replaced the chain (4 replacements per run); game content after each change; Menu overlay drawn |
+| Baseline | System, `0x801ea000` | 1 | Game content after each change; Menu overlay drawn |
+| Baseline | Turnip v25.3.0-R11 | 1 | Game content after each change except one black frame on the title-screen transition; the title rendered 3 s later |
+
+No replacement failed and no process exited. 0047 creates each replacement
+with the live chain as `oldSwapchain`. The log showed each new extent:
+
+```text
+Vulkan swap chain created: extent 2000x900 (window 2000x900), images 3 (requested 3), usage 0x10, transform 0x1, alpha 0x8, format 37, color space 0, present mode 2.
+Vulkan swap chain created: extent 2400x1080 (window 2400x1080), images 3 (requested 3), usage 0x10, transform 0x1, alpha 0x8, format 37, color space 0, present mode 2.
+```
+
+On the system driver, SDL sometimes reported the new window size about a frame
+before the surface's current extent followed. In 3 of 3 system runs one change
+logged `extent 2400x1080 (window 2000x900)`. The first 0047 build kept that
+stale chain until the next size change; the compositor scaled it. 0047 now
+reads the surface again while the chain's size differs from the window. In the
+two runs after that change, the next line was `extent 2000x900 (window
+2000x900)`. The baseline sized the chain from the window and does not log, so
+its extents are unknown.
+
+### Home and resume
+
 The game area stays black after resume with either build. RT64's Vulkan
 surface belongs to the window Android destroyed on Home, so a new swap chain
 needs a new surface. That is
@@ -414,9 +446,9 @@ rendered the attract race.
 Some desktop Vulkan starts on this PC exit before the first frame, with
 `0xC0000374` (heap corruption) or `0xC0000409`, or never present. The pinned
 build does this too. In 10 alternating cold starts of each build, the build
-without 0047 failed 7 times and the build with it failed twice. The final
-build with 0047, used for the checks above, failed 3 of 5 starts. The cause
-has not been found.
+without 0047 failed 7 times and the build with it failed twice. The later
+0047 builds used for the checks above failed 3 of 6 starts. The cause has
+not been found.
 
 ## Adreno 615 startup device loss
 
