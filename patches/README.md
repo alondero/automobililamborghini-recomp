@@ -59,6 +59,7 @@ significant single-space lines from `git diff --check`;
 | 0044 | Plume inside RT64 | On devices without descriptor indexing, removes non-uniform resource indexing declarations from SPIR-V before `vkCreateShaderModule`: the `ShaderNonUniform` and `*ArrayNonUniformIndexing` capabilities, `NonUniform` decorations, and `SPV_EXT_descriptor_indexing` when no other capability needs it. Those drivers cannot accept them (`VUID-VkShaderModuleCreateInfo-pCode-08740`/`-08742`). Without the declarations, a texture index must be the same across each draw. RT64 varies it within a draw only for RDP texture LOD, which this game never enables ([no_lod audit, Axis D](../docs/no_lod_audit.md)). Devices with descriptor indexing receive the original bytes. Malformed or foreign-endian code passes through. Applied by shared CMake after 0043; it takes the same capability switch as 0033. Compared 2026-10-26 with pinned Plume `51b1ad4` and [upstream main at 0ce184b](https://github.com/renderbag/plume/blob/0ce184b19270e49236afbb74052a6b267494b86b/plume_vulkan.cpp), which pass SPIR-V through unchanged. A host fixture runs the production constructor on synthetic modules and on RT64's RasterPS compiled with the bundled DXC. No upstream issue was opened. |
 | 0045 | RecompFrontend | On Android the UI pipeline targets R8G8B8A8_UNORM, the format of RT64's Android swap chain from 0013. Before this, the settings overlay drew with a B8G8R8A8_UNORM pipeline into an R8G8B8A8_UNORM swap chain (`VUID-vkCmdDrawIndexed-renderPass-02684`). The port's earlier in-tree UI made the same Android choice; moving to RecompFrontend lost it. Desktop keeps B8G8R8A8_UNORM. Applied by CMake after 0040. Compared 2026-10-26 with the pinned source and [upstream main at 2ddbfc8](https://github.com/N64Recomp/RecompFrontend/blob/2ddbfc8adcfe9ba26520441f14488861fdcefef7/recompui/src/renderer/ui_renderer.cpp), which hard-code B8G8R8A8_UNORM. A host test compiles both production format choices for Android and desktop and requires them to agree. No upstream issue was opened. |
 | 0046 | RT64 | The game's render thread sleeps on a condition variable while the present or workload queue slot it needs is still behind the consumer's barrier. Before this it spun on `cursorMutex`. Issue 329's Android 15 / Adreno 730 traces show RT64 Present blocked in Qualcomm gralloc while the render thread spent about 17.5 s of CPU in `advanceToNextPresent`. Ordering is unchanged: the producer still waits for the same barrier, and the barrier's advance wakes it. This removes the busy core; it does not release the gralloc stall. Applied by shared CMake after 0042. Compared 2026-10-26 with pinned RT64 and [upstream main at d9817c6](https://github.com/rt64/rt64/blob/d9817c68ffd7328cd0af383af124971489366e18/src/hle/rt64_present_queue.cpp), which both spin. A host fixture compiles the patched queue methods, holds each barrier for 400 ms, and requires the producer to stay blocked, wake on the barrier advance, and use under 100 ms of CPU. Clearing the queue's running flag also wakes the producer, so a stalled consumer cannot strand it. The destructors' wake-up line is not covered by the fixture; it is checked by reading. No upstream issue was opened. |
+| 0047 | Plume inside RT64 | Creates and replaces Vulkan swap chains within the surface's reported capabilities. See [the swap chain section](#swap-chain-surface-capabilities) for the contract, comparison and tests. Applied by shared CMake after 0044. |
 | 0048 | SDL dependency | Android SDL leaves a non-OpenGL window to its own graphics API. Pinned SDL 2 tried to create an EGL surface on every surface change, whatever the window type, and on every surface loss made Android's UI thread poll, up to 49 times 10 ms, for the event loop's EGL context backup. On every pause and resume the event loop also backed up and restored a GL context; for a Vulkan window the restore failed and pushed a spurious `SDL_RENDER_DEVICE_RESET`. The port's window is Vulkan. All of this now requires `SDL_WINDOW_OPENGL`, as window creation already does. The UI-thread wait is also skipped under `SDL_HINT_VIDEO_EXTERNAL_CONTEXT`, because the event loop never backs up an external context, so the wait could only time out. OpenGL windows keep everything, and an external-context OpenGL window still gets the EGL surface that window creation gives it. Debug-priority video log lines record each surface decision; see [surface callback logs](../docs/ANDROID.md#sdl-surface-callback-logs). Applied by `scripts/build_android.py` after 0015. Compared 2026-10-27 with pinned SDL `5d24957`, [the SDL2 branch at 8acf7cf](https://github.com/libsdl-org/SDL/blob/8acf7cfc0f88717e5c036f60f0314bfcafe39189/src/core/android/SDL_android.c#L1055), which still does all of it for every window, and SDL3 main at 4c18c09, which gates the [surface callbacks](https://github.com/libsdl-org/SDL/blob/4c18c09ea58408e476b266b34427b868a08e9fbb/src/core/android/SDL_android.c#L1283) and the [context backup and restore](https://github.com/libsdl-org/SDL/blob/4c18c09ea58408e476b266b34427b868a08e9fbb/src/video/android/SDL_androidevents.c#L36) on `SDL_WINDOW_OPENGL` but does not check the external-context hint in the wait. [DKR-R's patch](https://github.com/ThatGuyMcd/DKR-R/blob/d457741b57afff8d2ec96b2307f11c1340a4162f/patches/android/sdl2-vulkan-surface-lifecycle.patch) gates only the two callbacks and also skips surface recreation for an external context; this patch keeps recreation matched to window creation. `tests/test_android_sdl_surface.py` compiles the patched callbacks and context steps against a recording SDL/EGL boundary for Vulkan, OpenGL, timeout and external-context windows, and replays the SDL series on clean, pre-0048 and conflicting checkouts. Whether the old work contributed to issue 329's gralloc stall is unverified. No upstream issue was opened. |
 
 ## Application matrix
@@ -81,6 +82,61 @@ instead always reserves the layout capacity. This port retries only when the
 driver reports pool exhaustion, preserving normal allocation cost. No upstream
 issue was opened. The failure model is tested without a GPU; the reporting
 Xiaomi device and its separate Turnip ANR remain unverified on the fix.
+
+### Swap chain surface capabilities
+
+Patch 0047 (`0047-plume-vulkan-surface-capabilities.patch`) changes Plume's
+Vulkan swap chain on every platform through shared CMake:
+
+- A failed capability query stops creation instead of using undefined values.
+- The image extent is clamped to the surface's minimum and maximum. Where a
+  surface fixes its size, both equal the current extent. The chain remembers
+  the window size it was built for. A clamped chain is therefore not rebuilt
+  on every frame.
+- A maximum image count of zero means no upper limit. Replacements request the
+  caller's count again, not the larger count a driver may have returned.
+- Images request colour-attachment use only. RT64's final pass, its inspector
+  and RecompFrontend's UI only render into swap chain images. No Vulkan code
+  copies into, copies from or samples them. The port's swapchain readback in
+  `src/lambo_rt_evidence.cpp` runs only on D3D12.
+- A surface without the identity transform is refused with a logged reason.
+  Pre-rotation needs matching viewport, UI and touch changes, not only a
+  different `preTransform`. A surface without opaque or inherit alpha is also
+  refused: RT64's final pass does not promise an alpha of one.
+- A replacement is created into a temporary handle. The old chain is destroyed
+  whether or not creation succeeds. Vulkan retires `oldSwapchain` even when the
+  replacement fails. Android's loader then rejects it as `oldSwapchain` with
+  `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR` and returns `VK_ERROR_OUT_OF_DATE_KHR`
+  from acquire. Before this patch, one failed replacement left Plume holding
+  the retired chain, so every later attempt failed the same way.
+- Each creation logs the surface capabilities and the chosen extent, window
+  size, image count, usage, transform, alpha, format and present mode. RT64
+  retries a failed resize on every frame, so each distinct failure reason is
+  logged once.
+
+Compared on 2026-10-27 with pinned Plume `51b1ad4` and
+[upstream main at 0ce184b](https://github.com/renderbag/plume/blob/0ce184b19270e49236afbb74052a6b267494b86b/plume_vulkan.cpp).
+Upstream commit `519e325` clamps the extent, but stores the clamped size in the
+fields that `needsResize` compares with the window. A clamped chain is then
+rebuilt on every frame. Upstream otherwise matches the pinned code: it ignores
+the query result, clamps a zero maximum image count to the minimum, requests
+transfer and sampled usage, and writes the replacement into the live handle.
+The Android loader behaviour above was read from
+[AOSP `swapchain.cpp`](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/main/vulkan/libvulkan/swapchain.cpp)
+on 2026-10-27. That loader reports inherit alpha only, extents from 1x1 to
+4096x4096 and a full usage set. The usage and transform changes therefore do
+not alter Android's request. No upstream issue was opened.
+
+`tests/test_vulkan_swapchain.py` compiles the patched swap chain against a
+recording Vulkan boundary, without a ROM or GPU. It replaces only the
+window-system surface call and the window size query. The fake driver checks
+every creation against the reported capabilities and follows Android's
+`oldSwapchain` rules. It covers query failure at creation and resize; fixed,
+variable and zero extents; bounded, unbounded and minimum image counts;
+colour-only usage; all four alpha modes; transform refusal; present-mode
+changes; too few returned images; and a failed replacement followed by
+recovery. Before the patch, 13 of its 20 scenarios failed. The failed
+replacement reproduced the repeated `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR`.
 
 Run `python tools/check_patch_series.py` after changing the patch stack. It
 checks that each patch is wired into a build path and that the RT64 replay

@@ -48,7 +48,7 @@ checkouts, fetches the pinned Android SDL source, checks the complete branch
 diff, then runs:
 
 ~~~text
-python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool --require tests.test_vulkan_clear_bounds --require tests.test_vulkan_shader_nonuniform --require tests.test_android_swapchain_format --require tests.test_android_sdl_surface
+python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool --require tests.test_vulkan_clear_bounds --require tests.test_vulkan_shader_nonuniform --require tests.test_android_swapchain_format --require tests.test_android_sdl_surface --require tests.test_vulkan_swapchain
 ~~~
 
 Skipping a test in a required module, or failing to discover the module,

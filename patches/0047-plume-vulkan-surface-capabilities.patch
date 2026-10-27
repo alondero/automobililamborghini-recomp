@@ -1,0 +1,275 @@
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+index 041fac5..47ec39c 100644
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -2175,6 +2175,27 @@ namespace plume {
+ 
+     // VulkanSwapChain
+ 
++    static bool pickSwapChainCompositeAlpha(VkCompositeAlphaFlagsKHR supported, VkCompositeAlphaFlagBitsKHR &picked) {
++        // Prefer opaque over inherit. The final pass does not promise an alpha of one, so a
++        // pre-multiplied or post-multiplied compositor could blend the game with the desktop.
++        if (supported & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) {
++            picked = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
++            return true;
++        }
++        else if (supported & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) {
++            picked = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
++            return true;
++        }
++
++        return false;
++    }
++
++    static uint32_t clampSwapChainImageCount(uint32_t requested, const VkSurfaceCapabilitiesKHR &capabilities) {
++        // A maximum of zero means the surface has no upper limit.
++        const uint32_t count = std::max(requested, capabilities.minImageCount);
++        return (capabilities.maxImageCount > 0) ? std::min(count, capabilities.maxImageCount) : count;
++    }
++
+     VulkanSwapChain::VulkanSwapChain(VulkanCommandQueue *commandQueue, const RenderSwapChainDesc &desc) {
+         assert(commandQueue != nullptr);
+         assert(desc.textureCount > 0);
+@@ -2262,25 +2283,21 @@ namespace plume {
+         }
+ 
+         VkSurfaceCapabilitiesKHR surfaceCapabilities = {};
+-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities);
+-
+-        // Pick an alpha compositing mode
+-        if (surfaceCapabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) {
+-            pickedAlphaFlag = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+-        }
+-        else if (surfaceCapabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) {
+-            pickedAlphaFlag = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+-        }
+-        else {
+-            fprintf(stderr, "No known supported alpha compositing mode\n");
++        res = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities);
++        if (res != VK_SUCCESS) {
++            fprintf(stderr, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed with error code 0x%X.\n", res);
+             return;
+         }
+ 
+-        // Make sure maxImageCount is never below minImageCount, as it's allowed to be zero.
+-        surfaceCapabilities.maxImageCount = std::max(surfaceCapabilities.minImageCount, surfaceCapabilities.maxImageCount);
++        if (!pickSwapChainCompositeAlpha(surfaceCapabilities.supportedCompositeAlpha, pickedAlphaFlag)) {
++            fprintf(stderr, "No supported composite alpha mode was found (0x%X); opaque or inherit is required.\n",
++                surfaceCapabilities.supportedCompositeAlpha);
++            return;
++        }
+ 
+         // Clamp the requested buffer count between the bounds of the surface capabilities.
+-        this->desc.textureCount = std::clamp(desc.textureCount, surfaceCapabilities.minImageCount, surfaceCapabilities.maxImageCount);
++        requestedTextureCount = desc.textureCount;
++        this->desc.textureCount = clampSwapChainImageCount(desc.textureCount, surfaceCapabilities);
+ 
+         uint32_t surfaceFormatCount = 0;
+         vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatCount, nullptr);
+@@ -2326,18 +2343,6 @@ namespace plume {
+         // Sets the required presentation mode.
+         setVsyncEnabled(true);
+ 
+-        // Pick an alpha compositing mode, prefer opaque over inherit.
+-        if (surfaceCapabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) {
+-            pickedAlphaFlag = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+-        }
+-        else if (surfaceCapabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) {
+-            pickedAlphaFlag = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+-        }
+-        else {
+-            fprintf(stderr, "No supported alpha compositing mode was found.\n");
+-            return;
+-        }
+-
+         // Parent command queue should track this swap chain.
+         commandQueue->swapChains.insert(this);
+     }
+@@ -2412,29 +2417,86 @@ namespace plume {
+     }
+ 
+     bool VulkanSwapChain::resize() {
+-        getWindowSize(width, height);
++        // RT64 retries every presented frame after a failure; report each distinct reason once.
++        auto refuse = [this](const char *reason, uint32_t detail) {
++            if (reason != lastResizeFailure) {
++                fprintf(stderr, "Vulkan swap chain not created: %s (0x%X).\n", reason, detail);
++                lastResizeFailure = reason;
++            }
++
++            return false;
++        };
++
++        uint32_t windowWidth = 0;
++        uint32_t windowHeight = 0;
++        getWindowSize(windowWidth, windowHeight);
+ 
+         // Don't recreate the swap chain at all if the window doesn't have a valid size.
+-        if ((width == 0) || (height == 0)) {
++        if ((windowWidth == 0) || (windowHeight == 0)) {
++            width = height = requestedWidth = requestedHeight = 0;
+             return false;
+         }
+ 
+-        // Destroy any image view references to the current swap chain.
+-        releaseImageViews();
++        // The constructor could not pick a surface format and alpha mode.
++        if (pickedSurfaceFormat.format == VK_FORMAT_UNDEFINED) {
++            return refuse("the surface was not initialized", 0);
++        }
+ 
+-        // We don't actually need to query the surface capabilities but the validation layer seems to cache the valid extents from this call.
+         VkSurfaceCapabilitiesKHR surfaceCapabilities = {};
+-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(commandQueue->device->physicalDevice, surface, &surfaceCapabilities);
++        VkResult res = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(commandQueue->device->physicalDevice, surface, &surfaceCapabilities);
++        if (res != VK_SUCCESS) {
++            return refuse("vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed", res);
++        }
++
++        // Win32 reports a zero extent while the window is minimized.
++        if ((surfaceCapabilities.maxImageExtent.width == 0) || (surfaceCapabilities.maxImageExtent.height == 0)) {
++            width = height = requestedWidth = requestedHeight = 0;
++            return false;
++        }
++
++        if (lastResizeFailure == nullptr) {
++            fprintf(stderr, "Vulkan surface capabilities: extent current %ux%u min %ux%u max %ux%u, images min %u max %u, "
++                "transforms 0x%X current 0x%X, alpha 0x%X, usage 0x%X.\n",
++                surfaceCapabilities.currentExtent.width, surfaceCapabilities.currentExtent.height,
++                surfaceCapabilities.minImageExtent.width, surfaceCapabilities.minImageExtent.height,
++                surfaceCapabilities.maxImageExtent.width, surfaceCapabilities.maxImageExtent.height,
++                surfaceCapabilities.minImageCount, surfaceCapabilities.maxImageCount,
++                surfaceCapabilities.supportedTransforms, surfaceCapabilities.currentTransform,
++                surfaceCapabilities.supportedCompositeAlpha, surfaceCapabilities.supportedUsageFlags);
++        }
++
++        // Rotating the output needs matching viewport, UI and input changes, not only preTransform.
++        if (!(surfaceCapabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)) {
++            return refuse("the surface does not support the identity transform", surfaceCapabilities.supportedTransforms);
++        }
++
++        if (!pickSwapChainCompositeAlpha(surfaceCapabilities.supportedCompositeAlpha, pickedAlphaFlag)) {
++            return refuse("no opaque or inherit composite alpha mode", surfaceCapabilities.supportedCompositeAlpha);
++        }
++
++        // Swap chain images are only rendered to. Every surface must support this usage.
++        const VkImageUsageFlags imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
++        if ((surfaceCapabilities.supportedUsageFlags & imageUsage) != imageUsage) {
++            return refuse("the surface does not support color attachment images", surfaceCapabilities.supportedUsageFlags);
++        }
++
++        // Where the surface fixes its size, the minimum and maximum equal the current extent.
++        const uint32_t imageWidth = std::clamp(windowWidth, surfaceCapabilities.minImageExtent.width, surfaceCapabilities.maxImageExtent.width);
++        const uint32_t imageHeight = std::clamp(windowHeight, surfaceCapabilities.minImageExtent.height, surfaceCapabilities.maxImageExtent.height);
++        const uint32_t imageCount = clampSwapChainImageCount(requestedTextureCount, surfaceCapabilities);
++
++        // Destroy any image view references to the current swap chain.
++        releaseImageViews();
+ 
+         createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+         createInfo.surface = surface;
+-        createInfo.minImageCount = desc.textureCount;
++        createInfo.minImageCount = imageCount;
+         createInfo.imageFormat = pickedSurfaceFormat.format;
+         createInfo.imageColorSpace = pickedSurfaceFormat.colorSpace;
+-        createInfo.imageExtent.width = width;
+-        createInfo.imageExtent.height = height;
++        createInfo.imageExtent.width = imageWidth;
++        createInfo.imageExtent.height = imageHeight;
+         createInfo.imageArrayLayers = 1;
+-        createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
++        createInfo.imageUsage = imageUsage;
+         createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+         createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+         createInfo.compositeAlpha = pickedAlphaFlag;
+@@ -2442,28 +2504,29 @@ namespace plume {
+         createInfo.clipped = VK_TRUE;
+         createInfo.oldSwapchain = vk;
+ 
+-        VkResult res = vkCreateSwapchainKHR(commandQueue->device->vk, &createInfo, nullptr, &vk);
++        // Vulkan retires oldSwapchain even when the replacement fails, and Android then
++        // refuses it as oldSwapchain. Release it either way and never acquire from it.
++        VkSwapchainKHR newSwapChain = VK_NULL_HANDLE;
++        res = vkCreateSwapchainKHR(commandQueue->device->vk, &createInfo, nullptr, &newSwapChain);
++        releaseSwapChain();
++        textures.clear();
+         if (res != VK_SUCCESS) {
+-            fprintf(stderr, "vkCreateSwapchainKHR failed with error code 0x%X.\n", res);
+-            return false;
++            return refuse("vkCreateSwapchainKHR failed", res);
+         }
+ 
++        vk = newSwapChain;
++
+         // Store the chosen present mode to identify later whether the swapchain needs to be recreated.
+         createdPresentMode = requiredPresentMode;
+ 
+         // Reset present counter.
+         presentCount = 1;
+ 
+-        if (createInfo.oldSwapchain != VK_NULL_HANDLE) {
+-            vkDestroySwapchainKHR(commandQueue->device->vk, createInfo.oldSwapchain, nullptr);
+-        }
+-
+         uint32_t retrievedImageCount = 0;
+         vkGetSwapchainImagesKHR(commandQueue->device->vk, vk, &retrievedImageCount, nullptr);
+-        if (retrievedImageCount < desc.textureCount) {
++        if (retrievedImageCount < imageCount) {
+             releaseSwapChain();
+-            fprintf(stderr, "Image count differs from the texture count.\n");
+-            return false;
++            return refuse("the swap chain has fewer images than requested", retrievedImageCount);
+         }
+ 
+         desc.textureCount = retrievedImageCount;
+@@ -2472,10 +2535,20 @@ namespace plume {
+         res = vkGetSwapchainImagesKHR(commandQueue->device->vk, vk, &desc.textureCount, images.data());
+         if (res != VK_SUCCESS) {
+             releaseSwapChain();
+-            fprintf(stderr, "vkGetSwapchainImagesKHR failed with error code 0x%X.\n", res);
+-            return false;
++            return refuse("vkGetSwapchainImagesKHR failed", res);
+         }
+ 
++        width = imageWidth;
++        height = imageHeight;
++        requestedWidth = windowWidth;
++        requestedHeight = windowHeight;
++        lastResizeFailure = nullptr;
++        fprintf(stderr, "Vulkan swap chain created: extent %ux%u (window %ux%u), images %u (requested %u), usage 0x%X, "
++            "transform 0x%X, alpha 0x%X, format %d, color space %d, present mode %d.\n",
++            width, height, windowWidth, windowHeight, desc.textureCount, imageCount, imageUsage,
++            createInfo.preTransform, pickedAlphaFlag, int(pickedSurfaceFormat.format), int(pickedSurfaceFormat.colorSpace),
++            int(createdPresentMode));
++
+         // Assign the swap chain images to the buffer resources.
+         textures.resize(desc.textureCount);
+ 
+@@ -2499,7 +2572,7 @@ namespace plume {
+     bool VulkanSwapChain::needsResize() const {
+         uint32_t windowWidth, windowHeight;
+         getWindowSize(windowWidth, windowHeight);
+-        return (vk == VK_NULL_HANDLE) || (windowWidth != width) || (windowHeight != height) || (requiredPresentMode != createdPresentMode);
++        return (vk == VK_NULL_HANDLE) || (windowWidth != requestedWidth) || (windowHeight != requestedHeight) || (requiredPresentMode != createdPresentMode);
+     }
+ 
+     void VulkanSwapChain::setVsyncEnabled(bool vsyncEnabled) {
+diff --git a/plume_vulkan.h b/plume_vulkan.h
+index 0a1edbe..6a4b5b9 100644
+--- a/plume_vulkan.h
++++ b/plume_vulkan.h
+@@ -232,6 +232,14 @@ namespace plume {
+         uint64_t presentCount = 0;
+         uint32_t width = 0;
+         uint32_t height = 0;
++        // Window size the current chain was created for. The surface may clamp it
++        // to a different width and height, which must not trigger another resize.
++        uint32_t requestedWidth = 0;
++        uint32_t requestedHeight = 0;
++        // The caller's count. Drivers may return more images than requested, and
++        // replacements must not ask for that larger count.
++        uint32_t requestedTextureCount = 0;
++        const char *lastResizeFailure = nullptr;
+         VkSwapchainCreateInfoKHR createInfo = {};
+         VkSurfaceFormatKHR pickedSurfaceFormat = {};
+         VkPresentModeKHR createdPresentMode = VK_PRESENT_MODE_FIFO_KHR;
