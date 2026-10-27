@@ -22,6 +22,8 @@ PATCHES = {
     "lib/rt64": ["0006", "0009", "0010", "0011", "0013"],
     "lib/rt64/src/contrib/plume": ["0014"],
 }
+# SDL is fetched rather than a submodule, so CMake never patches it.
+SDL_PATCHES = ["0015", "0047"]
 # CMake owns application of these patches. Source preparation must also
 # recognize their composed states, since they change the script prefix's hunks.
 # tools/check_patch_series.py checks this list against the actual CMake order.
@@ -72,31 +74,37 @@ def apply_patch_series(directory, patches, following_patches=()):
             raise RuntimeError(f"Patch series conflicts with local changes in {directory}. Use a clean worktree.")
 
 
+def fetch_dependency(name):
+    url, revision = DEPS[name]
+    destination = WORK / "deps" / name
+    if not destination.exists():
+        run("git", "init", destination)
+        run("git", "-C", destination, "remote", "add", "origin", url)
+        run("git", "-C", destination, "fetch", "--depth", "1", "origin", revision)
+        run("git", "-C", destination, "checkout", "--detach", "FETCH_HEAD")
+    actual = subprocess.check_output(["git", "-C", str(destination), "rev-parse", "HEAD"], text=True).strip()
+    if actual != revision:
+        raise RuntimeError(f"Unexpected {name} revision: {actual}")
+    run("git", "-C", destination, "submodule", "update", "--init", "--recursive")
+    return destination
+
+
+def resolve_patches(numbers):
+    patches = []
+    for number in numbers:
+        patch, = (ROOT / "patches").glob(f"{number}-*.patch")
+        patches.append(patch)
+    return patches
+
+
 def prepare_sources():
     run("git", "submodule", "update", "--init", "--recursive")
     for submodule, numbers in PATCHES.items():
-        patches = []
-        for number in numbers + CMAKE_PATCHES.get(submodule, []):
-            patch, = (ROOT / "patches").glob(f"{number}-*.patch")
-            patches.append(patch)
+        patches = resolve_patches(numbers + CMAKE_PATCHES.get(submodule, []))
         apply_patch_series(ROOT / submodule, patches[:len(numbers)], patches[len(numbers):])
-    for name, (url, revision) in DEPS.items():
-        destination = WORK / "deps" / name
-        if not destination.exists():
-            run("git", "init", destination)
-            run("git", "-C", destination, "remote", "add", "origin", url)
-            run("git", "-C", destination, "fetch", "--depth", "1", "origin", revision)
-            run("git", "-C", destination, "checkout", "--detach", "FETCH_HEAD")
-        actual = subprocess.check_output(["git", "-C", str(destination), "rev-parse", "HEAD"], text=True).strip()
-        if actual != revision:
-            raise RuntimeError(f"Unexpected {name} revision: {actual}")
-        run("git", "-C", destination, "submodule", "update", "--init", "--recursive")
-
-    patch = ROOT / "patches/0015-sdl-android-usb-receiver.patch"
-    command = ["git", "-C", str(WORK / "deps/SDL"), "apply", "--ignore-whitespace"]
-    if subprocess.run(command + ["--reverse", "--check", str(patch)], capture_output=True).returncode != 0:
-        run(*command, "--check", patch)
-        run(*command, patch)
+    for name in DEPS:
+        fetch_dependency(name)
+    apply_patch_series(WORK / "deps/SDL", resolve_patches(SDL_PATCHES))
 
 
 def package(ndk, sdk, variant):
