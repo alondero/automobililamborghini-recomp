@@ -89,12 +89,19 @@ static void run(const std::string &scenario) {
         CHECK(liveViews.size() == 2);
     }
     else if (scenario == "query-failure-create") {
+        // A transient failure while constructing must not leave the swap chain unusable.
         capsResult = VK_ERROR_SURFACE_LOST_KHR;
-        Harness h(2);
-        capsResult = VK_SUCCESS;
+        Harness h(3);
         h.frames(3);
         CHECK(attempts.empty());
         CHECK(h.swapChain->isEmpty());
+        capsResult = VK_SUCCESS;
+        CHECK(h.frame());
+        h.frames(3);
+        CHECK(created.size() == 1);
+        CHECK(lastCreated().imageFormat == VK_FORMAT_R8G8B8A8_UNORM);
+        CHECK(lastCreated().compositeAlpha == VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR);
+        CHECK(lastCreated().minImageCount == 3);
     }
     else if (scenario == "query-failure-resize") {
         Harness h(2);
@@ -102,6 +109,7 @@ static void run(const std::string &scenario) {
         const VkSwapchainKHR first = activeChain;
         windowWidth = 1920;
         windowHeight = 1080;
+        caps.currentExtent = {1920, 1080};
         capsResult = VK_ERROR_SURFACE_LOST_KHR;
         CHECK(!h.frame());
         h.frames(3);
@@ -115,7 +123,33 @@ static void run(const std::string &scenario) {
         CHECK(lastCreated().imageExtent.width == 1920);
     }
     else if (scenario == "fixed-extent") {
-        // A fixed surface extent may differ from the window's reported client size.
+        // A defined current extent is the surface's size, even when wider bounds would allow the window size.
+        caps.currentExtent = {640, 480};
+        windowWidth = 800;
+        windowHeight = 600;
+        Harness h(2);
+        CHECK(h.frame());
+        CHECK((lastCreated().imageExtent.width == 640) && (lastCreated().imageExtent.height == 480));
+        CHECK((h.swapChain->getWidth() == 640) && (h.swapChain->getHeight() == 480));
+        CHECK(!h.swapChain->needsResize());
+        h.frames(10);
+        CHECK(created.size() == 1);
+        windowWidth = 1024;
+        windowHeight = 768;
+        h.frames(10);
+        CHECK(created.size() == 2);
+        CHECK((lastCreated().imageExtent.width == 640) && (lastCreated().imageExtent.height == 480));
+    }
+    else if (scenario == "zero-current-extent") {
+        caps.currentExtent = {0, 0};
+        caps.minImageExtent = {0, 0};
+        Harness h(2);
+        h.frames(3);
+        CHECK(attempts.empty());
+        CHECK(h.swapChain->isEmpty());
+    }
+    else if (scenario == "fixed-bounds") {
+        // Win32 fixes all three extents; the window's client size may differ.
         caps.currentExtent = caps.minImageExtent = caps.maxImageExtent = {1280, 720};
         windowWidth = 1283;
         Harness h(2);
@@ -248,6 +282,7 @@ static void run(const std::string &scenario) {
         const VkSwapchainKHR first = activeChain;
         windowWidth = 1920;
         windowHeight = 1080;
+        caps.currentExtent = {1920, 1080};
         createResult = VK_ERROR_SURFACE_LOST_KHR;
         CHECK(!h.frame());
         h.frames(5);

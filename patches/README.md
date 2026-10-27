@@ -89,10 +89,15 @@ Patch 0047 (`0047-plume-vulkan-surface-capabilities.patch`) changes Plume's
 Vulkan swap chain on every platform through shared CMake:
 
 - A failed capability query stops creation instead of using undefined values.
-- The image extent is clamped to the surface's minimum and maximum. Where a
-  surface fixes its size, both equal the current extent. The chain remembers
-  the window size it was built for. A clamped chain is therefore not rebuilt
-  on every frame.
+  If the query fails while the swap chain is constructed, format and alpha
+  selection is retried on the next resize. A transient failure therefore does
+  not leave the swap chain permanently unusable.
+- A defined current extent is the surface's size and is used as the image
+  extent. Only the special value `0xFFFFFFFF` lets the window size choose it.
+  The result is then kept inside the surface's minimum and maximum. A zero
+  extent, such as a minimized Win32 window, creates nothing. The chain
+  remembers the window size it was built for, so a surface size that differs
+  from the window does not cause a rebuild on every frame.
 - A maximum image count of zero means no upper limit. Replacements request the
   caller's count again, not the larger count a driver may have returned.
 - Images request colour-attachment use only. RT64's final pass, its inspector
@@ -116,27 +121,38 @@ Vulkan swap chain on every platform through shared CMake:
 
 Compared on 2026-10-27 with pinned Plume `51b1ad4` and
 [upstream main at 0ce184b](https://github.com/renderbag/plume/blob/0ce184b19270e49236afbb74052a6b267494b86b/plume_vulkan.cpp).
-Upstream commit `519e325` clamps the extent, but stores the clamped size in the
-fields that `needsResize` compares with the window. A clamped chain is then
-rebuilt on every frame. Upstream otherwise matches the pinned code: it ignores
+Upstream commit `519e325` clamps the window size to the surface bounds and
+ignores a defined current extent. It stores the clamped size in the fields that
+`needsResize` compares with the window, so a clamped chain is rebuilt on every
+frame. Upstream otherwise matches the pinned code: it ignores
 the query result, clamps a zero maximum image count to the minimum, requests
 transfer and sampled usage, and writes the replacement into the live handle.
 The Android loader behaviour above was read from
 [AOSP `swapchain.cpp`](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/main/vulkan/libvulkan/swapchain.cpp)
 on 2026-10-27. That loader reports inherit alpha only, extents from 1x1 to
 4096x4096 and a full usage set. The usage and transform changes therefore do
-not alter Android's request. No upstream issue was opened.
+not alter Android's request. Its current extent is the native window's default
+buffer size, not SDL's window size. The two are expected to match, but this has
+not been checked on a device. No upstream issue was opened.
 
 `tests/test_vulkan_swapchain.py` compiles the patched swap chain against a
 recording Vulkan boundary, without a ROM or GPU. It replaces only the
 window-system surface call and the window size query. The fake driver checks
 every creation against the reported capabilities and follows Android's
-`oldSwapchain` rules. It covers query failure at creation and resize; fixed,
-variable and zero extents; bounded, unbounded and minimum image counts;
-colour-only usage; all four alpha modes; transform refusal; present-mode
-changes; too few returned images; and a failed replacement followed by
-recovery. Before the patch, 13 of its 20 scenarios failed. The failed
-replacement reproduced the repeated `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR`.
+`oldSwapchain` rules. It covers query failure at creation, followed by
+recovery, and at resize. It also covers:
+
+- a fixed current extent inside wider bounds;
+- fixed bounds that differ from the window;
+- variable and zero extents;
+- bounded, unbounded and minimum image counts;
+- colour-only usage and all four alpha modes;
+- transform refusal and present-mode changes;
+- too few returned images;
+- a failed replacement followed by recovery.
+
+Before the patch, 15 of its 22 scenarios failed. The failed replacement
+reproduced the repeated `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR`.
 
 Run `python tools/check_patch_series.py` after changing the patch stack. It
 checks that each patch is wired into a build path and that the RT64 replay

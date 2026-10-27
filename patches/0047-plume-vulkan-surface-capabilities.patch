@@ -1,5 +1,5 @@
 diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
-index 041fac5..47ec39c 100644
+index 041fac5..9b23f4a 100644
 --- a/plume_vulkan.cpp
 +++ b/plume_vulkan.cpp
 @@ -2175,6 +2175,27 @@ namespace plume {
@@ -30,12 +30,15 @@ index 041fac5..47ec39c 100644
      VulkanSwapChain::VulkanSwapChain(VulkanCommandQueue *commandQueue, const RenderSwapChainDesc &desc) {
          assert(commandQueue != nullptr);
          assert(desc.textureCount > 0);
-@@ -2262,25 +2283,21 @@ namespace plume {
+@@ -2261,38 +2282,61 @@ namespace plume {
+             return;
          }
  
-         VkSurfaceCapabilitiesKHR surfaceCapabilities = {};
+-        VkSurfaceCapabilitiesKHR surfaceCapabilities = {};
 -        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities);
--
++        surfacePresentable = true;
++        requestedTextureCount = desc.textureCount;
+ 
 -        // Pick an alpha compositing mode
 -        if (surfaceCapabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) {
 -            pickedAlphaFlag = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -45,31 +48,105 @@ index 041fac5..47ec39c 100644
 -        }
 -        else {
 -            fprintf(stderr, "No known supported alpha compositing mode\n");
-+        res = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities);
-+        if (res != VK_SUCCESS) {
-+            fprintf(stderr, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed with error code 0x%X.\n", res);
-             return;
+-            return;
++        // A transient query failure leaves the format unpicked; resize() retries.
++        uint32_t detail = 0;
++        if (const char *reason = initializeSurfaceProperties(detail)) {
++            fprintf(stderr, "Vulkan swap chain surface not initialized: %s (0x%X).\n", reason, detail);
          }
  
 -        // Make sure maxImageCount is never below minImageCount, as it's allowed to be zero.
 -        surfaceCapabilities.maxImageCount = std::max(surfaceCapabilities.minImageCount, surfaceCapabilities.maxImageCount);
-+        if (!pickSwapChainCompositeAlpha(surfaceCapabilities.supportedCompositeAlpha, pickedAlphaFlag)) {
-+            fprintf(stderr, "No supported composite alpha mode was found (0x%X); opaque or inherit is required.\n",
-+                surfaceCapabilities.supportedCompositeAlpha);
-+            return;
++        // Sets the required presentation mode.
++        setVsyncEnabled(true);
+ 
+-        // Clamp the requested buffer count between the bounds of the surface capabilities.
+-        this->desc.textureCount = std::clamp(desc.textureCount, surfaceCapabilities.minImageCount, surfaceCapabilities.maxImageCount);
++        // Parent command queue should track this swap chain.
++        commandQueue->swapChains.insert(this);
++    }
+ 
+-        uint32_t surfaceFormatCount = 0;
+-        vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatCount, nullptr);
++    const char *VulkanSwapChain::initializeSurfaceProperties(uint32_t &detail) {
++        VkPhysicalDevice physicalDevice = commandQueue->device->physicalDevice;
++        VkSurfaceCapabilitiesKHR surfaceCapabilities = {};
++        VkResult res = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities);
++        if (res != VK_SUCCESS) {
++            detail = res;
++            return "vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed";
 +        }
  
-         // Clamp the requested buffer count between the bounds of the surface capabilities.
--        this->desc.textureCount = std::clamp(desc.textureCount, surfaceCapabilities.minImageCount, surfaceCapabilities.maxImageCount);
-+        requestedTextureCount = desc.textureCount;
-+        this->desc.textureCount = clampSwapChainImageCount(desc.textureCount, surfaceCapabilities);
++        if (!pickSwapChainCompositeAlpha(surfaceCapabilities.supportedCompositeAlpha, pickedAlphaFlag)) {
++            detail = surfaceCapabilities.supportedCompositeAlpha;
++            return "no opaque or inherit composite alpha mode";
++        }
++
++        uint32_t surfaceFormatCount = 0;
++        res = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatCount, nullptr);
+         std::vector<VkSurfaceFormatKHR> surfaceFormats(surfaceFormatCount);
+-        vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatCount, surfaceFormats.data());
++        if (res == VK_SUCCESS) {
++            res = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatCount, surfaceFormats.data());
++        }
  
-         uint32_t surfaceFormatCount = 0;
-         vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatCount, nullptr);
-@@ -2326,18 +2343,6 @@ namespace plume {
-         // Sets the required presentation mode.
-         setVsyncEnabled(true);
+-        uint32_t presentModeCount = 0;
+-        vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, nullptr);
++        if ((res != VK_SUCCESS) && (res != VK_INCOMPLETE)) {
++            detail = res;
++            return "vkGetPhysicalDeviceSurfaceFormatsKHR failed";
++        }
  
++        uint32_t presentModeCount = 0;
++        res = vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, nullptr);
+         std::vector<VkPresentModeKHR> presentModes(presentModeCount);
+-        vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, presentModes.data());
++        if (res == VK_SUCCESS) {
++            res = vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, presentModes.data());
++        }
++
++        if ((res != VK_SUCCESS) && (res != VK_INCOMPLETE)) {
++            detail = res;
++            return "vkGetPhysicalDeviceSurfacePresentModesKHR failed";
++        }
++
++        presentModes.resize(presentModeCount);
+         immediatePresentModeSupported = std::find(presentModes.begin(), presentModes.end(), VK_PRESENT_MODE_IMMEDIATE_KHR) != presentModes.end();
+         mailboxPresentModeSupported = std::find(presentModes.begin(), presentModes.end(), VK_PRESENT_MODE_MAILBOX_KHR) != presentModes.end();
+ 
+@@ -2307,39 +2351,25 @@ namespace plume {
+         }
+ 
+         if (compatibleSurfaceFormats.empty()) {
+-            fprintf(stderr, "No compatible surface formats were found.\n");
+-            return;
++            detail = requestedFormat;
++            return "the requested surface format is not supported";
+         }
+ 
++        // Clamp the requested buffer count between the bounds of the surface capabilities.
++        desc.textureCount = clampSwapChainImageCount(requestedTextureCount, surfaceCapabilities);
++
+         // Pick the preferred color space, if not available, pick whatever first shows up on the list.
+-        for (const VkSurfaceFormatKHR &surfaceFormat : compatibleSurfaceFormats) {
+-            if (surfaceFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+-                pickedSurfaceFormat = surfaceFormat;
++        // A defined format marks the surface as initialized, so it is assigned last.
++        VkSurfaceFormatKHR surfaceFormat = compatibleSurfaceFormats[0];
++        for (const VkSurfaceFormatKHR &compatibleSurfaceFormat : compatibleSurfaceFormats) {
++            if (compatibleSurfaceFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
++                surfaceFormat = compatibleSurfaceFormat;
+                 break;
+             }
+         }
+ 
+-        if (pickedSurfaceFormat.format == VK_FORMAT_UNDEFINED) {
+-            pickedSurfaceFormat = compatibleSurfaceFormats[0];
+-        }
+-
+-        // Sets the required presentation mode.
+-        setVsyncEnabled(true);
+-
 -        // Pick an alpha compositing mode, prefer opaque over inherit.
 -        if (surfaceCapabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) {
 -            pickedAlphaFlag = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -82,10 +159,14 @@ index 041fac5..47ec39c 100644
 -            return;
 -        }
 -
-         // Parent command queue should track this swap chain.
-         commandQueue->swapChains.insert(this);
+-        // Parent command queue should track this swap chain.
+-        commandQueue->swapChains.insert(this);
++        pickedSurfaceFormat = surfaceFormat;
++        return nullptr;
      }
-@@ -2412,29 +2417,86 @@ namespace plume {
+ 
+     VulkanSwapChain::~VulkanSwapChain() {
+@@ -2412,29 +2442,99 @@ namespace plume {
      }
  
      bool VulkanSwapChain::resize() {
@@ -113,9 +194,16 @@ index 041fac5..47ec39c 100644
  
 -        // Destroy any image view references to the current swap chain.
 -        releaseImageViews();
-+        // The constructor could not pick a surface format and alpha mode.
++        if (!surfacePresentable) {
++            return refuse("the surface cannot be presented to", 0);
++        }
++
++        // Retry format and alpha selection after a transient failure in the constructor.
 +        if (pickedSurfaceFormat.format == VK_FORMAT_UNDEFINED) {
-+            return refuse("the surface was not initialized", 0);
++            uint32_t detail = 0;
++            if (const char *reason = initializeSurfaceProperties(detail)) {
++                return refuse(reason, detail);
++            }
 +        }
  
 -        // We don't actually need to query the surface capabilities but the validation layer seems to cache the valid extents from this call.
@@ -126,8 +214,17 @@ index 041fac5..47ec39c 100644
 +            return refuse("vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed", res);
 +        }
 +
++        // A defined current extent is the surface's size. The special value lets the swap chain choose it.
++        VkExtent2D imageExtent = surfaceCapabilities.currentExtent;
++        if ((imageExtent.width == 0xFFFFFFFFU) && (imageExtent.height == 0xFFFFFFFFU)) {
++            imageExtent = { windowWidth, windowHeight };
++        }
++
++        const uint32_t imageWidth = std::clamp(imageExtent.width, surfaceCapabilities.minImageExtent.width, surfaceCapabilities.maxImageExtent.width);
++        const uint32_t imageHeight = std::clamp(imageExtent.height, surfaceCapabilities.minImageExtent.height, surfaceCapabilities.maxImageExtent.height);
++
 +        // Win32 reports a zero extent while the window is minimized.
-+        if ((surfaceCapabilities.maxImageExtent.width == 0) || (surfaceCapabilities.maxImageExtent.height == 0)) {
++        if ((imageWidth == 0) || (imageHeight == 0)) {
 +            width = height = requestedWidth = requestedHeight = 0;
 +            return false;
 +        }
@@ -158,9 +255,6 @@ index 041fac5..47ec39c 100644
 +            return refuse("the surface does not support color attachment images", surfaceCapabilities.supportedUsageFlags);
 +        }
 +
-+        // Where the surface fixes its size, the minimum and maximum equal the current extent.
-+        const uint32_t imageWidth = std::clamp(windowWidth, surfaceCapabilities.minImageExtent.width, surfaceCapabilities.maxImageExtent.width);
-+        const uint32_t imageHeight = std::clamp(windowHeight, surfaceCapabilities.minImageExtent.height, surfaceCapabilities.maxImageExtent.height);
 +        const uint32_t imageCount = clampSwapChainImageCount(requestedTextureCount, surfaceCapabilities);
 +
 +        // Destroy any image view references to the current swap chain.
@@ -182,7 +276,7 @@ index 041fac5..47ec39c 100644
          createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
          createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
          createInfo.compositeAlpha = pickedAlphaFlag;
-@@ -2442,28 +2504,29 @@ namespace plume {
+@@ -2442,28 +2542,29 @@ namespace plume {
          createInfo.clipped = VK_TRUE;
          createInfo.oldSwapchain = vk;
  
@@ -222,7 +316,7 @@ index 041fac5..47ec39c 100644
          }
  
          desc.textureCount = retrievedImageCount;
-@@ -2472,10 +2535,20 @@ namespace plume {
+@@ -2472,10 +2573,20 @@ namespace plume {
          res = vkGetSwapchainImagesKHR(commandQueue->device->vk, vk, &desc.textureCount, images.data());
          if (res != VK_SUCCESS) {
              releaseSwapChain();
@@ -245,7 +339,7 @@ index 041fac5..47ec39c 100644
          // Assign the swap chain images to the buffer resources.
          textures.resize(desc.textureCount);
  
-@@ -2499,7 +2572,7 @@ namespace plume {
+@@ -2499,7 +2610,7 @@ namespace plume {
      bool VulkanSwapChain::needsResize() const {
          uint32_t windowWidth, windowHeight;
          getWindowSize(windowWidth, windowHeight);
@@ -255,10 +349,10 @@ index 041fac5..47ec39c 100644
  
      void VulkanSwapChain::setVsyncEnabled(bool vsyncEnabled) {
 diff --git a/plume_vulkan.h b/plume_vulkan.h
-index 0a1edbe..6a4b5b9 100644
+index 0a1edbe..c007a80 100644
 --- a/plume_vulkan.h
 +++ b/plume_vulkan.h
-@@ -232,6 +232,14 @@ namespace plume {
+@@ -232,6 +232,17 @@ namespace plume {
          uint64_t presentCount = 0;
          uint32_t width = 0;
          uint32_t height = 0;
@@ -269,7 +363,18 @@ index 0a1edbe..6a4b5b9 100644
 +        // The caller's count. Drivers may return more images than requested, and
 +        // replacements must not ask for that larger count.
 +        uint32_t requestedTextureCount = 0;
++        // The surface exists and the queue can present to it. Format and alpha
++        // selection may still be pending after a transient query failure.
++        bool surfacePresentable = false;
 +        const char *lastResizeFailure = nullptr;
          VkSwapchainCreateInfoKHR createInfo = {};
          VkSurfaceFormatKHR pickedSurfaceFormat = {};
          VkPresentModeKHR createdPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+@@ -259,6 +270,7 @@ namespace plume {
+         bool isEmpty() const override;
+         uint32_t getRefreshRate() const override;
+         void getWindowSize(uint32_t &dstWidth, uint32_t &dstHeight) const;
++        const char *initializeSurfaceProperties(uint32_t &detail);
+         void releaseSwapChain();
+         void releaseImageViews();
+     };
