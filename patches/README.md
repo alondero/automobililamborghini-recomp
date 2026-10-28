@@ -7,7 +7,7 @@ The patch files are the source of truth for exact hunks. The descriptions below
 explain why each patch exists and which changes need comparison with upstream.
 
 A patch file is itself a diff, so a blank context line inside a hunk is a line
-holding one space — exactly what `git diff` emits. Never strip that space:
+holding one space â€” exactly what `git diff` emits. Never strip that space:
 after a CRLF checkout (standard on Windows CI) a stripped blank line becomes
 a lone carriage return and `git apply` rejects the whole patch as corrupt.
 `.gitattributes` forces LF checkouts for `*.patch` and exempts their
@@ -64,6 +64,8 @@ significant single-space lines from `git diff --check`;
 | 0049 | Plume inside RT64 | On Android, a swap chain that requests `R8G8B8A8_UNORM` uses it with `VK_COLOR_SPACE_SRGB_NONLINEAR_KHR` without calling `vkGetPhysicalDeviceSurfaceFormatsKHR`. Android's loader always lists that pair first without asking gralloc, so the chosen format is unchanged. It answers the rest of the query by asking gralloc about five more formats. In issue 329's Android 15 / Adreno 730 exports, gralloc's lock was held by the graphics thread, which runs this query, and RT64 Present blocked on it creating the first chain. Other formats and other platforms still query. Applied by shared CMake after 0047; it changes lines next to 0047's, so CMake checks for 0049 before 0047 on repeated configures. Compared 2026-10-28 with pinned Plume `51b1ad4` and [upstream main at 0ce184b](https://github.com/renderbag/plume/blob/0ce184b19270e49236afbb74052a6b267494b86b/plume_vulkan.cpp), which query in the constructor on every platform. The swap chain fixture compiles the production code a second time with its Android branch and models the held lock: construction on one thread, creation and presentation on another. It fails before the patch and passes after. That this query is what leaves gralloc's lock held is an inference; see the [Android investigation](../docs/ANDROID.md#gralloc-lock-holder). No upstream issue was opened. |
 | 0050 | Plume inside RT64 | Invalidates mapped reads and flushes mapped writes through VMA, with exclusive byte ranges, heap defaults, release-build validation and balanced failure cleanup. Applied by shared CMake on desktop and Android. See [mapped buffer memory](#mapped-buffer-memory) for caller audit, upstream comparison and measured limits. |
 | 0051 | Plume inside RT64 | Documents Vulkan's read-range defaults and dirty-atom rule beside the mapping declaration. Applied by shared CMake after the original 0050 so existing patched checkouts upgrade without resetting dependency files. No runtime change; see [mapped buffer memory](#mapped-buffer-memory). |
+| 0052 | Plume inside RT64 | Returns null after failed mapping or invalidation, preserving recoverable callers and nested references. Applies after stable patches 0050/0051. Flush failures remain fatal; see [mapped buffer memory](#mapped-buffer-memory). |
+| 0053 | Plume inside RT64 | Rejects invalidating read maps while another mapping is active, before acquiring a VMA reference. Omitted reads invalidate all non-upload heaps, including host-visible DEFAULT. Updates the contract comment without rewriting 0050/0051/0052. |
 
 ## Mapped buffer memory
 
@@ -73,6 +75,18 @@ pinned Plume `51b1ad443b9f202c5cfc930ae25345d3f2ba7716` and verified upstream
 both map/unmap through VMA without cache maintenance. Automatic allocation
 and host-access hints do not require coherent memory. No upstream issue was
 opened. Queue-family ownership remains separate (issue 361).
+
+Rechecked patches 0052 and 0053 on 2026-10-28 against upstream `main`, still
+at [0ce184b19270e49236afbb74052a6b267494b86b](https://github.com/renderbag/plume/blob/0ce184b19270e49236afbb74052a6b267494b86b/plume_vulkan.cpp).
+Upstream `VulkanBuffer::map` logs and returns `nullptr` when `vmaMapMemory`
+fails; 0052 restores that upstream failure contract. Upstream has no
+invalidation call, so 0052's invalidation-failure cleanup and null return are
+local policy, releasing only the newly acquired VMA reference. Upstream
+ignores read/written ranges and only calls `vmaUnmapMemory` on unmap: it has
+neither cache maintenance nor a nested-map guard. Thus 0053's rejection of
+nested invalidating reads and its whole-buffer omitted-read policy for
+non-upload heaps remain local behavior, supported by the recording tests.
+No upstream issue was opened.
 
 Patch 0050 retains its first published contents. Patch 0051 adds the mapping
 declaration comment separately: changing 0050's header hunk in place prevented
@@ -88,6 +102,22 @@ source files. Fresh configure and an already-commented checkout are also
 covered. The comparison with pinned/current upstream above applies to 0051's
 documented contract too; it changes only a comment, not mapping behavior.
 
+Patch 0052 changes the map/invalidation failure policy below. Keeping it as a
+suffix preserves both published base patches. CMake recognizes an applied
+0052 before revisiting 0050, whose reverse context it changes. The upgrade
+regression verifies that original checkouts acquire exactly the recovery
+changes while retaining unrelated edits, staged/unstaged notes and the index.
+
+Patch 0053 adds the nested-read guard and conservative DEFAULT-heap reads.
+Its recognition guard precedes 0050/0051/0052 because it changes their reverse
+context. Upgrade tests cover both original and already-recovery-patched
+checkouts, then repeat configuration and compare the source with fixture replay.
+
+Shared CMake applies 0050 after 0049. The checked Plume replay matrix and the
+byte comparison with repeated CMake configuration preserve that build order.
+There is no requirement for 0050 to precede 0047/0049: its mapping hunks and
+their swap-chain hunks do not overlap.
+
 `RenderRange` describes `[begin, end)` bytes relative to the buffer. Mapping
 returns the allocation base, including for partial ranges; callers add their
 own offsets. VMA maps the allocation, so the range declares CPU access rather
@@ -102,39 +132,53 @@ read stale data on noncoherent Vulkan memory.
 
 | Range | Map | Unmap |
 | --- | --- | --- |
-| Omitted | Invalidate the whole READBACK buffer; no invalidation on other heaps. | Flush the whole buffer except READBACK, which defaults to no writes. |
+| Omitted | No reads on UPLOAD/GPU_UPLOAD; invalidate the whole buffer on other host-visible heaps, including DEFAULT and READBACK. | Flush the whole buffer except READBACK, which defaults to no writes. |
 | Explicit nonempty | Invalidate those bytes on any heap. | Flush those bytes on any heap, including READBACK. |
 | Explicit empty, including `[size, size)` | Map without invalidation. | Unmap without flushing. |
 | Reversed or beyond the buffer size | Stop before mapping. | Release the mapping, then stop. |
 
-Only subresource zero is valid. Failed maps stop before returning a pointer;
-failed invalidation releases the new mapping before stopping. Flush failure
-also releases the mapping and stops before a GPU consumer can be submitted.
+Only subresource zero is valid. Failed maps return `nullptr`, matching D3D12
+and preserving existing callers that handle an unavailable upload. Failed
+invalidation releases the new VMA reference before returning `nullptr`.
+Neither failure exposes a data pointer. A failed write-only nested map leaves
+earlier successful references intact.
+Flush failure releases the mapping and stops before a GPU consumer is submitted.
 Unmatched unmaps stop without calling VMA. Nested maps retain VMA's reference
-counting. These checks run in release builds. VMA handles coherent-memory
+counting for write-only access. A map that would invalidate any nonempty read
+range while another mapping is active aborts before `vmaMapMemory`, on coherent
+and noncoherent memory alike. These checks run in release builds. VMA handles coherent-memory
 no-ops and `nonCoherentAtomSize` alignment; ranges use the buffer's size rather
-than allocation padding. Buffers mapped on other heaps need an explicit read
-range when CPU reads are intended.
+than allocation padding. A host-visible DEFAULT allocation with an omitted
+range is conservatively treated as readable. DEFAULT does not guarantee
+host-visible memory: this policy applies only when its allocation can be
+mapped; a failed VMA map still returns null. No current caller maps DEFAULT;
+the whole-buffer policy is tested rather than relying on that caller inventory.
 
 Atom alignment also affects ownership of dirty bytes. VMA expands a cache
 range to whole `nonCoherentAtomSize` atoms. Invalidating a read range can
 discard unflushed CPU writes elsewhere in the same atom, even outside the
-requested byte range. Before a nested read mapping or a write-then-remap,
-flush every pending host write in the affected atoms through an unmap with
-the appropriate written range. An empty written range does not preserve
-dirty bytes for a later invalidation. Nested map reference counting does not
-track dirty ranges or provide this ordering. The audited callers do not mix
-unflushed writes and invalidation this way.
+requested byte range. Finish every active mapping with the appropriate written
+range before starting a read map. The nested-read guard prevents this pattern
+from silently discarding host writes while another mapping remains active.
+After the last unmap, the API cannot detect dirty bytes deliberately omitted
+from written ranges: an empty written range does not flush those bytes, and
+a later invalidation may discard them. That caller duty remains a caveat,
+not an automatic guarantee. The audited callers do not mix unflushed writes
+and invalidation this way.
 
-Mapping, cache-maintenance and contract failures use `abort()` after writing
-the operation and any VMA error code to stderr and calling `fflush(stderr)`.
+Contract violations and flush failures use `abort()` after flushing the
+operation and any VMA error code to stderr. In particular, `VK_ERROR_DEVICE_LOST`
+from a flush terminates the game in release builds. This is an explicit policy:
+`unmap()` has no error return, and continuing could submit stale data. The port
+has no in-process device-loss recovery; the startup GPU advisory is not recovery.
+Map and invalidate failures instead log and return null, so callers can recover.
+Callers that do not check null can still fault, as they could before this patch.
 On POSIX, including Android,
 this raises SIGABRT, which the port's crash handler deliberately excludes
 (`src/lambo_crash.cpp`). These failures therefore do not produce the project's
-symbolised crash dump. Previously a failed map returned null, and a subsequent
-unchecked dereference could produce a captured SIGSEGV. Keeping controlled
-termination trades that later dump for a deterministic diagnostic at the
-failing operation and prevents stale or invalid data reaching a consumer.
+symbolised crash dump. For flush failure, controlled termination trades a
+later failure for a deterministic diagnostic at the failing operation and
+prevents stale data reaching a consumer.
 The dependency does not synthesize a memory fault or change the port's global
 SIGABRT policy. Include stderr/native logs in field reports when available.
 Capture of this abort path in Android app diagnostics or platform crash
@@ -149,7 +193,10 @@ explicit exclusive ranges; change-count reads follow `worker->wait()`, and
 the workload path waits before copying native readbacks to RAM. The port's
 evidence captures and patched RT64 alpha/owner/shadow probes also wait on
 their workers before reading. Shadow-scene uploads declare an empty read
-range and an explicit written range.
+range and an explicit written range. Specifically,
+`rt64_sun_shadow_scene.cpp`'s shared `upload()` helper checks a null map and
+returns false. Returning null on map/invalidation failure preserves that path
+on Vulkan as well as D3D12; it does not force optional shadow uploads to abort.
 
 RecompFrontend maps its dynamic vertex/index/upload buffers in `begin`, then
 unmaps in `end` before the caller submits the command list; resizing also
@@ -164,12 +211,18 @@ The recording VMA regression compiles the production declaration and mapping
 methods, with assertions disabled. Before the fix it observes stale bytes in
 both directions on its noncoherent model. It now checks ordering, coherent
 and noncoherent bytes, omitted/empty/partial/full ranges, invalid extents and
-subresources, nested mapping, failures and cleanup. A 32-byte-atom model also
-demonstrates loss of unflushed bytes outside a nested read range and retention
-after flushing before remapping; coherent memory preserves the dirty bytes.
-This is a possible noncoherent outcome, not a promise of a particular device's
-cache behavior. CI requires the module.
+subresources, write-only nested mapping, failures and cleanup. A 32-byte-atom
+model rejects nested invalidation before a second VMA reference is acquired,
+and verifies retention after flushing and closing mappings before a read.
+The same contract checks run for coherent and noncoherent allocations.
+CI requires the module.
 See [testing commands](../docs/testing.md#vulkan-mapped-memory).
+
+The original #372 snapshot `97b4644`, replayed without 0050, fails 39 of 46
+`unittest` subtests (individual scenario/coherence combinations), with zero
+setup errors. The earlier count of 34 came from an intermediate test version
+and is superseded. The current tests build on #371's fixture and add recoverable
+map failures and nested-reference preservation, so their totals differ.
 
 The ROM-free GPU probe uses production Plume allocation, mapping, drawing and
 submission, then waits for a successful Vulkan fence before checking 16 red
@@ -177,10 +230,19 @@ pixels. It uses a native Vulkan image-to-buffer copy and transfer-to-host
 barrier because pinned Plume's image-to-buffer copy dereferences a null
 `dstTexture`; [issue 366](https://github.com/alondero/automobililamborghini-recomp/issues/366)
 tracks that separate defect, which is not changed by 0050. It prints all memory
-types, actual selected properties per heap, atom size and queue families. It
+types, actual selected properties per heap, atom size and queue families. These
+diagnostics are confined to the developer probe; production constructors do
+not add an unconditional release log. It
 also attempts compatible noncoherent allocations without changing production
-allocation policy. Physical results and validation limits are recorded in
+allocation policy. `--require-noncoherent` makes unavailable physical coverage
+exit with code 2; specific upload/readback/both requirements are supported.
+Physical results and validation limits are recorded in
 the [Android notes](../docs/ANDROID.md#mapped-buffer-memory).
+
+Whole-buffer flush defaults remain conservative. Known written ranges can
+reduce noncoherent work, but this follow-up does not change callers without
+an appropriate measurement. Neither available device offers a compatible
+noncoherent upload allocation for that performance comparison.
 
 ## Application matrix
 

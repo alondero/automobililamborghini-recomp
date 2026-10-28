@@ -12,6 +12,7 @@ SCRIPT_SERIES = {
     "android": ["0006", "0009", "0010", "0011", "0013"],
 }
 CMAKE_SERIES = ["0021", "0022", "0024", "0025", "0026", "0027", "0029", "0030", "0033", "0038", "0039", "0042", "0046"]
+PLUME_CMAKE_SERIES = ["0023", "0028", "0041", "0043", "0044", "0047", "0049", "0050", "0051", "0052", "0053"]
 
 
 def resolve_patch(root, number):
@@ -60,6 +61,9 @@ def validate(root=ROOT):
     actual = re.findall(r'lambo_frontend_patch\("\$\{CMAKE_CURRENT_SOURCE_DIR\}/lib/rt64"\s+(\d{4})-[^\s)]+\)', source)
     if actual != CMAKE_SERIES:
         raise ValueError(f"CMake RT64 replay matrix {CMAKE_SERIES} != build order {actual}")
+    plume = re.findall(r'lambo_frontend_patch\("\$\{CMAKE_CURRENT_SOURCE_DIR\}/lib/rt64/src/contrib/plume"\s+(\d{4})-[^\s)]+\)', source)
+    if plume != PLUME_CMAKE_SERIES:
+        raise ValueError(f"CMake Plume replay matrix {PLUME_CMAKE_SERIES} != build order {plume}")
     recognized = android_series(root, "CMAKE_PATCHES").get("lib/rt64", [])
     if recognized != actual:
         raise ValueError(f"Android recognized CMake series {recognized} != build order {actual}")

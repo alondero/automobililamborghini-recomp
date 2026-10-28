@@ -53,8 +53,25 @@ if(NOT plume_surface_format_patch_applied EQUAL 0)
 endif()
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0049-plume-android-surface-format-without-gralloc-probe.patch)
 # Keep 0050's published hunks stable so existing checkouts pass its reverse check.
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0050-plume-vulkan-mapped-memory.patch)
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0051-plume-vulkan-mapped-memory-contract.patch)
+# Keep this shared order in sync with PLUME_CMAKE_SERIES; the checker verifies 0050 too.
+# 0053 changes reverse context in 0050/0051/0052; recognize it before all three.
+execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0053-plume-vulkan-nested-read-map-guard.patch"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume"
+    RESULT_VARIABLE plume_nested_read_guard_applied OUTPUT_QUIET ERROR_QUIET)
+if(NOT plume_nested_read_guard_applied EQUAL 0)
+    # 0052 changes 0050's reverse context; recognize the recovery patch first.
+    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0052-plume-vulkan-map-failure-recovery.patch"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume"
+        RESULT_VARIABLE plume_map_recovery_applied OUTPUT_QUIET ERROR_QUIET)
+    if(NOT plume_map_recovery_applied EQUAL 0)
+        lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0050-plume-vulkan-mapped-memory.patch)
+    endif()
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0051-plume-vulkan-mapped-memory-contract.patch)
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0052-plume-vulkan-map-failure-recovery.patch)
+endif()
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0053-plume-vulkan-nested-read-map-guard.patch)
 # Later RT64 patches change earlier patches' context. Recognize the newest
 # applied patch first, then replay only what is missing.
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
@@ -708,7 +725,7 @@ set(RT64_STATIC TRUE)
 if(WIN32)
     # Windows native build: RT64 uses its D3D12 backend + a plain Win32 window
     # (HWND handed over via SDL_GetWindowWMInfo in create_window_stub), so no SDL
-    # Vulkan surface. SDL2 comes from rt64's own bundled Windows deps — the same
+    # Vulkan surface. SDL2 comes from rt64's own bundled Windows deps â€” the same
     # tree rt64's CMake points itself at (mupen64plus-win32-deps/SDL2-2.26.3).
     set(SDL2_WIN32_DEPS ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3)
     set(SDL2_INCLUDE_DIRS ${SDL2_WIN32_DEPS}/include)
@@ -833,7 +850,7 @@ endif()
 
 # ultramodern + librecomp, which cascades N64Recomp / LiveRecomp / miniz.
 # The runtime root CMake (lib/N64ModernRuntime/CMakeLists.txt) deliberately
-# omits RT64 — it is pulled in only by a game's own CMake.
+# omits RT64 â€” it is pulled in only by a game's own CMake.
 add_subdirectory(${N64MR})
 
 if(BUILD_TESTING AND LAMBO_PYTHON_EXECUTABLE)
@@ -1007,7 +1024,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         # (compiled directly into lamborghini_modern, C++) pulls RmlUi headers.
         # The flag is scoped to CXX via two-argument generator expressions
         # because `-include` is a single compiler flag followed by a header
-        # name, not a `-flag,value` shorthand — passing both as bare strings
+        # name, not a `-flag,value` shorthand â€” passing both as bare strings
         # inside $<COMPILE_LANGUAGE:CXX>:...> makes CMake emit them as two
         # separate tokens for C++ TUs and empty strings for C TUs.
         "$<$<COMPILE_LANGUAGE:CXX>:-include>" "$<$<COMPILE_LANGUAGE:CXX>:cstdint>"
@@ -1203,7 +1220,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         target_sources(lamborghini_modern PRIVATE ${LAMBO_WINDOWS_RESOURCES_OBJ})
         # Native crash backtrace: CaptureStackBackTrace lives in
         # dbghelp.dll. MinGW64 ships the import lib (libdbghelp.a) so an explicit
-        # target_link_libraries entry is enough; we don't ship the DLL — the
+        # target_link_libraries entry is enough; we don't ship the DLL â€” the
         # system one is fine.
         target_link_libraries(lamborghini_modern PRIVATE dbghelp shell32)
         # Self-contained exe dir: RT64 dlopen()s dxcompiler/dxil at runtime and SDL2 is

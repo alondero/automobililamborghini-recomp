@@ -26,6 +26,9 @@ def main():
     parser.add_argument("--ndk", type=Path)
     parser.add_argument("--device", help="ADB serial for an Android system-driver run")
     parser.add_argument("--dxc", type=Path)
+    parser.add_argument("--require-noncoherent", nargs="?", const="any",
+                        choices=("any", "upload", "readback", "both"),
+                        help="Exit 2 if the requested physical coverage is unavailable")
     args = parser.parse_args()
     if os.name != "nt" and not sys.platform.startswith("linux"):
         parser.error("probe builds need a Windows or Linux host")
@@ -77,10 +80,13 @@ def main():
         for path in [executable, *shaders]:
             run(*adb, "push", path, f"{remote}/{path.name}")
         run(*adb, "shell", "chmod", "755", f"{remote}/probe")
-        run(*adb, "shell", f"{remote}/probe", *[f"{remote}/{path.name}" for path in shaders])
+        command = [*adb, "shell", f"{remote}/probe", *[f"{remote}/{path.name}" for path in shaders]]
     else:
-        run(executable, *shaders)
+        command = [str(executable), *map(str, shaders)]
+    if args.require_noncoherent:
+        command.append(args.require_noncoherent)
+    return subprocess.run(command).returncode
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

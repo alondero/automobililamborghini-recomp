@@ -19,6 +19,10 @@ class MappedMemoryTests(unittest.TestCase):
         source = patched_plume_vulkan(tree)
         header = patched_file(PLUME, "plume_vulkan.h", tree)
         fixture = (ROOT / "tests/fixtures/vulkan_mapped_memory.cpp").read_text(encoding="utf-8")
+        types = patched_file(PLUME, "plume_render_interface_types.h", tree)
+        fixture = fixture.replace("// RANGE_DECLARATION", method(types, "struct RenderRange {") + ";")
+        shadow = patched_file(ROOT / "lib/rt64", "src/render/rt64_sun_shadow_scene.cpp", tree / "rt64")
+        fixture = fixture.replace("// SHADOW_UPLOAD", method(shadow, "bool upload("))
         # Keep the production fields too, without pulling in the entire renderer.
         declaration = method(header, "struct VulkanBuffer : RenderBuffer")
         fixture = fixture.replace("// BUFFER_DECLARATION", declaration.replace(" override", "") + ";")
@@ -28,14 +32,17 @@ class MappedMemoryTests(unittest.TestCase):
         cpp = tree / "fixture.cpp"
         cpp.write_text(fixture, encoding="utf-8")
         cls.exe = tree / "fixture.exe"
-        result = subprocess.run(["g++", "-std=c++17", "-DNDEBUG", str(cpp), "-o", str(cls.exe)],
-                                capture_output=True, text=True)
+        command = ["g++", "-std=c++17", "-DNDEBUG", str(cpp), "-o", str(cls.exe)]
+        result = subprocess.run(command, capture_output=True, text=True)
         if result.returncode:
-            raise RuntimeError(result.stderr)
+            raise RuntimeError(f"Compiler exited {result.returncode}: {subprocess.list2cmdline(command)}\n"
+                               f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}")
 
     def run_scenario(self, scenario, coherent=False):
+        # Allow headroom for Windows death-test termination under load while
+        # keeping a bounded wait for a hung fixture.
         return subprocess.run([str(self.exe), scenario, "coherent" if coherent else "noncoherent"],
-                              capture_output=True, text=True, timeout=10)
+                              capture_output=True, text=True, timeout=30)
 
     def test_upload_is_visible_before_submission(self):
         for coherent in (False, True):
@@ -49,6 +56,14 @@ class MappedMemoryTests(unittest.TestCase):
         for coherent in (False, True):
             with self.subTest(coherent=coherent):
                 result = self.run_scenario("readback-default", coherent)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines(),
+                                 ["submit", "wait", "map", "invalidate 0 96", "cpu-read", "unmap"])
+
+    def test_default_heap_omitted_read_invalidates_the_whole_buffer(self):
+        for coherent in (False, True):
+            with self.subTest(coherent=coherent):
+                result = self.run_scenario("default-read", coherent)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.splitlines(),
                                  ["submit", "wait", "map", "invalidate 0 96", "cpu-read", "unmap"])
@@ -82,6 +97,15 @@ class MappedMemoryTests(unittest.TestCase):
         self.assertEqual(result.stdout.splitlines(),
                          ["map", "map", "flush 1 1", "unmap", "flush 2 1", "unmap"])
 
+    def test_nested_explicit_empty_reads_preserve_dirty_bytes_and_references(self):
+        for coherent in (False, True):
+            for heap in ("upload", "readback", "default"):
+                with self.subTest(coherent=coherent, heap=heap):
+                    result = self.run_scenario("nested-empty-" + heap, coherent)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.splitlines(),
+                                     ["map", "cpu-write", "map", "unmap", "flush 1 1", "unmap"])
+
     def test_invalid_reads_stop_before_mapping(self):
         for suffix in ("reversed", "end", "empty", "overflow", "subresource"):
             with self.subTest(suffix=suffix):
@@ -94,15 +118,17 @@ class MappedMemoryTests(unittest.TestCase):
         self.assertIn("invalid read range, subresource or allocation", result.stderr)
         self.assertEqual(result.stdout, "")
 
-    def test_nested_read_can_discard_unflushed_bytes_outside_read_range(self):
-        # Characterise a permitted outcome of invalidating dirty atoms. If the
-        # mapping contract gains automatic protection, update this expectation.
+    def test_nested_reads_stop_before_acquiring_another_mapping(self):
         for coherent in (False, True):
-            with self.subTest(coherent=coherent):
-                result = self.run_scenario("nested-dirty-atom", coherent)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout.splitlines(), ["map", "cpu-write", "submit", "wait",
-                                 "map", "invalidate 17 1", "cpu-read", "unmap", "unmap"])
+            for scenario in ("nested-dirty-read", "nested-readback", "nested-default-read"):
+                with self.subTest(scenario=scenario, coherent=coherent):
+                    result = self.run_scenario(scenario, coherent)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("nested read map would invalidate an active mapping", result.stderr)
+                    events = ["map"]
+                    if scenario != "nested-dirty-read":
+                        events += ["invalidate 0 96"]
+                    self.assertEqual(result.stdout.splitlines(), events + ["cpu-write"])
 
     def test_flushing_before_read_remap_preserves_other_bytes_in_atom(self):
         for coherent in (False, True):
@@ -128,17 +154,33 @@ class MappedMemoryTests(unittest.TestCase):
                 self.assertIn("unmap without a successful map; cannot continue", result.stderr)
                 self.assertEqual(result.stdout.splitlines(), events)
 
-    def test_vma_failures_stop_and_balance_successful_maps(self):
+    def test_map_failures_return_null_and_balance_successful_maps(self):
         for operation, events in (("map", ["map"]),
-                                  ("invalidate", ["map", "invalidate 0 96", "unmap"]),
-                                  ("flush", ["map", "cpu-write", "flush 0 96", "unmap"])):
+                                  ("invalidate", ["map", "invalidate 0 96", "unmap"])):
             with self.subTest(operation=operation):
                 result = self.run_scenario(operation + "-failure")
-                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn({"map": "vmaMapMemory", "invalidate": "vmaInvalidateAllocation",
-                               "flush": "vmaFlushAllocation"}[operation] + " failed (VkResult=", result.stderr)
-                self.assertIn("cannot continue", result.stderr)
+                               }[operation] + " failed with error code", result.stderr)
                 self.assertEqual(result.stdout.splitlines(), events)
+
+    def test_flush_failure_releases_mapping_and_stops_submission(self):
+        result = self.run_scenario("flush-failure")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("vmaFlushAllocation failed (VkResult=", result.stderr)
+        self.assertIn("cannot continue", result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ["map", "cpu-write", "flush 0 96", "unmap"])
+
+    def test_nested_map_failure_preserves_the_existing_mapping(self):
+        result = self.run_scenario("nested-map-failure")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ["map", "map", "unmap"])
+
+    def test_shadow_upload_returns_false_when_mapping_fails(self):
+        result = self.run_scenario("shadow-upload-failure")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("vmaMapMemory failed", result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ["map"])
 
 
 if __name__ == "__main__":

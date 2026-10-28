@@ -42,6 +42,16 @@ class PatchWiringChecks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unwired=.*9999-unwired.patch'):
             validate(self.root)
 
+    def test_reordered_plume_suffix_fails(self):
+        path = self.root / 'CMakeLists.txt'
+        source = path.read_text(encoding='utf-8')
+        source = source.replace('" 0044-', '" 9999-', 1)
+        source = source.replace('" 0050-', '" 0044-', 1)
+        source = source.replace('" 9999-', '" 0050-', 1)
+        path.write_text(source, encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'CMake Plume replay matrix'):
+            validate(self.root)
+
     def test_android_composed_series_drift_fails(self):
         path = self.root / 'scripts/build_android.py'
         source = path.read_text(encoding='utf-8').replace('"0038", "0039", "0042"', '"0038", "0039"', 1)
