@@ -48,7 +48,7 @@ checkouts, fetches the pinned Android SDL source, checks the complete branch
 diff, then runs:
 
 ~~~text
-python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool --require tests.test_vulkan_clear_bounds --require tests.test_vulkan_shader_nonuniform --require tests.test_android_swapchain_format --require tests.test_android_sdl_surface --require tests.test_vulkan_swapchain
+python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool --require tests.test_vulkan_mapped_memory --require tests.test_vulkan_clear_bounds --require tests.test_vulkan_shader_nonuniform --require tests.test_android_swapchain_format --require tests.test_android_sdl_surface --require tests.test_vulkan_swapchain
 ~~~
 
 Skipping a test in a required module, or failing to discover the module,
@@ -103,6 +103,9 @@ including the complete series before and after 0042. They check source and
 index preservation with staged, unstaged and untracked edits, and rejection
 of conflicting early and late patch edits even when a later marker or older
 composed state still matches.
+The Plume configure checks also upgrade a checkout carrying the frozen first
+revision of 0050 to additive patch 0051, preserving developer files and the
+Git index, then configure the upgraded checkout again.
 No ROM, Android SDK or device is needed; initialize `lib/rt64` first.
 
 Skip counts depend on the environment. `ShadowCaptureTests` skips its six tests
@@ -201,6 +204,39 @@ window, or GPU. They do not verify the actual rendered launcher/settings pages.
 cmake --build build --target lambo_frontend_debugger_tests
 ctest --test-dir build -R "^lambo_frontend_debugger_" --output-on-failure
 ~~~
+
+## Vulkan mapped memory
+
+The recording VMA regression exercises production Plume map/unmap methods
+without a ROM or GPU. Initialize RT64 and its nested Plume dependency first:
+
+```sh
+python -m unittest tests.test_vulkan_mapped_memory -v
+python tools/check_patch_series.py
+python -m unittest tests.test_android_build tests.test_patch_composability tests.test_patch_wiring -v
+```
+
+The separate offscreen hardware probe builds patched Plume and small shaders
+with the pinned DXC. It uploads vertices, draws, copies pixels to readback
+memory, waits for GPU completion and checks the pixels. It changes no game
+settings or saves. Windows/Linux hosts need g++; Android needs NDK 28.2.13676358 and an
+authorized ADB device. For example:
+
+```sh
+python tools/run_vulkan_mapped_memory_probe.py
+python tools/run_vulkan_mapped_memory_probe.py --ndk /path/to/ndk/28.2.13676358 --device ADB_SERIAL
+```
+
+`--dxc PATH` overrides the bundled host DXC. Build output stays under
+`build-vulkan-mapped-memory/`; Android uses `/data/local/tmp/lambo-mapped-memory`.
+Run with the Khronos validation layer installed to check API use. The probe
+explicitly reports when validation is unavailable; a pixel pass alone is not
+a validation pass. It prints actual memory flags and tries compatible
+noncoherent types when available. A coherent-only device cannot establish
+noncoherent coverage. The [patch inventory](../patches/README.md#mapped-buffer-memory)
+defines range semantics and audited caller ordering; the
+[device record](ANDROID.md#mapped-buffer-memory) distinguishes measured and
+unverified paths.
 
 ## Focused checks
 

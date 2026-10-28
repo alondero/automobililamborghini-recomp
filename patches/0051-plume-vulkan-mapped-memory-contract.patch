@@ -1,0 +1,14 @@
+diff --git a/plume_vulkan.h b/plume_vulkan.h
+index 942db49..d9e1950 100644
+--- a/plume_vulkan.h
++++ b/plume_vulkan.h
+@@ -61,6 +61,9 @@
+         VulkanBuffer() = default;
+         VulkanBuffer(VulkanDevice *device, VulkanPool *pool, const RenderBufferDesc &desc);
+         ~VulkanBuffer() override;
++        // Vulkan omits invalidation for null UPLOAD/GPU_UPLOAD read ranges;
++        // D3D12 allows whole-resource reads. Use explicit ranges for portable reads.
++        // Flush dirty host bytes in overlapping atoms before read maps, including nested maps.
+         void *map(uint32_t subresource, const RenderRange *readRange) override;
+         void unmap(uint32_t subresource, const RenderRange *writtenRange) override;
+         std::unique_ptr<RenderBufferFormattedView> createBufferFormattedView(RenderFormat format) override;
