@@ -67,7 +67,7 @@ VkResult vmaInvalidateAllocation(int, VmaAllocation, VkDeviceSize offset, VkDevi
     require(mappings > 0 && size > 0 && offset + size <= 96, "invalid invalidation");
     printf("invalidate %llu %llu\n", (unsigned long long)offset, (unsigned long long)size);
     fflush(stdout);
-    if (scenario == "invalidate-failure" || scenario == "nested-invalidate-failure") return -4;
+    if (scenario == "invalidate-failure") return -4;
     if (!coherent) copyAtoms(deviceBytes, hostBytes, offset, size);
     return VK_SUCCESS;
 }
@@ -126,15 +126,28 @@ int main(int argc, char **argv) {
         buffer.desc.heapType = RenderHeapType::READBACK;
         require(buffer.map(0, nullptr) == nullptr, "failed invalidation exposed stale bytes");
         require(buffer.mapCount == 0 && mappings == 0, "failed invalidation leaked a reference");
-    } else if (scenario == "nested-map-failure" || scenario == "nested-invalidate-failure") {
+    } else if (scenario == "nested-map-failure") {
         require(buffer.map(0, nullptr) != nullptr, "first mapping failed");
-        const RenderRange read{0, 96}, noWrite{0, 0};
-        require(buffer.map(0, &read) == nullptr, "nested failure must return null");
+        const RenderRange noRead{0, 0}, noWrite{0, 0};
+        require(buffer.map(0, &noRead) == nullptr, "nested failure must return null");
         require(buffer.mapCount == 1 && mappings == 1, "nested failure changed earlier map reference");
         buffer.unmap(0, &noWrite);
-    } else if (scenario == "nested-dirty-atom" || scenario == "remap-flushed-atom") {
-        // Model a permitted loss of dirty host bytes when invalidating the same
-        // atom through a different range. Reference counting cannot prevent it.
+    } else if (scenario == "nested-dirty-read" || scenario == "nested-readback" ||
+               scenario == "nested-default-read") {
+        atomSize = 32;
+        if (scenario == "nested-readback") buffer.desc.heapType = RenderHeapType::READBACK;
+        if (scenario == "nested-default-read") buffer.desc.heapType = RenderHeapType::DEFAULT;
+        hostBytes.fill(19);
+        gpuBytes().fill(19);
+        auto *data = static_cast<uint8_t *>(buffer.map(0, nullptr));
+        data[1] = 42;
+        event("cpu-write");
+        const RenderRange read{17, 18};
+        buffer.map(0, scenario == "nested-dirty-read" ? &read : nullptr);
+        require(false, "invalidating nested read continued");
+    } else if (scenario == "remap-flushed-atom") {
+        // A legal write -> flush/unmap -> GPU completion -> read map sequence
+        // preserves host bytes elsewhere in the same noncoherent atom.
         atomSize = 32;
         hostBytes.fill(19);
         deviceBytes.fill(19);
@@ -142,18 +155,15 @@ int main(int argc, char **argv) {
         auto *data = static_cast<uint8_t *>(buffer.map(0, nullptr));
         event("cpu-write");
         data[1] = 42;
-        const bool flushed = scenario == "remap-flushed-atom";
-        if (flushed) buffer.unmap(0, &written);
+        buffer.unmap(0, &written);
         event("submit");
         gpuBytes()[17] = 83;
         event("wait");
         data = static_cast<uint8_t *>(buffer.map(0, &read));
         event("cpu-read");
         require(data[17] == 83, "read range missed GPU data");
-        require(data[1] == ((flushed || coherent) ? 42 : 19),
-            "dirty-atom model did not expose the caller's flush requirement");
+        require(data[1] == 42, "flushed host bytes were lost during invalidation");
         buffer.unmap(0, &noWrite);
-        if (!flushed) buffer.unmap(0, &noWrite);
     } else if (scenario == "nested") {
         auto *first = static_cast<uint8_t *>(buffer.map(0, nullptr));
         auto *second = static_cast<uint8_t *>(buffer.map(0, nullptr));
@@ -192,15 +202,16 @@ int main(int argc, char **argv) {
         event("submit");
         require(gpuBytes()[range.begin] == 42, "partial flush missed CPU data");
         if (!coherent && range.begin != 0) require(gpuBytes()[0] == 23, "flushed outside requested range");
-    } else if (scenario == "readback-default") {
-        buffer.desc.heapType = RenderHeapType::READBACK;
+    } else if (scenario == "readback-default" || scenario == "default-read") {
+        buffer.desc.heapType = scenario == "default-read" ? RenderHeapType::DEFAULT : RenderHeapType::READBACK;
         event("submit");
         gpuBytes()[17] = 83;
         event("wait");
         const auto *data = static_cast<uint8_t *>(buffer.map(0, nullptr));
         event("cpu-read");
         require(data == hostBytes.data() && data[17] == 83, "CPU saw stale GPU data");
-        buffer.unmap(0, nullptr);
+        const RenderRange noWrite{0, 0};
+        buffer.unmap(0, &noWrite);
     } else {
         require(scenario == "upload-default" || scenario == "gpu-upload-default" ||
                 scenario == "flush-failure", "unknown scenario");

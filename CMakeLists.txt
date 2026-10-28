@@ -54,16 +54,24 @@ endif()
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0049-plume-android-surface-format-without-gralloc-probe.patch)
 # Keep 0050's published hunks stable so existing checkouts pass its reverse check.
 # Keep this shared order in sync with PLUME_CMAKE_SERIES; the checker verifies 0050 too.
-# 0052 changes 0050's reverse context; recognize the recovery patch first.
+# 0053 changes reverse context in 0050/0051/0052; recognize it before all three.
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0052-plume-vulkan-map-failure-recovery.patch"
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0053-plume-vulkan-nested-read-map-guard.patch"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume"
-    RESULT_VARIABLE plume_map_recovery_applied OUTPUT_QUIET ERROR_QUIET)
-if(NOT plume_map_recovery_applied EQUAL 0)
-    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0050-plume-vulkan-mapped-memory.patch)
+    RESULT_VARIABLE plume_nested_read_guard_applied OUTPUT_QUIET ERROR_QUIET)
+if(NOT plume_nested_read_guard_applied EQUAL 0)
+    # 0052 changes 0050's reverse context; recognize the recovery patch first.
+    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0052-plume-vulkan-map-failure-recovery.patch"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume"
+        RESULT_VARIABLE plume_map_recovery_applied OUTPUT_QUIET ERROR_QUIET)
+    if(NOT plume_map_recovery_applied EQUAL 0)
+        lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0050-plume-vulkan-mapped-memory.patch)
+    endif()
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0051-plume-vulkan-mapped-memory-contract.patch)
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0052-plume-vulkan-map-failure-recovery.patch)
 endif()
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0051-plume-vulkan-mapped-memory-contract.patch)
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0052-plume-vulkan-map-failure-recovery.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0053-plume-vulkan-nested-read-map-guard.patch)
 # Later RT64 patches change earlier patches' context. Recognize the newest
 # applied patch first, then replay only what is missing.
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check

@@ -783,18 +783,19 @@ with simple shaders, which does not establish full RT64 shader compatibility.
 
 ### Follow-up verification and dependency provenance
 
-PR 372 is an incremental follow-up to primary PR 371, based on its `8afabc0`
-revision. The earlier independent implementation is preserved in `97b4644`;
-it is not a second patch intended to merge alongside 371. The stable 0050/0051
-patches are retained; patch 0052 carries recovery and is recognized on repeated
-configuration before checking 0050's changed reverse context. Map/invalidation
+PR 371 is merged as `372809b` on main. PR 372 is an incremental follow-up based
+on that merge commit. The stable 0050/0051 patches are retained; 0052 carries
+recovery and 0053 rejects nested invalidating reads before acquiring another
+VMA reference. Recognition guards allow repeated configuration and upgrades
+without rewriting those published patches. Map/invalidation
 failure now returns null; a failed flush remains fatal even if Vulkan reports
 device loss, because unmap has no error return. This policy does not add device
 recovery or turn the startup advisory into recovery.
 
-Before rebuilding, the 20 modified RecompFrontend files were compared with a
-clean replay of the nine checked-in frontend patches from pin `b1a1477`.
-The files and complete binary diff matched exactly, including FindFreetype,
+Before rebuilding, the 20 modified RecompFrontend files and two patch-created
+untracked files (`ui_debugger.h` and `ui_document_source.h`) were compared with
+a clean replay of the nine checked-in frontend patches from pin `b1a1477`.
+All 22 files and the complete tracked binary diff matched exactly, including FindFreetype,
 input assignment, modal layout and Android RGBA selection. These are required
 build patches, not unrelated developer changes. They were left in place, and
 the supported Android script was used; it does not run the desktop scripts'

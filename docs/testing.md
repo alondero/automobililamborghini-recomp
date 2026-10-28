@@ -257,7 +257,14 @@ the fixture's Vulkan source/header bytes with the CMake-patched files.
 Mapping and invalidation failures return null after releasing any newly
 acquired VMA reference. The recording fixture runs the production sunlight
 upload helper to verify its existing false-on-null behavior. A failed nested
-map leaves earlier successful references intact. Flush failure still stops
+write-only map leaves earlier successful references intact. An invalidating
+read map while any mapping is active aborts before a second VMA map, even on
+coherent memory. Finish and flush active mappings before reading. Omitted
+reads on host-visible DEFAULT invalidate the full buffer; UPLOAD/GPU_UPLOAD
+retain their write-only defaults. The header and recording tests cover both
+contracts. An empty written range cannot preserve dirty host bytes for a later
+read remap; that non-enforceable caller caveat is documented separately.
+Flush failure still stops
 the process, including on device loss; see the [failure policy](../patches/README.md#mapped-buffer-memory).
 
 ## Focused checks

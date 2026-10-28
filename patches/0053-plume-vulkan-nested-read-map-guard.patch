@@ -1,0 +1,52 @@
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -919,6 +919,17 @@
+             failBufferMapping("invalid read range, subresource or allocation");
+         }
+ 
++        // Only upload heaps default to write-only access. Other host-visible
++        // heaps, including DEFAULT, conservatively invalidate the whole buffer.
++        const bool upload = (desc.heapType == RenderHeapType::UPLOAD) || (desc.heapType == RenderHeapType::GPU_UPLOAD);
++        const VkDeviceSize offset = (readRange != nullptr) ? readRange->begin : 0;
++        const VkDeviceSize size = (readRange != nullptr) ? readRange->end - readRange->begin : (upload ? 0 : desc.size);
++        if ((mapCount > 0) && (size > 0)) {
++            // Invalidation can discard dirty bytes anywhere in the same atom.
++            // End existing mappings with their written ranges before reading.
++            failBufferMapping("nested read map would invalidate an active mapping");
++        }
++
+         void *data = nullptr;
+         VkResult res = vmaMapMemory(device->allocator, allocation, &data);
+         if (res != VK_SUCCESS) {
+@@ -926,11 +937,7 @@
+             return nullptr;
+         }
+ 
+-        // Omitted upload ranges are write-only. Readbacks default to the whole buffer;
+-        // other heaps can request reads explicitly. The caller must wait for GPU writes.
+-        const VkDeviceSize offset = (readRange != nullptr) ? readRange->begin : 0;
+-        const VkDeviceSize size = (readRange != nullptr) ? readRange->end - readRange->begin :
+-            ((desc.heapType == RenderHeapType::READBACK) ? desc.size : 0);
++        // The caller must have waited for GPU writes before mapping reads.
+         if (size > 0) {
+             res = vmaInvalidateAllocation(device->allocator, allocation, offset, size);
+             if (res != VK_SUCCESS) {
+diff --git a/plume_vulkan.h b/plume_vulkan.h
+--- a/plume_vulkan.h
++++ b/plume_vulkan.h
+@@ -61,9 +61,11 @@
+         VulkanBuffer() = default;
+         VulkanBuffer(VulkanDevice *device, VulkanPool *pool, const RenderBufferDesc &desc);
+         ~VulkanBuffer() override;
+-        // Vulkan omits invalidation for null UPLOAD/GPU_UPLOAD read ranges;
+-        // D3D12 allows whole-resource reads. Use explicit ranges for portable reads.
+-        // Flush dirty host bytes in overlapping atoms before read maps, including nested maps.
++        // Omitted reads are empty on UPLOAD/GPU_UPLOAD, whole-buffer on other heaps.
++        // Use explicit read ranges for portable upload reads.
++        // Invalidating read maps cannot nest; finish and flush active mappings first.
++        // Empty written ranges do not flush dirty host bytes before a later read map.
++        // Failed map/invalidation returns null; contract violations stop in release too.
+         void *map(uint32_t subresource, const RenderRange *readRange) override;
+         void unmap(uint32_t subresource, const RenderRange *writtenRange) override;
+         std::unique_ptr<RenderBufferFormattedView> createBufferFormattedView(RenderFormat format) override;

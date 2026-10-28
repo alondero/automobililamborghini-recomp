@@ -65,6 +65,7 @@ significant single-space lines from `git diff --check`;
 | 0050 | Plume inside RT64 | Invalidates mapped reads and flushes mapped writes through VMA, with exclusive byte ranges, heap defaults, release-build validation and balanced failure cleanup. Applied by shared CMake on desktop and Android. See [mapped buffer memory](#mapped-buffer-memory) for caller audit, upstream comparison and measured limits. |
 | 0051 | Plume inside RT64 | Documents Vulkan's read-range defaults and dirty-atom rule beside the mapping declaration. Applied by shared CMake after the original 0050 so existing patched checkouts upgrade without resetting dependency files. No runtime change; see [mapped buffer memory](#mapped-buffer-memory). |
 | 0052 | Plume inside RT64 | Returns null after failed mapping or invalidation, preserving recoverable callers and nested references. Applies after stable patches 0050/0051. Flush failures remain fatal; see [mapped buffer memory](#mapped-buffer-memory). |
+| 0053 | Plume inside RT64 | Rejects invalidating read maps while another mapping is active, before acquiring a VMA reference. Omitted reads invalidate all non-upload heaps, including host-visible DEFAULT. Updates the contract comment without rewriting 0050/0051/0052. |
 
 ## Mapped buffer memory
 
@@ -95,6 +96,11 @@ suffix preserves both published base patches. CMake recognizes an applied
 regression verifies that original checkouts acquire exactly the recovery
 changes while retaining unrelated edits, staged/unstaged notes and the index.
 
+Patch 0053 adds the nested-read guard and conservative DEFAULT-heap reads.
+Its recognition guard precedes 0050/0051/0052 because it changes their reverse
+context. Upgrade tests cover both original and already-recovery-patched
+checkouts, then repeat configuration and compare the source with fixture replay.
+
 Shared CMake applies 0050 after 0049. The checked Plume replay matrix and the
 byte comparison with repeated CMake configuration preserve that build order.
 There is no requirement for 0050 to precede 0047/0049: its mapping hunks and
@@ -114,31 +120,37 @@ read stale data on noncoherent Vulkan memory.
 
 | Range | Map | Unmap |
 | --- | --- | --- |
-| Omitted | Invalidate the whole READBACK buffer; no invalidation on other heaps. | Flush the whole buffer except READBACK, which defaults to no writes. |
+| Omitted | No reads on UPLOAD/GPU_UPLOAD; invalidate the whole buffer on other host-visible heaps, including DEFAULT and READBACK. | Flush the whole buffer except READBACK, which defaults to no writes. |
 | Explicit nonempty | Invalidate those bytes on any heap. | Flush those bytes on any heap, including READBACK. |
 | Explicit empty, including `[size, size)` | Map without invalidation. | Unmap without flushing. |
 | Reversed or beyond the buffer size | Stop before mapping. | Release the mapping, then stop. |
 
 Only subresource zero is valid. Failed maps return `nullptr`, matching D3D12
 and preserving existing callers that handle an unavailable upload. Failed
-invalidation releases the new VMA reference before returning `nullptr`;
-an earlier nested mapping remains valid. Neither failure exposes a data pointer.
+invalidation releases the new VMA reference before returning `nullptr`.
+Neither failure exposes a data pointer. A failed write-only nested map leaves
+earlier successful references intact.
 Flush failure releases the mapping and stops before a GPU consumer is submitted.
 Unmatched unmaps stop without calling VMA. Nested maps retain VMA's reference
-counting. These checks run in release builds. VMA handles coherent-memory
+counting for write-only access. A map that would invalidate any nonempty read
+range while another mapping is active aborts before `vmaMapMemory`, on coherent
+and noncoherent memory alike. These checks run in release builds. VMA handles coherent-memory
 no-ops and `nonCoherentAtomSize` alignment; ranges use the buffer's size rather
-than allocation padding. Buffers mapped on other heaps need an explicit read
-range when CPU reads are intended.
+than allocation padding. A host-visible DEFAULT allocation with an omitted
+range is conservatively treated as readable. No current caller maps DEFAULT;
+the whole-buffer policy is tested rather than relying on that caller inventory.
 
 Atom alignment also affects ownership of dirty bytes. VMA expands a cache
 range to whole `nonCoherentAtomSize` atoms. Invalidating a read range can
 discard unflushed CPU writes elsewhere in the same atom, even outside the
-requested byte range. Before a nested read mapping or a write-then-remap,
-flush every pending host write in the affected atoms through an unmap with
-the appropriate written range. An empty written range does not preserve
-dirty bytes for a later invalidation. Nested map reference counting does not
-track dirty ranges or provide this ordering. The audited callers do not mix
-unflushed writes and invalidation this way.
+requested byte range. Finish every active mapping with the appropriate written
+range before starting a read map. The nested-read guard prevents this pattern
+from silently discarding host writes while another mapping remains active.
+After the last unmap, the API cannot detect dirty bytes deliberately omitted
+from written ranges: an empty written range does not flush those bytes, and
+a later invalidation may discard them. That caller duty remains a caveat,
+not an automatic guarantee. The audited callers do not mix unflushed writes
+and invalidation this way.
 
 Contract violations and flush failures use `abort()` after flushing the
 operation and any VMA error code to stderr. In particular, `VK_ERROR_DEVICE_LOST`
@@ -185,11 +197,11 @@ The recording VMA regression compiles the production declaration and mapping
 methods, with assertions disabled. Before the fix it observes stale bytes in
 both directions on its noncoherent model. It now checks ordering, coherent
 and noncoherent bytes, omitted/empty/partial/full ranges, invalid extents and
-subresources, nested mapping, failures and cleanup. A 32-byte-atom model also
-demonstrates loss of unflushed bytes outside a nested read range and retention
-after flushing before remapping; coherent memory preserves the dirty bytes.
-This is a possible noncoherent outcome, not a promise of a particular device's
-cache behavior. CI requires the module.
+subresources, write-only nested mapping, failures and cleanup. A 32-byte-atom
+model rejects nested invalidation before a second VMA reference is acquired,
+and verifies retention after flushing and closing mappings before a read.
+The same contract checks run for coherent and noncoherent allocations.
+CI requires the module.
 See [testing commands](../docs/testing.md#vulkan-mapped-memory).
 
 The original #372 snapshot `97b4644`, replayed without 0050, fails 39 of 46

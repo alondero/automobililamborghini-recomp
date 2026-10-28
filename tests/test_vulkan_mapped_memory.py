@@ -58,6 +58,14 @@ class MappedMemoryTests(unittest.TestCase):
                 self.assertEqual(result.stdout.splitlines(),
                                  ["submit", "wait", "map", "invalidate 0 96", "cpu-read", "unmap"])
 
+    def test_default_heap_omitted_read_invalidates_the_whole_buffer(self):
+        for coherent in (False, True):
+            with self.subTest(coherent=coherent):
+                result = self.run_scenario("default-read", coherent)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines(),
+                                 ["submit", "wait", "map", "invalidate 0 96", "cpu-read", "unmap"])
+
     def test_explicit_reads_and_writes_keep_exclusive_byte_ranges_and_base_pointer(self):
         for scenario, offset, size in (("partial", 7, 23), ("full", 0, 96), ("tail", 95, 1),
                                        ("default-explicit", 7, 23), ("readback-explicit-write", 7, 23)):
@@ -99,15 +107,17 @@ class MappedMemoryTests(unittest.TestCase):
         self.assertIn("invalid read range, subresource or allocation", result.stderr)
         self.assertEqual(result.stdout, "")
 
-    def test_nested_read_can_discard_unflushed_bytes_outside_read_range(self):
-        # Characterise a permitted outcome of invalidating dirty atoms. If the
-        # mapping contract gains automatic protection, update this expectation.
+    def test_nested_reads_stop_before_acquiring_another_mapping(self):
         for coherent in (False, True):
-            with self.subTest(coherent=coherent):
-                result = self.run_scenario("nested-dirty-atom", coherent)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout.splitlines(), ["map", "cpu-write", "submit", "wait",
-                                 "map", "invalidate 17 1", "cpu-read", "unmap", "unmap"])
+            for scenario in ("nested-dirty-read", "nested-readback", "nested-default-read"):
+                with self.subTest(scenario=scenario, coherent=coherent):
+                    result = self.run_scenario(scenario, coherent)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("nested read map would invalidate an active mapping", result.stderr)
+                    events = ["map"]
+                    if scenario != "nested-dirty-read":
+                        events += ["invalidate 0 96"]
+                    self.assertEqual(result.stdout.splitlines(), events + ["cpu-write"])
 
     def test_flushing_before_read_remap_preserves_other_bytes_in_atom(self):
         for coherent in (False, True):
@@ -151,12 +161,9 @@ class MappedMemoryTests(unittest.TestCase):
         self.assertEqual(result.stdout.splitlines(), ["map", "cpu-write", "flush 0 96", "unmap"])
 
     def test_nested_map_failure_preserves_the_existing_mapping(self):
-        for operation, events in (("map", ["map", "map", "unmap"]),
-                                  ("invalidate", ["map", "map", "invalidate 0 96", "unmap", "unmap"])):
-            with self.subTest(operation=operation):
-                result = self.run_scenario("nested-" + operation + "-failure")
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout.splitlines(), events)
+        result = self.run_scenario("nested-map-failure")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ["map", "map", "unmap"])
 
     def test_shadow_upload_returns_false_when_mapping_fails(self):
         result = self.run_scenario("shadow-upload-failure")

@@ -213,6 +213,12 @@ class PlumeRepeatConfigureTests(unittest.TestCase):
                              f"recording fixture differs from repeated CMake result: {name}")
 
     def test_upgrade_from_original_mapped_memory_patch_preserves_edits(self):
+        self.check_mapping_upgrade(from_recovery=False)
+
+    def test_upgrade_from_recovery_patch_preserves_edits(self):
+        self.check_mapping_upgrade(from_recovery=True)
+
+    def check_mapping_upgrade(self, from_recovery):
         root, tree = self.plume_checkout()
         patch = resolve_patch("0050")
         # Freeze the first published patch as data, independent of Git history
@@ -220,9 +226,15 @@ class PlumeRepeatConfigureTests(unittest.TestCase):
         # from configuring the latest revision twice.
         shutil.copyfile(ROOT / "tests/fixtures/plume_mapped_memory_v1.patch", root / "patches" / patch.name)
         steps = self.plume_steps()
-        prefix_end = steps.index("\n", steps.index(patch.name)) + 1
-        prefix_end = steps.index("\nendif()", prefix_end - 1) + len("\nendif()") + 1
-        self.configure(root, steps[:prefix_end], "original mapping patch")
+        final_patch = resolve_patch("0052").name if from_recovery else patch.name
+        prefix_end = steps.index("\n", steps.rindex(final_patch)) + 1
+        prefix = steps[:prefix_end]
+        # The selected prefix can end inside recognition guards. Close only
+        # those active conditionals so the production prefix runs unchanged.
+        depth = sum(bool(re.match(r"\s*if\(", line)) - bool(re.match(r"\s*endif\(", line))
+                    for line in prefix.splitlines())
+        self.assertGreaterEqual(depth, 0)
+        self.configure(root, prefix + "\nendif()" * depth, "previous mapping patch state")
 
         cpp = tree / "plume_vulkan.cpp"
         header = tree / "plume_vulkan.h"
@@ -240,8 +252,9 @@ class PlumeRepeatConfigureTests(unittest.TestCase):
         expected = root / "expected"
         expected.mkdir()
         (expected / "plume_vulkan.cpp").write_bytes(cpp.read_bytes())
-        subprocess.run(["git", "apply", "--include=plume_vulkan.cpp", str(resolve_patch("0052"))],
-                       cwd=expected, check=True, capture_output=True)
+        for number in (["0053"] if from_recovery else ["0052", "0053"]):
+            subprocess.run(["git", "apply", "--include=plume_vulkan.cpp", str(resolve_patch(number))],
+                           cwd=expected, check=True, capture_output=True)
         expected_cpp = (expected / "plume_vulkan.cpp").read_bytes()
 
         shutil.copyfile(patch, root / "patches" / patch.name)
@@ -249,7 +262,7 @@ class PlumeRepeatConfigureTests(unittest.TestCase):
         self.assertEqual({path: path.read_bytes() for path in before}, before)
         self.assertEqual(cpp.read_bytes(), expected_cpp)
         self.assertTrue(header.read_bytes().endswith(b"// Keep this unrelated header edit.\n"))
-        comment = b"Vulkan omits invalidation for null UPLOAD/GPU_UPLOAD read ranges;"
+        comment = b"Invalidating read maps cannot nest; finish and flush active mappings first."
         self.assertEqual(header.read_bytes().count(comment), 1)
         upgraded_header = header.read_bytes()
         self.configure(root, steps, "repeat upgraded mapping patch")
