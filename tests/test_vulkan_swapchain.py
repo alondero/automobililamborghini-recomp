@@ -5,6 +5,8 @@ implementation against a recording Vulkan boundary. The window-system surface
 block and getWindowSize are the only replaced parts. The fake driver enforces
 the VkSwapchainCreateInfoKHR contract and the Android loader's rule that an
 oldSwapchain is retired even when its replacement fails.
+
+The implementation is compiled twice, once with its Android branches (#329).
 """
 import shutil
 import subprocess
@@ -22,6 +24,8 @@ SCENARIOS = (
     "alpha-premultiplied", "alpha-postmultiplied", "transform-refusal", "replacement-failure",
     "abandoned-surface", "short-image-count", "present-mode",
 )
+# Android 15 on an Adreno 730: the format query leaves gralloc's lock with its thread.
+ANDROID_SCENARIOS = SCENARIOS + ("gralloc-probe-lock",)
 
 
 def swap_chain_section(source):
@@ -48,25 +52,35 @@ class SwapChainCapabilityTests(unittest.TestCase):
         tree = Path(cls.temporary.name)
         source = patched_plume_vulkan(tree)
         header = patched_file(PLUME, "plume_vulkan.h", tree)
+        section = swap_chain_section(source)
+        cls.exe = cls.build(tree / "fixture", header, section)
+        # The surface and window-size blocks are already replaced, so the define reaches only the
+        # Android branches of the shared swap chain code.
+        cls.android_exe = cls.build(tree / "fixture-android", header,
+                                    "#define __ANDROID__ 1\n" + section + "\n#undef __ANDROID__")
+
+    @staticmethod
+    def build(stem, header, section):
         fixtures = ROOT / "tests/fixtures"
-        cpp = tree / "fixture.cpp"
+        cpp = stem.with_suffix(".cpp")
         cpp.write_text("\n".join([
             (fixtures / "vulkan_swapchain.cpp").read_text(encoding="utf-8"),
             "namespace plume {",
             swap_chain_declaration(header),
-            swap_chain_section(source),
+            section,
             "}",
             (fixtures / "vulkan_swapchain_scenarios.cpp").read_text(encoding="utf-8"),
         ]), encoding="utf-8")
-        cls.exe = tree / "fixture.exe"
+        exe = stem.with_suffix(".exe")
         # Undefine the platform macros so only the fixture's surface path is compiled.
-        result = subprocess.run(["g++", "-std=c++17", "-U__APPLE__", str(cpp), "-o", str(cls.exe)],
+        result = subprocess.run(["g++", "-std=c++17", "-U__APPLE__", str(cpp), "-o", str(exe)],
                                 capture_output=True, text=True)
         if result.returncode:
             raise RuntimeError(result.stderr)
+        return exe
 
-    def run_scenario(self, scenario):
-        result = subprocess.run([str(self.exe), scenario], capture_output=True, text=True, timeout=10)
+    def run_scenario(self, scenario, exe=None):
+        result = subprocess.run([str(exe or self.exe), scenario], capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, f"{scenario}\n{result.stdout}\n{result.stderr}")
         return result
 
@@ -74,6 +88,11 @@ class SwapChainCapabilityTests(unittest.TestCase):
         for scenario in SCENARIOS:
             with self.subTest(scenario=scenario):
                 self.run_scenario(scenario)
+
+    def test_android_scenarios(self):
+        for scenario in ANDROID_SCENARIOS:
+            with self.subTest(scenario=scenario):
+                self.run_scenario(scenario, self.android_exe)
 
     def test_creation_records_capabilities_and_choices(self):
         log = self.run_scenario("android-defaults").stderr

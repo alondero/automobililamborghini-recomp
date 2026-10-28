@@ -42,7 +42,16 @@ lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 00
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0041-plume-variable-descriptor-pool-retry.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0043-plume-vulkan-clear-rect-bounds.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0044-plume-vulkan-shader-nonuniform-without-descriptor-indexing.patch)
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0047-plume-vulkan-surface-capabilities.patch)
+# 0049 changes lines next to 0047's, so recognize it before checking 0047's
+# reverse context on repeated configure runs.
+execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0049-plume-android-surface-format-without-gralloc-probe.patch"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume"
+    RESULT_VARIABLE plume_surface_format_patch_applied OUTPUT_QUIET ERROR_QUIET)
+if(NOT plume_surface_format_patch_applied EQUAL 0)
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0047-plume-vulkan-surface-capabilities.patch)
+endif()
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0049-plume-android-surface-format-without-gralloc-probe.patch)
 # Later RT64 patches change earlier patches' context. Recognize the newest
 # applied patch first, then replay only what is missing.
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check

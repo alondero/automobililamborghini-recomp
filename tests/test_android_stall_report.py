@@ -55,6 +55,27 @@ class AndroidStallReportTests(unittest.TestCase):
     def test_non_dumpable_process_still_names_holder(self):
         self.assertIn("dumpable after report 0", self.assert_names_holder("undumpable"))
 
+    # Issue 329: the present thread waited on gralloc's lock while the graphics thread held it.
+    def test_blocked_probe_names_holder(self):
+        output = self.run_probe("held-probe")
+        holder = re.search(r"holder tid (\d+)", output).group(1)
+        self.assertIn("Held lock check: no answer after 500 ms. Probe wait:", output)
+        line = next((line for line in output.splitlines() if "'Lambo Probe'" in line), "")
+        self.assertIn("futex LOCK_PI", line, output)
+        self.assertIn(f"owner={holder} holder: tid {holder} 'PI Holder'", line, output)
+        self.assertIn("answered 0 dumpable after check 0", output)
+
+    def test_allocator_check_answers(self):
+        output = self.run_probe("allocator")
+        self.assertRegex(output, r"Graphics buffer check on device \(tid \d+\): answered in \d+ ms\.")
+
+    def run_probe(self, mode):
+        result = subprocess.run([ADB, "shell", f"chmod 755 {REMOTE} && {REMOTE} {mode}"],
+                                capture_output=True, text=True, timeout=30)
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, output)
+        return output
+
     def assert_names_holder(self, mode):
         result = subprocess.run([ADB, "shell", f"chmod 755 {REMOTE} && {REMOTE} {mode}"],
                                 capture_output=True, text=True, timeout=30)

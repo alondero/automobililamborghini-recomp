@@ -355,6 +355,23 @@ static void run(const std::string &scenario) {
         h.frames(3);
         CHECK(created.size() == 2);
     }
+    else if (scenario == "gralloc-probe-lock") {
+        // RT64 constructs the swap chain on its gfx thread and creates and presents it on its present thread.
+        formatProbeKeepsGrallocLock = true;
+        Harness h(2);
+        bool presented = false;
+        std::thread present([&] {
+            presented = h.frame();
+            h.frames(3);
+        });
+        present.join();
+        CHECK(presented);
+        CHECK(created.size() == 1);
+        if (!created.empty()) {
+            CHECK(lastCreated().imageFormat == VK_FORMAT_R8G8B8A8_UNORM);
+            CHECK(lastCreated().imageColorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR);
+        }
+    }
     else {
         printf("unknown scenario %s\n", scenario.c_str());
         ++failures;

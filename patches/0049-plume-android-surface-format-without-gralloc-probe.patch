@@ -1,0 +1,41 @@
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+index 4472ad8..5489699 100644
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -2324,16 +2324,28 @@ namespace plume {
+             return "no opaque or inherit composite alpha mode";
+         }
+ 
+-        uint32_t surfaceFormatCount = 0;
+-        res = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatCount, nullptr);
+-        std::vector<VkSurfaceFormatKHR> surfaceFormats(surfaceFormatCount);
+-        if (res == VK_SUCCESS) {
+-            res = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatCount, surfaceFormats.data());
++        std::vector<VkSurfaceFormatKHR> surfaceFormats;
++#   if defined(__ANDROID__)
++        // Android's loader always offers RGBA8 with sRGB, and answers the query by asking gralloc
++        // about other formats. An Android 15 Adreno 730 gralloc kept its lock with the querying
++        // thread afterwards, so the present thread blocked creating the first chain.
++        if (toVk(desc.format) == VK_FORMAT_R8G8B8A8_UNORM) {
++            surfaceFormats.push_back({ VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR });
+         }
++#   endif
+ 
+-        if ((res != VK_SUCCESS) && (res != VK_INCOMPLETE)) {
+-            detail = res;
+-            return "vkGetPhysicalDeviceSurfaceFormatsKHR failed";
++        uint32_t surfaceFormatCount = uint32_t(surfaceFormats.size());
++        if (surfaceFormats.empty()) {
++            res = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatCount, nullptr);
++            surfaceFormats.resize(surfaceFormatCount);
++            if (res == VK_SUCCESS) {
++                res = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatCount, surfaceFormats.data());
++            }
++
++            if ((res != VK_SUCCESS) && (res != VK_INCOMPLETE)) {
++                detail = res;
++                return "vkGetPhysicalDeviceSurfaceFormatsKHR failed";
++            }
+         }
+ 
+         uint32_t presentModeCount = 0;
