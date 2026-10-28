@@ -231,8 +231,13 @@ public final class LauncherActivity extends Activity {
     }
 
     private void ensureAssets() throws Exception {
+        ensureAssets(getFilesDir());
+    }
+
+    // Device regression checks use an empty cache directory with the same
+    // packaged AssetManager, without touching the player's extracted files.
+    void ensureAssets(File files) throws Exception {
         final String version = Integer.toString(getPackageManager().getPackageInfo(getPackageName(), 0).versionCode);
-        File files = getFilesDir();
         File marker = new File(files, "assets/.assets-version");
         File expected = new File(files, "assets/LatoLatin-Regular.ttf");
         File expectedSyms = new File(files, "lamborghini.syms.toml");

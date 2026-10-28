@@ -15,7 +15,7 @@ android {
     defaultConfig {
         applicationId 'io.github.alondero.lamborghinirecomp'
         testInstrumentationRunner "io.github.alondero.lamborghinirecomp.DriverImportInstrumentation"
-        minSdk 26
+        minSdk 28
         targetSdk 35
         versionCode major * 1000000 + minor * 1000 + patch
         versionName "${major}.${minor}.${patch}"

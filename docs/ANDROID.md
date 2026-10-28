@@ -71,6 +71,24 @@ SDL and the renderer share an app-local Vulkan loader so they use the same drive
 and surface. Native libraries must be extracted by Android (`useLegacyPackaging`)
 for AdrenoTools hooks. NDK 28 supplies 16 KiB-aligned native libraries.
 
+## Packaged assets and startup checks
+
+The nested APK paths `assets/assets/...` are intentional. Android's
+AssetManager exposes the ZIP's outer `assets/` directory as its root. The
+launcher copies its `assets` subdirectory to app-private `files/assets/`,
+and copies `lamborghini.syms.toml` beside that directory. Native startup uses
+app-private storage as its working directory. Flattening the APK paths breaks
+fresh extraction. A direct GameActivity launch skips extraction and cannot
+validate this contract.
+
+The packaging script validates all four UI fonts and `recomp.rcss`, plus the
+symbols file. See [Testing](testing.md) for the ROM-free `assetcheck` and the
+launcher-driven `gameboot` soak. PR 287's original flattening diagnosis was
+contradicted by this staging contract, and its polling loop did not implement
+the claimed 45-second soak. The original missing-font cause remains unverified;
+missing staged files, including after direct GameActivity startup, are a
+possible explanation. Preserve the failed launch's diagnostics before retrying.
+
 ## Export diagnostics after a failed launch
 
 Return to the launcher and select **Export diagnostics ZIP**. Choose where to

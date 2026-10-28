@@ -323,6 +323,38 @@ and direct mode writes the selected curve entry with the stick's sign.
 `LAMBO_STEERING_TRACE` and the `LAMBO_STEERING_*` overrides to compare modes,
 as in [Steering response](steering.md#verification).
 
+The Android asset extraction check uses the installed debug APK's AssetManager
+and the launcher's real extraction code in empty cache storage. It checks all
+packaged runtime bytes, version refresh, cached reuse, and recovery when a font
+or symbols file is missing. It requires no ROM and leaves player files alone:
+
+~~~powershell
+adb shell am instrument -w -e assetcheck 1 io.github.alondero.lamborghinirecomp.test/io.github.alondero.lamborghinirecomp.DriverImportInstrumentation
+~~~
+
+The opt-in game-boot check opens LauncherActivity and presses Play, including
+its normal asset extraction. Import your supported USA ROM through the launcher
+first. This uses the installed ROM, settings, saves, and selected GPU driver;
+it can create logs and save data. Keep the screen unlocked and the app in the
+foreground. Install both the debug APK and matching instrumentation APK
+(`android/gradlew.bat -p android assembleDebug assembleDebugAndroidTest` from
+the repository root). Install the instrumentation APK as described in the
+[Android guide](ANDROID.md#build-locally), then run:
+
+~~~powershell
+adb shell am force-stop io.github.alondero.lamborghinirecomp
+adb shell am instrument -w -e gameboot 1 -e hold_ms 45000 io.github.alondero.lamborghinirecomp.test/io.github.alondero.lamborghinirecomp.DriverImportInstrumentation
+~~~
+
+Startup has a separate 10-second timeout. `hold_ms` is the soak duration after
+the game process appears, with a minimum and default of 2,000 ms. Invalid or
+negative values fail. Every 500 ms the check requires the same process PID;
+death or restart fails. An already-running game is rejected. The check leaves
+the game running after success. Process survival does not prove font loading,
+rendering, responsiveness, or gameplay; inspect logs and play on the device.
+The host `test_android_game_boot.py` verifies polling duration and failure cases
+with a simulated clock; it does not run Android.
+
 `lambo_prompt_back_action` checks the settings quit confirmation's controller
 contract in the build input: the prompt must answer the Back action, that action
 must be the mapped Back rather than a fixed button, and the affirmative quit
