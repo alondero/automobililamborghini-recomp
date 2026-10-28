@@ -18,6 +18,8 @@ CMake series is shared. Plume patches (0004/0014/0023/0028) are out of scope:
 they target the nested plume submodule identically on all platforms, so they
 cannot cause platform divergence.
 """
+import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -153,6 +155,45 @@ class PatchCompositionTests(unittest.TestCase):
                     self.prepare_android(tree)
                 self.assertEqual(self.snapshot(tree), before)
                 path.write_bytes(original)
+
+
+@unittest.skipUnless(
+    (ROOT / "lib" / "rt64" / "src" / "contrib" / "plume" / ".git").exists()
+    and shutil.which("cmake"),
+    "plume submodule or cmake unavailable",
+)
+class PlumeRepeatConfigureTests(unittest.TestCase):
+    """build.ps1 configures twice, so the plume patch steps must run twice."""
+
+    def plume_steps(self):
+        frontend = (ROOT / "cmake" / "Frontend.cmake").read_text(encoding="utf-8")
+        function = re.search(r"find_package\(Git REQUIRED\).*?endfunction\(\)", frontend, re.S)
+        cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+        steps = re.search(r"include\(cmake/Frontend\.cmake\)\n(.*?)\n# Later RT64 patches", cmake, re.S)
+        self.assertTrue(function and steps, "patch step markers moved")
+        self.assertIn("contrib/plume", steps.group(1))
+        return function.group(0) + "\n" + steps.group(1) + "\n"
+
+    def test_second_configure_accepts_applied_plume_series(self):
+        sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD:src/contrib/plume"], cwd=RT64_DIR, text=True
+        ).strip()
+        tmp = tempfile.TemporaryDirectory(prefix="lambo-plume-configure-")
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        shutil.copytree(PATCHES_DIR, root / "patches")
+        tree = root / "lib" / "rt64" / "src" / "contrib" / "plume"
+        plume = RT64_DIR / "src" / "contrib" / "plume"
+        subprocess.check_call(["git", "-C", str(plume), "worktree", "add", "--detach", str(tree), sha],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(subprocess.run, ["git", "-C", str(plume), "worktree", "remove", "--force", str(tree)],
+                        capture_output=True)
+        script = root / "plume_patches.cmake"
+        script.write_text(self.plume_steps(), encoding="utf-8")
+        for run in ("first", "second"):
+            result = subprocess.run(["cmake", "-P", str(script)], cwd=root, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, f"{run} configure:\n{result.stderr}")
+        self.assertTrue(subprocess.check_output(["git", "-C", str(tree), "diff", "--stat"]))
 
 
 class DxilGuardTests(unittest.TestCase):

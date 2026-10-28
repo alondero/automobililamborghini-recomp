@@ -5,14 +5,18 @@
 #include <cstdio>
 
 #if defined(__ANDROID__)
+#include <android/hardware_buffer.h>
 #include <dirent.h>
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include <condition_variable>
 #include <cstdlib>
+#include <memory>
 #include <mutex>
 #include <thread>
 #endif
@@ -227,11 +231,23 @@ void report_thread(long tid) {
     std::fprintf(stderr, "  %s\n", line.c_str());
 }
 
+// A release app is not dumpable, so the kernel gives root its owner-only
+// /proc files (syscall, mem) and every lock word reads as missing.
+class ScopedDumpable {
+public:
+    ScopedDumpable() : dumpable_(prctl(PR_GET_DUMPABLE)) {
+        if (dumpable_ == 0) prctl(PR_SET_DUMPABLE, 1);
+    }
+    ~ScopedDumpable() {
+        if (dumpable_ == 0) prctl(PR_SET_DUMPABLE, 0);
+    }
+
+private:
+    int dumpable_;
+};
+
 void report(uint64_t beats, std::chrono::milliseconds threshold) {
-    // A release app is not dumpable, so the kernel gives root its owner-only
-    // /proc files (syscall, mem) and every lock word reads as missing.
-    const int dumpable = prctl(PR_GET_DUMPABLE);
-    if (dumpable == 0) prctl(PR_SET_DUMPABLE, 1);
+    const ScopedDumpable dumpable;
     std::fprintf(stderr, "Present stall: no frame for %lld ms after %llu frames. Thread waits:\n",
                  (long long)threshold.count(), (unsigned long long)beats);
     if (DIR* tasks = opendir("/proc/self/task")) {
@@ -241,12 +257,85 @@ void report(uint64_t beats, std::chrono::milliseconds threshold) {
         }
         closedir(tasks);
     }
-    if (dumpable == 0) prctl(PR_SET_DUMPABLE, 0);
     std::fprintf(stderr, "End of present stall report.\n");
     std::fflush(stderr);
 }
 
 } // namespace
+
+bool check_wait(const std::string& what, std::function<void()> probe, std::chrono::milliseconds timeout) {
+    struct Probe {
+        std::mutex mutex;
+        std::condition_variable finished;
+        bool done = false;
+        long tid = 0;
+    };
+    // A probe that never returns keeps its state alive.
+    auto state = std::make_shared<Probe>();
+    const auto started = std::chrono::steady_clock::now();
+    std::thread([state, probe = std::move(probe)] {
+        pthread_setname_np(pthread_self(), "Lambo Probe");
+        {
+            const std::scoped_lock lock(state->mutex);
+            state->tid = gettid();
+        }
+        probe();
+        {
+            const std::scoped_lock lock(state->mutex);
+            state->done = true;
+        }
+        state->finished.notify_all();
+    }).detach();
+
+    std::unique_lock lock(state->mutex);
+    if (state->finished.wait_for(lock, timeout, [&] { return state->done; })) {
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);
+        std::fprintf(stderr, "%s: answered in %lld ms.\n", what.c_str(), (long long)elapsed.count());
+        return true;
+    }
+    const long tid = state->tid;
+    lock.unlock();
+    std::fprintf(stderr, "%s: no answer after %lld ms. Probe wait:\n", what.c_str(), (long long)timeout.count());
+    if (tid > 0) {
+        const ScopedDumpable dumpable;
+        report_thread(tid);
+    } else {
+        std::fprintf(stderr, "  probe thread did not start\n");
+    }
+    std::fflush(stderr);
+    return false;
+}
+
+void check_buffer_allocator(const char* point) {
+    // A blocked probe never returns, and the stall report covers what follows.
+    static std::atomic<bool> blocked{false};
+    if (blocked.load()) return;
+
+    // minSdk is 28; the query is API 29.
+    using IsSupported = int (*)(const AHardwareBuffer_Desc*);
+    static const auto is_supported = [] {
+        void* library = dlopen("libnativewindow.so", RTLD_NOW);
+        return library ? reinterpret_cast<IsSupported>(dlsym(library, "AHardwareBuffer_isSupported")) : nullptr;
+    }();
+    const std::string what = std::string("Graphics buffer check ") + point + " (tid " + std::to_string(gettid()) + ")";
+    if (is_supported == nullptr) {
+        std::fprintf(stderr, "%s: AHardwareBuffer_isSupported unavailable.\n", what.c_str());
+        return;
+    }
+
+    // The format and usage Turnip's swap chain asked about when issue 329's present thread blocked.
+    if (!check_wait(what, [] {
+            AHardwareBuffer_Desc desc = {};
+            desc.width = 1;
+            desc.height = 1;
+            desc.layers = 1;
+            desc.format = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
+            desc.usage = AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE | AHARDWAREBUFFER_USAGE_GPU_FRAMEBUFFER;
+            is_supported(&desc);
+        }, std::chrono::milliseconds(1000))) {
+        blocked.store(true);
+    }
+}
 
 void start() {
     static std::once_flag once;
@@ -265,6 +354,7 @@ void start() {
 }
 #else
 void start() {}
+void check_buffer_allocator(const char*) {}
 #endif
 
 } // namespace lambo::stall

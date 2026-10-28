@@ -6,6 +6,8 @@
 // the reported surface capabilities and models the Android loader's surface
 // ownership: one active chain per surface, oldSwapchain is retired even when
 // creation fails, and a retired chain cannot be replaced again or acquired from.
+// It can also model the gralloc lock seen on an Android 15 Adreno 730 (#329):
+// the format query's buffer probes leave it owned by the querying thread.
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -18,6 +20,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <vector>
 
@@ -157,6 +160,9 @@ namespace driver {
     std::unordered_set<VkImageView> liveViews;
     VkSwapchainKHR activeChain = VK_NULL_HANDLE;
     bool surfaceAlive = false;
+    bool formatProbeKeepsGrallocLock = false;
+    bool grallocLocked = false;
+    std::thread::id grallocOwner;
     uintptr_t nextHandle = 100;
     int violations = 0;
 
@@ -229,6 +235,10 @@ static VkResult enumerate(const std::vector<T> &values, uint32_t *count, T *out)
 }
 
 VkResult vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice, VkSurfaceKHR, uint32_t *count, VkSurfaceFormatKHR *formats) {
+    if (driver::formatProbeKeepsGrallocLock && !driver::grallocLocked) {
+        driver::grallocLocked = true;
+        driver::grallocOwner = std::this_thread::get_id();
+    }
     return enumerate(driver::formats, count, formats);
 }
 
@@ -239,6 +249,12 @@ VkResult vkGetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice, VkSurfaceKH
 VkResult vkCreateSwapchainKHR(VkDevice, const VkSwapchainCreateInfoKHR *info, const VkAllocationCallbacks *, VkSwapchainKHR *out) {
     using namespace driver;
     attempts.push_back(*info);
+    // Dequeuing the chain's buffers takes gralloc's lock. The device blocks forever here.
+    if (grallocLocked && (grallocOwner != std::this_thread::get_id())) {
+        violation("vkCreateSwapchainKHR waits for a gralloc lock held by the thread that queried surface formats");
+        return VK_ERROR_SURFACE_LOST_KHR;
+    }
+
     // Android: CreateSwapchainKHR refuses an oldSwapchain other than the surface's active chain.
     if (info->oldSwapchain != activeChain) {
         violation("oldSwapchain %llu is not the surface's active chain %llu",

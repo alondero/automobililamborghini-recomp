@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -18,6 +19,17 @@ void beat();
 // Idempotent. Starts the monitor on Android only; reports go to stderr, which the
 // launcher keeps as native-errors.log.
 void start();
+
+// Graphics thread, around renderer setup. On Android, asks gralloc about RGBA8 buffers
+// from a helper thread. If gralloc's lock keeps the answer back, the helper's wait names
+// the lock's holder. Issue 329's holder was the graphics thread.
+void check_buffer_allocator(const char* point);
+
+#if defined(__ANDROID__)
+// Runs `probe` on a helper thread named "Lambo Probe". Logs how long it took or, after
+// `timeout`, the helper's kernel wait. False when the probe has not returned.
+bool check_wait(const std::string& what, std::function<void()> probe, std::chrono::milliseconds timeout);
+#endif
 
 // /proc/<pid>/task/<tid>/syscall
 struct Syscall {

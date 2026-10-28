@@ -645,10 +645,12 @@ bool enabled() {
 std::unique_ptr<ultramodern::renderer::RendererContext>
 create_render_context(uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle,
                       bool developer_mode) {
+    lambo::stall::check_buffer_allocator("before renderer setup");
     auto ctx = std::make_unique<RT64Context>(rdram, window_handle, developer_mode);
     if (!ctx->valid()) {
         return nullptr;
     }
+    lambo::stall::check_buffer_allocator("after renderer setup");
     lambo::stall::start();
     return ctx;
 }

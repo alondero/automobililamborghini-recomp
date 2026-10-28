@@ -125,7 +125,9 @@ the [investigation below](#adreno-descriptor-pool-investigation). The v0.10.1
 exports show that retry working: the system driver no longer crashes. All three
 tested drivers now end in the same ANR, with RT64 Present and Android's UI
 renderer waiting on a Qualcomm gralloc lock. See the
-[present stall investigation](#present-stall-report). The shared
+[present stall investigation](#present-stall-report). The v0.10.2 exports name
+the game's graphics thread as that lock's holder; see the
+[gralloc lock holder](#gralloc-lock-holder). The shared
 `AHardwareBuffer` format-allocation errors also occur during successful startup
 on the older Adreno 650 test phone; they do not establish a missing Vulkan
 feature or the cause of the hang.
@@ -296,6 +298,81 @@ setting. A thread whose `syscall` file still cannot be read is marked
 `syscall=unreadable`. The device test above runs the probe a second time
 without the dumpable flag. Before the fix that case reproduced the Xiaomi
 output; it now names the holder. Verified on a Pixel 5, Android 13.
+
+### Gralloc lock holder
+
+The three exports attached to issue 329 on 2026-10-28 report app 0.10.2
+(10002) on the Xiaomi `diting`, Android 15. Each stall report now gives the
+lock word:
+
+| Driver | Process | Report frame count | Lock holder |
+| --- | --- | --- | --- |
+| System, `0x8026705f` | 15705 | 170 | `Thread-7`, tid 16991 |
+| Turnip T30, `0x6802063` | 16882 | 106 | `Thread-7`, tid 19390 |
+| Turnip v25.3.0-R11, `0x6402063` | 17096 | 106 | `Thread-7`, tid 20001 |
+
+- RT64 Present waits on the priority-inheritance lock in gralloc's
+  `BufferManager`. With the system driver, HWUI's RenderThread waits on the
+  same lock. The lock word names `Thread-7` as its owner.
+- `Thread-7` is the graphics thread: its ANR stack starts in
+  `gfx_thread_func`. Its innermost frame in the stripped `libmain.so` (build
+  ID `4f349a70`) has the shape of patch 0046's barrier wait, where RT64 waits
+  for a free queue slot. It has no gralloc frame. It holds gralloc's lock while
+  it is idle.
+- No export has a `Vulkan swap chain created` line. Present blocks in the
+  first `vkCreateSwapchainKHR`, so no chain was ever made.
+
+So the graphics thread took gralloc's lock earlier and kept it. RT64 constructs
+the swap chain on the graphics thread, in `Application::setup`, and Present
+creates the chain later. Android 15's loader answers
+`vkGetPhysicalDeviceSurfaceFormatsKHR` by asking gralloc about five formats
+with `AHardwareBuffer_isSupported`
+([`swapchain.cpp`](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/android15-release/vulkan/libvulkan/swapchain.cpp),
+read 2026-10-28). Two of them are `R8_UNORM` (`0x38`) and
+`R10G10B10A10_UNORM` (`0x3b`), the formats this gralloc logs as
+unrecognized. The loader's capability and present-mode queries only read the
+window. No port code on the graphics thread calls gralloc. The format query is
+therefore the graphics thread's only known path into gralloc. That gralloc
+keeps its lock after these probes is an inference; its source is not public.
+
+One report argues against this being the whole cause. DKR-R's RT64 makes the
+same calls on the same two threads, and the reporter says DKR-R runs on this
+phone.
+
+[Patch 0049](../patches/0049-plume-android-surface-format-without-gralloc-probe.patch)
+skips the format query on Android when the swap chain requests
+`R8G8B8A8_UNORM`, as the port does. The loader always lists that format with
+sRGB first, without asking gralloc, so the chosen format is unchanged. The
+swap chain fixture models the held lock and fails without the patch:
+
+```sh
+python -m unittest tests.test_vulkan_swapchain -v
+```
+
+The game also checks gralloc before and after renderer setup. A helper thread
+asks `AHardwareBuffer_isSupported` about a 1x1 RGBA8 buffer, the question
+Turnip's swap chain asked when Present blocked. Each check writes one line to
+`native-errors.log`. A debug build with patch 0049 on a Galaxy Z Fold6
+(Android 16, Adreno 750, system driver) wrote:
+
+```text
+Graphics buffer check before renderer setup (tid 7365): answered in 0 ms.
+Graphics buffer check after renderer setup (tid 7365): answered in 0 ms.
+```
+
+The tid is the graphics thread; Android may rename it `Thread-N`. If gralloc
+does not answer within 1 second, the line ends `no answer after 1000 ms. Probe
+wait:` and the helper's wait follows, with the lock holder, as in the stall
+report. A held lock before setup points to another thread. A held lock only
+after setup points to setup itself. The device test above also runs a blocked
+check and a real one.
+
+On the Fold6, 0.10.2's graphics thread logged gralloc's rejection of format
+`0x3b` during setup; with patch 0049 it logged none. That gralloc released
+its lock after the probes in a standalone test, so this device does not
+reproduce the 329 hang. Its system driver then fails to build five compute
+pipelines and the game crashes, with or without the patch. That crash is a
+separate problem.
 
 ### SDL surface callback logs
 
