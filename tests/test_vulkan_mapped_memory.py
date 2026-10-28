@@ -19,6 +19,10 @@ class MappedMemoryTests(unittest.TestCase):
         source = patched_plume_vulkan(tree)
         header = patched_file(PLUME, "plume_vulkan.h", tree)
         fixture = (ROOT / "tests/fixtures/vulkan_mapped_memory.cpp").read_text(encoding="utf-8")
+        types = patched_file(PLUME, "plume_render_interface_types.h", tree)
+        fixture = fixture.replace("// RANGE_DECLARATION", method(types, "struct RenderRange {") + ";")
+        shadow = patched_file(ROOT / "lib/rt64", "src/render/rt64_sun_shadow_scene.cpp", tree / "rt64")
+        fixture = fixture.replace("// SHADOW_UPLOAD", method(shadow, "bool upload("))
         # Keep the production fields too, without pulling in the entire renderer.
         declaration = method(header, "struct VulkanBuffer : RenderBuffer")
         fixture = fixture.replace("// BUFFER_DECLARATION", declaration.replace(" override", "") + ";")
@@ -28,10 +32,11 @@ class MappedMemoryTests(unittest.TestCase):
         cpp = tree / "fixture.cpp"
         cpp.write_text(fixture, encoding="utf-8")
         cls.exe = tree / "fixture.exe"
-        result = subprocess.run(["g++", "-std=c++17", "-DNDEBUG", str(cpp), "-o", str(cls.exe)],
-                                capture_output=True, text=True)
+        command = ["g++", "-std=c++17", "-DNDEBUG", str(cpp), "-o", str(cls.exe)]
+        result = subprocess.run(command, capture_output=True, text=True)
         if result.returncode:
-            raise RuntimeError(result.stderr)
+            raise RuntimeError(f"Compiler exited {result.returncode}: {subprocess.list2cmdline(command)}\n"
+                               f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}")
 
     def run_scenario(self, scenario, coherent=False):
         return subprocess.run([str(self.exe), scenario, "coherent" if coherent else "noncoherent"],
@@ -128,17 +133,36 @@ class MappedMemoryTests(unittest.TestCase):
                 self.assertIn("unmap without a successful map; cannot continue", result.stderr)
                 self.assertEqual(result.stdout.splitlines(), events)
 
-    def test_vma_failures_stop_and_balance_successful_maps(self):
+    def test_map_failures_return_null_and_balance_successful_maps(self):
         for operation, events in (("map", ["map"]),
-                                  ("invalidate", ["map", "invalidate 0 96", "unmap"]),
-                                  ("flush", ["map", "cpu-write", "flush 0 96", "unmap"])):
+                                  ("invalidate", ["map", "invalidate 0 96", "unmap"])):
             with self.subTest(operation=operation):
                 result = self.run_scenario(operation + "-failure")
-                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn({"map": "vmaMapMemory", "invalidate": "vmaInvalidateAllocation",
-                               "flush": "vmaFlushAllocation"}[operation] + " failed (VkResult=", result.stderr)
-                self.assertIn("cannot continue", result.stderr)
+                               }[operation] + " failed with error code", result.stderr)
                 self.assertEqual(result.stdout.splitlines(), events)
+
+    def test_flush_failure_releases_mapping_and_stops_submission(self):
+        result = self.run_scenario("flush-failure")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("vmaFlushAllocation failed (VkResult=", result.stderr)
+        self.assertIn("cannot continue", result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ["map", "cpu-write", "flush 0 96", "unmap"])
+
+    def test_nested_map_failure_preserves_the_existing_mapping(self):
+        for operation, events in (("map", ["map", "map", "unmap"]),
+                                  ("invalidate", ["map", "map", "invalidate 0 96", "unmap", "unmap"])):
+            with self.subTest(operation=operation):
+                result = self.run_scenario("nested-" + operation + "-failure")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines(), events)
+
+    def test_shadow_upload_returns_false_when_mapping_fails(self):
+        result = self.run_scenario("shadow-upload-failure")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("vmaMapMemory failed", result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ["map"])
 
 
 if __name__ == "__main__":

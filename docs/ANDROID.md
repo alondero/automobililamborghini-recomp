@@ -781,6 +781,37 @@ validation of later game paths remains unverified. Imported Turnip and the
 issue 329 device were not tested. The standalone probe passes on this phone
 with simple shaders, which does not establish full RT64 shader compatibility.
 
+### Follow-up verification and dependency provenance
+
+PR 372 is an incremental follow-up to primary PR 371, based on its `8afabc0`
+revision. The earlier independent implementation is preserved in `97b4644`;
+it is not a second patch intended to merge alongside 371. The stable 0050/0051
+patches are retained; patch 0052 carries recovery and is recognized on repeated
+configuration before checking 0050's changed reverse context. Map/invalidation
+failure now returns null; a failed flush remains fatal even if Vulkan reports
+device loss, because unmap has no error return. This policy does not add device
+recovery or turn the startup advisory into recovery.
+
+Before rebuilding, the 20 modified RecompFrontend files were compared with a
+clean replay of the nine checked-in frontend patches from pin `b1a1477`.
+The files and complete binary diff matched exactly, including FindFreetype,
+input assignment, modal layout and Android RGBA selection. These are required
+build patches, not unrelated developer changes. They were left in place, and
+the supported Android script was used; it does not run the desktop scripts'
+checkout/clean sequence. Do not run the destructive Linux builder over an
+unrelated dirty dependency tree. On Windows use `-PreserveSubmodules` when
+retaining local dependency work. Stashing this verified patch state would
+remove build inputs rather than preserve an unrelated change.
+
+The follow-up probe uses a transfer-write to vertex-read dependency for its
+staging copy. On RTX 3080, the run with Khronos nightly layer API 1.4.366 and
+`VK_VALIDATION_VALIDATE_SYNC=1` passed both pixel experiments without validation
+errors. Requiring noncoherent coverage on that coherent-only device returned
+code 2. On the SM-F956B, requiring noncoherent readback passed with type 3,
+flags `0xB`; upload still selected coherent type 6. Android shell validation
+remains unavailable. The observed exits distinguish missing physical coverage
+from successful coherent rendering.
+
 ## Release signing (one-time repository setup)
 
 The Build & Release workflow's Android job is **required**. All four signing

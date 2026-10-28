@@ -15,6 +15,7 @@ static void require(bool condition, const char *message) {
 }
 
 static std::atomic<unsigned> validationErrors{0};
+static bool noncoherentUpload = false, noncoherentReadback = false;
 static VKAPI_ATTR VkBool32 VKAPI_CALL validation(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
         VkDebugUtilsMessageTypeFlagsEXT, const VkDebugUtilsMessengerCallbackDataEXT *data, void *) {
     fprintf(stderr, "%s\n", data->pMessage);
@@ -72,6 +73,13 @@ static std::unique_ptr<VulkanBuffer> makeBuffer(VulkanDevice &device, const Rend
         }
     }
     reportMemory(device, *buffer, label);
+    VkMemoryPropertyFlags selectedFlags;
+    vmaGetAllocationMemoryProperties(device.allocator, buffer->allocation, &selectedFlags);
+    if ((selectedFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
+        !(selectedFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+        noncoherentUpload |= desc.heapType == RenderHeapType::UPLOAD;
+        noncoherentReadback |= desc.heapType == RenderHeapType::READBACK;
+    }
     return buffer;
 }
 
@@ -122,6 +130,9 @@ static void draw(VulkanDevice &device, const std::vector<char> &vs, const std::v
     auto framebuffer = device.createFramebuffer(RenderFramebufferDesc(&attachment, 1));
 
     list->begin();
+    // Plume tracks source stages in barriers(), not in the copy command.
+    // Mark the write so the following graphics barrier includes TRANSFER.
+    list->barriers(RenderBarrierStage::COPY, RenderBufferBarrier(geometry.get(), RenderBufferAccess::WRITE));
     list->copyBufferRegion(geometry->at(written.begin), upload->at(written.begin), sizeof(vertices));
     list->barriers(RenderBarrierStage::GRAPHICS, RenderBufferBarrier(geometry.get(), RenderBufferAccess::READ));
     list->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(target.get(), RenderTextureLayout::COLOR_WRITE));
@@ -171,7 +182,10 @@ static void draw(VulkanDevice &device, const std::vector<char> &vs, const std::v
 
 int main(int argc, char **argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
-    require(argc == 3, "expected vertex and pixel SPIR-V paths");
+    require(argc == 3 || argc == 4, "expected vertex/pixel SPIR-V paths and optional coverage requirement");
+    const std::string coverage = argc == 4 ? argv[3] : "";
+    require(coverage.empty() || coverage == "any" || coverage == "upload" ||
+        coverage == "readback" || coverage == "both", "invalid noncoherent coverage requirement");
     VulkanInterface renderInterface;
     require(renderInterface.isValid(), "Vulkan instance unavailable");
     uint32_t count = 0;
@@ -228,4 +242,13 @@ int main(int argc, char **argv) {
     }
     if (messenger) vkDestroyDebugUtilsMessengerEXT(renderInterface.instance, messenger, nullptr);
     require(validationErrors == 0, "Vulkan validation errors observed");
+    printf("noncoherent coverage: upload=%u readback=%u\n", unsigned(noncoherentUpload), unsigned(noncoherentReadback));
+    const bool complete = coverage.empty() ||
+        (coverage == "any" && (noncoherentUpload || noncoherentReadback)) ||
+        (coverage == "upload" && noncoherentUpload) || (coverage == "readback" && noncoherentReadback) ||
+        (coverage == "both" && noncoherentUpload && noncoherentReadback);
+    if (!complete) {
+        fprintf(stderr, "UNVERIFIED: requested noncoherent %s coverage unavailable; exit 2\n", coverage.c_str());
+        return 2;
+    }
 }

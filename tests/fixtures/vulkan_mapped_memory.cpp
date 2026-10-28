@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
 
@@ -16,8 +17,12 @@ constexpr int VK_NULL_HANDLE = 0, VK_SUCCESS = 0;
 struct VmaAllocationInfo {};
 enum class RenderHeapType { UNKNOWN, DEFAULT, UPLOAD, READBACK, GPU_UPLOAD };
 struct RenderBufferDesc { uint64_t size = 96; RenderHeapType heapType = RenderHeapType::UPLOAD; };
-struct RenderRange { uint64_t begin, end; };
-struct RenderBuffer {};
+// RANGE_DECLARATION
+struct RenderBuffer {
+    virtual ~RenderBuffer() = default;
+    virtual void *map(uint32_t, const RenderRange *) = 0;
+    virtual void unmap(uint32_t, const RenderRange *) = 0;
+};
 struct RenderBufferFormattedView {};
 enum class RenderFormat {};
 using RenderBarrierStages = int;
@@ -47,7 +52,8 @@ static void copyAtoms(const std::array<uint8_t, 256> &source,
 
 VkResult vmaMapMemory(int, VmaAllocation, void **data) {
     event("map");
-    if (scenario == "map-failure") return -5;
+    if (scenario == "map-failure" || scenario == "shadow-upload-failure" ||
+        (scenario == "nested-map-failure" && mappings > 0)) return -5;
     ++mappings;
     *data = hostBytes.data();
     return VK_SUCCESS;
@@ -61,7 +67,7 @@ VkResult vmaInvalidateAllocation(int, VmaAllocation, VkDeviceSize offset, VkDevi
     require(mappings > 0 && size > 0 && offset + size <= 96, "invalid invalidation");
     printf("invalidate %llu %llu\n", (unsigned long long)offset, (unsigned long long)size);
     fflush(stdout);
-    if (scenario == "invalidate-failure") return -4;
+    if (scenario == "invalidate-failure" || scenario == "nested-invalidate-failure") return -4;
     if (!coherent) copyAtoms(deviceBytes, hostBytes, offset, size);
     return VK_SUCCESS;
 }
@@ -74,6 +80,7 @@ VkResult vmaFlushAllocation(int, VmaAllocation, VkDeviceSize offset, VkDeviceSiz
     return VK_SUCCESS;
 }
 
+// SHADOW_UPLOAD
 int main(int argc, char **argv) {
     require(argc == 3, "scenario and coherence required");
     scenario = argv[1];
@@ -82,7 +89,13 @@ int main(int argc, char **argv) {
     VulkanBuffer buffer;
     buffer.device = &device;
     buffer.allocation = 1;
-    if (scenario == "map-failure" || scenario == "invalid-allocation" ||
+    if (scenario == "shadow-upload-failure") {
+        const uint8_t byte = 42;
+        require(!upload(&buffer, &byte, sizeof(byte)), "shadow upload did not report map failure");
+    } else if (scenario == "map-failure") {
+        require(buffer.map(0, nullptr) == nullptr, "failed map must return null");
+        require(buffer.mapCount == 0 && mappings == 0, "failed map acquired a reference");
+    } else if (scenario == "invalid-allocation" ||
         scenario.rfind("invalid-read-", 0) == 0) {
         RenderRange range{0, 96};
         uint32_t subresource = 0;
@@ -111,8 +124,14 @@ int main(int argc, char **argv) {
         require(false, "invalid unmap continued");
     } else if (scenario == "invalidate-failure") {
         buffer.desc.heapType = RenderHeapType::READBACK;
-        buffer.map(0, nullptr);
-        require(false, "failed invalidation continued");
+        require(buffer.map(0, nullptr) == nullptr, "failed invalidation exposed stale bytes");
+        require(buffer.mapCount == 0 && mappings == 0, "failed invalidation leaked a reference");
+    } else if (scenario == "nested-map-failure" || scenario == "nested-invalidate-failure") {
+        require(buffer.map(0, nullptr) != nullptr, "first mapping failed");
+        const RenderRange read{0, 96}, noWrite{0, 0};
+        require(buffer.map(0, &read) == nullptr, "nested failure must return null");
+        require(buffer.mapCount == 1 && mappings == 1, "nested failure changed earlier map reference");
+        buffer.unmap(0, &noWrite);
     } else if (scenario == "nested-dirty-atom" || scenario == "remap-flushed-atom") {
         // Model a permitted loss of dirty host bytes when invalidating the same
         // atom through a different range. Reference counting cannot prevent it.

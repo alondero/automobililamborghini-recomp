@@ -225,6 +225,8 @@ authorized ADB device. For example:
 ```sh
 python tools/run_vulkan_mapped_memory_probe.py
 python tools/run_vulkan_mapped_memory_probe.py --ndk /path/to/ndk/28.2.13676358 --device ADB_SERIAL
+python tools/run_vulkan_mapped_memory_probe.py --require-noncoherent
+python tools/run_vulkan_mapped_memory_probe.py --ndk /path/to/ndk/28.2.13676358 --device ADB_SERIAL --require-noncoherent readback
 ```
 
 `--dxc PATH` overrides the bundled host DXC. Build output stays under
@@ -237,6 +239,26 @@ noncoherent coverage. The [patch inventory](../patches/README.md#mapped-buffer-m
 defines range semantics and audited caller ordering; the
 [device record](ANDROID.md#mapped-buffer-memory) distinguishes measured and
 unverified paths.
+
+`--require-noncoherent` requires physical upload or readback coverage and exits
+with code 2 when neither is available. Use `upload`, `readback`, or `both` to
+require specific directions. A normal run can pass coherent rendering while
+printing `UNVERIFIED`; automation claiming noncoherent coverage must use the
+requirement flag. The launcher preserves the probe's exit code, including
+through adb. Enable synchronization validation with
+`VK_VALIDATION_VALIDATE_SYNC=1` when the installed Khronos layer supports it.
+
+Plume fixtures replay the platform prefixes followed by `PLUME_CMAKE_SERIES`,
+which `tools/check_patch_series.py` checks against shared CMake, including
+0050. Patch application is strict; replay errors include the command, exit
+code and captured output. The real repeated-configure test also compares
+the fixture's Vulkan source/header bytes with the CMake-patched files.
+
+Mapping and invalidation failures return null after releasing any newly
+acquired VMA reference. The recording fixture runs the production sunlight
+upload helper to verify its existing false-on-null behavior. A failed nested
+map leaves earlier successful references intact. Flush failure still stops
+the process, including on device loss; see the [failure policy](../patches/README.md#mapped-buffer-memory).
 
 ## Focused checks
 

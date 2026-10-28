@@ -1,0 +1,23 @@
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -922,8 +922,8 @@
+         void *data = nullptr;
+         VkResult res = vmaMapMemory(device->allocator, allocation, &data);
+         if (res != VK_SUCCESS) {
+-            // Callers generally dereference immediately, so a failed map must stop here.
+-            failBufferMapping("vmaMapMemory failed", res);
++            fprintf(stderr, "vmaMapMemory failed with error code 0x%X.\n", res);
++            return nullptr;
+         }
+ 
+         // Omitted upload ranges are write-only. Readbacks default to the whole buffer;
+@@ -935,6 +935,7 @@
+             res = vmaInvalidateAllocation(device->allocator, allocation, offset, size);
+             if (res != VK_SUCCESS) {
+                 vmaUnmapMemory(device->allocator, allocation);
+-                failBufferMapping("vmaInvalidateAllocation failed", res);
++                fprintf(stderr, "vmaInvalidateAllocation failed with error code 0x%X.\n", res);
++                return nullptr;
+             }
+         }

@@ -8,10 +8,10 @@ line that patch 0030's DXC hunk requires to be absent. Both slipped through
 because each platform applies a different patch subset before the shared
 CMake series.
 
-The tests below replay each platform's exact rt64 order — script patches
+The tests below replay each platform's exact rt64 order â€” script patches
 (with ``--ignore-whitespace``, as the scripts apply them), then the CMake
 series from CMakeLists.txt (plain ``git apply``, as lambo_frontend_patch
-does) — inside a disposable worktree of the pinned rt64 submodule, and lock
+does) â€” inside a disposable worktree of the pinned rt64 submodule, and lock
 in the platform guard for DXIL-blob uses. Platform orders mirror build.ps1
 (Windows), build.sh (Linux), and scripts/build_android.py (Android); the
 CMake series is shared. Plume patches (0004/0014/0023/0028) are out of scope:
@@ -188,6 +188,9 @@ class PlumeRepeatConfigureTests(unittest.TestCase):
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.addCleanup(subprocess.run, ["git", "-C", str(plume), "worktree", "remove", "--force", str(tree)],
                         capture_output=True)
+        # Match the Android prefix used by the recording fixtures too.
+        subprocess.run(["git", "-C", str(tree), "apply", str(resolve_patch("0014"))],
+                       check=True, capture_output=True)
         return root, tree
 
     def configure(self, root, steps, label):
@@ -201,6 +204,13 @@ class PlumeRepeatConfigureTests(unittest.TestCase):
         for run in ("first", "second"):
             self.configure(root, self.plume_steps(), run)
         self.assertTrue(subprocess.check_output(["git", "-C", str(tree), "diff", "--stat"]))
+        from tests.patched_source import patched_file
+        plume = RT64_DIR / "src/contrib/plume"
+        recording = root / "recording"
+        for name in ("plume_vulkan.cpp", "plume_vulkan.h"):
+            patched_file(plume, name, recording)
+            self.assertEqual((recording / name).read_bytes(), (tree / name).read_bytes(),
+                             f"recording fixture differs from repeated CMake result: {name}")
 
     def test_upgrade_from_original_mapped_memory_patch_preserves_edits(self):
         root, tree = self.plume_checkout()
@@ -211,6 +221,7 @@ class PlumeRepeatConfigureTests(unittest.TestCase):
         shutil.copyfile(ROOT / "tests/fixtures/plume_mapped_memory_v1.patch", root / "patches" / patch.name)
         steps = self.plume_steps()
         prefix_end = steps.index("\n", steps.index(patch.name)) + 1
+        prefix_end = steps.index("\nendif()", prefix_end - 1) + len("\nendif()") + 1
         self.configure(root, steps[:prefix_end], "original mapping patch")
 
         cpp = tree / "plume_vulkan.cpp"
@@ -225,23 +236,31 @@ class PlumeRepeatConfigureTests(unittest.TestCase):
         untracked.write_bytes(b"keep untracked note\r\n")
         index = Path(subprocess.check_output(["git", "rev-parse", "--git-path", "index"],
                                             cwd=tree, text=True).strip())
-        before = {path: path.read_bytes() for path in (cpp, note, untracked, index)}
+        before = {path: path.read_bytes() for path in (note, untracked, index)}
+        expected = root / "expected"
+        expected.mkdir()
+        (expected / "plume_vulkan.cpp").write_bytes(cpp.read_bytes())
+        subprocess.run(["git", "apply", "--include=plume_vulkan.cpp", str(resolve_patch("0052"))],
+                       cwd=expected, check=True, capture_output=True)
+        expected_cpp = (expected / "plume_vulkan.cpp").read_bytes()
 
         shutil.copyfile(patch, root / "patches" / patch.name)
         self.configure(root, steps, "upgrade from original mapping patch")
         self.assertEqual({path: path.read_bytes() for path in before}, before)
+        self.assertEqual(cpp.read_bytes(), expected_cpp)
         self.assertTrue(header.read_bytes().endswith(b"// Keep this unrelated header edit.\n"))
         comment = b"Vulkan omits invalidation for null UPLOAD/GPU_UPLOAD read ranges;"
         self.assertEqual(header.read_bytes().count(comment), 1)
         upgraded_header = header.read_bytes()
         self.configure(root, steps, "repeat upgraded mapping patch")
         self.assertEqual(header.read_bytes(), upgraded_header)
+        self.assertEqual(cpp.read_bytes(), expected_cpp)
         self.assertEqual({path: path.read_bytes() for path in before}, before)
 
 
 class DxilGuardTests(unittest.TestCase):
     def test_dxil_blob_use_arrives_with_platform_guard(self):
-        # DXIL shader blobs are only generated (and declared) on Windows —
+        # DXIL shader blobs are only generated (and declared) on Windows â€”
         # rt64's CMake builds them under if(WIN32). Any patch hunk that
         # references a BlobDXIL symbol must bring its own _WIN32 guard, or
         # non-Windows builds fail with "not declared in this scope".
