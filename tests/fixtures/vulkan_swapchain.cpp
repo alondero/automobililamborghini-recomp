@@ -6,6 +6,8 @@
 // the reported surface capabilities and models the Android loader's surface
 // ownership: one active chain per surface, oldSwapchain is retired even when
 // creation fails, and a retired chain cannot be replaced again or acquired from.
+// Its queue-idle teardown model checks the backend's compatibility fallback;
+// unextended Vulkan does not formally guarantee WSI completion from queue idle.
 // It can also model the gralloc lock seen on an Android 15 Adreno 730 (#329):
 // the format query's buffer probes leave it owned by the querying thread.
 #include <algorithm>
@@ -39,11 +41,16 @@ using VkFence = uintptr_t;
 using VkAllocationCallbacks = void;
 constexpr uintptr_t VK_NULL_HANDLE = 0;
 constexpr VkBool32 VK_TRUE = 1;
+constexpr VkBool32 VK_FALSE = 0;
 
 enum VkResult {
     VK_SUCCESS = 0,
+    VK_NOT_READY = 1,
+    VK_TIMEOUT = 2,
     VK_INCOMPLETE = 5,
     VK_ERROR_OUT_OF_DEVICE_MEMORY = -2,
+    VK_ERROR_OUT_OF_HOST_MEMORY = -1,
+    VK_ERROR_DEVICE_LOST = -4,
     VK_ERROR_SURFACE_LOST_KHR = -1000000000,
     VK_ERROR_NATIVE_WINDOW_IN_USE_KHR = -1000000001,
     VK_SUBOPTIMAL_KHR = 1000001003,
@@ -53,6 +60,7 @@ enum VkStructureType {
     VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR = 1000001000,
     VK_STRUCTURE_TYPE_PRESENT_INFO_KHR = 1000001001,
     VK_STRUCTURE_TYPE_PRESENT_ID_KHR = 1000294000,
+    VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR = 1000008000,
 };
 enum VkFormat { VK_FORMAT_UNDEFINED = 0, VK_FORMAT_R8G8B8A8_UNORM = 37, VK_FORMAT_B8G8R8A8_UNORM = 44 };
 enum VkColorSpaceKHR { VK_COLOR_SPACE_SRGB_NONLINEAR_KHR = 0, VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT = 1000104002 };
@@ -135,6 +143,12 @@ struct VkPresentIdKHR {
     const uint64_t *pPresentIds;
 };
 struct VkRefreshCycleDurationGOOGLE { uint64_t refreshDuration; };
+struct ANativeWindow { int refs = 0; };
+struct VkAndroidSurfaceCreateInfoKHR {
+    VkStructureType sType;
+    ANativeWindow *window;
+};
+using Uint64 = uint64_t;
 
 // Recording driver state.
 namespace driver {
@@ -160,6 +174,22 @@ namespace driver {
     std::unordered_set<VkImageView> liveViews;
     VkSwapchainKHR activeChain = VK_NULL_HANDLE;
     bool surfaceAlive = false;
+    uint64_t nativeGeneration = 1;
+    uint64_t surfaceGeneration = 0;
+    ANativeWindow nativeWindow;
+    bool nativeAvailable = true;
+    VkResult surfaceCreateResult = VK_SUCCESS;
+    VkResult surfaceSupportResult = VK_SUCCESS;
+    VkBool32 surfaceSupported = VK_TRUE;
+    bool replaceDuringSurfaceCreation = false;
+    VkResult presentResult = VK_SUCCESS;
+    VkResult drainResult = VK_SUCCESS;
+    VkResult refreshResult = VK_SUCCESS;
+    int refreshQueries = 0;
+    int windowAcquires = 0, windowReleases = 0, acquireCalls = 0;
+    uint64_t acquireTimeout = 0;
+    bool pendingPresent = false;
+    int drains = 0;
     bool formatProbeKeepsGrallocLock = false;
     bool grallocLocked = false;
     std::thread::id grallocOwner;
@@ -207,8 +237,8 @@ namespace driver {
 }
 
 VkResult vkGetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice, uint32_t, VkSurfaceKHR, VkBool32 *supported) {
-    *supported = VK_TRUE;
-    return VK_SUCCESS;
+    *supported = driver::surfaceSupported;
+    return driver::surfaceSupportResult;
 }
 
 VkResult vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice, VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR *caps) {
@@ -249,6 +279,7 @@ VkResult vkGetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice, VkSurfaceKH
 VkResult vkCreateSwapchainKHR(VkDevice, const VkSwapchainCreateInfoKHR *info, const VkAllocationCallbacks *, VkSwapchainKHR *out) {
     using namespace driver;
     attempts.push_back(*info);
+    if (surfaceGeneration != nativeGeneration) return VK_ERROR_NATIVE_WINDOW_IN_USE_KHR;
     // Dequeuing the chain's buffers takes gralloc's lock. The device blocks forever here.
     if (grallocLocked && (grallocOwner != std::this_thread::get_id())) {
         violation("vkCreateSwapchainKHR waits for a gralloc lock held by the thread that queried surface formats");
@@ -328,7 +359,9 @@ VkResult vkGetSwapchainImagesKHR(VkDevice, VkSwapchainKHR handle, uint32_t *coun
     return enumerate(chain->images, count, images);
 }
 
-VkResult vkAcquireNextImageKHR(VkDevice, VkSwapchainKHR handle, uint64_t, VkSemaphore, VkFence, uint32_t *index) {
+VkResult vkAcquireNextImageKHR(VkDevice, VkSwapchainKHR handle, uint64_t timeout, VkSemaphore, VkFence, uint32_t *index) {
+    ++driver::acquireCalls;
+    driver::acquireTimeout = timeout;
     driver::Chain *chain = driver::find(handle);
     if ((chain == nullptr) || (chain->state != driver::State::Live)) {
         driver::violation("acquire from %s chain %llu", (chain == nullptr) ? "unknown" :
@@ -341,11 +374,19 @@ VkResult vkAcquireNextImageKHR(VkDevice, VkSwapchainKHR handle, uint64_t, VkSema
 }
 
 VkResult vkQueuePresentKHR(VkQueue, const VkPresentInfoKHR *info) {
+    driver::pendingPresent = true;
     driver::Chain *chain = driver::find(info->pSwapchains[0]);
     if ((chain == nullptr) || (chain->state != driver::State::Live)) {
         driver::violation("present to a chain that is not live");
         return VK_ERROR_OUT_OF_DATE_KHR;
     }
+    return driver::presentResult;
+}
+
+VkResult vkQueueWaitIdle(VkQueue) {
+    if (driver::drainResult != VK_SUCCESS) return driver::drainResult;
+    driver::pendingPresent = false;
+    ++driver::drains;
     return VK_SUCCESS;
 }
 
@@ -353,17 +394,20 @@ VkResult vkWaitForPresentKHR(VkDevice, VkSwapchainKHR, uint64_t, uint64_t) { ret
 
 // Android's loader dereferences the handle without checking it.
 VkResult vkGetRefreshCycleDurationGOOGLE(VkDevice, VkSwapchainKHR handle, VkRefreshCycleDurationGOOGLE *cycle) {
+    ++driver::refreshQueries;
     driver::Chain *chain = driver::find(handle);
     if ((chain == nullptr) || (chain->state == driver::State::Destroyed)) {
         driver::violation("refresh cycle query on %s chain %llu", (chain == nullptr) ? "unknown" : "destroyed",
                           (unsigned long long)handle);
         return VK_ERROR_SURFACE_LOST_KHR;
     }
+    if (driver::refreshResult != VK_SUCCESS) return driver::refreshResult;
     cycle->refreshDuration = 16666667;
     return VK_SUCCESS;
 }
 
 void vkDestroyImageView(VkDevice, VkImageView view, const VkAllocationCallbacks *) {
+    if (driver::pendingPresent) driver::violation("image view retired before presentation drain");
     if (driver::liveViews.erase(view) == 0) driver::violation("destroying unknown image view");
 }
 
@@ -376,7 +420,29 @@ void vkDestroySurfaceKHR(VkInstance, VkSurfaceKHR, const VkAllocationCallbacks *
 
 static VkSurfaceKHR fixtureCreateSurface() {
     driver::surfaceAlive = true;
+    driver::surfaceGeneration = driver::nativeGeneration;
     return 7;
+}
+
+uint64_t SDL_AndroidGetNativeWindowGeneration() { return driver::nativeGeneration; }
+void ANativeWindow_acquire(ANativeWindow *window) { ++window->refs; ++driver::windowAcquires; }
+void ANativeWindow_release(ANativeWindow *window) {
+    if (--window->refs < 0) driver::violation("unbalanced native window release");
+    ++driver::windowReleases;
+}
+void *SDL_AndroidAcquireNativeWindow(Uint64 *generation) {
+    *generation = driver::nativeGeneration;
+    if (!driver::nativeAvailable) return nullptr;
+    ANativeWindow_acquire(&driver::nativeWindow);
+    return &driver::nativeWindow;
+}
+VkResult vkCreateAndroidSurfaceKHR(VkInstance, const VkAndroidSurfaceCreateInfoKHR *info,
+                                  const VkAllocationCallbacks *, VkSurfaceKHR *surface) {
+    if (!info->window || info->window->refs == 0) driver::violation("surface created without retained window");
+    if (driver::surfaceCreateResult != VK_SUCCESS) return driver::surfaceCreateResult;
+    *surface = fixtureCreateSurface();
+    if (driver::replaceDuringSurfaceCreation) ++driver::nativeGeneration;
+    return VK_SUCCESS;
 }
 
 namespace plume {
@@ -404,7 +470,9 @@ namespace plume {
     };
 
     struct RenderSwapChain {
+        enum class DrainResult { Complete, DeviceLost, Failed };
         virtual ~RenderSwapChain() { }
+        virtual DrainResult drain() { return DrainResult::Complete; }
         virtual bool present(uint32_t textureIndex, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount) = 0;
         virtual void wait() = 0;
         virtual bool resize() = 0;
@@ -416,6 +484,7 @@ namespace plume {
         virtual RenderTexture *getTexture(uint32_t textureIndex) = 0;
         virtual uint32_t getTextureCount() const = 0;
         virtual bool acquireTexture(RenderCommandSemaphore *signalSemaphore, uint32_t *textureIndex) = 0;
+        virtual bool isAcquisitionRetryable() const { return false; }
         virtual RenderWindow getWindow() const = 0;
         virtual bool isEmpty() const = 0;
         virtual uint32_t getRefreshRate() const = 0;

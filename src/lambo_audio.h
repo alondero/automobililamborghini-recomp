@@ -31,6 +31,10 @@ void init(uint32_t desired_sample_rate);
 // This keeps SDL device lifecycle calls out of queue_samples.
 void pump();
 
+// Lifecycle event watch: discard stale PCM and converter history. SDL owns the
+// Android device pause/resume; this gate prevents in-flight guest work refilling it.
+void set_suspended(bool suspended);
+
 // Populate the three ultramodern audio callbacks (queue_samples,
 // get_frames_remaining, and set_frequency) into out. Callers must invoke
 // `init(...)` first; the callback pointers are stable for the process lifetime

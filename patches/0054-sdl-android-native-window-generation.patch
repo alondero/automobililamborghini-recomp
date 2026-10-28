@@ -1,0 +1,116 @@
+diff --git a/src/core/android/SDL_android.c b/src/core/android/SDL_android.c
+--- a/src/core/android/SDL_android.c
++++ b/src/core/android/SDL_android.c
+@@ -1034,6 +1034,34 @@
+     return Android_RemoveHaptic(device_id);
+ }
+ 
++/* Local extension: snapshots retain the native window while Vulkan owns its surface.
++   Callers release with ANativeWindow_release after retiring all GPU references. */
++Uint64 SDL_AndroidGetNativeWindowGeneration(void)
++{
++    Uint64 generation = 0;
++    SDL_LockMutex(Android_ActivityMutex);
++    if (Android_Window) {
++        generation = ((SDL_WindowData *)Android_Window->driverdata)->surface_generation;
++    }
++    SDL_UnlockMutex(Android_ActivityMutex);
++    return generation;
++}
++
++void *SDL_AndroidAcquireNativeWindow(Uint64 *generation)
++{
++    ANativeWindow *window = NULL;
++    SDL_LockMutex(Android_ActivityMutex);
++    *generation = 0;
++    if (Android_Window) {
++        SDL_WindowData *data = (SDL_WindowData *)Android_Window->driverdata;
++        *generation = data->surface_generation;
++        window = data->native_window;
++        if (window) ANativeWindow_acquire(window);
++    }
++    SDL_UnlockMutex(Android_ActivityMutex);
++    return window;
++}
++
+ /* Called from surfaceCreated() */
+ JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(onNativeSurfaceCreated)(JNIEnv *env, jclass jcls)
+ {
+@@ -1042,6 +1070,9 @@
+     if (Android_Window) {
+         SDL_WindowData *data = (SDL_WindowData *)Android_Window->driverdata;
+ 
++        /* A callback is a new generation even if Android reuses the pointer. */
++        ++data->surface_generation;
++        if (data->native_window) ANativeWindow_release(data->native_window);
+         data->native_window = Android_JNI_GetNativeWindow();
+         if (data->native_window == NULL) {
+             SDL_SetError("Could not fetch native window from UI thread");
+@@ -1121,6 +1152,7 @@
+         }
+ #endif
+ 
++        ++data->surface_generation;
+         if (data->native_window) {
+             ANativeWindow_release(data->native_window);
+             data->native_window = NULL;
+diff --git a/src/video/android/SDL_androidwindow.h b/src/video/android/SDL_androidwindow.h
+--- a/src/video/android/SDL_androidwindow.h
++++ b/src/video/android/SDL_androidwindow.h
+@@ -44,6 +44,7 @@
+ #endif
+     SDL_bool backup_done;
+     ANativeWindow *native_window;
++    Uint64 surface_generation; /* ActivityMutex protects availability and generation. */
+ 
+ } SDL_WindowData;
+ 
+diff --git a/src/video/android/SDL_androidwindow.c b/src/video/android/SDL_androidwindow.c
+--- a/src/video/android/SDL_androidwindow.c
++++ b/src/video/android/SDL_androidwindow.c
+@@ -70,6 +70,7 @@
+         goto endfunction;
+     }
+ 
++    data->surface_generation = 1;
+     data->native_window = Android_JNI_GetNativeWindow();
+ 
+     if (!data->native_window) {
+diff --git a/include/SDL_system.h b/include/SDL_system.h
+--- a/include/SDL_system.h
++++ b/include/SDL_system.h
+@@ -292,6 +292,12 @@
+  * \sa SDL_AndroidGetJNIEnv
+  */
+ extern DECLSPEC void * SDLCALL SDL_AndroidGetActivity(void);
++
++/* Local Vulkan lifecycle extensions. The snapshot owns one ANativeWindow reference,
++   or returns NULL while unavailable. generation is written atomically with it.
++   Release the reference with ANativeWindow_release. No Vulkan calls under this lock. */
++extern DECLSPEC Uint64 SDLCALL SDL_AndroidGetNativeWindowGeneration(void);
++extern DECLSPEC void * SDLCALL SDL_AndroidAcquireNativeWindow(Uint64 *generation);
+ 
+ /**
+  * Query Android API level of the current device.
+diff --git a/src/dynapi/SDL_dynapi_procs.h b/src/dynapi/SDL_dynapi_procs.h
+--- a/src/dynapi/SDL_dynapi_procs.h
++++ b/src/dynapi/SDL_dynapi_procs.h
+@@ -985,3 +985,8 @@
+ SDL_DYNAPI_PROC(int,SDL_GDKGetDefaultUser,(XUserHandle *a),(a),return)
+ #endif
+ SDL_DYNAPI_PROC(Uint64,SDL_GameControllerGetSteamHandle,(SDL_GameController *a),(a),return)
++
++#ifdef __ANDROID__
++SDL_DYNAPI_PROC(Uint64,SDL_AndroidGetNativeWindowGeneration,(void),(),return)
++SDL_DYNAPI_PROC(void*,SDL_AndroidAcquireNativeWindow,(Uint64 *a),(a),return)
++#endif
+diff --git a/src/dynapi/SDL_dynapi_overrides.h b/src/dynapi/SDL_dynapi_overrides.h
+--- a/src/dynapi/SDL_dynapi_overrides.h
++++ b/src/dynapi/SDL_dynapi_overrides.h
+@@ -898,3 +898,6 @@
+ #define SDL_DestroyWindowSurface SDL_DestroyWindowSurface_REAL
+ #define SDL_GDKGetDefaultUser SDL_GDKGetDefaultUser_REAL
+ #define SDL_GameControllerGetSteamHandle SDL_GameControllerGetSteamHandle_REAL
++
++#define SDL_AndroidGetNativeWindowGeneration SDL_AndroidGetNativeWindowGeneration_REAL
++#define SDL_AndroidAcquireNativeWindow SDL_AndroidAcquireNativeWindow_REAL

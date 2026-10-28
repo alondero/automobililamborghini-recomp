@@ -545,6 +545,118 @@ without 0047 failed 7 times and the build with it failed twice. The later
 0047 builds used for the checks above failed 3 of 6 starts. The cause has
 not been found.
 
+## Native surface recovery
+
+Status: implemented with ROM-free production-boundary coverage. Successful
+presentation after Android lifecycle transitions still requires device evidence.
+This change does not establish a cold-start fix for issue 329.
+
+SDL owns the Android callbacks and publishes surface availability plus a generation.
+Creation and destruction advance that generation, including when Android reuses a
+native pointer. Plume takes a retained snapshot through SDL. RT64 Present owns
+Vulkan surface and swap-chain creation, recovery and destruction; Java does no GPU
+work and never waits for the presenter. Before replacement, the rendering fence and
+presentation queue drain, then framebuffers, semaphores, image views, swap chain,
+surface and retained window retire in that order. The frontend draws through this
+same path. The rendering fence covers the last GPU use of attachments. The pinned
+backend does not enable `swapchain_maintenance1` presentation fences: queue idle
+is its compatibility fallback for WSI teardown, not a formal presentation-engine
+completion guarantee. That guarantee remains a limitation of this implementation;
+see [Khronos's explanation](https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html).
+Creation failures are retryable. Unavailable windows, failed Vulkan calls,
+unsupported presentation and a generation changing during recovery each log a
+distinct reason, including the Vulkan result when available. Identical failures
+are logged once; a changed reason/result or successful recovery resets suppression.
+An acquire waits at most 16 ms. Timeout and
+not-ready results skip the frame without a queue drain or swap-chain rebuild;
+the acquire semaphore has no pending signal in those cases. Real errors still
+request recovery. A timeout never authorizes reuse of outstanding GPU work. If a queue drain fails,
+recovery keeps the attachments and semaphores alive, marks the chain invalid and
+retries later. The swap-chain and present-queue destructors release their resources
+after completion or device loss. For other errors, including out-of-memory results,
+they skip destruction of their swap-chain objects and retain the native window
+because completion is unknown. Framebuffer and semaphore wrappers are deliberately
+abandoned so their automatic member destruction cannot release those objects.
+This path needs no new allocations. A driver that hangs during a queue drain can
+still block the native presenter.
+
+This policy covers swap-chain objects and their presentation attachments. It does
+not establish safe shutdown of the entire renderer after an unknown-completion
+failure. `Application::end()` still destroys uploaders, the texture cache, workers
+and the device. `VulkanDevice::release()` destroys the allocator and device without
+an additional wait. If queued work is still running, quitting may still crash or
+report Vulkan validation errors. That application-wide shutdown path remains
+unverified by these fixtures.
+
+Repeated drain and refresh-query failures log once per distinct result. A successful
+operation resets suppression. While a drain remains failed, refresh-rate polling
+returns unknown without calling the driver again.
+
+The SDL lifecycle event watch freezes guest time and retraces before the main pump
+blocks in the background. Timer deadlines use that same clock. The audio boundary
+discards queued sound and resampling history, including in-flight submissions.
+Resume starts with fresh audio and excludes background time from the guest clock.
+Touch release remains owned by `GameActivity`, on Activity pause and surface loss;
+gyro reset and recentering remain
+in the existing main-thread sensor event path. Saves and settings are not changed.
+
+The host regression first reproduced `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR` by
+replacing a native-window generation while retaining the old `VkSurfaceKHR`.
+The recovery fixture now checks loss, same-pointer replacement, repeated transitions,
+unavailable and zero-sized surfaces, failed creation, timeout/not-ready acquisition,
+present loss, changed present modes and shutdown without a surface. Separate fixtures
+execute SDL's actual publication callbacks and RT64's retirement method.
+These tests model API behavior; they do not prove visible pixels or driver progress.
+
+The pre-recovery failure was replayed during review against pinned Plume with the
+port's patches through 0049, using the original native-replacement scenario and
+a recording queue-idle boundary to isolate stale-surface behavior. The captured
+output was:
+
+```text
+Pre-0051 Plume (pinned source plus patches through 0049), native-replacement
+exit code: 1
+FAILED: h.frame() (line 1457)
+FAILED: surfaceGeneration == nativeGeneration (line 1458)
+Vulkan swap chain not created: vkCreateSwapchainKHR failed (0xC46535FF).
+```
+
+The captured label predates patch renumbering; surface recovery is now patch 0055.
+
+Those line numbers refer to the generated fixture translation unit. The current
+production recovery passes the same replacement case. The review regressions
+also require failed drains to retain resources without aborting, timeout/not-ready
+acquisitions to leave creation and drain counts unchanged, and each distinct
+recovery failure to log its reason and result once. The real RT64 acquisition
+method is compiled into that fixture. A separate deterministic timer-loop fixture
+rejects added foreground sleeps and checks deadline waits across suspension.
+
+For device acceptance, capture game pixels and native logs before and after each
+transition in one process. Repeat Home/resume, screen off/on, notification shade,
+recent apps and both landscape orientations with system and Turnip drivers. Open
+Menu after each transition, verify touch and controller release, gyro recentering,
+audio recovery, saved settings and no guest clock catch-up burst. A live process or
+an increasing presentation count is insufficient. Follow the Vulkan validation
+instructions below and record any pre-existing validation errors separately.
+
+The older Adreno 650 test phone and the issue 329 Xiaomi phone were unavailable
+during this implementation. The connected Galaxy Z Fold6 (Android 16, Adreno 750)
+has the separately recorded cold-start compute-pipeline crash with its system
+driver. The candidate APK reproduced it on 2026-10-28: Adreno 750, system driver
+`0x802fa029`, five `vkCreateComputePipelines` failures (`0xFFFFFFF3`), then SIGSEGV
+before any native surface-generation or swap-chain creation log. No game pixels
+were available for transition checks. A failed cold start cannot validate
+lifecycle recovery. System/Turnip transitions, Vulkan validation, Menu, physical
+input, audible recovery and save/settings preservation remain unverified.
+
+The Windows cross-build used `python scripts/build_android.py`, NDK
+28.2.13676358, CMake 3.22.1, MinGW GCC 15.2.0 and JBR 21.0.8. The supported
+USA ROM SHA-256 was
+`cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c`.
+Game and RSP output was freshly regenerated. The supported builder also completed
+a second time against the already-patched dependencies. Generated output and the
+ROM are not part of the change.
+
 ## Adreno 615 startup device loss
 
 Status: a resolution-dependent system-driver fault is reproduced. Patch 0042

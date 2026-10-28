@@ -24,6 +24,7 @@ lambo_frontend_patch("${N64MR}" 0016-runtime-host-config-storage.patch)
 lambo_frontend_patch("${N64MR}" 0018-runtime-game-presentation.patch)
 lambo_frontend_patch("${N64MR}" 0035-runtime-live-mod-discovery.patch)
 lambo_frontend_patch("${N64MR}" 0036-runtime-mod-handle-complete-type.patch)
+lambo_frontend_patch("${N64MR}" 0057-runtime-app-suspension.patch)
 # 0034 changes a control-state line from 0017, so recognize it before checking
 # the older patch's reverse context on repeated configure runs.
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check

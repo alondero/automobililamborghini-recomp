@@ -58,6 +58,7 @@ extern "C" SDL_AudioDeviceID SDLCALL SDL_OpenAudioDevice(
 }
 
 extern "C" void SDLCALL SDL_PauseAudioDevice(SDL_AudioDeviceID, int) {}
+extern "C" void SDLCALL SDL_ClearQueuedAudio(SDL_AudioDeviceID) { queued_bytes = 0; }
 
 extern "C" int SDLCALL SDL_QueueAudio(SDL_AudioDeviceID, const void*, Uint32) {
     ++queue_attempts;
@@ -129,6 +130,16 @@ int main() {
 
     callbacks.queue_samples(samples, 4);
     expect(queued_buffers == 2, "the replacement device should receive the current buffer");
+
+    queued_bytes = 65536;
+    lambo::audio::set_suspended(true);
+    expect(queued_bytes == 0, "backgrounding discards stale PCM");
+    callbacks.queue_samples(samples, 4);
+    expect(queued_buffers == 2, "in-flight guest audio must not refill a suspended sink");
+    expect(callbacks.get_frames_remaining() == 0, "suspended audio has no guest backpressure");
+    lambo::audio::set_suspended(false);
+    callbacks.queue_samples(samples, 4);
+    expect(queued_buffers == 3, "fresh audio is accepted after resume");
 
     lambo::audio::shutdown();
     std::puts("audio device recovery tests passed");

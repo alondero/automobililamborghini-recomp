@@ -42,16 +42,23 @@ lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 00
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0041-plume-variable-descriptor-pool-retry.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0043-plume-vulkan-clear-rect-bounds.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0044-plume-vulkan-shader-nonuniform-without-descriptor-indexing.patch)
-# 0049 changes lines next to 0047's, so recognize it before checking 0047's
-# reverse context on repeated configure runs.
+# Recovery changes the constructor context of both surface-property patches.
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0049-plume-android-surface-format-without-gralloc-probe.patch"
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0055-plume-android-surface-recovery.patch"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume"
-    RESULT_VARIABLE plume_surface_format_patch_applied OUTPUT_QUIET ERROR_QUIET)
-if(NOT plume_surface_format_patch_applied EQUAL 0)
-    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0047-plume-vulkan-surface-capabilities.patch)
+    RESULT_VARIABLE plume_recovery_patch_applied OUTPUT_QUIET ERROR_QUIET)
+if(NOT plume_recovery_patch_applied EQUAL 0)
+    # 0049 changes lines next to 0047's, so recognize it before checking 0047's
+    # reverse context on repeated configure runs.
+    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0049-plume-android-surface-format-without-gralloc-probe.patch"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume"
+        RESULT_VARIABLE plume_surface_format_patch_applied OUTPUT_QUIET ERROR_QUIET)
+    if(NOT plume_surface_format_patch_applied EQUAL 0)
+        lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0047-plume-vulkan-surface-capabilities.patch)
+    endif()
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0049-plume-android-surface-format-without-gralloc-probe.patch)
 endif()
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0049-plume-android-surface-format-without-gralloc-probe.patch)
 # Keep 0050's published hunks stable so existing checkouts pass its reverse check.
 # Keep this shared order in sync with PLUME_CMAKE_SERIES; the checker verifies 0050 too.
 # 0053 changes reverse context in 0050/0051/0052; recognize it before all three.
@@ -72,6 +79,7 @@ if(NOT plume_nested_read_guard_applied EQUAL 0)
     lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0052-plume-vulkan-map-failure-recovery.patch)
 endif()
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0053-plume-vulkan-nested-read-map-guard.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0055-plume-android-surface-recovery.patch)
 # Later RT64 patches change earlier patches' context. Recognize the newest
 # applied patch first, then replay only what is missing.
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
@@ -138,7 +146,14 @@ if(NOT rt64_shadow_performance_patch_applied EQUAL 0)
 endif()
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0039-rt64-shadow-traversal-performance.patch)
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0042-rt64-adreno-615-automatic-resolution-limit.patch)
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0046-rt64-queue-barrier-wait.patch)
+execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0056-rt64-present-resource-retirement.patch"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
+    RESULT_VARIABLE rt64_retirement_patch_applied OUTPUT_QUIET ERROR_QUIET)
+if(NOT rt64_retirement_patch_applied EQUAL 0)
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0046-rt64-queue-barrier-wait.patch)
+endif()
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0056-rt64-present-resource-retirement.patch)
 
 # --- RT64 renderer boundary; see patches/README.md ---
 # recomp/lib/rt64 is a pinned git submodule; RT64 is always compiled in and is the

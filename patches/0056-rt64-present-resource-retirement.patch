@@ -1,0 +1,122 @@
+diff --git a/src/hle/rt64_present_queue.cpp b/src/hle/rt64_present_queue.cpp
+--- a/src/hle/rt64_present_queue.cpp
++++ b/src/hle/rt64_present_queue.cpp
+@@ -29,6 +29,7 @@
+             delete presentThread;
+         }
+ 
++        releaseSwapChainResources();
+         presentIdCondition.notify_all();
+     }
+ 
+@@ -303,9 +304,9 @@
+             }
+ 
+             uint32_t swapChainIndex = 0;
+-            const bool presentFrame = (i < framesToPresent) && swapChainValid;
++            bool presentFrame = (i < framesToPresent) && swapChainValid;
+             if (presentFrame) {
+-                swapChainValid = ext.swapChain->acquireTexture(acquiredSemaphore.get(), &swapChainIndex);
++                presentFrame = threadAcquire(swapChainIndex, swapChainValid);
+             }
+ 
+             if (presentFrame && swapChainValid) {
+@@ -464,6 +465,54 @@
+         barrierCondition.notify_all();
+     }
+ 
++    bool PresentQueue::threadAcquire(uint32_t &swapChainIndex, bool &swapChainValid) {
++        const bool acquired = ext.swapChain->acquireTexture(acquiredSemaphore.get(), &swapChainIndex);
++        swapChainValid = acquired || ext.swapChain->isAcquisitionRetryable();
++        return acquired; // No draw/submission/present without an acquired image.
++    }
++
++    void PresentQueue::releaseSwapChainResources() {
++        if (swapChainFramebuffers.empty() && drawSemaphores.empty() && !acquiredSemaphore) return;
++        const auto drained = ext.swapChain ? ext.swapChain->drain() : RenderSwapChain::DrainResult::Failed;
++        if (drained == RenderSwapChain::DrainResult::Failed) {
++            // Completion is unknown. Leak the wrappers as well as their GPU objects;
++            // leaving unique_ptrs here would destroy them when PresentQueue dies.
++            for (auto &framebuffer : swapChainFramebuffers) framebuffer.release();
++            for (auto &semaphore : drawSemaphores) semaphore.release();
++            acquiredSemaphore.release();
++        }
++        swapChainFramebuffers.clear();
++        drawSemaphores.clear();
++        acquiredSemaphore.reset();
++    }
++
++    void PresentQueue::threadResize(bool &swapChainValid) {
++        // Complete rendering and apply backend WSI teardown before retiring attachments.
++        // Frontend rendering uses these same framebuffers through the draw hook.
++        ext.presentGraphicsWorker->commandList->begin();
++        ext.presentGraphicsWorker->commandList->end();
++        ext.presentGraphicsWorker->execute();
++        ext.presentGraphicsWorker->wait();
++        if (ext.swapChain->drain() != RenderSwapChain::DrainResult::Complete) {
++            swapChainValid = false;
++            return; // Keep attachments and semaphores alive for a later retry.
++        }
++        swapChainFramebuffers.clear();
++        drawSemaphores.clear();
++        acquiredSemaphore.reset();
++        swapChainValid = ext.swapChain->resize();
++
++        // A failed present may leave a signalled, unconsumed semaphore. Allocate fresh
++        // synchronization objects after the drain, including on a failed recreation.
++        acquiredSemaphore = ext.device->createCommandSemaphore();
++        if (swapChainValid) {
++            ext.sharedResources->setSwapChainSize(ext.swapChain->getWidth(), ext.swapChain->getHeight());
++            while (drawSemaphores.size() < ext.swapChain->getTextureCount()) {
++                drawSemaphores.emplace_back(ext.device->createCommandSemaphore());
++            }
++        }
++    }
++
+     void PresentQueue::threadLoop() {
+         Thread::setCurrentThreadName("RT64 Present");
+ 
+@@ -501,21 +550,7 @@
+                 std::unique_lock<std::mutex> threadLock(threadMutex);
+                 const bool needsResize = ext.swapChain->needsResize() || !swapChainValid;
+                 if (needsResize) {
+-                    ext.presentGraphicsWorker->commandList->begin();
+-                    ext.presentGraphicsWorker->commandList->end();
+-                    ext.presentGraphicsWorker->execute();
+-                    ext.presentGraphicsWorker->wait();
+-                    swapChainValid = ext.swapChain->resize();
+-                    swapChainFramebuffers.clear();
+-
+-                    if (swapChainValid) {
+-                        ext.sharedResources->setSwapChainSize(ext.swapChain->getWidth(), ext.swapChain->getHeight());
+-                        
+-                        // Texture count could've changed after resize, so new semaphores are needed.
+-                        while (drawSemaphores.size() < ext.swapChain->getTextureCount()) {
+-                            drawSemaphores.emplace_back(ext.device->createCommandSemaphore());
+-                        }
+-                    }
++                    threadResize(swapChainValid);
+                 }
+ 
+                 if (needsResize || ext.appWindow->detectWindowMoved()) {
+@@ -579,5 +614,6 @@
+             ext.presentGraphicsWorker->commandQueue->executeCommandLists(&commandList, 1, &waitSemaphore, 1, nullptr, 0, ext.presentGraphicsWorker->commandFence.get());
+             ext.presentGraphicsWorker->wait();
+         }
++        releaseSwapChainResources();
+     }
+ };
+diff --git a/src/hle/rt64_present_queue.h b/src/hle/rt64_present_queue.h
+--- a/src/hle/rt64_present_queue.h
++++ b/src/hle/rt64_present_queue.h
+@@ -72,6 +72,9 @@
+         void skipInterpolation();
+         void notifyPresentId(const Present &present);
+         void threadAdvanceBarrier();
++        bool threadAcquire(uint32_t &swapChainIndex, bool &swapChainValid);
++        void releaseSwapChainResources();
++        void threadResize(bool &swapChainValid);
+         void threadLoop();
+     };
+ };
+\ No newline at end of file

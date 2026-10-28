@@ -2,11 +2,12 @@ package io.github.alondero.lamborghinirecomp;
 
 import android.os.Bundle;
 import android.system.Os;
+import android.view.SurfaceHolder;
 import android.widget.RelativeLayout;
 import java.util.HashSet;
 import org.libsdl.app.SDLActivity;
 
-public final class GameActivity extends SDLActivity {
+public final class GameActivity extends SDLActivity implements SurfaceHolder.Callback {
     private final HashSet<Integer> held = new HashSet<>();
     private TouchOverlay overlay;
 
@@ -35,12 +36,23 @@ public final class GameActivity extends SDLActivity {
         });
         mLayout.addView(overlay, new RelativeLayout.LayoutParams(
             RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT));
+        mSurface.getHolder().addCallback(this);
     }
 
-    @Override protected void onPause() {
+    private void releaseTouchControls() {
         if (overlay != null) overlay.reset();
         for (int key : held) onNativeKeyUp(key);
         held.clear();
+    }
+
+    // SurfaceView replacement can native-pause SDL without pausing this Activity.
+    // Keep touch ownership here; SDL publishes generations and owns the native window.
+    @Override public void surfaceDestroyed(SurfaceHolder holder) { releaseTouchControls(); }
+    @Override public void surfaceCreated(SurfaceHolder holder) { }
+    @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) { }
+
+    @Override protected void onPause() {
+        releaseTouchControls();
         super.onPause();
     }
 }

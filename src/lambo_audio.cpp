@@ -48,6 +48,7 @@ uint32_t          g_stream_src_rate = 0;
 bool              g_device_opened = false;
 bool              g_audio_subsystem_ready = false;
 bool              g_initialized = false;
+bool              g_suspended = false;
 bool              g_headless_sink = false;
 bool              g_recovery_requested = false;
 bool              g_unavailable_logged = false;
@@ -253,7 +254,7 @@ void submit(const int16_t* pcm, size_t sample_count) {
     {
         std::lock_guard<std::mutex> lock(g_state_mtx);
         headless = g_headless_sink;
-        if (!g_initialized || (!headless && (!g_device_opened || g_dev == 0))) {
+        if (g_suspended || !g_initialized || (!headless && (!g_device_opened || g_dev == 0))) {
             return;
         }
     }
@@ -298,7 +299,7 @@ void submit(const int16_t* pcm, size_t sample_count) {
     }
 
     std::lock_guard<std::mutex> lock(g_state_mtx);
-    if (!g_device_opened || g_dev == 0) {
+    if (g_suspended || !g_device_opened || g_dev == 0) {
         return;
     }
     // Cheap passthrough: native format + native channels + native rate.
@@ -357,7 +358,7 @@ void queue_samples(int16_t* pcm, size_t sample_count) {
 
 size_t get_frames_remaining() {
     std::lock_guard<std::mutex> lock(g_state_mtx);
-    if (!g_device_opened || g_dev == 0) {
+    if (g_suspended || !g_device_opened || g_dev == 0) {
         return 0;
     }
     const Uint32 bytes = SDL_GetQueuedAudioSize(g_dev);
@@ -409,6 +410,18 @@ void set_frequency(uint32_t freq) {
 
 namespace lambo::audio {
 
+void set_suspended(bool suspended) {
+    std::lock_guard<std::mutex> lock(g_state_mtx);
+    if (g_suspended == suspended) return;
+    g_suspended = suspended;
+    if (g_dev != 0) SDL_ClearQueuedAudio(g_dev);
+    if (g_stream != nullptr) {
+        SDL_FreeAudioStream(g_stream);
+        g_stream = nullptr;
+        g_stream_src_rate = 0;
+    }
+}
+
 void init(uint32_t desired_sample_rate) {
     {
         std::lock_guard<std::mutex> lock(g_state_mtx);
@@ -456,6 +469,7 @@ void shutdown() {
     std::lock_guard<std::mutex> lock(g_state_mtx);
     close_device_locked();
     g_initialized = false;
+    g_suspended = false;
     g_headless_sink = false;
     g_audio_subsystem_ready = false;
     g_recovery_requested = false;

@@ -66,6 +66,10 @@ significant single-space lines from `git diff --check`;
 | 0051 | Plume inside RT64 | Documents Vulkan's read-range defaults and dirty-atom rule beside the mapping declaration. Applied by shared CMake after the original 0050 so existing patched checkouts upgrade without resetting dependency files. No runtime change; see [mapped buffer memory](#mapped-buffer-memory). |
 | 0052 | Plume inside RT64 | Returns null after failed mapping or invalidation, preserving recoverable callers and nested references. Applies after stable patches 0050/0051. Flush failures remain fatal; see [mapped buffer memory](#mapped-buffer-memory). |
 | 0053 | Plume inside RT64 | Rejects invalidating read maps while another mapping is active, before acquiring a VMA reference. Omitted reads invalidate all non-upload heaps, including host-visible DEFAULT. Updates the contract comment without rewriting 0050/0051/0052. |
+| 0054 | SDL dependency | Retained Android native-window snapshots and generation publication. Applied after 0048 by the Android script. See ownership below. |
+| 0055 | Plume inside RT64 | Recover Android Vulkan surfaces on RT64 Present, bound acquisition and drain presentation work. Applied after 0053 by shared CMake. See ownership below. |
+| 0056 | RT64 | Retire presentation framebuffers and synchronization before resizing; drain on shutdown without a surface. Applied after 0046 by shared CMake. |
+| 0057 | N64ModernRuntime | Host application suspension freezes guest time, timer deadlines and VI production. Applied by shared CMake; Android opts in through an SDL event watch. |
 
 ## Mapped buffer memory
 
@@ -243,6 +247,89 @@ Whole-buffer flush defaults remain conservative. Known written ranges can
 reduce noncoherent work, but this follow-up does not change callers without
 an appropriate measurement. Neither available device offers a compatible
 noncoherent upload allocation for that performance comparison.
+
+## Android presentation ownership (0054-0057)
+
+Patch 0054 extends the pinned SDL2 Android integration with a retained native-window
+snapshot and a generation query, including dynamic API exports. SDL publishes
+creation, replacement and destruction under `Android_ActivityMutex`. Each callback
+advances the generation even when the native pointer is reused. SDL releases its
+own reference; Plume independently retains its snapshot until GPU resources and
+`VkSurfaceKHR` retire. No Vulkan call or presentation wait occurs under that lock.
+
+Patch 0055 keeps `RenderWindow` as `SDL_Window*` and uses the SDL-selected Vulkan
+loader from 0014. Android surface creation and property queries move to RT64
+Present. Loss, replacement and recoverable driver results recreate the surface
+before the swap chain. Failed creation releases the snapshot and retries on a
+later frame. Recovery failures report the unavailable window, surface creation,
+presentation-support query or generation race, including a Vulkan result when
+one exists. Identical reason/result pairs are logged once until the reason/result
+changes or a resize succeeds. Present modes are reselected from the new surface while retaining
+the requested vsync setting. Android acquire uses a 16 ms timeout. Timeout and
+not-ready results skip the frame while preserving the healthy chain and its
+synchronization objects; they do not drain or recreate it. Real acquisition errors
+still invalidate the chain. Success and suboptimal acquisition proceed through
+submission to consume the semaphore.
+
+Drain and display-timing errors are reported once per distinct Vulkan result;
+success resets suppression. After a failed drain, refresh-rate polling returns
+unknown without another driver query, so display-rate retries do not flood logs.
+
+Patch 0056 completes the present worker's rendering fence, drains pending Vulkan
+submitted queue work, then destroys external framebuffers and synchronization objects
+before resizing. Fresh semaphores replace any signalled but unconsumed objects
+after failed presentation. Shutdown drains and retires references even without an
+available surface. A failed drain marks the chain invalid and retains attachments
+and semaphores for a later retry. Drain results distinguish completion, device
+loss and other failures. Swap-chain teardown releases its resources after completion
+or device loss; other errors abandon its GPU handles, framebuffer/semaphore wrappers
+and retained native-window leases without allocating. Their automatic member
+destruction cannot release those abandoned objects. This is a local ownership
+policy: `Application::end()` still destroys uploaders, the texture cache, workers
+and the device, whose release destroys the allocator/device without another wait.
+Safe application-wide shutdown after unknown completion remains unverified; queued
+work could still cause a quit-time crash or Vulkan validation errors. A lost device
+does not cause the swap-chain destructor to abort. A hung driver can still
+block the native present thread. Android's UI thread never
+waits for that drain. The frontend uses the same presentation attachments.
+Unextended Vulkan queue idle is a compatibility fallback, not a formal guarantee
+that the presentation engine released all WSI references. The pinned backend does
+not enable `swapchain_maintenance1` presentation fences. Stronger WSI retirement
+and live driver transition coverage remain open validation limits; the fixture's
+recording driver cannot establish those guarantees. See the
+[Khronos guidance](https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html).
+
+Patch 0057 adds a host suspension API to the pinned runtime, which has no existing
+application pause API. It freezes guest count/time, timer deadlines and retraces.
+Foreground timers retain their deadline waits; the added 1 ms sleep applies only
+while suspended. A wait interrupted by a pause rechecks the shifted guest deadline
+without adding foreground polling or a sleep.
+An SDL event watch invokes it before SDL blocks the main pump. The port's existing
+audio boundary clears queued PCM and converter history and drops in-flight audio
+while suspended. Java's Activity-pause and surface-loss handlers release touch controls; the existing
+main-thread sensor event path closes and recenters gyro state.
+
+Compared on 2026-10-28 with pinned Plume `51b1ad4` and
+[current Plume `0ce184b`](https://github.com/renderbag/plume/blob/0ce184b19270e49236afbb74052a6b267494b86b/plume_vulkan.cpp):
+both create a surface once in the constructor and acquire with `UINT64_MAX`.
+Pinned RT64 `f0728a2` and
+[current RT64 `d9817c6`](https://github.com/rt64/rt64/blob/d9817c68ffd7328cd0af383af124971489366e18/src/hle/rt64_present_queue.cpp)
+both resize before clearing presentation framebuffers. Pinned runtime `cdf5abb`
+is also its current upstream HEAD; its clock runs continuously and VI has no host
+suspension gate. Pinned SDL `5d24957` and
+[SDL2 `8acf7cf`](https://github.com/libsdl-org/SDL/blob/8acf7cfc0f88717e5c036f60f0314bfcafe39189/src/core/android/SDL_android.c)
+publish neither a generation nor a retained renderer snapshot. DKR's
+[retirement change](https://github.com/ThatGuyMcd/DKR-R/blob/d457741b57afff8d2ec96b2307f11c1340a4162f/patches/android/present-surface-ownership.patch)
+was reviewed before implementing this order; its ANativeWindow-only surface patch
+was not copied over this port's SDL-window contract. No upstream issue was opened.
+
+0054 applies after 0048 through the Android script. Shared CMake applies 0055 after
+0053, 0056 after 0046, and 0057 after the runtime integration patches. Repeated
+configuration recognizes 0055 before the constructor contexts it changes. The
+Android script recognizes 0056 as part of the composed RT64 series. Production
+callback, swap-chain, retirement and clock fixtures are listed in
+[testing](../docs/testing.md#android-presentation-lifecycle).
+Device limits are recorded in [Android](../docs/ANDROID.md#native-surface-recovery).
 
 ## Application matrix
 
@@ -500,7 +587,7 @@ No patch content or dependency pin changed in that continuation.
 | --- | --- |
 | Linux script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, then 0016 through 0039 in CMake. |
 | Windows script | The Linux set plus 0005 and 0004, then 0016 through 0039 in CMake. |
-| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, and 0014, then 0016 through 0039 in CMake. The fetched SDL gets 0015, then 0048. |
+| Android script | 0001, 0007, 0012, 0006, 0009, 0010, 0011, 0013, and 0014, then the shared CMake patches, including 0055-0057 above. The fetched SDL gets 0015, 0048 and 0054. |
 
 If a patch no longer applies to its pinned submodule, stop and update the
 patch or pin as a deliberate change. Do not reset a developer's unrelated

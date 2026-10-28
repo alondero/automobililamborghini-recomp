@@ -97,6 +97,22 @@ class PatchCompositionTests(unittest.TestCase):
     def test_windows_series_composes(self):
         self.replay("windows")
 
+    @unittest.skipUnless(shutil.which("cmake"), "cmake unavailable")
+    def test_repeated_configure_accepts_applied_rt64_series(self):
+        tree = self.replay("android")
+        root = tree.parent
+        shutil.copytree(PATCHES_DIR, root / "patches")
+        frontend = (ROOT / "cmake/Frontend.cmake").read_text(encoding="utf-8")
+        function = re.search(r"find_package\(Git REQUIRED\).*?endfunction\(\)", frontend, re.S).group(0)
+        cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+        steps = cmake[cmake.index("# Later RT64 patches"):cmake.index("# --- RT64 renderer boundary")]
+        steps = steps.replace("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64", tree.as_posix())
+        script = root / "rt64_patches.cmake"
+        script.write_text(function + "\n" + steps, encoding="utf-8")
+        for run in ("first", "second"):
+            result = subprocess.run(["cmake", "-P", str(script)], cwd=root, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, f"{run} configure:\n{result.stderr}")
+
     def test_linux_series_composes(self):
         self.replay("linux")
 
@@ -252,16 +268,19 @@ class PlumeRepeatConfigureTests(unittest.TestCase):
         expected = root / "expected"
         expected.mkdir()
         (expected / "plume_vulkan.cpp").write_bytes(cpp.read_bytes())
-        for number in (["0053"] if from_recovery else ["0052", "0053"]):
-            subprocess.run(["git", "apply", "--include=plume_vulkan.cpp", str(resolve_patch(number))],
-                           cwd=expected, check=True, capture_output=True)
+        (expected / "plume_vulkan.h").write_bytes(header.read_bytes())
+        suffix = ["0053", "0055"] if from_recovery else ["0051", "0052", "0053", "0055"]
+        for number in suffix:
+            subprocess.run(["git", "apply", "--include=plume_vulkan.cpp", "--include=plume_vulkan.h",
+                            str(resolve_patch(number))], cwd=expected, check=True, capture_output=True)
         expected_cpp = (expected / "plume_vulkan.cpp").read_bytes()
+        expected_header = (expected / "plume_vulkan.h").read_bytes()
 
         shutil.copyfile(patch, root / "patches" / patch.name)
         self.configure(root, steps, "upgrade from original mapping patch")
         self.assertEqual({path: path.read_bytes() for path in before}, before)
         self.assertEqual(cpp.read_bytes(), expected_cpp)
-        self.assertTrue(header.read_bytes().endswith(b"// Keep this unrelated header edit.\n"))
+        self.assertEqual(header.read_bytes(), expected_header)
         comment = b"Invalidating read maps cannot nest; finish and flush active mappings first."
         self.assertEqual(header.read_bytes().count(comment), 1)
         upgraded_header = header.read_bytes()
