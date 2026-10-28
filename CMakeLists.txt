@@ -52,6 +52,7 @@ if(NOT plume_surface_format_patch_applied EQUAL 0)
     lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0047-plume-vulkan-surface-capabilities.patch)
 endif()
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0049-plume-android-surface-format-without-gralloc-probe.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0050-plume-vulkan-mapped-memory.patch)
 # Later RT64 patches change earlier patches' context. Recognize the newest
 # applied patch first, then replay only what is missing.
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check

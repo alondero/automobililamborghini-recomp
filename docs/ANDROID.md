@@ -732,6 +732,55 @@ Any new error is a regression, especially one that names the texture
 descriptor set. Remove the settings afterwards with
 `adb shell settings delete global <name>` for each of the three names.
 
+## Mapped buffer memory
+
+Patch 0050 fixes Vulkan CPU/GPU cache visibility for noncoherent mapped
+buffers. It invalidates reads before returning the mapped pointer and flushes
+writes before unmapping. See the [range contract and caller audit](../patches/README.md#mapped-buffer-memory)
+and [ROM-free tests](testing.md#vulkan-mapped-memory). Callers still need GPU
+completion fences and ordering barriers. Queue-family ownership is tracked
+separately in issue 361. This fix does not establish the cause of issue 329.
+
+The offscreen probe ran on 2026-10-28 with the patched production Plume
+backend. Each experiment uploaded vertices, drew 16 red pixels, copied them
+to a readback buffer, waited successfully for GPU completion, then checked
+every pixel. Omitted and partial ranges passed on both devices:
+
+| Device/system driver | Selected memory and synchronization |
+| --- | --- |
+| Windows 11, RTX 3080, driver `0x9D850000` | DEFAULT type 1 flags `0x1`; staging UPLOAD type 3 flags `0x6`; READBACK type 4 flags `0xE`. All host-visible types are coherent. Atom size 64; graphics/compute/copy families `0,2,1`; the probe uses only graphics family 0. |
+| Samsung SM-F956B, Android 16, Adreno 750, driver `0x802FA029` | DEFAULT type 0 flags `0x1`; UPLOAD and GPU_UPLOAD type 6 flags `0xF`; READBACK type 3 flags `0xB` (host-visible, cached, **noncoherent**). Atom size 1; all queue families 0. |
+
+The phone therefore exercises physical noncoherent readback. Neither device
+offers a compatible noncoherent upload type, including a transfer-only
+staging buffer on the phone. Physical noncoherent flushing and an atom size
+greater than one on noncoherent memory remain unverified. The recording VMA
+boundary covers both cache directions, including failures and range handling.
+The desktop probe passed with Khronos validation 1.4.363.0 (MSYS2 binary),
+without warnings or errors. The standalone Android executable could not load
+the app-injected validation layer. It reports validation unavailable; its
+pixel pass does not mean Android validation passed. The Linux host probe was
+not executed in this Windows session.
+
+The supported `scripts/build_android.py` build completed on Windows with
+NDK 28.2.13676358, SDK CMake 3.22.1, MinGW GCC 15.2.0 host tools and JBR 21.0.8.
+It freshly regenerated USA game and RSP output from ROM SHA-256
+`cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c`.
+No generated output, ROM or saves are checked in.
+
+An installed debug APK was launched from the launcher with retained settings
+(system driver, Auto resolution, MSAA2X) and Khronos validation 1.4.363.0 on the
+SM-F956B. Its driver rejected shaders and returned `VK_ERROR_UNKNOWN` creating
+compute pipelines, then the game bound a null pipeline and crashed. Rebuilding
+the same source with only 0050 removed reproduced those shader failures and
+the same two validation messages: `UNASSIGNED-GeneralParameterError-RequiredHandle`
+and `VUID-vkCmdBindPipeline-pipeline-parameter`. This is not a successful game
+or Menu check. This baseline failure is tracked in [issue 367](https://github.com/alondero/automobililamborghini-recomp/issues/367).
+No mapped-memory validation error appeared before the crash;
+validation of later game paths remains unverified. Imported Turnip and the
+issue 329 device were not tested. The standalone probe passes on this phone
+with simple shaders, which does not establish full RT64 shader compatibility.
+
 ## Release signing (one-time repository setup)
 
 The Build & Release workflow's Android job is **required**. All four signing
