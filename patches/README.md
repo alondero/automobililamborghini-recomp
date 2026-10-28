@@ -78,6 +78,13 @@ returns the allocation base, including for partial ranges; callers add their
 own offsets. VMA maps the allocation, so the range declares CPU access rather
 than limiting the mapping itself.
 
+The omitted read range deliberately differs between backends. D3D12 passes
+`nullptr` to `ID3D12Resource::Map`, which permits CPU reads of the whole
+resource. Vulkan treats omitted UPLOAD/GPU_UPLOAD read ranges as write-only
+and does not invalidate them. Portable callers that read these heaps must
+provide an explicit read range; relying on D3D12's null-range behavior can
+read stale data on noncoherent Vulkan memory.
+
 | Range | Map | Unmap |
 | --- | --- | --- |
 | Omitted | Invalidate the whole READBACK buffer; no invalidation on other heaps. | Flush the whole buffer except READBACK, which defaults to no writes. |
@@ -93,6 +100,28 @@ counting. These checks run in release builds. VMA handles coherent-memory
 no-ops and `nonCoherentAtomSize` alignment; ranges use the buffer's size rather
 than allocation padding. Buffers mapped on other heaps need an explicit read
 range when CPU reads are intended.
+
+Atom alignment also affects ownership of dirty bytes. VMA expands a cache
+range to whole `nonCoherentAtomSize` atoms. Invalidating a read range can
+discard unflushed CPU writes elsewhere in the same atom, even outside the
+requested byte range. Before a nested read mapping or a write-then-remap,
+flush every pending host write in the affected atoms through an unmap with
+the appropriate written range. An empty written range does not preserve
+dirty bytes for a later invalidation. Nested map reference counting does not
+track dirty ranges or provide this ordering. The audited callers do not mix
+unflushed writes and invalidation this way.
+
+Mapping, cache-maintenance and contract failures use `abort()` after flushing
+the operation and any VMA error code to stderr. On POSIX, including Android,
+this raises SIGABRT, which the port's crash handler deliberately excludes
+(`src/lambo_crash.cpp`). These failures therefore do not produce the project's
+symbolised crash dump. Previously a failed map returned null, and a subsequent
+unchecked dereference could produce a captured SIGSEGV. Keeping controlled
+termination trades that later dump for a deterministic diagnostic at the
+failing operation and prevents stale or invalid data reaching a consumer.
+The dependency does not synthesize a memory fault or change the port's global
+SIGABRT policy; field reports must retain stderr/native logs. Android's own
+abort-report capture was not verified here.
 
 The caller audit covered pinned RT64, RecompFrontend and this port's patches
 and hand-written sources. Texture-cache uploads, native-target uploads,
@@ -118,7 +147,11 @@ The recording VMA regression compiles the production declaration and mapping
 methods, with assertions disabled. Before the fix it observes stale bytes in
 both directions on its noncoherent model. It now checks ordering, coherent
 and noncoherent bytes, omitted/empty/partial/full ranges, invalid extents and
-subresources, nested mapping, failures and cleanup. CI requires the module.
+subresources, nested mapping, failures and cleanup. A 32-byte-atom model also
+demonstrates loss of unflushed bytes outside a nested read range and retention
+after flushing before remapping; coherent memory preserves the dirty bytes.
+This is a possible noncoherent outcome, not a promise of a particular device's
+cache behavior. CI requires the module.
 See [testing commands](../docs/testing.md#vulkan-mapped-memory).
 
 The ROM-free GPU probe uses production Plume allocation, mapping, drawing and

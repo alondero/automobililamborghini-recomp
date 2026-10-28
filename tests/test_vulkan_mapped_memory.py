@@ -94,6 +94,22 @@ class MappedMemoryTests(unittest.TestCase):
         self.assertIn("invalid read range, subresource or allocation", result.stderr)
         self.assertEqual(result.stdout, "")
 
+    def test_nested_read_can_discard_unflushed_bytes_outside_read_range(self):
+        for coherent in (False, True):
+            with self.subTest(coherent=coherent):
+                result = self.run_scenario("nested-dirty-atom", coherent)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines(), ["map", "cpu-write", "submit", "wait",
+                                 "map", "invalidate 17 1", "cpu-read", "unmap", "unmap"])
+
+    def test_flushing_before_read_remap_preserves_other_bytes_in_atom(self):
+        for coherent in (False, True):
+            with self.subTest(coherent=coherent):
+                result = self.run_scenario("remap-flushed-atom", coherent)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines(), ["map", "cpu-write", "flush 1 1", "unmap",
+                                 "submit", "wait", "map", "invalidate 17 1", "cpu-read", "unmap"])
+
     def test_invalid_writes_release_mapping_before_stopping(self):
         for suffix in ("reversed", "end", "empty", "overflow", "subresource"):
             with self.subTest(suffix=suffix):

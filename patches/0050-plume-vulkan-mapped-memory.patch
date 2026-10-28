@@ -78,10 +78,9 @@ index 2800022..3a8f1be 100644
  
      std::unique_ptr<RenderBufferFormattedView> VulkanBuffer::createBufferFormattedView(RenderFormat format) {
 diff --git a/plume_vulkan.h b/plume_vulkan.h
-index 0a1edbe..942db49 100644
 --- a/plume_vulkan.h
 +++ b/plume_vulkan.h
-@@ -55,6 +55,7 @@ namespace plume {
+@@ -55,11 +55,15 @@
          VmaAllocation allocation = VK_NULL_HANDLE;
          VmaAllocationInfo allocationInfo = {};
          RenderBufferDesc desc;
@@ -89,3 +88,11 @@ index 0a1edbe..942db49 100644
          RenderBarrierStages barrierStages = RenderBarrierStage::NONE;
  
          VulkanBuffer() = default;
+         VulkanBuffer(VulkanDevice *device, VulkanPool *pool, const RenderBufferDesc &desc);
+         ~VulkanBuffer() override;
++        // Vulkan omits invalidation for null UPLOAD/GPU_UPLOAD read ranges;
++        // D3D12 allows whole-resource reads. Use explicit ranges for portable reads.
++        // Flush dirty host bytes in overlapping atoms before read maps, including nested maps.
+         void *map(uint32_t subresource, const RenderRange *readRange) override;
+         void unmap(uint32_t subresource, const RenderRange *writtenRange) override;
+         std::unique_ptr<RenderBufferFormattedView> createBufferFormattedView(RenderFormat format) override;

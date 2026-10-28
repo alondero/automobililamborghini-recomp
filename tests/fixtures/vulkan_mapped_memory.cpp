@@ -29,6 +29,7 @@ VulkanBuffer::~VulkanBuffer() = default;
 
 static std::array<uint8_t, 256> hostBytes{}, deviceBytes{};
 static bool coherent = false;
+static VkDeviceSize atomSize = 1;
 static int mappings = 0;
 static std::string scenario;
 static void require(bool ok, const char *message) {
@@ -36,6 +37,13 @@ static void require(bool ok, const char *message) {
 }
 static void event(const char *name) { puts(name); fflush(stdout); }
 static auto &gpuBytes() { return coherent ? hostBytes : deviceBytes; }
+
+static void copyAtoms(const std::array<uint8_t, 256> &source,
+                      std::array<uint8_t, 256> &destination, VkDeviceSize offset, VkDeviceSize size) {
+    const auto begin = offset / atomSize * atomSize;
+    const auto end = std::min<VkDeviceSize>((offset + size + atomSize - 1) / atomSize * atomSize, 96);
+    std::copy_n(source.data() + begin, end - begin, destination.data() + begin);
+}
 
 VkResult vmaMapMemory(int, VmaAllocation, void **data) {
     event("map");
@@ -54,7 +62,7 @@ VkResult vmaInvalidateAllocation(int, VmaAllocation, VkDeviceSize offset, VkDevi
     printf("invalidate %llu %llu\n", (unsigned long long)offset, (unsigned long long)size);
     fflush(stdout);
     if (scenario == "invalidate-failure") return -4;
-    if (!coherent) std::copy_n(deviceBytes.data() + offset, size, hostBytes.data() + offset);
+    if (!coherent) copyAtoms(deviceBytes, hostBytes, offset, size);
     return VK_SUCCESS;
 }
 VkResult vmaFlushAllocation(int, VmaAllocation, VkDeviceSize offset, VkDeviceSize size) {
@@ -62,7 +70,7 @@ VkResult vmaFlushAllocation(int, VmaAllocation, VkDeviceSize offset, VkDeviceSiz
     printf("flush %llu %llu\n", (unsigned long long)offset, (unsigned long long)size);
     fflush(stdout);
     if (scenario == "flush-failure") return -4;
-    if (!coherent) std::copy_n(hostBytes.data() + offset, size, deviceBytes.data() + offset);
+    if (!coherent) copyAtoms(hostBytes, deviceBytes, offset, size);
     return VK_SUCCESS;
 }
 
@@ -105,6 +113,28 @@ int main(int argc, char **argv) {
         buffer.desc.heapType = RenderHeapType::READBACK;
         buffer.map(0, nullptr);
         require(false, "failed invalidation continued");
+    } else if (scenario == "nested-dirty-atom" || scenario == "remap-flushed-atom") {
+        // Model a permitted loss of dirty host bytes when invalidating the same
+        // atom through a different range. Reference counting cannot prevent it.
+        atomSize = 32;
+        hostBytes.fill(19);
+        deviceBytes.fill(19);
+        const RenderRange written{1, 2}, read{17, 18}, noWrite{0, 0};
+        auto *data = static_cast<uint8_t *>(buffer.map(0, nullptr));
+        event("cpu-write");
+        data[1] = 42;
+        const bool flushed = scenario == "remap-flushed-atom";
+        if (flushed) buffer.unmap(0, &written);
+        event("submit");
+        gpuBytes()[17] = 83;
+        event("wait");
+        data = static_cast<uint8_t *>(buffer.map(0, &read));
+        event("cpu-read");
+        require(data[17] == 83, "read range missed GPU data");
+        require(data[1] == ((flushed || coherent) ? 42 : 19),
+            "dirty-atom model did not expose the caller's flush requirement");
+        buffer.unmap(0, &noWrite);
+        if (!flushed) buffer.unmap(0, &noWrite);
     } else if (scenario == "nested") {
         auto *first = static_cast<uint8_t *>(buffer.map(0, nullptr));
         auto *second = static_cast<uint8_t *>(buffer.map(0, nullptr));
