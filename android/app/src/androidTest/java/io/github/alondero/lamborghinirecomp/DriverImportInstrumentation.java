@@ -13,16 +13,42 @@ import java.nio.file.Files;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-/** Device regression checks use isolated cache storage, never the user's ROM or driver. */
+/** Default and assetcheck use cache sandboxes. Opt-in gameboot uses the installed ROM and driver. */
 public final class DriverImportInstrumentation extends Instrumentation {
     private int checks;
-    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
+    private Bundle arguments;
+    @Override public void onCreate(Bundle arguments) {
+        super.onCreate(arguments);
+        this.arguments = arguments;
+        start();
+    }
 
     @Override public void onStart() {
         Bundle result = new Bundle();
+        if (arguments != null && arguments.containsKey("gameboot")) {
+            try {
+                long holdMs = 0;
+                holdMs = Long.parseLong(arguments.getString("hold_ms", "0"));
+                if (holdMs < 0) throw new IllegalArgumentException("hold_ms must be nonnegative");
+                GameBootCheck.run(this, holdMs);
+                result.putString("stream", "\nLauncher Play started a new game process; same PID survived "
+                    + Math.max(2000, holdMs) + " ms of polling. Rendering is unverified.\n");
+                finish(Activity.RESULT_OK, result);
+            } catch (Throwable error) {
+                result.putString("stream", "\nFAILED: " + android.util.Log.getStackTraceString(error));
+                finish(Activity.RESULT_CANCELED, result);
+            }
+            return;
+        }
         File sandbox = null;
         try {
             sandbox = Files.createTempDirectory(getTargetContext().getCacheDir().toPath(), "driver-tests-").toFile();
+            if (arguments != null && arguments.containsKey("assetcheck")) {
+                LauncherAssetChecks.run(this, sandbox);
+                result.putString("stream", "\nPackaged launcher asset extraction checks passed.\n");
+                finish(Activity.RESULT_OK, result);
+                return;
+            }
             final File files = new File(sandbox, "files");
             require(files.mkdir(), "create isolated files directory");
             Context context = new ContextWrapper(getTargetContext()) {
