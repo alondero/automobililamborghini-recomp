@@ -1,0 +1,357 @@
+diff --git a/plume_render_interface.h b/plume_render_interface.h
+--- a/plume_render_interface.h
++++ b/plume_render_interface.h
+@@ -86,9 +86,14 @@
+     };
+ 
+     struct RenderSwapChain {
++        enum class DrainResult { Complete, DeviceLost, Failed };
+         virtual ~RenderSwapChain() { }
+         virtual bool present(uint32_t textureIndex, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount) = 0;
+         virtual void wait() = 0;
++        // Call after rendering fences, before retiring presentation framebuffers or
++        // synchronization objects. Only Complete permits reuse. DeviceLost permits
++        // destruction; any other failure requires abandoning objects at teardown.
++        virtual DrainResult drain() { return DrainResult::Complete; }
+         virtual bool resize() = 0;
+         virtual bool needsResize() const = 0;
+         virtual void setVsyncEnabled(bool vsyncEnabled) = 0;
+@@ -98,6 +103,9 @@
+         virtual RenderTexture *getTexture(uint32_t textureIndex) = 0;
+         virtual uint32_t getTextureCount() const = 0;
+         virtual bool acquireTexture(RenderCommandSemaphore *signalSemaphore, uint32_t *textureIndex) = 0;
++        // A retryable failed acquire supplies no image or semaphore signal. Skip the
++        // frame while keeping the chain valid; other failures require recovery.
++        virtual bool isAcquisitionRetryable() const { return false; }
+         virtual RenderWindow getWindow() const = 0;
+         virtual bool isEmpty() const = 0;
+ 
+diff --git a/plume_vulkan.h b/plume_vulkan.h
+--- a/plume_vulkan.h
++++ b/plume_vulkan.h
+@@ -226,6 +226,14 @@
+         VkSwapchainKHR vk = VK_NULL_HANDLE;
+         VulkanCommandQueue *commandQueue = nullptr;
+         VkSurfaceKHR surface = VK_NULL_HANDLE;
++#if defined(__ANDROID__) && defined(PLUME_SDL_VULKAN_ENABLED)
++        void *nativeWindow = nullptr; // One retained SDL snapshot, outlives VkSurfaceKHR.
++        uint64_t surfaceGeneration = 0;
++        bool surfaceLost = false;
++        bool androidSurfaceCurrent() const;
++        const char *recoverSurface(uint32_t &detail);
++        void releaseSurface();
++#endif
+ #if defined(__APPLE__)
+         std::unique_ptr<CocoaWindow> windowWrapper;
+ #endif
+@@ -243,6 +251,7 @@
+         // selection may still be pending after a transient query failure.
+         bool surfacePresentable = false;
+         const char *lastResizeFailure = nullptr;
++        uint32_t lastResizeFailureDetail = 0;
+         VkSwapchainCreateInfoKHR createInfo = {};
+         VkSurfaceFormatKHR pickedSurfaceFormat = {};
+         VkPresentModeKHR createdPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+@@ -250,6 +259,10 @@
+         VkCompositeAlphaFlagBitsKHR pickedAlphaFlag = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+         std::vector<VulkanTexture> textures;
+         uint64_t currentPresentId = 0;
++        VkResult lastDrainResult = VK_SUCCESS;
++        mutable VkResult lastRefreshResult = VK_SUCCESS;
++        bool acquisitionRetryable = false;
++        bool requestedVsyncEnabled = true;
+         bool immediatePresentModeSupported = false;
+         bool mailboxPresentModeSupported = false;
+ 
+@@ -257,6 +270,7 @@
+         ~VulkanSwapChain() override;
+         bool present(uint32_t textureIndex, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount) override;
+         void wait() override;
++        DrainResult drain() override;
+         bool resize() override;
+         bool needsResize() const override;
+         void setVsyncEnabled(bool vsyncEnabled) override;
+@@ -266,6 +280,7 @@
+         RenderTexture *getTexture(uint32_t textureIndex) override;
+         uint32_t getTextureCount() const override;
+         bool acquireTexture(RenderCommandSemaphore *signalSemaphore, uint32_t *textureIndex) override;
++        bool isAcquisitionRetryable() const override;
+         RenderWindow getWindow() const override;
+         bool isEmpty() const override;
+         uint32_t getRefreshRate() const override;
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -18,6 +18,11 @@
+ 
+ #if DLSS_ENABLED
+ #   include "render/plume_dlss.h"
++#endif
++
++#if defined(__ANDROID__) && defined(PLUME_SDL_VULKAN_ENABLED)
++#include <SDL_system.h>
++#include <android/native_window.h>
+ #endif
+ 
+ #ifndef NDEBUG
+@@ -2215,6 +2220,13 @@
+         this->commandQueue = commandQueue;
+         this->desc = desc;
+ 
++#if defined(__ANDROID__) && defined(PLUME_SDL_VULKAN_ENABLED)
++        // Surface creation and properties belong to the present thread, not the
++        // graphics setup thread. SDL's RenderWindow remains an SDL_Window*.
++        requestedTextureCount = desc.textureCount;
++        commandQueue->swapChains.insert(this);
++        return;
++#endif
+         VkResult res;
+ 
+ #   ifdef _WIN64
+@@ -2363,6 +2375,7 @@
+         presentModes.resize(presentModeCount);
+         immediatePresentModeSupported = std::find(presentModes.begin(), presentModes.end(), VK_PRESENT_MODE_IMMEDIATE_KHR) != presentModes.end();
+         mailboxPresentModeSupported = std::find(presentModes.begin(), presentModes.end(), VK_PRESENT_MODE_MAILBOX_KHR) != presentModes.end();
++        setVsyncEnabled(requestedVsyncEnabled);
+ 
+         // Check if the format we requested is part of the supported surface formats.
+         std::vector<VkSurfaceFormatKHR> compatibleSurfaceFormats;
+@@ -2396,7 +2409,110 @@
+         return nullptr;
+     }
+ 
++    RenderSwapChain::DrainResult VulkanSwapChain::drain() {
++        // Queue idle is the legacy WSI teardown fallback, not a formal present fence.
++        // Rendering is complete here; presentation-engine retirement needs maintenance1.
++        const std::scoped_lock queueLock(*commandQueue->queue->mutex);
++        VkResult res = vkQueueWaitIdle(commandQueue->queue->vk);
++        if ((res != VK_SUCCESS) && (res != lastDrainResult)) {
++            fprintf(stderr, "Vulkan presentation drain failed: 0x%X.\n", res);
++        }
++        lastDrainResult = res; // Success permits the same later error to be reported again.
++        if (res != VK_SUCCESS) {
++            return (res == VK_ERROR_DEVICE_LOST) ? DrainResult::DeviceLost : DrainResult::Failed;
++        }
++        return DrainResult::Complete;
++    }
++
++#if defined(__ANDROID__) && defined(PLUME_SDL_VULKAN_ENABLED)
++    bool VulkanSwapChain::androidSurfaceCurrent() const {
++        return (surface != VK_NULL_HANDLE) && !surfaceLost &&
++            (SDL_AndroidGetNativeWindowGeneration() == surfaceGeneration);
++    }
++
++    void VulkanSwapChain::releaseSurface() {
++        // The caller drained submitted work and retired external framebuffers first.
++        releaseImageViews();
++        textures.clear();
++        releaseSwapChain();
++        if (surface != VK_NULL_HANDLE) {
++            vkDestroySurfaceKHR(commandQueue->device->renderInterface->instance, surface, nullptr);
++            surface = VK_NULL_HANDLE;
++        }
++        if (nativeWindow != nullptr) {
++            ANativeWindow_release(static_cast<ANativeWindow *>(nativeWindow));
++            nativeWindow = nullptr;
++        }
++        pickedSurfaceFormat = {};
++        surfacePresentable = false;
++        currentPresentId = 0;
++    }
++
++    const char *VulkanSwapChain::recoverSurface(uint32_t &detail) {
++        Uint64 generation = 0;
++        auto *window = static_cast<ANativeWindow *>(SDL_AndroidAcquireNativeWindow(&generation));
++        if (window && androidSurfaceCurrent() && (generation == surfaceGeneration)) {
++            ANativeWindow_release(window);
++            return nullptr;
++        }
++
++        releaseSurface();
++        surfaceGeneration = generation;
++        surfaceLost = false;
++        if (window == nullptr) return "the Android native window is unavailable";
++
++        nativeWindow = window;
++        VkAndroidSurfaceCreateInfoKHR info = {};
++        info.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
++        info.window = window;
++        VkResult res = vkCreateAndroidSurfaceKHR(commandQueue->device->renderInterface->instance, &info, nullptr, &surface);
++        if (res != VK_SUCCESS) {
++            detail = res;
++            releaseSurface();
++            return "vkCreateAndroidSurfaceKHR failed";
++        }
++        VkBool32 supported = VK_FALSE;
++        res = vkGetPhysicalDeviceSurfaceSupportKHR(commandQueue->device->physicalDevice,
++            commandQueue->familyIndex, surface, &supported);
++        if (res != VK_SUCCESS) {
++            detail = res;
++            releaseSurface();
++            return "vkGetPhysicalDeviceSurfaceSupportKHR failed";
++        }
++        surfacePresentable = supported;
++        if (!surfacePresentable) {
++            releaseSurface();
++            return "the Android surface cannot be presented to";
++        }
++        if (!androidSurfaceCurrent()) {
++            releaseSurface();
++            return "the Android surface changed during recovery";
++        }
++        fprintf(stderr, "Vulkan native surface generation %llu ready.\n", static_cast<unsigned long long>(generation));
++        return nullptr;
++    }
++#endif
++
+     VulkanSwapChain::~VulkanSwapChain() {
++        const DrainResult drained = drain();
++        if (drained == DrainResult::Failed) {
++            // OOM and other errors do not establish completion. Abandon native GPU
++            // objects and the retained window without allocating on this error path.
++            // Detach the texture handles so automatic member destruction cannot free them.
++            for (VulkanTexture &texture : textures) {
++                texture.imageView = VK_NULL_HANDLE;
++                texture.vk = VK_NULL_HANDLE;
++            }
++#if defined(__APPLE__)
++            windowWrapper.release();
++#endif
++            commandQueue->swapChains.erase(this);
++            return;
++        }
++        // Complete or device-lost teardown can release resources without aborting.
++#if defined(__ANDROID__) && defined(PLUME_SDL_VULKAN_ENABLED)
++        releaseSurface();
++#endif
+         releaseImageViews();
+         releaseSwapChain();
+ 
+@@ -2410,6 +2526,9 @@
+     }
+ 
+     bool VulkanSwapChain::present(uint32_t textureIndex, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount) {
++#if defined(__ANDROID__) && defined(PLUME_SDL_VULKAN_ENABLED)
++        if (!androidSurfaceCurrent()) return false;
++#endif
+         thread_local std::vector<VkSemaphore> waitSemaphoresVector;
+         waitSemaphoresVector.clear();
+         for (uint32_t i = 0; i < waitSemaphoreCount; i++) {
+@@ -2442,6 +2561,9 @@
+             res = vkQueuePresentKHR(commandQueue->queue->vk, &presentInfo);
+         }
+ 
++#if defined(__ANDROID__) && defined(PLUME_SDL_VULKAN_ENABLED)
++        surfaceLost = (res == VK_ERROR_SURFACE_LOST_KHR) || (res == VK_ERROR_NATIVE_WINDOW_IN_USE_KHR);
++#endif
+ #if defined(__APPLE__)
+         // Under MoltenVK, VK_SUBOPTIMAL_KHR does not result in a valid state for rendering. We intentionally
+         // only check for this error during present to avoid having to synchronize manually against the semaphore
+@@ -2459,7 +2581,7 @@
+     void VulkanSwapChain::wait() {
+         assert(desc.enablePresentWait && "Present wait should've been explicitly enabled during swap chain creation before using the wait function.");
+ 
+-        if (currentPresentId >= desc.maxFrameLatency) {
++        if ((vk != VK_NULL_HANDLE) && (currentPresentId >= desc.maxFrameLatency)) {
+             constexpr uint64_t waitTimeout = 100000000;
+             vkWaitForPresentKHR(commandQueue->device->vk, vk, currentPresentId - (desc.maxFrameLatency - 1), waitTimeout);
+         }
+@@ -2468,14 +2590,23 @@
+     bool VulkanSwapChain::resize() {
+         // RT64 retries every presented frame after a failure; report each distinct reason once.
+         auto refuse = [this](const char *reason, uint32_t detail) {
+-            if (reason != lastResizeFailure) {
++#if defined(__ANDROID__) && defined(PLUME_SDL_VULKAN_ENABLED)
++            surfaceLost = surfaceLost || (detail == uint32_t(VK_ERROR_SURFACE_LOST_KHR)) ||
++                (detail == uint32_t(VK_ERROR_NATIVE_WINDOW_IN_USE_KHR));
++#endif
++            if ((reason != lastResizeFailure) || (detail != lastResizeFailureDetail)) {
+                 fprintf(stderr, "Vulkan swap chain not created: %s (0x%X).\n", reason, detail);
+                 lastResizeFailure = reason;
++                lastResizeFailureDetail = detail;
+             }
+ 
+             return false;
+         };
+ 
++#if defined(__ANDROID__) && defined(PLUME_SDL_VULKAN_ENABLED)
++        uint32_t recoveryDetail = 0;
++        if (const char *reason = recoverSurface(recoveryDetail)) return refuse(reason, recoveryDetail);
++#endif
+         uint32_t windowWidth = 0;
+         uint32_t windowHeight = 0;
+         getWindowSize(windowWidth, windowHeight);
+@@ -2627,6 +2758,9 @@
+     }
+ 
+     bool VulkanSwapChain::needsResize() const {
++#if defined(__ANDROID__) && defined(PLUME_SDL_VULKAN_ENABLED)
++        if (!androidSurfaceCurrent()) return true;
++#endif
+         uint32_t windowWidth, windowHeight;
+         getWindowSize(windowWidth, windowHeight);
+         if ((vk == VK_NULL_HANDLE) || (windowWidth != requestedWidth) || (windowHeight != requestedHeight) || (requiredPresentMode != createdPresentMode)) {
+@@ -2649,6 +2783,7 @@
+     }
+ 
+     void VulkanSwapChain::setVsyncEnabled(bool vsyncEnabled) {
++        requestedVsyncEnabled = vsyncEnabled;
+         // Immediate mode must be supported and the presentation mode will only be used on the next resize.
+         // needsResize() will return as true as long as the created and required present mode do not match.
+         if (immediatePresentModeSupported && !vsyncEnabled) {
+@@ -2689,17 +2824,22 @@
+     }
+ 
+     uint32_t VulkanSwapChain::getRefreshRate() const {
+-        // RT64 asks every frame, including after a failed resize; Android's loader dereferences the handle.
+-        if (vk == VK_NULL_HANDLE) {
++        // RT64 asks even after a failed drain. Do not query an unhealthy queue/device
++        // or a null handle (Android's loader dereferences the latter).
++        if ((vk == VK_NULL_HANDLE) || (lastDrainResult != VK_SUCCESS)) {
+             return 0;
+         }
+ 
+         VkRefreshCycleDurationGOOGLE refreshCycle = {};
+         VkResult res = vkGetRefreshCycleDurationGOOGLE(commandQueue->device->vk, vk, &refreshCycle);
+         if (res != VK_SUCCESS) {
+-            fprintf(stderr, "vkGetRefreshCycleDurationGOOGLE failed with error code 0x%X.\n", res);
++            if (res != lastRefreshResult) {
++                fprintf(stderr, "vkGetRefreshCycleDurationGOOGLE failed with error code 0x%X.\n", res);
++            }
++            lastRefreshResult = res;
+             return 0;
+         }
++        lastRefreshResult = VK_SUCCESS;
+ 
+         return std::lround(1000000000.0 / refreshCycle.refreshDuration);
+     }
+@@ -2729,11 +2869,28 @@
+ #   endif
+     }
+ 
++    bool VulkanSwapChain::isAcquisitionRetryable() const {
++        return acquisitionRetryable;
++    }
++
+     bool VulkanSwapChain::acquireTexture(RenderCommandSemaphore *signalSemaphore, uint32_t *textureIndex) {
+         assert(signalSemaphore != nullptr);
++        acquisitionRetryable = false;
+ 
+         VulkanCommandSemaphore *interfaceSemaphore = static_cast<VulkanCommandSemaphore *>(signalSemaphore);
+-        VkResult res = vkAcquireNextImageKHR(commandQueue->device->vk, vk, UINT64_MAX, interfaceSemaphore->vk, VK_NULL_HANDLE, textureIndex);
++#if defined(__ANDROID__) && defined(PLUME_SDL_VULKAN_ENABLED)
++        if (!androidSurfaceCurrent()) return false;
++        // TIMEOUT/NOT_READY leave the supplied semaphore unsignalled with no pending
++        // signal operation. A successful/suboptimal acquire must always be consumed.
++        constexpr uint64_t acquireTimeout = 16'000'000;
++#else
++        constexpr uint64_t acquireTimeout = UINT64_MAX;
++#endif
++        VkResult res = vkAcquireNextImageKHR(commandQueue->device->vk, vk, acquireTimeout, interfaceSemaphore->vk, VK_NULL_HANDLE, textureIndex);
++        acquisitionRetryable = (res == VK_TIMEOUT) || (res == VK_NOT_READY);
++#if defined(__ANDROID__) && defined(PLUME_SDL_VULKAN_ENABLED)
++        surfaceLost = (res == VK_ERROR_SURFACE_LOST_KHR) || (res == VK_ERROR_NATIVE_WINDOW_IN_USE_KHR);
++#endif
+         if ((res != VK_SUCCESS) && (res != VK_SUBOPTIMAL_KHR)) {
+             return false;
+         }

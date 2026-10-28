@@ -21,7 +21,10 @@ from tests.patched_source import ROOT, method, patched_file
 
 SDL = android.WORK / "deps/SDL"
 SOURCE = "src/core/android/SDL_android.c"
-CALLBACKS = ("JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(onNativeSurfaceChanged)(",
+CALLBACKS = ("JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(onNativeSurfaceCreated)(",
+             "Uint64 SDL_AndroidGetNativeWindowGeneration(",
+             "void *SDL_AndroidAcquireNativeWindow(",
+             "JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(onNativeSurfaceChanged)(",
              "JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(onNativeSurfaceDestroyed)(")
 EVENTS = "src/video/android/SDL_androidevents.c"
 CONTEXT_STEPS = ("static void android_egl_context_restore(", "static void android_egl_context_backup(")
@@ -91,6 +94,9 @@ class SurfaceCallbackTests(unittest.TestCase):
 
     def test_opengl_window_keeps_context_backup_and_restore(self):
         self.scenario("opengl-pause-resume")
+
+    def test_retained_snapshots_survive_same_pointer_replacement_and_loss(self):
+        self.scenario("native-generation")
 
 
 @PINNED

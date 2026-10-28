@@ -257,6 +257,21 @@ static std::atomic<bool> g_multiplayer_connected[4]{};
 static SDL_Window* g_sdl_window = nullptr;
 static lambo::StartupController* g_startup_controller = nullptr;
 
+#if defined(__ANDROID__)
+static int SDLCALL android_lifecycle_event(void*, SDL_Event* event) {
+    // An event watch runs before SDL blocks the main event pump in the background.
+    // Do not take the frontend mutex here: the blocked pump may already own it.
+    if (event->type == SDL_APP_WILLENTERBACKGROUND) {
+        ultramodern::set_app_suspended(true);
+        lambo::audio::set_suspended(true);
+    } else if (event->type == SDL_APP_DIDENTERFOREGROUND) {
+        lambo::audio::set_suspended(false);
+        ultramodern::set_app_suspended(false);
+    }
+    return 1;
+}
+#endif
+
 // F11 / Alt+Enter fullscreen toggle (main thread, called from the SDL event loop).
 // SDL owns the window state; the new mode is persisted to graphics.json so the next
 // launch starts in the same mode. Two deliberate omissions:
@@ -355,6 +370,9 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
             return ultramodern::renderer::WindowHandle{};
         }
         g_sdl_window = window;
+#if defined(__ANDROID__)
+        SDL_AddEventWatch(android_lifecycle_event, nullptr);
+#endif
         // The live window now sits at the configured size. Recording that keeps
         // the pump from treating startup as a pending resize, and is what a
         // later pick is compared against.

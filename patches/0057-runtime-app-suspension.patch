@@ -1,0 +1,126 @@
+diff --git a/ultramodern/src/timer.cpp b/ultramodern/src/timer.cpp
+--- a/ultramodern/src/timer.cpp
++++ b/ultramodern/src/timer.cpp
+@@ -1,4 +1,5 @@
+ #include <thread>
++#include <mutex>
+ #include <variant>
+ #include <set>
+ #include "blockingconcurrentqueue.h"
+@@ -12,7 +13,27 @@
+ #endif
+ 
+ // Start time for the program
+-static std::chrono::high_resolution_clock::time_point start_time = std::chrono::high_resolution_clock::now();
++static const auto start_time = std::chrono::high_resolution_clock::now();
++// One clock owner for VI scheduling, osGetTime/osGetCount and guest timers.
++// Lifecycle publication never waits for guest or renderer threads.
++static std::mutex app_clock_mutex;
++static bool app_suspended = false;
++static std::chrono::high_resolution_clock::time_point suspended_since;
++static std::chrono::high_resolution_clock::duration suspended_duration{};
++
++void ultramodern::set_app_suspended(bool suspended) {
++    const std::scoped_lock lock(app_clock_mutex);
++    if (suspended == app_suspended) return;
++    const auto now = std::chrono::high_resolution_clock::now();
++    if (suspended) suspended_since = now;
++    else suspended_duration += now - suspended_since;
++    app_suspended = suspended;
++}
++
++bool ultramodern::is_app_suspended() {
++    const std::scoped_lock lock(app_clock_mutex);
++    return app_suspended;
++}
+ // Offset of the duration since program start used to calculate the value for osGetTime. 
+ static int64_t ostime_offset = 0;
+ // Game speed multiplier (1 means no speedup)
+@@ -59,11 +80,11 @@
+ }
+ 
+ std::chrono::high_resolution_clock::time_point ticks_to_timepoint(uint64_t ticks) {
+-    return start_time + ticks_to_duration(ticks);
++    return ultramodern::get_start() + ticks_to_duration(ticks);
+ }
+ 
+ uint64_t time_now() {
+-    return duration_to_ticks(std::chrono::high_resolution_clock::now() - start_time);
++    return duration_to_ticks(ultramodern::time_since_start());
+ }
+ 
+ void timer_thread(RDRAM_ARG1) {
+@@ -129,6 +150,18 @@
+             process_timer_action(cur_action);
+         }
+         else {
++            if (ultramodern::is_app_suspended()) {
++                active_timers.insert(cur_timer_);
++                std::this_thread::sleep_for(std::chrono::milliseconds(1));
++                continue;
++            }
++            // A pause may have shifted the guest deadline while the original
++            // wall-clock wait was in progress. Re-wait that deadline without
++            // polling or adding a foreground sleep.
++            if (time_now() < cur_timer->timestamp) {
++                active_timers.insert(cur_timer_);
++                continue;
++            }
+             // Waiting for the timer completed, so send the timer's message to its message queue
+             ultramodern::enqueue_external_message_src(cur_timer->mq, cur_timer->msg, false, ultramodern::EventMessageSource::Timer);
+             // If the timer has a specified interval then reload it with that value
+@@ -150,11 +183,16 @@
+ }
+ 
+ std::chrono::high_resolution_clock::time_point ultramodern::get_start() {
+-    return start_time;
++    const std::scoped_lock lock(app_clock_mutex);
++    const auto paused = app_suspended ? std::chrono::high_resolution_clock::now() - suspended_since
++                                     : std::chrono::high_resolution_clock::duration{};
++    return start_time + suspended_duration + paused;
+ }
+ 
+ std::chrono::high_resolution_clock::duration ultramodern::time_since_start() {
+-    return std::chrono::high_resolution_clock::now() - start_time;
++    const std::scoped_lock lock(app_clock_mutex);
++    const auto now = app_suspended ? suspended_since : std::chrono::high_resolution_clock::now();
++    return now - start_time - suspended_duration;
+ }
+ 
+ extern "C" u32 osGetCount() {
+diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -205,6 +205,10 @@
+     int remaining_retraces = 1;
+ 
+     while (!exited) {
++        if (ultramodern::is_app_suspended()) {
++            ultramodern::sleep_milliseconds(1);
++            continue;
++        }
+         // Determine the next VI time (more accurate than adding 16ms each VI interrupt)
+         auto next = ultramodern::get_start() + (total_vis * 1000000us) / (60 * ultramodern::get_speed_multiplier());
+         //if (next > std::chrono::high_resolution_clock::now()) {
+@@ -231,6 +235,7 @@
+         ultramodern::sleep_until(next);
+         auto time_now = ultramodern::time_since_start();
+         // Calculate how many VIs have passed
++        if (ultramodern::is_app_suspended()) continue;
+         uint64_t new_total_vis = (time_now * (60 * ultramodern::get_speed_multiplier()) / 1000ms) + 1;
+         if (new_total_vis > total_vis + 1) {
+             //printf("Skipped % " PRId64 " frames in VI interupt thread!\n", new_total_vis - total_vis - 1);
+diff --git a/ultramodern/include/ultramodern/ultramodern.hpp b/ultramodern/include/ultramodern/ultramodern.hpp
+--- a/ultramodern/include/ultramodern/ultramodern.hpp
++++ b/ultramodern/include/ultramodern/ultramodern.hpp
+@@ -110,6 +110,10 @@
+ uint32_t get_speed_multiplier();
+ 
+ // Time
++// Host lifecycle gate. Freezes guest time and retraces; in-flight work may finish.
++// Idempotent, thread-safe, and never waits for guest/presentation work.
++void set_app_suspended(bool suspended);
++bool is_app_suspended();
+ std::chrono::high_resolution_clock::time_point get_start();
+ std::chrono::high_resolution_clock::duration time_since_start();
+ void measure_input_latency();

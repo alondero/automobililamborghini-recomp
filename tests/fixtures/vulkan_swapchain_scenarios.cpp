@@ -21,6 +21,9 @@ struct Harness {
     std::unique_ptr<VulkanSwapChain> swapChain;
     bool valid = false;
     uint32_t refreshRate = 0;
+    std::unique_ptr<VulkanCommandSemaphore> acquiredSemaphore = std::make_unique<VulkanCommandSemaphore>();
+
+    bool acquire(uint32_t &index, bool &valid);
 
     explicit Harness(uint32_t textureCount) {
         device.renderInterface = &renderInterface;
@@ -37,6 +40,11 @@ struct Harness {
     // Mirrors RT64 PresentQueue::threadLoop and threadPresent.
     bool frame() {
         if (swapChain->needsResize() || !valid) {
+            if (swapChain->drain() != RenderSwapChain::DrainResult::Complete) {
+                valid = false;
+                refreshRate = swapChain->getRefreshRate(); // RT64 still polls display timing after failure.
+                return false;
+            }
             valid = swapChain->resize();
         }
         // RT64 reads the refresh rate every frame, even after a failed resize, when the
@@ -45,20 +53,21 @@ struct Harness {
         if (swapChain->isEmpty() || !valid) {
             return false;
         }
-        VulkanCommandSemaphore semaphore;
         uint32_t index = 0;
-        valid = swapChain->acquireTexture(&semaphore, &index);
-        if (valid) {
-            RenderCommandSemaphore *wait = &semaphore;
+        if (acquire(index, valid)) {
+            RenderCommandSemaphore *wait = acquiredSemaphore.get();
             valid = swapChain->present(index, &wait, 1);
+            return valid;
         }
-        return valid;
+        return false;
     }
 
     void frames(int count) {
         for (int i = 0; i < count; i++) frame();
     }
 };
+
+// PRODUCTION_ACQUIRE
 
 static const VkSwapchainCreateInfoKHR &lastCreated() {
     assert(!driver::created.empty());
@@ -355,6 +364,202 @@ static void run(const std::string &scenario) {
         h.frames(3);
         CHECK(created.size() == 2);
     }
+    else if (scenario == "native-replacement") {
+        Harness h(2);
+        CHECK(h.frame());
+        ++nativeGeneration;
+        acquireResult = VK_ERROR_SURFACE_LOST_KHR;
+        CHECK(!h.frame());
+        acquireResult = VK_SUCCESS;
+        // Android has a new native window at the same dimensions. Retrying a chain
+        // on the old VkSurfaceKHR must not strand the renderer on NATIVE_WINDOW_IN_USE.
+        h.frames(3);
+        CHECK(h.frame());
+        CHECK(surfaceGeneration == nativeGeneration);
+    }
+    else if (scenario == "native-unavailable" || scenario == "native-shutdown-unavailable") {
+        Harness h(2);
+        CHECK(h.frame());
+        nativeAvailable = false;
+        ++nativeGeneration;
+        const int before = acquireCalls;
+        h.frames(5);
+        checkNoLiveChain(*h.swapChain);
+        CHECK(acquireCalls == before);
+        CHECK(nativeWindow.refs == 0);
+        if (scenario == "native-unavailable") {
+            nativeAvailable = true;
+            ++nativeGeneration;
+            CHECK(h.frame());
+        }
+    }
+    else if (scenario == "native-create-failure") {
+        surfaceCreateResult = VK_ERROR_SURFACE_LOST_KHR;
+        Harness h(2);
+        h.frames(5);
+        CHECK(nativeWindow.refs == 0);
+        CHECK(attempts.empty());
+        surfaceCreateResult = VK_SUCCESS;
+        CHECK(h.frame());
+    }
+    else if (scenario == "drain-device-lost") {
+        Harness h(2);
+        CHECK(h.frame());
+        // Device loss leaves no GPU use pending, including at destructor entry.
+        pendingPresent = false;
+        drainResult = VK_ERROR_DEVICE_LOST;
+        h.swapChain->drain(); // Must log and return, including on desktop Vulkan.
+        CHECK(!liveViews.empty());
+        CHECK(h.swapChain->vk != VK_NULL_HANDLE);
+    }
+    else if (scenario == "drain-device-memory" || scenario == "drain-host-memory") {
+        Harness h(2);
+        CHECK(h.frame());
+        const auto views = liveViews;
+        const auto chain = activeChain;
+        const int retainedWindows = nativeWindow.refs;
+        drainResult = (scenario == "drain-device-memory") ?
+            VK_ERROR_OUT_OF_DEVICE_MEMORY : VK_ERROR_OUT_OF_HOST_MEMORY;
+        h.swapChain.reset(); // Invoke the real destructor while GPU use can still be pending.
+        CHECK(liveViews == views);
+        CHECK(activeChain == chain && find(chain)->state == State::Live);
+        CHECK(surfaceAlive);
+        CHECK(nativeWindow.refs == retainedWindows);
+        CHECK(h.commandQueue.swapChains.empty()); // No dangling CPU wrapper in the parent queue.
+    }
+    else if (scenario == "drain-failure-logging") {
+        Harness h(2);
+        CHECK(h.frame());
+        h.valid = false;
+        const int queries = refreshQueries;
+        drainResult = refreshResult = VK_ERROR_DEVICE_LOST;
+        h.frames(25);
+        CHECK(refreshQueries == queries);
+        drainResult = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+        h.frames(25);
+        CHECK(refreshQueries == queries);
+        drainResult = refreshResult = VK_SUCCESS;
+        CHECK(h.frame());
+        h.valid = false;
+        drainResult = refreshResult = VK_ERROR_DEVICE_LOST;
+        h.frames(25); // A successful drain resets suppression for the same later error.
+        drainResult = refreshResult = VK_SUCCESS;
+        CHECK(h.frame());
+    }
+    else if (scenario == "refresh-failure-logging") {
+        Harness h(2);
+        CHECK(h.frame());
+        refreshResult = VK_ERROR_DEVICE_LOST;
+        h.frames(25);
+        refreshResult = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+        h.frames(25);
+        refreshResult = VK_SUCCESS;
+        CHECK(h.frame());
+        refreshResult = VK_ERROR_DEVICE_LOST;
+        h.frames(25); // A successful timing query resets suppression too.
+        refreshResult = VK_SUCCESS;
+        CHECK(h.frame());
+    }
+    else if (scenario == "native-recovery-failures") {
+        nativeAvailable = false;
+        Harness h(2);
+        h.frames(4);
+        nativeAvailable = true;
+        surfaceCreateResult = VK_ERROR_SURFACE_LOST_KHR;
+        h.frames(4);
+        surfaceCreateResult = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+        h.frames(4);
+        surfaceCreateResult = VK_SUCCESS;
+        surfaceSupportResult = VK_ERROR_SURFACE_LOST_KHR;
+        h.frames(4);
+        surfaceSupportResult = VK_SUCCESS;
+        surfaceSupported = VK_FALSE;
+        h.frames(4);
+        surfaceSupported = VK_TRUE;
+        replaceDuringSurfaceCreation = true;
+        h.frames(4);
+        replaceDuringSurfaceCreation = false;
+        CHECK(h.frame());
+        nativeAvailable = false;
+        ++nativeGeneration;
+        h.frames(4); // Successful recovery resets suppression for a later failure.
+    }
+    else if (scenario == "native-repeated") {
+        Harness h(2);
+        for (int i = 0; i < 30; ++i) {
+            CHECK(h.frame());
+            nativeAvailable = false;
+            ++nativeGeneration;
+            CHECK(!h.frame());
+            CHECK(nativeWindow.refs == 0);
+            nativeAvailable = true;
+            ++nativeGeneration; // Always reuse the same native pointer.
+        }
+        CHECK(h.frame());
+    }
+    else if (scenario == "native-timeout") {
+        Harness h(2);
+        CHECK(h.frame());
+        const auto creations = created.size();
+        const auto attemptsBefore = attempts.size();
+        const int drainsBefore = drains;
+        for (VkResult result : {VK_TIMEOUT, VK_NOT_READY}) {
+            acquireResult = result;
+            h.frames(4);
+            CHECK(h.valid);
+            CHECK(acquireTimeout > 0 && acquireTimeout < 100'000'000);
+            acquireResult = VK_SUCCESS;
+            CHECK(h.frame());
+            CHECK(created.size() == creations);
+            CHECK(attempts.size() == attemptsBefore);
+            CHECK(drains == drainsBefore);
+        }
+        acquireResult = VK_SUBOPTIMAL_KHR;
+        CHECK(h.frame()); // A signalled acquire must still be consumed by rendering/present.
+        CHECK(created.size() == creations);
+        acquireResult = VK_ERROR_OUT_OF_DATE_KHR;
+        CHECK(!h.frame());
+        CHECK(!h.valid);
+        acquireResult = VK_SUCCESS;
+        CHECK(h.frame());
+        CHECK(created.size() == creations + 1);
+    }
+    else if (scenario == "native-present-loss") {
+        Harness h(2);
+        CHECK(h.frame());
+        const int before = windowReleases;
+        presentResult = VK_ERROR_SURFACE_LOST_KHR;
+        CHECK(!h.frame());
+        presentResult = VK_SUCCESS;
+        CHECK(h.frame());
+        CHECK(windowReleases > before);
+    }
+    else if (scenario == "native-present-mode-change") {
+        Harness h(2);
+        CHECK(h.frame());
+        h.swapChain->setVsyncEnabled(false);
+        CHECK(h.frame());
+        CHECK(lastCreated().presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR);
+        ++nativeGeneration;
+        presentModes = {VK_PRESENT_MODE_FIFO_KHR};
+        CHECK(h.frame());
+        CHECK(lastCreated().presentMode == VK_PRESENT_MODE_FIFO_KHR);
+        ++nativeGeneration;
+        presentModes.push_back(VK_PRESENT_MODE_IMMEDIATE_KHR);
+        CHECK(h.frame());
+        CHECK(lastCreated().presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR);
+    }
+    else if (scenario == "native-zero-size") {
+        Harness h(2);
+        CHECK(h.frame());
+        windowWidth = windowHeight = 0;
+        CHECK(!h.frame());
+        ++nativeGeneration;
+        CHECK(!h.frame());
+        windowWidth = 1280;
+        windowHeight = 720;
+        CHECK(h.frame());
+    }
     else if (scenario == "gralloc-probe-lock") {
         // RT64 constructs the swap chain on its gfx thread and creates and presents it on its present thread.
         formatProbeKeepsGrallocLock = true;
@@ -382,6 +587,11 @@ int main(int argc, char **argv) {
     assert(argc == 2);
     driver::reset();
     run(argv[1]);
+    if (std::string(argv[1]) == "drain-device-memory" || std::string(argv[1]) == "drain-host-memory") {
+        // Teardown intentionally abandons GPU objects and the native-window lease
+        // when a failed drain cannot establish completion. Nothing may be destroyed.
+        return (failures + driver::violations) ? 1 : 0;
+    }
     // Every scenario's swap chain has been destroyed: nothing may outlive it.
     for (const auto &[handle, chain] : driver::chains) {
         if (chain.state != driver::State::Destroyed) {
@@ -391,6 +601,8 @@ int main(int argc, char **argv) {
     }
     CHECK(driver::liveViews.empty());
     CHECK(!driver::surfaceAlive);
+    CHECK(driver::nativeWindow.refs == 0);
+    CHECK(driver::windowAcquires == driver::windowReleases);
     fflush(stderr);
     return (failures + driver::violations) ? 1 : 0;
 }

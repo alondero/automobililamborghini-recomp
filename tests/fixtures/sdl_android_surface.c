@@ -22,6 +22,7 @@ typedef struct ANativeWindow ANativeWindow;
 typedef struct SDL_mutex SDL_mutex;
 typedef enum { SDL_FALSE, SDL_TRUE } SDL_bool;
 typedef unsigned int Uint32;
+typedef unsigned long long Uint64;
 typedef void *SDL_GLContext;
 typedef struct { Uint32 type; } SDL_Event;
 
@@ -37,6 +38,7 @@ typedef struct {
     EGLContext egl_context;
     SDL_bool backup_done;
     ANativeWindow *native_window;
+    Uint64 surface_generation;
 } SDL_WindowData;
 
 typedef struct SDL_VideoDevice SDL_VideoDevice;
@@ -46,6 +48,7 @@ static SDL_mutex *Android_ActivityMutex = (SDL_mutex *)0x2000;
 static SDL_Window *Android_Window;
 static SDL_bool external_context;
 static int locks, egl_creates, egl_destroys, delays, released, errors;
+static int acquired;
 static int backup_after_delays = -1;
 static int gl_calls, reset_events;
 static SDL_bool egl_loaded;
@@ -57,6 +60,11 @@ static void SDL_LockMutex(SDL_mutex *mutex) { (void)mutex; locks++; }
 static void SDL_UnlockMutex(SDL_mutex *mutex) { (void)mutex; locks--; }
 static int SDL_SetError(const char *format, ...) { (void)format; errors++; return -1; }
 static void ANativeWindow_release(ANativeWindow *window) { (void)window; released++; }
+static void ANativeWindow_acquire(ANativeWindow *window) { (void)window; acquired++; }
+static ANativeWindow *Android_JNI_GetNativeWindow(void) {
+    ANativeWindow_acquire((ANativeWindow *)0x4000);
+    return (ANativeWindow *)0x4000;
+}
 
 static EGLSurface SDL_EGL_CreateSurface(SDL_VideoDevice *device, NativeWindowType window)
 {
@@ -138,11 +146,32 @@ static void expect_log(const char *text)
 int main(int argc, char **argv)
 {
     const char *scenario = argc > 1 ? argv[1] : "";
-    SDL_WindowData data = { EGL_NO_SURFACE, 0, SDL_FALSE, (ANativeWindow *)0x4000 };
+    SDL_WindowData data = { EGL_NO_SURFACE, 0, SDL_FALSE, (ANativeWindow *)0x4000, 1 };
     SDL_Window window = { SDL_WINDOW_VULKAN, &data };
     Android_Window = &window;
 
-    if (strcmp(scenario, "vulkan") == 0) {
+    if (strcmp(scenario, "native-generation") == 0) {
+        Uint64 generation;
+        ANativeWindow *snapshot = SDL_AndroidAcquireNativeWindow(&generation);
+        expect(generation, 1, "initial generation");
+        expect(snapshot == data.native_window, 1, "snapshot pointer");
+        Java_org_libsdl_app_SDLActivity_onNativeSurfaceDestroyed(NULL, NULL);
+        expect(SDL_AndroidGetNativeWindowGeneration(), 2, "destroyed generation");
+        expect(SDL_AndroidAcquireNativeWindow(&generation) == NULL, 1, "unavailable snapshot");
+        expect(generation, 2, "unavailable generation");
+        expect(acquired - released, 0, "renderer retains last reference after SDL release");
+        Java_org_libsdl_app_SDLActivity_onNativeSurfaceCreated(NULL, NULL);
+        expect(SDL_AndroidGetNativeWindowGeneration(), 3, "same pointer new generation");
+        expect(snapshot == data.native_window, 1, "Android reuses native pointer");
+        Java_org_libsdl_app_SDLActivity_onNativeSurfaceCreated(NULL, NULL);
+        expect(SDL_AndroidGetNativeWindowGeneration(), 4, "replacement without destruction");
+        ANativeWindow_release(snapshot);
+        Java_org_libsdl_app_SDLActivity_onNativeSurfaceDestroyed(NULL, NULL);
+        expect(acquired + 1, released, "all snapshot and SDL references released");
+        expect(delays, 0, "UI never waits for presentation");
+        expect(locks, 0, "mutex balance");
+        return failures != 0;
+    } else if (strcmp(scenario, "vulkan") == 0) {
         Java_org_libsdl_app_SDLActivity_onNativeSurfaceChanged(NULL, NULL);
         expect(egl_creates, 0, "EGL surfaces created for a Vulkan window");
         Java_org_libsdl_app_SDLActivity_onNativeSurfaceDestroyed(NULL, NULL);

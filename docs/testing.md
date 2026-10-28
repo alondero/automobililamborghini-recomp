@@ -48,7 +48,7 @@ checkouts, fetches the pinned Android SDL source, checks the complete branch
 diff, then runs:
 
 ~~~text
-python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool --require tests.test_vulkan_mapped_memory --require tests.test_vulkan_clear_bounds --require tests.test_vulkan_shader_nonuniform --require tests.test_android_swapchain_format --require tests.test_android_sdl_surface --require tests.test_vulkan_swapchain
+python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool --require tests.test_vulkan_mapped_memory --require tests.test_vulkan_clear_bounds --require tests.test_vulkan_shader_nonuniform --require tests.test_android_swapchain_format --require tests.test_android_sdl_surface --require tests.test_vulkan_swapchain --require tests.test_android_presentation_lifecycle --require tests.test_android_activity_lifecycle
 ~~~
 
 Skipping a test in a required module, or failing to discover the module,
@@ -460,6 +460,44 @@ python tools/run_game_scenario.py scenarios/menu-to-race-smoke.json
 
 It needs a display and a working graphics backend. Do not run it in a
 headless CI job unless the job supplies a suitable display.
+
+## Android presentation lifecycle
+
+Run the production-boundary checks without a ROM or GPU:
+
+~~~text
+python tools/check_patch_series.py
+python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_android_sdl_surface --require tests.test_vulkan_swapchain --require tests.test_android_presentation_lifecycle --require tests.test_android_activity_lifecycle
+~~~
+
+The required modules need initialized dependencies, pinned SDL, GCC/G++, CMake and a JDK;
+the runner fails if one skips. SDL callback tests execute the generation publisher
+and retained snapshot API, including same-pointer replacement and balanced ownership.
+The Plume fixture models stale native generations, surface and chain failures,
+zero dimensions, repeated loss, timeout/not-ready acquire, changed presentation
+modes and unavailable-surface shutdown. RT64's actual acquisition method must
+skip timeout/not-ready frames without a drain or new swap chain; its resize method
+must retain framebuffers and semaphores if draining fails. The recording boundary
+rejects retirement before submitted work completes. A fixture also invokes the real
+`PresentQueue` destructor: successful or device-lost drains permit cleanup, while
+other failures must preserve its presentation objects through automatic member teardown.
+Plume's destructor is checked after host-memory and device-memory errors on both
+desktop and Android paths. Repeated drain/timing failures require bounded logs,
+and failed drains must suppress refresh queries. Recovery log checks require one
+diagnostic per distinct reason/result. The runtime clock test checks frozen time, duplicate
+events, concurrent readers and elapsed time after resume. A recording clock/queue
+executes the production timer loop: foreground deadlines require one timed wait
+and no added sleep, and pause/resume re-waits the remaining guest deadline. The native
+`lambo_audio_recovery_tests` fixture checks discarded PCM and resumed submission.
+
+These tests do not cover `Application::end()` or subsequent uploader, texture-cache,
+allocator and device destruction. They do not establish safe application-wide
+shutdown after an unknown-completion drain failure. They also do not run the guest,
+Android compositor, Vulkan validation layer or
+frontend drawing hook. Build with `python scripts/build_android.py`, recording
+toolchain, ROM SHA-256 and generation freshness, then use the manual
+[device matrix](ANDROID.md#native-surface-recovery). Keep screenshots and logs
+under ignored `artifacts/`; report missing device/driver coverage explicitly.
 
 ## ROM and generated-output rules
 

@@ -17,14 +17,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
       - run: python -m pip install numpy
       - name: Initialize patch replay dependency
         run: |
-          git submodule update --init --depth 1 lib/rt64
+          git submodule update --init --depth 1 lib/rt64 lib/N64ModernRuntime
           git -C lib/rt64 submodule update --init --depth 1 src/contrib/plume src/contrib/dxc
           git submodule update --init --depth 1 lib/RecompFrontend
           python -c "from scripts.build_android import fetch_dependency; fetch_dependency('SDL')"
       - name: Check complete branch diff
         run: python tools/check_branch.py --event-file "$GITHUB_EVENT_PATH" --head "$GITHUB_SHA"
       - run: python tools/check_docs.py
-      - run: python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool --require tests.test_vulkan_mapped_memory --require tests.test_vulkan_clear_bounds --require tests.test_vulkan_shader_nonuniform --require tests.test_android_swapchain_format --require tests.test_android_sdl_surface --require tests.test_vulkan_swapchain
+      - run: python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool --require tests.test_vulkan_mapped_memory --require tests.test_vulkan_clear_bounds --require tests.test_vulkan_shader_nonuniform --require tests.test_android_swapchain_format --require tests.test_android_sdl_surface --require tests.test_vulkan_swapchain --require tests.test_android_presentation_lifecycle --require tests.test_android_activity_lifecycle
