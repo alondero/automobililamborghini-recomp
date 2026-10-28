@@ -174,7 +174,7 @@ class PlumeRepeatConfigureTests(unittest.TestCase):
         self.assertIn("contrib/plume", steps.group(1))
         return function.group(0) + "\n" + steps.group(1) + "\n"
 
-    def test_second_configure_accepts_applied_plume_series(self):
+    def plume_checkout(self):
         sha = subprocess.check_output(
             ["git", "rev-parse", "HEAD:src/contrib/plume"], cwd=RT64_DIR, text=True
         ).strip()
@@ -188,12 +188,55 @@ class PlumeRepeatConfigureTests(unittest.TestCase):
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.addCleanup(subprocess.run, ["git", "-C", str(plume), "worktree", "remove", "--force", str(tree)],
                         capture_output=True)
+        return root, tree
+
+    def configure(self, root, steps, label):
         script = root / "plume_patches.cmake"
-        script.write_text(self.plume_steps(), encoding="utf-8")
+        script.write_text(steps, encoding="utf-8")
+        result = subprocess.run(["cmake", "-P", str(script)], cwd=root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, f"{label} configure:\n{result.stderr}")
+
+    def test_second_configure_accepts_applied_plume_series(self):
+        root, tree = self.plume_checkout()
         for run in ("first", "second"):
-            result = subprocess.run(["cmake", "-P", str(script)], cwd=root, capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, f"{run} configure:\n{result.stderr}")
+            self.configure(root, self.plume_steps(), run)
         self.assertTrue(subprocess.check_output(["git", "-C", str(tree), "diff", "--stat"]))
+
+    def test_upgrade_from_original_mapped_memory_patch_preserves_edits(self):
+        root, tree = self.plume_checkout()
+        patch = resolve_patch("0050")
+        # Freeze the first published patch as data, independent of Git history
+        # availability in CI. Upgrading an applied patch is a different case
+        # from configuring the latest revision twice.
+        shutil.copyfile(ROOT / "tests/fixtures/plume_mapped_memory_v1.patch", root / "patches" / patch.name)
+        steps = self.plume_steps()
+        prefix_end = steps.index("\n", steps.index(patch.name)) + 1
+        self.configure(root, steps[:prefix_end], "original mapping patch")
+
+        cpp = tree / "plume_vulkan.cpp"
+        header = tree / "plume_vulkan.h"
+        cpp.write_bytes(cpp.read_bytes() + b"\n// Keep this unrelated developer edit.\n")
+        header.write_bytes(header.read_bytes() + b"\n// Keep this unrelated header edit.\n")
+        note = tree / "personal.txt"
+        note.write_bytes(b"staged note\n")
+        subprocess.run(["git", "add", "personal.txt"], cwd=tree, check=True)
+        note.write_bytes(b"unstaged note\r\n")
+        untracked = tree / "untracked.txt"
+        untracked.write_bytes(b"keep untracked note\r\n")
+        index = Path(subprocess.check_output(["git", "rev-parse", "--git-path", "index"],
+                                            cwd=tree, text=True).strip())
+        before = {path: path.read_bytes() for path in (cpp, note, untracked, index)}
+
+        shutil.copyfile(patch, root / "patches" / patch.name)
+        self.configure(root, steps, "upgrade from original mapping patch")
+        self.assertEqual({path: path.read_bytes() for path in before}, before)
+        self.assertTrue(header.read_bytes().endswith(b"// Keep this unrelated header edit.\n"))
+        comment = b"Vulkan omits invalidation for null UPLOAD/GPU_UPLOAD read ranges;"
+        self.assertEqual(header.read_bytes().count(comment), 1)
+        upgraded_header = header.read_bytes()
+        self.configure(root, steps, "repeat upgraded mapping patch")
+        self.assertEqual(header.read_bytes(), upgraded_header)
+        self.assertEqual({path: path.read_bytes() for path in before}, before)
 
 
 class DxilGuardTests(unittest.TestCase):

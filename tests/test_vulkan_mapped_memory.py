@@ -95,6 +95,8 @@ class MappedMemoryTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
 
     def test_nested_read_can_discard_unflushed_bytes_outside_read_range(self):
+        # Characterise a permitted outcome of invalidating dirty atoms. If the
+        # mapping contract gains automatic protection, update this expectation.
         for coherent in (False, True):
             with self.subTest(coherent=coherent):
                 result = self.run_scenario("nested-dirty-atom", coherent)

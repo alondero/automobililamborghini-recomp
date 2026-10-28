@@ -103,6 +103,9 @@ including the complete series before and after 0042. They check source and
 index preservation with staged, unstaged and untracked edits, and rejection
 of conflicting early and late patch edits even when a later marker or older
 composed state still matches.
+The Plume configure checks also upgrade a checkout carrying the frozen first
+revision of 0050 to additive patch 0051, preserving developer files and the
+Git index, then configure the upgraded checkout again.
 No ROM, Android SDK or device is needed; initialize `lib/rt64` first.
 
 Skip counts depend on the environment. `ShadowCaptureTests` skips its six tests
