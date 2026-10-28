@@ -76,6 +76,18 @@ both map/unmap through VMA without cache maintenance. Automatic allocation
 and host-access hints do not require coherent memory. No upstream issue was
 opened. Queue-family ownership remains separate (issue 361).
 
+Rechecked patches 0052 and 0053 on 2026-10-28 against upstream `main`, still
+at [0ce184b19270e49236afbb74052a6b267494b86b](https://github.com/renderbag/plume/blob/0ce184b19270e49236afbb74052a6b267494b86b/plume_vulkan.cpp).
+Upstream `VulkanBuffer::map` logs and returns `nullptr` when `vmaMapMemory`
+fails; 0052 restores that upstream failure contract. Upstream has no
+invalidation call, so 0052's invalidation-failure cleanup and null return are
+local policy, releasing only the newly acquired VMA reference. Upstream
+ignores read/written ranges and only calls `vmaUnmapMemory` on unmap: it has
+neither cache maintenance nor a nested-map guard. Thus 0053's rejection of
+nested invalidating reads and its whole-buffer omitted-read policy for
+non-upload heaps remain local behavior, supported by the recording tests.
+No upstream issue was opened.
+
 Patch 0050 retains its first published contents. Patch 0051 adds the mapping
 declaration comment separately: changing 0050's header hunk in place prevented
 CMake from recognizing checkouts that had already applied its original
@@ -137,7 +149,9 @@ range while another mapping is active aborts before `vmaMapMemory`, on coherent
 and noncoherent memory alike. These checks run in release builds. VMA handles coherent-memory
 no-ops and `nonCoherentAtomSize` alignment; ranges use the buffer's size rather
 than allocation padding. A host-visible DEFAULT allocation with an omitted
-range is conservatively treated as readable. No current caller maps DEFAULT;
+range is conservatively treated as readable. DEFAULT does not guarantee
+host-visible memory: this policy applies only when its allocation can be
+mapped; a failed VMA map still returns null. No current caller maps DEFAULT;
 the whole-buffer policy is tested rather than relying on that caller inventory.
 
 Atom alignment also affects ownership of dirty bytes. VMA expands a cache

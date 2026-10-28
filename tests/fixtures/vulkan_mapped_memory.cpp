@@ -164,6 +164,25 @@ int main(int argc, char **argv) {
         require(data[17] == 83, "read range missed GPU data");
         require(data[1] == 42, "flushed host bytes were lost during invalidation");
         buffer.unmap(0, &noWrite);
+    } else if (scenario.rfind("nested-empty-", 0) == 0) {
+        if (scenario == "nested-empty-readback") buffer.desc.heapType = RenderHeapType::READBACK;
+        if (scenario == "nested-empty-default") buffer.desc.heapType = RenderHeapType::DEFAULT;
+        atomSize = 32;
+        hostBytes.fill(19);
+        gpuBytes().fill(19);
+        const RenderRange empty{17, 17}, written{1, 2};
+        auto *first = static_cast<uint8_t *>(buffer.map(0, &empty));
+        first[1] = 42;
+        event("cpu-write");
+        auto *second = static_cast<uint8_t *>(buffer.map(0, &empty));
+        require(second == first && second[1] == 42, "empty nested read lost dirty bytes or base pointer");
+        require(buffer.mapCount == 2 && mappings == 2, "empty nested read lost a VMA reference");
+        buffer.unmap(0, &empty);
+        require(buffer.mapCount == 1 && mappings == 1, "nested unmap released the outer reference");
+        require(first[1] == 42, "nested unmap lost outer mapping data");
+        buffer.unmap(0, &written);
+        require(buffer.mapCount == 0 && mappings == 0 && gpuBytes()[1] == 42,
+            "empty nested read left references or lost outer writes");
     } else if (scenario == "nested") {
         auto *first = static_cast<uint8_t *>(buffer.map(0, nullptr));
         auto *second = static_cast<uint8_t *>(buffer.map(0, nullptr));

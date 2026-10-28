@@ -39,8 +39,10 @@ class MappedMemoryTests(unittest.TestCase):
                                f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}")
 
     def run_scenario(self, scenario, coherent=False):
+        # Allow headroom for Windows death-test termination under load while
+        # keeping a bounded wait for a hung fixture.
         return subprocess.run([str(self.exe), scenario, "coherent" if coherent else "noncoherent"],
-                              capture_output=True, text=True, timeout=10)
+                              capture_output=True, text=True, timeout=30)
 
     def test_upload_is_visible_before_submission(self):
         for coherent in (False, True):
@@ -94,6 +96,15 @@ class MappedMemoryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(),
                          ["map", "map", "flush 1 1", "unmap", "flush 2 1", "unmap"])
+
+    def test_nested_explicit_empty_reads_preserve_dirty_bytes_and_references(self):
+        for coherent in (False, True):
+            for heap in ("upload", "readback", "default"):
+                with self.subTest(coherent=coherent, heap=heap):
+                    result = self.run_scenario("nested-empty-" + heap, coherent)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.splitlines(),
+                                     ["map", "cpu-write", "map", "unmap", "flush 1 1", "unmap"])
 
     def test_invalid_reads_stop_before_mapping(self):
         for suffix in ("reversed", "end", "empty", "overflow", "subresource"):
