@@ -82,8 +82,8 @@ needed to trigger it: Android's input-device listeners report connects and
 drops, and a device counts when SDL's own Android joystick handler accepts it.
 
 Status: **Experimental**. Host tests cover the visibility rule, the release of
-held keys, and the stored choice. A phone with a real Bluetooth gamepad is
-**Unverified**.
+held keys, the stored choice, and which touches the overlay keeps while the pad
+is shown or hidden. A phone with a real Bluetooth gamepad is **Unverified**.
 
 ## Pre-race menu navigation
 

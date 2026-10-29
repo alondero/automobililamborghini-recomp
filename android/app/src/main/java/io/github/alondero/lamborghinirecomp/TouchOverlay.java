@@ -160,9 +160,13 @@ final class TouchOverlay extends View {
         int index = e.getActionIndex();
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-                // A touch on no shown control belongs to the game surface; declining the
-                // gesture is what lets Android hand it to SDL's view underneath.
-                if (!controls.down(e.getPointerId(index), e.getX(index), e.getY(index))) return false;
+                boolean claimed = controls.down(e.getPointerId(index), e.getX(index), e.getY(index));
+                // While the pad is shown the overlay keeps every gesture, even one that starts
+                // on empty space: declining ACTION_DOWN removes this view from the gesture, so
+                // Android would stop delivering the second finger and the slide onto the stick.
+                // Only a hidden pad declines, and that refusal is what lets Android hand the
+                // whole gesture to SDL's view underneath.
+                if (!controlsShown && !claimed) return false;
                 break;
             case MotionEvent.ACTION_POINTER_DOWN:
                 controls.down(e.getPointerId(index), e.getX(index), e.getY(index));
