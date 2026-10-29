@@ -28,7 +28,7 @@ SDL_PATCHES = ["0015", "0048", "0054"]
 # recognize their composed states, since they change the script prefix's hunks.
 # tools/check_patch_series.py checks this list against the actual CMake order.
 CMAKE_PATCHES = {
-    "lib/rt64": ["0021", "0022", "0024", "0025", "0026", "0027", "0029", "0030", "0033", "0038", "0039", "0042", "0046", "0056"],
+    "lib/rt64": ["0021", "0022", "0024", "0025", "0026", "0027", "0029", "0030", "0033", "0038", "0039", "0042", "0046", "0056", "0058", "0059", "0060"],
 }
 
 

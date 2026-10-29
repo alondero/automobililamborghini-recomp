@@ -125,7 +125,8 @@ The export works in release APKs without root or `run-as`. It includes:
 
 - Native output (`native.log` and `native-errors.log`). If no frame is
   presented for 3 seconds, `native-errors.log` also gets a
-  [present stall report](#present-stall-report).
+  [present stall report](#present-stall-report). `native.log` records the
+  [render cost](#render-cost-line) every 5 seconds.
 - Up to ten recent session logs and three crash reports.
 - Graphics settings and device, Android, app-version and selected-driver details.
 - On Android 11+, retained game-process exit records and up to three available
@@ -725,8 +726,9 @@ name `Adreno (TM) 615`. It bounds only automatic scale to at most 2x, retains
 The saved Auto setting is preserved. Explicit native/manual choices and
 supersampling keep their existing meaning; higher manual scales have not been
 validated on this driver. Other GPU/driver combinations, including Turnip,
-keep their existing automatic scale. Use a compatible Turnip driver when
-window-sized rendering is needed on this tablet.
+are bounded by the general
+[pixel-rate budget](#render-cost-and-automatic-resolution) from patch 0059,
+which gives 3x on this tablet at 60 Hz.
 
 The ROM-free fixture compiles the production scale-selection switch for
 Android and desktop. It fails against the original code (`expected 2, got 6`)
@@ -759,6 +761,120 @@ to patch hunks still fail; existing files and the real index are preserved
 when the composed series is already present. ROM-free patch replay tests
 cover repeat preparation and conflict rejection. This preparation fix has
 not been verified with an APK build or a device run.
+
+## Render cost and automatic resolution
+
+Status: [issue 374](https://github.com/alondero/automobililamborghini-recomp/issues/374).
+Automatic resolution on Android is now bounded by a pixel-rate budget, and
+`native.log` records the render cost every 5 seconds. Measured on one
+Snapdragon 865 phone. The reporter's Adreno 730 and any 120 Hz panel are not
+measured.
+
+### Render-cost line
+
+Patch 0058 writes one line to `native.log` every 5 seconds. The diagnostics
+ZIP includes it. For example:
+
+```text
+[render-cost] window_s=5.0 surface=2400x992@60Hz vi=320x240@30Hz target_hz=60 internal=1742x720 scale=5.44x3.00 msaa=2 game_fps=29.8 present_fps=58.6 frames=296/296 frame_ms=6.0/12.0 gpu_ms=4.7/10.0 workload_ms=13.6/27.0 setup_ms=1.9 match_ms=1.8
+```
+
+| Field | Meaning |
+| --- | --- |
+| `surface`, `vi` | Swap-chain size and refresh rate; game framebuffer size and frame rate. |
+| `target_hz` | Presentation target. `0` means the game's own rate (no interpolation). |
+| `internal`, `scale` | Internal render target and the horizontal and vertical scale. |
+| `game_fps`, `present_fps` | Game frames processed and frames shown per second. |
+| `frames` | Display frames rendered of those requested. RT64 skips interpolated frames that would miss the game frame. |
+| `frame_ms` | Average/maximum render-thread wall time per rendered frame, including the wait for its GPU work. |
+| `gpu_ms` | Average/maximum GPU time per rendered frame, from Vulkan timestamps. |
+| `workload_ms`, `setup_ms`, `match_ms` | Per game frame: all render-thread work, the part before the first frame, and frame matching within it. |
+
+On desktop, set `RT64_RENDER_COST_REPORT=1` to print the same line.
+
+### Automatic resolution budget
+
+Before this change, Auto rendered at the window's integer scale on every
+Android device except one Adreno 615 driver: 5x (2903x1200) on a 2400x992
+surface and 6x on a 1220-line panel. Patch 0059 picks the largest integer scale
+whose internal pixels times the presentation rate stay within 80 million pixels
+per second. The presentation rate is the refresh target when it is above the
+game's rate, otherwise the game's rate (30 Hz until known). The scale is never
+below 1x or above the window scale. Manual and native scales, supersampling
+and desktop are unchanged.
+
+| Surface (Expand, 320x240 game) | 60 Hz target | Original rate | 120 Hz target |
+| --- | --- | --- | --- |
+| 2400x992 or 2400x1080 phone | 3x | 4x | 2x |
+| 2712x1220 phone (20:9) | 3x | 4x | 2x |
+| 1920x1080 phone | 3x | 5x | 2x |
+| 2560x1600 tablet | 3x | 5x | 2x |
+
+The SM-T720's Adreno 615 system driver stays at 2x (patch 0042). The
+resolution fixture covers these cases. The 120 Hz and other non-measured rows
+are arithmetic, not device results.
+
+### Measurements
+
+Device: Android 13 build `TD1A.220804.031` reporting model `Pixel 5`
+(`redfin`) on platform `kona`; Vulkan reports `Adreno (TM) 650`. The system
+driver was `0x801ea000`; Turnip v25.3.0-R11 reported `0x6402063`. The
+2400x1080 panel runs at 60 Hz; the game surface was 2400x992 because the status
+bar stays visible. The USA ROM was used with default graphics settings except
+those listed. Each run launched the attract sequence and was summarised from
+the medians of the `[render-cost]` windows after the first 30 seconds, about
+2 minutes of attract race. The scale was forced for the 2x, 4x and 5x rows by
+an uncommitted measurement-only build.
+
+Before patch 0060, all at MSAA2X and 60 Hz unless stated:
+
+| Driver, scale | Internal | GPU ms | Frames kept | Presented fps (10th percentile) | Game fps |
+| --- | --- | --- | --- | --- | --- |
+| Turnip, 2x | 1161x480 | 2.9 | 100% | 59.8 (58.7) | 30.0 |
+| Turnip, 3x | 1742x720 | 5.3 | 100% | 59.7 (57.3) | 30.0 |
+| Turnip, 4x | 2323x960 | 8.8 | 80% | 47.7 (32.2) | 30.0 |
+| Turnip, 5x (old Auto) | 2903x1200 | 13.4 | 50% | 30.0 (29.9) | 30.0 |
+| Turnip, 5x, no MSAA | 2903x1200 | 10.9 | 50% | 30.2 (30.0) | 30.0 |
+| Turnip, 5x, original rate | 2903x1200 | 11.6 | 100% | 30.0 (29.8) | 30.0 |
+| System, 2x | 1161x480 | 3.9 | 100% | 59.8 (59.0) | 30.0 |
+| System, 3x | 1742x720 | 7.3 | 97% | 57.8 (55.5) | 30.0 |
+| System, 5x (old Auto) | 2903x1200 | 17.7 | 60% | 28.1 (25.3) | 28.8 |
+
+GPU time grows with internal pixels, about 3.8 ms per million pixels with
+Turnip; MSAA2X added about a fifth. At the old default, every interpolated
+frame was dropped: 60 Hz presentation fell to 30 frames per second. With the
+system driver the game itself slowed. Frame matching (`match_ms`) took about
+12.8 ms of every 33 ms game frame at any resolution, which left about 20 ms
+for two display frames.
+
+`simpleperf` on the RT64 workload thread, 15 seconds of attract race at the new
+3x default, attributed 85% of the thread to `GameFrame::matchScene` and about
+half of that to Android's allocator. Patch 0060 removes those allocations
+without changing the matching order. With 0058 to 0060:
+
+| Driver, scale | GPU ms | `match_ms` | Frames kept | Presented fps (10th percentile) | Game fps |
+| --- | --- | --- | --- | --- | --- |
+| Turnip, 3x (new Auto) | 5.3 | 3.7 | 100% | 59.8 (58.6) | 30.0 |
+| Turnip, 4x | 8.9 | 3.8 | 99% | 59.3 (55.8) | 30.0 |
+| Turnip, 5x | 13.4 | 3.9 | 68% | 40.9 (30.7) | 30.0 |
+| System, 3x (new Auto) | 7.4 | 3.1 | 99% | 59.5 (58.6) | 30.0 |
+| System, 4x | 12.2 | 2.9 | 97% | 54.9 (49.5) | 29.6 |
+| System, 5x | 18.1 | 3.2 | 53% | 29.7 (29.2) | 29.6 |
+| System, original rate (new Auto 4x) | 10.9 | 0 | 100% | 30.0 (29.8) | 30.0 |
+
+The original-rate row was measured with 0058 and 0059 only; matching does not
+run without interpolation. The system driver still cannot hold 4x at 60 Hz on
+this phone, so the budget keeps 3x.
+
+Not measured: the reporter's Xiaomi 12T Pro (Adreno 730, 120 Hz), any 120 Hz
+panel, a full player race, multiplayer, and the touch overlay's composition
+cost. GPUs slower than the Adreno 650 can still exceed their frame time within
+the budget; a frame-time-driven limit is
+[issue 268](https://github.com/alondero/automobililamborghini-recomp/issues/268).
+
+```sh
+python -m unittest tests.test_android_resolution_limit tests.test_rt64_frame_matching tests.test_patch_composability -v
+```
 
 ## Build locally
 

@@ -54,6 +54,13 @@ class BranchChecks(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             check(self.base, worktree=True, cwd=self.root)
 
+    def test_patch_may_end_with_blank_context_line(self):
+        attributes = Path(__file__).resolve().parents[1] / ".gitattributes"
+        self.commit(".gitattributes", attributes.read_text(encoding="utf-8"))
+        start = self.git("rev-parse", "HEAD").strip()
+        self.commit("fix.patch", "@@ -1,2 +1,3 @@\n a\n+b\n \n")
+        check(start, cwd=self.root)
+
     def test_new_branch_checks_from_empty_tree(self):
         check("0" * 40, cwd=self.root)
         self.commit("bad.txt", "bad \n")

@@ -36,7 +36,8 @@ class AndroidResolutionTests(unittest.TestCase):
             selection = source[start:end]
             helper = ""
             for signature in ("static bool needsAdreno615ResolutionLimit(",
-                              "static float automaticResolutionScale("):
+                              "static float automaticResolutionScale(",
+                              "static float automaticResolutionBudgetScale("):
                 if signature in source:
                     helper += method(source, signature) + "\n"
             fixture = (ROOT / "tests/fixtures/android_resolution_limit.cpp").read_text(encoding="utf-8")
