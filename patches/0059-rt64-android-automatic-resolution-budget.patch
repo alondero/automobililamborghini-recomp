@@ -1,0 +1,98 @@
+diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
+index 251580e..a43d2d6 100644
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -2,6 +2,7 @@
+ // RT64
+ //
+ 
++#include <cmath>
+ #include <cstdlib>
+ 
+ #include "rhi/rt64_render_hooks.h"
+@@ -35,6 +36,19 @@ namespace RT64 {
+         return needsAdreno615ResolutionLimit(deviceDescription) ? std::min(scale, 2.0f) : scale;
+     }
+ 
++    // Largest integer scale whose presented pixel rate fits the budget. The
++    // display refresh target multiplies the work as much as the resolution
++    // does, so both are bounded together. With an unknown game rate, assume 30.
++    static float automaticResolutionBudgetScale(uint32_t referenceHeight, float aspectRatioTarget, uint32_t targetRate, uint32_t viOriginalRate) {
++        // An Adreno 650 with MSAA2X kept every 60 Hz interpolated frame at
++        // 1.25 Mpixels per frame (75 Mpixels/s) and dropped a fifth at 2.2.
++        // See docs/ANDROID.md in the port for the measurements.
++        const double PixelsPerSecond = 80.0e6;
++        const double presentRate = std::max({ targetRate, viOriginalRate, 30U });
++        const double pixelsAtNativeScale = double(referenceHeight) * double(referenceHeight) * aspectRatioTarget;
++        return std::max(float(std::floor(std::sqrt(PixelsPerSecond / (pixelsAtNativeScale * presentRate)))), 1.0f);
++    }
++
+     // WorkloadQueue
+ 
+     WorkloadQueue::WorkloadQueue() {
+@@ -219,30 +233,6 @@ namespace RT64 {
+             break;
+         }
+ 
+-        // Compute the resolution scaling to be used for the frame.
+-        float resolutionMultiplier;
+-        const auto resolutionMode = ext.sharedResources->userConfig.resolution;
+-        switch (resolutionMode) {
+-        case UserConfiguration::Resolution::WindowIntegerScale:
+-            resolutionMultiplier = automaticResolutionScale(ext.sharedResources->swapChainHeight, referenceHeight, deviceDescription);
+-            break;
+-        case UserConfiguration::Resolution::Manual:
+-            resolutionMultiplier = float(ext.sharedResources->userConfig.resolutionMultiplier);
+-            break;
+-        case UserConfiguration::Resolution::Original:
+-        default:
+-            resolutionMultiplier = 1.0f;
+-            break;
+-        }
+-
+-        uint32_t msaaSampleCount = ext.sharedResources->userConfig.msaaSampleCount();
+-
+-        // Build the resolution scale vector from the configuration.
+-        workloadConfig.aspectRatioScale = workloadConfig.aspectRatioTarget / workloadConfig.aspectRatioSource;
+-        workloadConfig.resolutionScale = { resolutionMultiplier * workloadConfig.aspectRatioScale, resolutionMultiplier };
+-        workloadConfig.downsampleMultiplier = ext.sharedResources->userConfig.downsampleMultiplier;
+-        ext.sharedResources->resolutionScale = workloadConfig.resolutionScale;
+-
+         // Find the target refresh rate from the configuration.
+         const auto refreshRate = ext.sharedResources->userConfig.refreshRate;
+         switch (refreshRate) {
+@@ -267,6 +257,34 @@ namespace RT64 {
+         // Store the rate that was chosen for the configuration.
+         ext.sharedResources->targetRate = workloadConfig.targetRate;
+ 
++        // Compute the resolution scaling to be used for the frame.
++        float resolutionMultiplier;
++        const auto resolutionMode = ext.sharedResources->userConfig.resolution;
++        switch (resolutionMode) {
++        case UserConfiguration::Resolution::WindowIntegerScale:
++            resolutionMultiplier = automaticResolutionScale(ext.sharedResources->swapChainHeight, referenceHeight, deviceDescription);
++#if defined(__ANDROID__)
++            resolutionMultiplier = std::min(resolutionMultiplier, automaticResolutionBudgetScale(referenceHeight,
++                workloadConfig.aspectRatioTarget, workloadConfig.targetRate, ext.sharedResources->viOriginalRate));
++#endif
++            break;
++        case UserConfiguration::Resolution::Manual:
++            resolutionMultiplier = float(ext.sharedResources->userConfig.resolutionMultiplier);
++            break;
++        case UserConfiguration::Resolution::Original:
++        default:
++            resolutionMultiplier = 1.0f;
++            break;
++        }
++
++        uint32_t msaaSampleCount = ext.sharedResources->userConfig.msaaSampleCount();
++
++        // Build the resolution scale vector from the configuration.
++        workloadConfig.aspectRatioScale = workloadConfig.aspectRatioTarget / workloadConfig.aspectRatioSource;
++        workloadConfig.resolutionScale = { resolutionMultiplier * workloadConfig.aspectRatioScale, resolutionMultiplier };
++        workloadConfig.downsampleMultiplier = ext.sharedResources->userConfig.downsampleMultiplier;
++        ext.sharedResources->resolutionScale = workloadConfig.resolutionScale;
++
+ #   if RT_ENABLED
+         workloadConfig.raytracingEnabled = rtEnabled;
+ 

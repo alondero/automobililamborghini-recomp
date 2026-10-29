@@ -1,0 +1,210 @@
+diff --git a/src/hle/rt64_present_queue.cpp b/src/hle/rt64_present_queue.cpp
+index 08066ad..8e9d7bd 100644
+--- a/src/hle/rt64_present_queue.cpp
++++ b/src/hle/rt64_present_queue.cpp
+@@ -421,6 +421,9 @@ namespace RT64 {
+                 RenderCommandSemaphore *waitSemaphore = drawSemaphores[swapChainIndex].get();
+                 presentTimestamp = Timer::current();
+                 swapChainValid = ext.swapChain->present(swapChainIndex, &waitSemaphore, 1);
++                if (swapChainValid) {
++                    ext.sharedResources->presentedFrames++;
++                }
+                 RenderEvidenceObserver *evidence = GetRenderEvidenceObserver();
+                 if (swapChainValid && (evidence != nullptr)) {
+                     evidencePresentation.workloadId = present.workloadId;
+diff --git a/src/hle/rt64_shared_queue_resources.h b/src/hle/rt64_shared_queue_resources.h
+index 8858dac..610369f 100644
+--- a/src/hle/rt64_shared_queue_resources.h
++++ b/src/hle/rt64_shared_queue_resources.h
+@@ -4,6 +4,7 @@
+ 
+ #pragma once
+ 
++#include <atomic>
+ #include <mutex>
+ 
+ #include "common/rt64_common.h"
+@@ -57,6 +58,7 @@ namespace RT64 {
+         std::mutex interpolatedMutex;
+         std::condition_variable interpolatedCondition;
+         std::mutex workloadMutex;
++        std::atomic<uint64_t> presentedFrames = 0;
+ 
+         void setSwapChainSize(uint32_t width, uint32_t height) {
+             std::scoped_lock<std::mutex> configurationLock(configurationMutex);
+diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
+index e47f233..251580e 100644
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -2,6 +2,8 @@
+ // RT64
+ //
+ 
++#include <cstdlib>
++
+ #include "rhi/rt64_render_hooks.h"
+ #include "rt64_workload_queue.h"
+ 
+@@ -138,6 +140,12 @@ namespace RT64 {
+         tileProcessor.setup(ext.workloadGraphicsWorker);
+         lookAtProcessor.setup(ext.workloadGraphicsWorker);
+ 
++#if defined(__ANDROID__)
++        renderCostEnabled = true;
++#else
++        const char *renderCostSetting = std::getenv("RT64_RENDER_COST_REPORT");
++        renderCostEnabled = (renderCostSetting != nullptr) && (renderCostSetting[0] != '\0') && (renderCostSetting[0] != '0');
++#endif
+         threadsRunning = true;
+         renderThread = new std::thread(&WorkloadQueue::renderThreadLoop, this);
+         idleThread = new std::thread(&WorkloadQueue::idleThreadLoop, this);
+@@ -897,7 +905,11 @@ namespace RT64 {
+             // Update the GPU profiler with the results from the timestamps of the frame.
+             queryPool->queryResults();
+             const uint64_t *frameTimestamps = queryPool->getResults();
+-            rendererGPUProfiler.log(double(frameTimestamps[1] - frameTimestamps[0]) / 1000000.0);
++            const double gpuMs = double(frameTimestamps[1] - frameTimestamps[0]) / 1000000.0;
++            rendererGPUProfiler.log(gpuMs);
++            renderCost.gpuMs += gpuMs;
++            renderCost.gpuMaxMs = std::max(renderCost.gpuMaxMs, gpuMs);
++            renderCost.gpuSamples++;
+ 
+             // Indicate to the texture cache it's safe to delete the textures if no locks are active.
+             ext.textureCache->decrementLock();
+@@ -914,6 +926,46 @@ namespace RT64 {
+ #   endif
+     }
+ 
++    void WorkloadQueue::threadReportRenderCost(hlslpp::uint2 viFbSize, const WorkloadConfiguration &workloadConfig, uint32_t viOriginalRate) {
++        const double seconds = renderCost.timer.elapsedSeconds();
++        if (seconds < 5.0) {
++            return;
++        }
++
++        const uint64_t presented = ext.sharedResources->presentedFrames.load();
++        if (renderCostEnabled && (renderCost.workloads > 0)) {
++            uint32_t swapChainWidth, swapChainHeight, swapChainRate;
++            {
++                const std::scoped_lock lock(ext.sharedResources->configurationMutex);
++                swapChainWidth = ext.sharedResources->swapChainWidth;
++                swapChainHeight = ext.sharedResources->swapChainHeight;
++                swapChainRate = ext.sharedResources->swapChainRate;
++            }
++
++            // Frame times are the render thread's wall time per rendered frame,
++            // which includes waiting for that frame's GPU work to finish.
++            const uint32_t viWidth = viFbSize[0];
++            const uint32_t viHeight = viFbSize[1];
++            const double scaleX = float(workloadConfig.resolutionScale[0]);
++            const double scaleY = float(workloadConfig.resolutionScale[1]);
++            const uint32_t samples = ext.sharedResources->renderTargetManager.multisampling.sampleCount;
++            const double frames = std::max(renderCost.renderedFrames, 1U);
++            const double gpuSamples = std::max(renderCost.gpuSamples, 1U);
++            fprintf(stdout, "[render-cost] window_s=%.1f surface=%ux%u@%uHz vi=%ux%u@%uHz target_hz=%u internal=%.0fx%.0f scale=%.2fx%.2f msaa=%u "
++                "game_fps=%.1f present_fps=%.1f frames=%u/%u frame_ms=%.1f/%.1f gpu_ms=%.1f/%.1f workload_ms=%.1f/%.1f setup_ms=%.1f match_ms=%.1f\n",
++                seconds, swapChainWidth, swapChainHeight, swapChainRate, viWidth, viHeight, viOriginalRate, workloadConfig.targetRate,
++                viWidth * scaleX, viHeight * scaleY, scaleX, scaleY, samples,
++                renderCost.workloads / seconds, (presented - renderCost.presentedAtStart) / seconds, renderCost.renderedFrames, renderCost.displayFrames,
++                renderCost.frameMs / frames, renderCost.frameMaxMs, renderCost.gpuMs / gpuSamples, renderCost.gpuMaxMs,
++                renderCost.workloadMs / renderCost.workloads, renderCost.workloadMaxMs,
++                renderCost.setupMs / renderCost.workloads, renderCost.matchMs / renderCost.workloads);
++            fflush(stdout);
++        }
++
++        renderCost = RenderCostWindow();
++        renderCost.presentedAtStart = presented;
++    }
++
+     void WorkloadQueue::threadAdvanceBarrier() {
+         {
+             std::scoped_lock<std::mutex> cursorLock(cursorMutex);
+@@ -1043,7 +1095,9 @@ namespace RT64 {
+                 if (requiresFrameMatching) {
+                     matchingProfiler.reset();
+                     matchingProfiler.start();
++                    const int64_t matchStartMicro = workloadTimer.elapsedMicroseconds();
+                     curFrame.match(ext.workloadGraphicsWorker, *this, prevFrame, ext.workloadVelocityUploader, velocityUploaderUsed, tileInterpolationUsed, lookAtInterpolationUsed);
++                    renderCost.matchMs += (workloadTimer.elapsedMicroseconds() - matchStartMicro) / 1000.0;
+                     matchingProfiler.end();
+                     matchingProfiler.log();
+ 
+@@ -1119,6 +1173,7 @@ namespace RT64 {
+                 
+                 const int64_t originalTimeMicro = (workload.viOriginalRate > 0) ? (1000000 / workload.viOriginalRate) : 0;
+                 const int64_t setupTimeMicro = workloadTimer.elapsedMicroseconds();
++                renderCost.setupMs += setupTimeMicro / 1000.0;
+                 const int64_t adjustedTimeWindowMicro = originalTimeMicro - setupTimeMicro;
+                 const int64_t maxTimePerFrameMicro = adjustedTimeWindowMicro / displayFrames;
+                 bool skippedFrames = false;
+@@ -1183,7 +1238,10 @@ namespace RT64 {
+                         interpolationTargetKey, interpolationTargetFbPairIndex, overrideTarget, overrideModifier, velocityUploaderUsed, uploadExtras, tileInterpolationUsed, lookAtInterpolationUsed);
+ 
+                     // Add total time the frame took to render.
+-                    renderTimeTotalMicro += workloadTimer.elapsedMicroseconds() - renderTimeMicro;
++                    const int64_t frameTimeMicro = workloadTimer.elapsedMicroseconds() - renderTimeMicro;
++                    renderTimeTotalMicro += frameTimeMicro;
++                    renderCost.frameMs += frameTimeMicro / 1000.0;
++                    renderCost.frameMaxMs = std::max(renderCost.frameMaxMs, frameTimeMicro / 1000.0);
+ 
+                     // After one frame is rendered, we indicate the workload has been processed so the present thread can start presenting frames as soon as it can.
+                     if (frame == 0) {
+@@ -1234,6 +1292,13 @@ namespace RT64 {
+                 workloadProfiler.end();
+                 workloadProfiler.log();
+                 workloadProfiler.reset();
++
++                renderCost.workloads++;
++                renderCost.displayFrames += displayFrames;
++                renderCost.renderedFrames += framesRendered;
++                renderCost.workloadMs += workloadTimer.elapsedMilliseconds();
++                renderCost.workloadMaxMs = std::max(renderCost.workloadMaxMs, workloadTimer.elapsedMilliseconds());
++                threadReportRenderCost(workload.viFbSize, workloadConfig, workload.viOriginalRate);
+             }
+         }
+     }
+diff --git a/src/hle/rt64_workload_queue.h b/src/hle/rt64_workload_queue.h
+index 1d2dad7..76a11ce 100644
+--- a/src/hle/rt64_workload_queue.h
++++ b/src/hle/rt64_workload_queue.h
+@@ -60,6 +60,24 @@ namespace RT64 {
+             bool postBlendNoiseNegative = false;
+         };
+ 
++        // Periodic render-cost line on stdout; on by default only on Android.
++        struct RenderCostWindow {
++            ElapsedTimer timer;
++            uint64_t presentedAtStart = 0;
++            uint32_t workloads = 0;
++            uint32_t displayFrames = 0;
++            uint32_t renderedFrames = 0;
++            double frameMs = 0.0;
++            double frameMaxMs = 0.0;
++            double gpuMs = 0.0;
++            double gpuMaxMs = 0.0;
++            uint32_t gpuSamples = 0;
++            double workloadMs = 0.0;
++            double workloadMaxMs = 0.0;
++            double setupMs = 0.0;
++            double matchMs = 0.0;
++        };
++
+         External ext;
+         RenderDeviceDescription deviceDescription;
+         std::array<Workload, WORKLOAD_QUEUE_SIZE> workloads;
+@@ -99,6 +117,8 @@ namespace RT64 {
+         ProfilingTimer rendererGPUProfiler = ProfilingTimer(120);
+         ProfilingTimer matchingProfiler = ProfilingTimer(120);
+         ProfilingTimer workloadProfiler = ProfilingTimer(120);
++        bool renderCostEnabled = false;
++        RenderCostWindow renderCost;
+         std::array<GameFrame, 2> gameFrames;
+         uint32_t prevFrameIndex = uint32_t(gameFrames.size()) - 1;
+         uint32_t curFrameIndex = 0;
+@@ -120,6 +140,7 @@ namespace RT64 {
+             float deltaTimeMs, RenderTargetKey overrideTargetKey, int32_t overrideTargetFbPairIndex, RenderTarget *overrideTarget,
+             uint32_t overrideTargetModifier, bool uploadVelocity, bool uploadExtras, bool interpolateTiles, bool interpolateLookAts);
+ 
++        void threadReportRenderCost(hlslpp::uint2 viFbSize, const WorkloadConfiguration &workloadConfig, uint32_t viOriginalRate);
+         void threadAdvanceBarrier();
+         void threadAdvanceWorkloadId(uint64_t newWorkloadId);
+         void renderThreadLoop();

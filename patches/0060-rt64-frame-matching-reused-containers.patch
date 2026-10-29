@@ -1,0 +1,139 @@
+diff --git a/src/hle/rt64_game_frame.cpp b/src/hle/rt64_game_frame.cpp
+index a386b65..81f58e2 100644
+--- a/src/hle/rt64_game_frame.cpp
++++ b/src/hle/rt64_game_frame.cpp
+@@ -438,8 +438,8 @@ namespace RT64 {
+             return;
+         }
+ 
+-        thread_local std::multimap<uint64_t, GameCallMap> curCallHashMap;
+-        thread_local std::multimap<uint64_t, GameCallMap> prevCallHashMap;
++        thread_local GameCallHashMap curCallHashMap;
++        thread_local GameCallHashMap prevCallHashMap;
+         curCallHashMap.clear();
+         prevCallHashMap.clear();
+ 
+@@ -549,17 +549,40 @@ namespace RT64 {
+             buildCallHashMap(p, prevWorkload, prevProj, prevCallHashMap);
+         }
+ 
++        const auto hashLess = [](const std::pair<uint64_t, GameCallMap> &lhs, const std::pair<uint64_t, GameCallMap> &rhs) {
++            return lhs.first < rhs.first;
++        };
++
++        // Calls are appended in projection and call order, so this keeps
++        // std::multimap's insertion order for equal hashes without the
++        // temporary buffer std::stable_sort allocates.
++        const auto callLess = [](const std::pair<uint64_t, GameCallMap> &lhs, const std::pair<uint64_t, GameCallMap> &rhs) {
++            if (lhs.first != rhs.first) {
++                return lhs.first < rhs.first;
++            }
++
++            if (lhs.second.sceneProjIndex != rhs.second.sceneProjIndex) {
++                return lhs.second.sceneProjIndex < rhs.second.sceneProjIndex;
++            }
++
++            return lhs.second.callIndex < rhs.second.callIndex;
++        };
++
++        std::sort(curCallHashMap.begin(), curCallHashMap.end(), callLess);
++        std::sort(prevCallHashMap.begin(), prevCallHashMap.end(), callLess);
++
+         // FIXME: Transform set needs to be done per unique workload detected.
+-        thread_local std::set<IndexPair> transformCheckSet;
+-        thread_local std::set<IndexPair> tileCheckSet;
+-        thread_local std::set<IndexPair> lookAtCheckSet;
++        // Each check set is sorted and made unique below, giving std::set's order.
++        thread_local std::vector<IndexPair> transformCheckSet;
++        thread_local std::vector<IndexPair> tileCheckSet;
++        thread_local std::vector<IndexPair> lookAtCheckSet;
+         transformCheckSet.clear();
+         tileCheckSet.clear();
+         lookAtCheckSet.clear();
+ 
+         // Traverse the map and fill the set with all the combinations of transforms to check.
+-        for (std::pair<uint64_t, GameCallMap> curIt : curCallHashMap) {
+-            auto prevRange = prevCallHashMap.equal_range(curIt.first);
++        for (const std::pair<uint64_t, GameCallMap> &curIt : curCallHashMap) {
++            auto prevRange = std::equal_range(prevCallHashMap.begin(), prevCallHashMap.end(), curIt, hashLess);
+             for (auto prevIt = prevRange.first; prevIt != prevRange.second; prevIt++) {
+                 const GameIndices::Projection &curProjIndices = curScene.projections[curIt.second.sceneProjIndex];
+                 const Workload &curWorkload = workloadQueue.workloads[curProjIndices.workloadIndex];
+@@ -582,7 +605,7 @@ namespace RT64 {
+                         const uint32_t prevGroupIndex = prevWorkload.drawData.worldTransformGroups[prevWorldMatrix];
+                         const TransformGroup &prevGroup = prevWorkload.drawData.transformGroups[prevGroupIndex];
+                         if ((curGroup.matrixId == prevGroup.matrixId) && ((curGroup.matrixId == G_EX_ID_AUTO) || ((curGroup.matrixId != G_EX_ID_IGNORE) && (curGroup.ordering == G_EX_ORDER_AUTO)))) {
+-                            transformCheckSet.emplace(curWorldMatrix, prevWorldMatrix);
++                            transformCheckSet.emplace_back(curWorldMatrix, prevWorldMatrix);
+                         }
+                     }
+                 }
+@@ -596,7 +619,7 @@ namespace RT64 {
+                             continue;
+                         }
+ 
+-                        tileCheckSet.emplace(curCall.callDesc.tileIndex + t, prevCall.callDesc.tileIndex + t);
++                        tileCheckSet.emplace_back(curCall.callDesc.tileIndex + t, prevCall.callDesc.tileIndex + t);
+                     }
+                 }
+ 
+@@ -609,11 +632,16 @@ namespace RT64 {
+                     const uint32_t prevVertexIndex = prevWorkload.drawData.faceIndices[prevCall.meshDesc.faceIndicesStart];
+                     const uint32_t curLookAtIndex = curWorkload.drawData.lookAtIndices[curVertexIndex] >> RSP_LOOKAT_INDEX_SHIFT;
+                     const uint32_t prevLookAtIndex = prevWorkload.drawData.lookAtIndices[prevVertexIndex] >> RSP_LOOKAT_INDEX_SHIFT;
+-                    lookAtCheckSet.emplace(curLookAtIndex, prevLookAtIndex);
++                    lookAtCheckSet.emplace_back(curLookAtIndex, prevLookAtIndex);
+                 }
+             }
+         }
+ 
++        for (std::vector<IndexPair> *checkSet : { &transformCheckSet, &tileCheckSet, &lookAtCheckSet }) {
++            std::sort(checkSet->begin(), checkSet->end());
++            checkSet->erase(std::unique(checkSet->begin(), checkSet->end()), checkSet->end());
++        }
++
+         // Compute all the differences between transforms and insert them into a vector that will be sorted according to the differences.
+         thread_local std::vector<MatchCandidate> matchCandidates;
+         matchCandidates.clear();
+@@ -911,7 +939,7 @@ namespace RT64 {
+         }
+     }
+     
+-    void GameFrame::buildCallHashMap(uint32_t sceneProjIndex, const Workload &workload, const Projection &proj, std::multimap<uint64_t, GameCallMap> &hashMap) const {
++    void GameFrame::buildCallHashMap(uint32_t sceneProjIndex, const Workload &workload, const Projection &proj, GameCallHashMap &hashMap) const {
+         for (uint32_t c = 0; c < proj.gameCallCount; c++) {
+             const GameCall &call = proj.gameCalls[c];
+             uint32_t matrixIdHash = 0;
+@@ -929,7 +957,7 @@ namespace RT64 {
+                 doTileMatching = doTileMatching || (group.tileInterpolation == G_EX_COMPONENT_AUTO);
+             }
+ 
+-            hashMap.emplace(hashFromCall(call, matrixIdHash), GameCallMap{ sceneProjIndex, c, doTransformMatching, doTileInterpolation, doTileMatching });
++            hashMap.emplace_back(hashFromCall(call, matrixIdHash), GameCallMap{ sceneProjIndex, c, doTransformMatching, doTileInterpolation, doTileMatching });
+         }
+     }
+ 
+diff --git a/src/hle/rt64_game_frame.h b/src/hle/rt64_game_frame.h
+index 00a72f6..f51a9a3 100644
+--- a/src/hle/rt64_game_frame.h
++++ b/src/hle/rt64_game_frame.h
+@@ -100,6 +100,10 @@ namespace RT64 {
+         uint32_t doTileMatching : 1;
+     };
+ 
++    // Sorted by hash before use, keeping std::multimap's order. Reusing the
++    // vector avoids a heap allocation and free per draw call every frame.
++    typedef std::vector<std::pair<uint64_t, GameCallMap>> GameCallHashMap;
++
+     struct ModifiedBuffers {
+         bool positionVelocity = false;
+         bool texcoordVelocity = false;
+@@ -128,7 +132,7 @@ namespace RT64 {
+         void match(RenderWorker *worker, WorkloadQueue &workloadQueue, const GameFrame &prevFrame, BufferUploader *velocityUploader, bool &velocityUploaderUsed, bool &tileInterpolationUsed, bool &lookAtInterpolationUsed);
+         void matchScene(WorkloadQueue &workloadQueue, const GameFrame &prevFrame, const GameScene &curScene, const GameScene &prevScene, std::unordered_map<uint32_t, ModifiedBuffers> &workloadsModified, bool &tileInterpolationUsed, bool &lookAtInterpolationUsed);
+         void matchTransform(Workload &curWorkload, const Workload &prevWorkload, GameFrameMap::WorkloadMap &curWorkloadMap, const GameFrameMap::WorkloadMap *prevWorkloadMap, uint32_t curTransformIndex, uint32_t prevTransformIndex, ModifiedBuffers &modifiedBuffers);
+-        void buildCallHashMap(uint32_t sceneProjIndex, const Workload &workload, const Projection &proj, std::multimap<uint64_t, GameCallMap> &hashMap) const;
++        void buildCallHashMap(uint32_t sceneProjIndex, const Workload &workload, const Projection &proj, GameCallHashMap &hashMap) const;
+         void buildTransformIdMap(const Workload &workload, std::multimap<uint32_t, uint32_t> &idMap, std::vector<uint32_t> &ignoredIdVector) const;
+         uint64_t hashFromCall(const GameCall &call, uint32_t matrixIdHash) const;
+         bool isDebuggerCameraEnabled(const WorkloadQueue &workloadQueue);

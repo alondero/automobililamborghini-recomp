@@ -6,5 +6,5 @@
 # (Windows release builds failed on patch 0011 for exactly this reason).
 *.patch text eol=lf
 # The single-space blank context lines above are significant patch content,
-# not trailing whitespace.
-*.patch whitespace=-blank-at-eol
+# not trailing whitespace, even when a hunk ends the file.
+*.patch whitespace=-blank-at-eol,-blank-at-eof

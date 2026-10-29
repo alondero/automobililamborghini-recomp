@@ -145,15 +145,25 @@ if(NOT rt64_shadow_performance_patch_applied EQUAL 0)
     lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0038-rt64-sun-shadow-robust-scene.patch)
 endif()
 lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0039-rt64-shadow-traversal-performance.patch)
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0042-rt64-adreno-615-automatic-resolution-limit.patch)
+# 0059 changes 0042's and 0058's reverse context; recognize it first.
 execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0056-rt64-present-resource-retirement.patch"
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0059-rt64-android-automatic-resolution-budget.patch"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
-    RESULT_VARIABLE rt64_retirement_patch_applied OUTPUT_QUIET ERROR_QUIET)
-if(NOT rt64_retirement_patch_applied EQUAL 0)
-    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0046-rt64-queue-barrier-wait.patch)
+    RESULT_VARIABLE rt64_resolution_budget_patch_applied OUTPUT_QUIET ERROR_QUIET)
+if(NOT rt64_resolution_budget_patch_applied EQUAL 0)
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0042-rt64-adreno-615-automatic-resolution-limit.patch)
+    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0056-rt64-present-resource-retirement.patch"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
+        RESULT_VARIABLE rt64_retirement_patch_applied OUTPUT_QUIET ERROR_QUIET)
+    if(NOT rt64_retirement_patch_applied EQUAL 0)
+        lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0046-rt64-queue-barrier-wait.patch)
+    endif()
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0056-rt64-present-resource-retirement.patch)
+    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0058-rt64-render-cost-report.patch)
 endif()
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0056-rt64-present-resource-retirement.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0059-rt64-android-automatic-resolution-budget.patch)
+lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0060-rt64-frame-matching-reused-containers.patch)
 
 # --- RT64 renderer boundary; see patches/README.md ---
 # recomp/lib/rt64 is a pinned git submodule; RT64 is always compiled in and is the

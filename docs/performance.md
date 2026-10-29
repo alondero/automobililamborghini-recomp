@@ -20,7 +20,7 @@ for less work.
 | 3 | Skip hidden settings synchronisation | `lambo_frontend.cpp::render` refreshed the whole settings schema on every presentation, including ordinary gameplay. This includes string construction/lookups, variants, and the player-name mutex. | Implemented; hidden gameplay inputs skip refresh too. Menu-opening events use the frontend's own resolver. |
 | 4 | Cache synthesized visibility rows | `lambo_no_lod.cpp` builds a row on each viewport walk; the policy scans the track records again even when the camera segment has not changed. | [Issue 266](https://github.com/alondero/automobililamborghini-recomp/issues/266). Track reload, savestate, Track Lab and viewport invalidation are essential. |
 | 5 | Reduce fog preparation work | The earlier renderer-side rewrite is now part of the shared HUD/fog producer walk. Active custom fog still made sparse correction-table lookups for unrelated commands. | A private correction bitmap skips unrelated lookups; authored-word tracking and restoration remain intact. [Issue 267](https://github.com/alondero/automobililamborghini-recomp/issues/267) records the original traversal proposal. |
-| 6 | Control rendering against a frame budget | Auto resolution and Display interpolation follow output demands, including high-resolution/high-refresh displays. Original resolutions and Manual refresh already exist. | [Issue 268](https://github.com/alondero/automobililamborghini-recomp/issues/268). Measure CPU/GPU separately before adaptive resolution or a presentation ceiling. |
+| 6 | Control rendering against a frame budget | Auto resolution and Display interpolation follow output demands, including high-resolution/high-refresh displays. Original resolutions and Manual refresh already exist. | [Issue 268](https://github.com/alondero/automobililamborghini-recomp/issues/268). Measure CPU/GPU separately before adaptive resolution or a presentation ceiling. Android Auto now has a fixed pixel-rate budget; see [Android render cost](#android-render-cost-2026-10-29). |
 | 7 | Reduce Windows guest-memory commit further | Patch 0012 already avoids committing the 4 GiB reservation, but the runtime still commits a 512 MiB accessible prefix on Windows. This is commit charge, not a measured physical working set. | [Issue 269](https://github.com/alondero/automobililamborghini-recomp/issues/269). Audit runtime/mod allocations and guards before smaller or demand commitment. |
 | 8 | Evaluate PGO and selective LTO | Release optimisation is already enabled. No root PGO/IPO workflow exists. Generated functions deliberately preserve patchable, distinct entrypoints for mods. | [Issue 270](https://github.com/alondero/automobililamborghini-recomp/issues/270). Train representative replays and prove hook identity and floating-point behavior. |
 | 9 | Tune worker concurrency on low-core CPUs | RT64 chooses raster compiler workers from half the logical threads, ubershader workers from threads minus two, and texture workers from a quarter. Normal shader workers already use idle priority. | [Issue 271](https://github.com/alondero/automobililamborghini-recomp/issues/271). Measure contention, startup and audio underruns before reducing concurrency. |
@@ -337,3 +337,43 @@ Android devices, Linux and a measured energy saving. The Japanese
 configuration's USA-input digest was updated with the generator's digest
 function, because the Japanese ROM was not available. Hooks are not carried to
 the Japanese configuration, so no other generated line changes.
+
+## Android render cost (2026-10-29)
+
+[Issue 374](https://github.com/alondero/automobililamborghini-recomp/issues/374)
+measured the default Android settings on a Snapdragon 865 phone (Adreno 650,
+2400x1080, 60 Hz) during the attract race. Device, drivers, method and every
+run are in [Android render cost](ANDROID.md#render-cost-and-automatic-resolution).
+The default (Auto resolution, MSAA2X, display-rate presentation) showed 30
+frames per second instead of 60. With the system driver the game also slowed
+to about 29 frames per second.
+
+The bottlenecks, largest first:
+
+| Cost | Evidence | Change |
+| --- | --- | --- |
+| Internal resolution | Auto selected 5x (2903x1200). GPU time grows with pixels: 13.4 ms per frame with Turnip, 17.7 ms with the system driver. Two must fit in each 33 ms game frame at 60 Hz. | Patch 0059: an Android pixel-rate budget selects 3x at 60 Hz. |
+| Frame matching on the CPU | 12.8 ms of every game frame at any resolution, only when interpolating. `simpleperf` put 85% of the RT64 workload thread in `GameFrame::matchScene`, about half of it in Android's allocator. | Patch 0060 reuses sorted vectors; matching takes about 3.5 ms. |
+| MSAA2X | About a fifth of GPU time at 5x. | None. Within the budget it no longer decides the frame rate. |
+| Driver | The system driver needed about 35% more GPU time than Turnip. | None. |
+
+With both changes the default presented 59.8 frames per second with Turnip
+and 59.5 with the system driver, holding the game at 30. Patch 0058 records
+these numbers in `native.log` so player reports carry them.
+
+Remaining opportunities:
+
+- The fixed budget does not adapt to slower GPUs or to thermal throttling.
+  [Issue 268](https://github.com/alondero/automobililamborghini-recomp/issues/268)
+  remains the frame-time-driven design, and the render-cost line gives it
+  inputs.
+- RT64 renders each interpolated frame and then waits for that frame's GPU
+  work before starting the next (`execute` then `wait`). Overlapping CPU
+  recording with GPU work could add headroom; this is not measured
+  ([issue 377](https://github.com/alondero/automobililamborghini-recomp/issues/377)).
+- Matching still compares every pair of calls with equal hashes, which grows
+  quadratically with repeated scenery. It now costs about 3.5 ms
+  ([issue 378](https://github.com/alondero/automobililamborghini-recomp/issues/378)).
+- 120 Hz panels, player races, split screen and the touch overlay are not
+  measured yet
+  ([issue 379](https://github.com/alondero/automobililamborghini-recomp/issues/379)).
