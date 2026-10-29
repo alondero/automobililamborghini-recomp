@@ -1,7 +1,7 @@
 """Replay the port's patched dependency sources for ROM-free host fixtures."""
 import subprocess
 from pathlib import Path
-from tools.check_patch_series import PLUME_CMAKE_SERIES, resolve_patch, script_series
+from tools.apply_patches import load_series
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUME = ROOT / "lib/rt64/src/contrib/plume"
@@ -21,9 +21,10 @@ def method(source, signature):
 def patched_file(submodule, path, tree):
     """Return a pinned submodule file with every port patch that edits it.
 
-    Plume replays the platform script prefixes and the checked shared CMake
-    suffix. Other fixtures use number order for their independent file hunks.
-    Application is strict, like shared CMake, so whitespace drift is an error.
+    Plume replays its series from patches/series.txt, with every platform's
+    entries in series order. Other fixtures use number order for their
+    independent file hunks. Application is strict, so whitespace drift is an
+    error.
     """
     # Replay the same source as the build without mutating the user's checkout.
     target = Path(tree) / path
@@ -36,11 +37,8 @@ def patched_file(submodule, path, tree):
         # Some fixture callers are introduced by the checked-in patch series.
         target.unlink(missing_ok=True)
     if submodule.resolve() == PLUME.resolve():
-        directory = "lib/rt64/src/contrib/plume"
-        prefixes = dict.fromkeys(name for platform in ("windows", "linux", "android")
-                                 for name in script_series(ROOT, platform).get(directory, []))
-        patches = [ROOT / "patches" / name for name in prefixes]
-        patches += [resolve_patch(ROOT, number) for number in PLUME_CMAKE_SERIES]
+        patches = [entry.patch for entry in load_series(ROOT)
+                   if entry.directory == "lib/rt64/src/contrib/plume"]
     else:
         patches = sorted((ROOT / "patches").glob("*.patch"))
     for patch in patches:

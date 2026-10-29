@@ -18,6 +18,16 @@ cmake_minimum_required(VERSION 3.20)
 
 project(lamborghini_modern VERSION 0.10.2 LANGUAGES C CXX)
 
+# Python applies the dependency patches and generates mod and test inputs.
+find_program(LAMBO_PYTHON_EXECUTABLE NAMES python python3 REQUIRED)
+execute_process(COMMAND ${LAMBO_PYTHON_EXECUTABLE} -c
+    "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)"
+    RESULT_VARIABLE LAMBO_PYTHON_VERSION_RESULT)
+if(NOT LAMBO_PYTHON_VERSION_RESULT EQUAL 0)
+    message(FATAL_ERROR "Python 3.11 or newer is required; set LAMBO_PYTHON_EXECUTABLE")
+endif()
+include(cmake/Patches.cmake)
+
 if(ANDROID)
     include(cmake/Android.cmake)
 endif()
@@ -36,134 +46,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(N64MR ${CMAKE_CURRENT_SOURCE_DIR}/lib/N64ModernRuntime)
-include(cmake/Frontend.cmake)
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0023-plume-texture-readback.patch)
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0028-plume-d3d12-pipeline-failure.patch)
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0041-plume-variable-descriptor-pool-retry.patch)
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0043-plume-vulkan-clear-rect-bounds.patch)
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0044-plume-vulkan-shader-nonuniform-without-descriptor-indexing.patch)
-# Recovery changes the constructor context of both surface-property patches.
-execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0055-plume-android-surface-recovery.patch"
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume"
-    RESULT_VARIABLE plume_recovery_patch_applied OUTPUT_QUIET ERROR_QUIET)
-if(NOT plume_recovery_patch_applied EQUAL 0)
-    # 0049 changes lines next to 0047's, so recognize it before checking 0047's
-    # reverse context on repeated configure runs.
-    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0049-plume-android-surface-format-without-gralloc-probe.patch"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume"
-        RESULT_VARIABLE plume_surface_format_patch_applied OUTPUT_QUIET ERROR_QUIET)
-    if(NOT plume_surface_format_patch_applied EQUAL 0)
-        lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0047-plume-vulkan-surface-capabilities.patch)
-    endif()
-    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0049-plume-android-surface-format-without-gralloc-probe.patch)
-endif()
-# Keep 0050's published hunks stable so existing checkouts pass its reverse check.
-# Keep this shared order in sync with PLUME_CMAKE_SERIES; the checker verifies 0050 too.
-# 0053 changes reverse context in 0050/0051/0052; recognize it before all three.
-execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0053-plume-vulkan-nested-read-map-guard.patch"
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume"
-    RESULT_VARIABLE plume_nested_read_guard_applied OUTPUT_QUIET ERROR_QUIET)
-if(NOT plume_nested_read_guard_applied EQUAL 0)
-    # 0052 changes 0050's reverse context; recognize the recovery patch first.
-    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0052-plume-vulkan-map-failure-recovery.patch"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume"
-        RESULT_VARIABLE plume_map_recovery_applied OUTPUT_QUIET ERROR_QUIET)
-    if(NOT plume_map_recovery_applied EQUAL 0)
-        lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0050-plume-vulkan-mapped-memory.patch)
-    endif()
-    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0051-plume-vulkan-mapped-memory-contract.patch)
-    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0052-plume-vulkan-map-failure-recovery.patch)
-endif()
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0053-plume-vulkan-nested-read-map-guard.patch)
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume" 0055-plume-android-surface-recovery.patch)
-# Later RT64 patches change earlier patches' context. Recognize the newest
-# applied patch first, then replay only what is missing.
-execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0039-rt64-shadow-traversal-performance.patch"
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
-    RESULT_VARIABLE rt64_shadow_performance_patch_applied OUTPUT_QUIET ERROR_QUIET)
-if(rt64_shadow_performance_patch_applied EQUAL 0)
-    set(rt64_robust_shadow_patch_applied 0)
-else()
-    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0038-rt64-sun-shadow-robust-scene.patch"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
-        RESULT_VARIABLE rt64_robust_shadow_patch_applied OUTPUT_QUIET ERROR_QUIET)
-endif()
-if(rt64_robust_shadow_patch_applied EQUAL 0)
-    set(rt64_sun_shadow_receiver_patch_applied 0)
-else()
-    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0030-rt64-sun-shadow-receiver.patch"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
-        RESULT_VARIABLE rt64_sun_shadow_receiver_patch_applied OUTPUT_QUIET ERROR_QUIET)
-endif()
-if(rt64_sun_shadow_receiver_patch_applied EQUAL 0)
-    set(rt64_native_alpha_patch_applied 0)
-else()
-    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0029-rt64-native-game-alpha-evidence.patch"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
-        RESULT_VARIABLE rt64_native_alpha_patch_applied OUTPUT_QUIET ERROR_QUIET)
-endif()
-if(rt64_native_alpha_patch_applied EQUAL 0)
-    set(rt64_candidate_patch_applied 0)
-else()
-    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0027-rt64-native-ray-candidate-coverage.patch"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
-        RESULT_VARIABLE rt64_candidate_patch_applied OUTPUT_QUIET ERROR_QUIET)
-endif()
-if(NOT rt64_candidate_patch_applied EQUAL 0)
-    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0025-rt64-workload-shadow-metadata.patch"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
-        RESULT_VARIABLE rt64_shadow_metadata_patch_applied OUTPUT_QUIET ERROR_QUIET)
-    if(NOT rt64_shadow_metadata_patch_applied EQUAL 0)
-        lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0021-rt64-sun-shadow-groundwork.patch)
-        lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0022-rt64-render-evidence-hooks.patch)
-        lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0024-d3d12-raster-owner-evidence.patch)
-    endif()
-    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0025-rt64-workload-shadow-metadata.patch)
-    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0026-rt64-native-material-evaluation.patch)
-endif()
-if(NOT rt64_native_alpha_patch_applied EQUAL 0)
-    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0027-rt64-native-ray-candidate-coverage.patch)
-endif()
-if(NOT rt64_sun_shadow_receiver_patch_applied EQUAL 0)
-    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0029-rt64-native-game-alpha-evidence.patch)
-endif()
-if(NOT rt64_robust_shadow_patch_applied EQUAL 0)
-    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0030-rt64-sun-shadow-receiver.patch)
-    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0033-rt64-fixed-texture-table-without-descriptor-indexing.patch)
-endif()
-if(NOT rt64_shadow_performance_patch_applied EQUAL 0)
-    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0038-rt64-sun-shadow-robust-scene.patch)
-endif()
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0039-rt64-shadow-traversal-performance.patch)
-# 0059 changes 0042's and 0058's reverse context; recognize it first.
-execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/0059-rt64-android-automatic-resolution-budget.patch"
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
-    RESULT_VARIABLE rt64_resolution_budget_patch_applied OUTPUT_QUIET ERROR_QUIET)
-if(NOT rt64_resolution_budget_patch_applied EQUAL 0)
-    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0042-rt64-adreno-615-automatic-resolution-limit.patch)
-    execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-        "${CMAKE_CURRENT_SOURCE_DIR}/patches/0056-rt64-present-resource-retirement.patch"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64"
-        RESULT_VARIABLE rt64_retirement_patch_applied OUTPUT_QUIET ERROR_QUIET)
-    if(NOT rt64_retirement_patch_applied EQUAL 0)
-        lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0046-rt64-queue-barrier-wait.patch)
-    endif()
-    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0056-rt64-present-resource-retirement.patch)
-    lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0058-rt64-render-cost-report.patch)
-endif()
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0059-rt64-android-automatic-resolution-budget.patch)
-lambo_frontend_patch("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64" 0060-rt64-frame-matching-reused-containers.patch)
 
 # --- RT64 renderer boundary; see patches/README.md ---
 # recomp/lib/rt64 is a pinned git submodule; RT64 is always compiled in and is the
@@ -243,31 +125,27 @@ if(BUILD_TESTING)
     target_link_libraries(lambo_mods_rtz_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_mods_rtz_container COMMAND lambo_mods_rtz_tests)
 
-    find_program(LAMBO_PYTHON_EXECUTABLE NAMES python python3)
+    # Window-free: the driver tests stub sys.platform and ctypes.WinDLL, so
+    # this runs wherever python does, matching unittest discovery. Gating it
+    # on WIN32 would silently drop it from the Linux CTest run.
+    add_test(NAME lambo_drive_input
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_drive_input.py)
+    set(MOD_MENU_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend/recompui/src/composites/ui_mod_menu.cpp)
+    add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mod_menu_refresh_methods.inl
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_mod_menu_methods.py
+            ${MOD_MENU_SOURCE} ${CMAKE_CURRENT_BINARY_DIR}/mod_menu_refresh_methods.inl
+        DEPENDS tests/extract_mod_menu_methods.py ${MOD_MENU_SOURCE}
+        VERBATIM)
+    add_executable(lambo_mod_menu_refresh_tests tests/test_mod_menu_refresh.cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/mod_menu_refresh_methods.inl)
+    target_include_directories(lambo_mod_menu_refresh_tests PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR} ${N64MR}/N64Recomp/include
+        $<TARGET_PROPERTY:librecomp,INTERFACE_INCLUDE_DIRECTORIES>
+        $<TARGET_PROPERTY:miniz,INTERFACE_INCLUDE_DIRECTORIES>)
+    target_compile_definitions(lambo_mod_menu_refresh_tests PRIVATE NOMINMAX MINIZ_STATIC_DEFINE)
+    add_test(NAME lambo_mod_menu_refresh COMMAND lambo_mod_menu_refresh_tests)
 
-    if(LAMBO_PYTHON_EXECUTABLE)
-        # Window-free: the driver tests stub sys.platform and ctypes.WinDLL, so
-        # this runs wherever python does, matching unittest discovery. Gating it
-        # on WIN32 would silently drop it from the Linux CTest run.
-        add_test(NAME lambo_drive_input
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_drive_input.py)
-        set(MOD_MENU_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/lib/RecompFrontend/recompui/src/composites/ui_mod_menu.cpp)
-        add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mod_menu_refresh_methods.inl
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_mod_menu_methods.py
-                ${MOD_MENU_SOURCE} ${CMAKE_CURRENT_BINARY_DIR}/mod_menu_refresh_methods.inl
-            DEPENDS tests/extract_mod_menu_methods.py ${MOD_MENU_SOURCE}
-            VERBATIM)
-        add_executable(lambo_mod_menu_refresh_tests tests/test_mod_menu_refresh.cpp
-            ${CMAKE_CURRENT_BINARY_DIR}/mod_menu_refresh_methods.inl)
-        target_include_directories(lambo_mod_menu_refresh_tests PRIVATE
-            ${CMAKE_CURRENT_BINARY_DIR} ${N64MR}/N64Recomp/include
-            $<TARGET_PROPERTY:librecomp,INTERFACE_INCLUDE_DIRECTORIES>
-            $<TARGET_PROPERTY:miniz,INTERFACE_INCLUDE_DIRECTORIES>)
-        target_compile_definitions(lambo_mod_menu_refresh_tests PRIVATE NOMINMAX MINIZ_STATIC_DEFINE)
-        add_test(NAME lambo_mod_menu_refresh COMMAND lambo_mod_menu_refresh_tests)
-    endif()
-
-    if(LAMBO_PYTHON_EXECUTABLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs/funcs.h")
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs/funcs.h")
         file(GLOB ROM_RECOMP_SOURCES CONFIGURE_DEPENDS RecompiledFuncs/funcs_*.c)
         add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/player_record_funcs.c
             COMMAND ${LAMBO_PYTHON_EXECUTABLE}
@@ -673,65 +551,61 @@ if(BUILD_TESTING)
 
 
 
-    if(LAMBO_PYTHON_EXECUTABLE)
-        add_test(NAME lambo_hud_blue_bar_rom
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hud_blue_bar_rom.py)
-        add_test(NAME lambo_car_card_rom
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_car_card_rom.py)
-        add_test(NAME lambo_frontend_assets
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_frontend_assets.py ${CMAKE_CURRENT_SOURCE_DIR})
-        add_test(NAME lambo_quit_path
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_quit_path.py
-                ${CMAKE_CURRENT_SOURCE_DIR}
-        )
-        add_test(NAME lambo_game_scenario_runner
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_game_scenario.py
-        )
-        add_test(NAME lambo_hud_savestate
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/hud_savestate_process.py
-                $<TARGET_FILE:lambo_hud_savestate_tests>)
-        add_test(NAME lambo_hud_rt64_contract
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hud_rt64_contract.py)
-        add_test(NAME lambo_rt_task_capture
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rt_task_capture.py
-        )
-        add_test(NAME lambo_rt_alpha_capture
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rt_alpha_capture.py
-        )
-        add_test(NAME lambo_prompt_back_action
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
-                -m tests.test_prompt_back_action
-        )
-        add_test(NAME lambo_native_menu_retired
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE} -m tests.test_native_menu_retired
-        )
-        add_test(NAME lambo_reset_rom
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_reset_rom.py)
-        add_test(NAME lambo_track_lab_codec
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
-                -m unittest tests.test_track_lab
-        )
-        add_test(NAME lambo_track_patch_python_interop
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
-                -m tests.test_track_patch_interop
-                $<TARGET_FILE:lambo_track_patch_tests>
-        )
-        set_tests_properties(
-            lambo_track_lab_codec
-            lambo_track_patch_python_interop
-            lambo_prompt_back_action
-            lambo_native_menu_retired
-            PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        )
-    else()
-        message(WARNING "Python not found; Python-based tests will not be registered")
-    endif()
+    add_test(NAME lambo_hud_blue_bar_rom
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hud_blue_bar_rom.py)
+    add_test(NAME lambo_car_card_rom
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_car_card_rom.py)
+    add_test(NAME lambo_frontend_assets
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_frontend_assets.py ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME lambo_quit_path
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_quit_path.py
+            ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    add_test(NAME lambo_game_scenario_runner
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_game_scenario.py
+    )
+    add_test(NAME lambo_hud_savestate
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/hud_savestate_process.py
+            $<TARGET_FILE:lambo_hud_savestate_tests>)
+    add_test(NAME lambo_hud_rt64_contract
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hud_rt64_contract.py)
+    add_test(NAME lambo_rt_task_capture
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rt_task_capture.py
+    )
+    add_test(NAME lambo_rt_alpha_capture
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rt_alpha_capture.py
+    )
+    add_test(NAME lambo_prompt_back_action
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+            -m tests.test_prompt_back_action
+    )
+    add_test(NAME lambo_native_menu_retired
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE} -m tests.test_native_menu_retired
+    )
+    add_test(NAME lambo_reset_rom
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_reset_rom.py)
+    add_test(NAME lambo_track_lab_codec
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+            -m unittest tests.test_track_lab
+    )
+    add_test(NAME lambo_track_patch_python_interop
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+            -m tests.test_track_patch_interop
+            $<TARGET_FILE:lambo_track_patch_tests>
+    )
+    set_tests_properties(
+        lambo_track_lab_codec
+        lambo_track_patch_python_interop
+        lambo_prompt_back_action
+        lambo_native_menu_retired
+        PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
 endif()
 
 # RecompFrontend owns RmlUi, its SDL backend, fonts and SVG support.
@@ -884,7 +758,7 @@ endif()
 # omits RT64 â€” it is pulled in only by a game's own CMake.
 add_subdirectory(${N64MR})
 
-if(BUILD_TESTING AND LAMBO_PYTHON_EXECUTABLE)
+if(BUILD_TESTING)
     add_executable(lambo_mod_runtime_refresh_tests tests/test_mod_runtime_refresh.cpp)
     target_include_directories(lambo_mod_runtime_refresh_tests PRIVATE ${N64MR}/N64Recomp/include)
     target_link_libraries(lambo_mod_runtime_refresh_tests PRIVATE librecomp Threads::Threads)
@@ -1011,13 +885,6 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         add_executable(lamborghini_modern WIN32 ${LAMBO_SOURCES})
     else()
         add_executable(lamborghini_modern ${LAMBO_SOURCES})
-    endif()
-    find_program(LAMBO_PYTHON_EXECUTABLE NAMES python python3 REQUIRED)
-    execute_process(COMMAND ${LAMBO_PYTHON_EXECUTABLE} -c
-        "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)"
-        RESULT_VARIABLE LAMBO_PYTHON_VERSION_RESULT)
-    if(NOT LAMBO_PYTHON_VERSION_RESULT EQUAL 0)
-        message(FATAL_ERROR "Python 3.11 or newer is required for mod patch metadata; set LAMBO_PYTHON_EXECUTABLE")
     endif()
     set(LAMBO_MOD_GUARDS ${CMAKE_CURRENT_BINARY_DIR}/generated/lambo_mod_patch_guards.inc)
     add_custom_command(OUTPUT ${LAMBO_MOD_GUARDS}

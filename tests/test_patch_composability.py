@@ -1,39 +1,34 @@
-"""Patch-composition regression: every platform's rt64 patch order must apply cleanly.
+"""Patch-composition regression: every platform's series must apply and repeat.
 
 Background: the v0.8.0 release builds broke on two platforms at once while
 the local Windows build stayed green. Linux failed to compile because patch
 0024 referenced a Windows-only DXIL shader blob without a platform guard, and
 Android failed to configure because patch 0013 (Android-only) inserts a blank
 line that patch 0030's DXC hunk requires to be absent. Both slipped through
-because each platform applies a different patch subset before the shared
-CMake series.
+because each platform applies a different subset of patches/series.txt.
 
-The tests below replay each platform's exact rt64 order â€” script patches
-(with ``--ignore-whitespace``, as the scripts apply them), then the CMake
-series from CMakeLists.txt (plain ``git apply``, as lambo_frontend_patch
-does) â€” inside a disposable worktree of the pinned rt64 submodule, and lock
-in the platform guard for DXIL-blob uses. Platform orders mirror build.ps1
-(Windows), build.sh (Linux), and scripts/build_android.py (Android); the
-CMake series is shared. Plume patches (0004/0014/0023/0028) are out of scope:
-they target the nested plume submodule identically on all platforms, so they
-cannot cause platform divergence.
+The tests below run the production applier, tools/apply_patches.py, against
+disposable worktrees of the pinned submodules: every platform's series must
+apply, a second run must recognize it, and a checkout part-way through the
+series must be completed without losing unrelated local files.
 """
-import re
 import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from scripts import build_android as android
-from tools.check_patch_series import SCRIPT_SERIES, CMAKE_SERIES, validate
+
+from tools.apply_patches import PLATFORMS, PatchError, apply_series, series_for
 
 ROOT = Path(__file__).resolve().parents[1]
 PATCHES_DIR = ROOT / "patches"
 RT64_DIR = ROOT / "lib" / "rt64"
+PLUME = "lib/rt64/src/contrib/plume"
+SUBMODULES = ("lib/N64ModernRuntime", "lib/rt64", PLUME, "lib/RecompFrontend")
 
-class PatchWiringTests(unittest.TestCase):
-    def test_replay_matrix_matches_build_inputs(self):
-        validate(ROOT)
+
+def git(*args, cwd=ROOT):
+    return subprocess.check_output(["git", *args], cwd=cwd, stderr=subprocess.STDOUT)
 
 
 def resolve_patch(number):
@@ -42,117 +37,86 @@ def resolve_patch(number):
     return matches[0]
 
 
-@unittest.skipUnless(
-    (ROOT / "lib" / "rt64" / ".git").exists(), "lib/rt64 submodule not initialized"
-)
-class PatchCompositionTests(unittest.TestCase):
-    def replay(self, platform, cmake_series=CMAKE_SERIES):
-        """Apply a platform's full rt64 order in a throwaway worktree."""
-        sha = subprocess.check_output(
-            ["git", "rev-parse", "HEAD:lib/rt64"], cwd=ROOT, text=True
-        ).strip()
-        tmp = tempfile.TemporaryDirectory(prefix="lambo-patch-compose-")
-        self.addCleanup(tmp.cleanup)
-        tree = Path(tmp.name) / "rt64"
-        self.git("-C", str(RT64_DIR), "worktree", "add", "--detach", str(tree), sha)
-        self.addCleanup(
-            subprocess.run,
-            ["git", "-C", str(RT64_DIR), "worktree", "remove", "--force", str(tree)],
-            cwd=ROOT,
-            capture_output=True,
-        )
-        ordered = [resolve_patch(n) for n in SCRIPT_SERIES[platform]]
-        for patch in ordered:
-            self.apply(tree, patch, ["--ignore-whitespace"], platform)
-        for number in cmake_series:
-            self.apply(tree, resolve_patch(number), [], platform)
-        return tree
+def checkout(test, directory):
+    """Return a detached worktree of a submodule at its pinned commit."""
+    source = ROOT / directory
+    parent = Path(git("rev-parse", "--show-superproject-working-tree", cwd=source).decode().strip())
+    relative = source.resolve().relative_to(parent.resolve()).as_posix()
+    sha = git("rev-parse", f"HEAD:{relative}", cwd=parent).decode().strip()
+    temporary = tempfile.TemporaryDirectory(prefix="lambo-patch-compose-")
+    test.addCleanup(temporary.cleanup)
+    tree = Path(temporary.name) / Path(directory).name
+    git("-C", str(source), "worktree", "add", "--detach", str(tree), sha)
+    test.addCleanup(subprocess.run, ["git", "-C", str(source), "worktree", "remove", "--force", str(tree)],
+                    capture_output=True)
+    return tree
 
-    def apply(self, tree, patch, flags, platform):
-        check = subprocess.run(
-            ["git", "-C", str(tree), "apply", *flags, "--check", str(patch)],
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(
-            check.returncode,
-            0,
-            f"{platform}: {patch.name} does not apply onto its predecessors:\n"
-            + check.stderr,
-        )
-        apply = subprocess.run(
-            ["git", "-C", str(tree), "apply", *flags, str(patch)],
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(
-            apply.returncode, 0, f"{platform}: applying {patch.name} failed:\n" + apply.stderr
-        )
 
-    def git(self, *args):
-        return subprocess.check_output(
-            ["git", *args], cwd=ROOT, stderr=subprocess.STDOUT
-        )
+def reset(tree):
+    git("-C", str(tree), "reset", "-q", "--hard", "HEAD")
+    git("-C", str(tree), "clean", "-fdqx")
 
-    def test_windows_series_composes(self):
-        self.replay("windows")
 
-    @unittest.skipUnless(shutil.which("cmake"), "cmake unavailable")
-    def test_repeated_configure_accepts_applied_rt64_series(self):
-        tree = self.replay("android")
-        root = tree.parent
-        shutil.copytree(PATCHES_DIR, root / "patches")
-        frontend = (ROOT / "cmake/Frontend.cmake").read_text(encoding="utf-8")
-        function = re.search(r"find_package\(Git REQUIRED\).*?endfunction\(\)", frontend, re.S).group(0)
-        cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
-        steps = cmake[cmake.index("# Later RT64 patches"):cmake.index("# --- RT64 renderer boundary")]
-        steps = steps.replace("${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64", tree.as_posix())
-        script = root / "rt64_patches.cmake"
-        script.write_text(function + "\n" + steps, encoding="utf-8")
-        for run in ("first", "second"):
-            result = subprocess.run(["cmake", "-P", str(script)], cwd=root, capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, f"{run} configure:\n{result.stderr}")
+def snapshot(tree):
+    """Changed and untracked files plus the raw index, to prove they are kept."""
+    changed = git("-C", str(tree), "diff", "--name-only", "-z", "HEAD")
+    untracked = git("-C", str(tree), "ls-files", "--others", "--exclude-standard", "-z")
+    files = {name: (tree / name.decode()).read_bytes()
+             for name in (changed + untracked).split(b"\0") if name}
+    index = Path(git("-C", str(tree), "rev-parse", "--git-path", "index").decode().strip())
+    if not index.is_absolute():
+        index = tree / index
+    return files, index.read_bytes()
 
-    def test_linux_series_composes(self):
-        self.replay("linux")
 
-    def test_android_series_composes(self):
-        self.replay("android")
+@unittest.skipUnless(all((ROOT / directory / ".git").exists() for directory in SUBMODULES),
+                     "dependency submodules not initialized")
+class SeriesReplayTests(unittest.TestCase):
+    def test_every_platform_series_applies_then_repeats(self):
+        for directory in SUBMODULES:
+            tree = checkout(self, directory)
+            for platform in PLATFORMS:
+                patches = series_for(platform)[directory]
+                with self.subTest(directory=directory, platform=platform):
+                    reset(tree)
+                    self.assertEqual(apply_series(tree, patches), len(patches))
+                    self.assertEqual(apply_series(tree, patches), 0)
 
-    def snapshot(self, tree):
-        changed = self.git("-C", str(tree), "diff", "--name-only", "-z", "HEAD")
-        untracked = self.git("-C", str(tree), "ls-files", "--others", "--exclude-standard", "-z")
-        files = {name: (tree / name.decode()).read_bytes()
-                 for name in (changed + untracked).split(b"\0") if name}
-        index = Path(self.git("-C", str(tree), "rev-parse", "--git-path", "index").decode().strip())
-        return files, index.read_bytes()
+    def test_tree_patched_for_another_platform_is_rejected(self):
+        tree = checkout(self, "lib/rt64")
+        apply_series(tree, series_for("windows")["lib/rt64"])
+        before = snapshot(tree)
+        with self.assertRaisesRegex(PatchError, "another platform"):
+            apply_series(tree, series_for("android")["lib/rt64"])
+        self.assertEqual(snapshot(tree), before)
 
-    def prepare_android(self, tree):
-        android.apply_patch_series(
-            tree, [resolve_patch(n) for n in SCRIPT_SERIES["android"]],
-            [resolve_patch(n) for n in CMAKE_SERIES])
+    def test_partial_series_is_completed_and_local_files_kept(self):
+        # Issue 351 reported a checkout stopped before 0042; every boundary
+        # between independently added groups must be completed the same way.
+        tree = checkout(self, "lib/rt64")
+        patches = series_for("android")["lib/rt64"]
+        names = [patch.name[:4] for patch in patches]
+        for applied in sorted({0, names.index("0021"), names.index("0042"), len(patches) - 1}):
+            with self.subTest(applied=names[applied - 1] if applied else "none"):
+                reset(tree)
+                apply_series(tree, patches[:applied])
+                personal = tree / "personal.txt"
+                personal.write_bytes(b"keep my staged file\n")
+                git("-C", str(tree), "add", "personal.txt", "src/hle/rt64_game_frame.cpp")
+                personal.write_bytes(b"keep my unstaged edit\r\n")
+                (tree / "notes.txt").write_bytes(b"keep my untracked notes\r\n")
+                files, index = snapshot(tree)
+                self.assertEqual(apply_series(tree, patches), len(patches) - applied)
+                after_files, after_index = snapshot(tree)
+                self.assertEqual(after_index, index)
+                for name in (b"personal.txt", b"notes.txt"):
+                    self.assertEqual(after_files[name], files[name])
+                self.assertEqual(apply_series(tree, patches), 0)
 
-    def test_android_preparation_preserves_each_composed_cmake_prefix(self):
-        tree = self.replay("android", cmake_series=[])
-        # Keep staged, unstaged and untracked developer files through every
-        # preparation, including the pre-0042 series reported in issue 351.
-        personal = tree / "personal.txt"
-        personal.write_bytes(b"keep my staged file\n")
-        self.git("-C", str(tree), "add", "personal.txt", "src/hle/rt64_game_frame.cpp")
-        personal.write_bytes(b"keep my unstaged edit\r\n")
-        (tree / "notes.txt").write_bytes(b"keep my untracked notes\r\n")
-        for number in CMAKE_SERIES:
-            with self.subTest(cmake_patch=number):
-                self.apply(tree, resolve_patch(number), [], "android")
-                before = self.snapshot(tree)
-                self.prepare_android(tree)
-                self.assertEqual(self.snapshot(tree), before)
-        # Also exercise a second preparation of the complete current series.
-        self.prepare_android(tree)
-        self.assertEqual(self.snapshot(tree), before)
-
-    def test_android_preparation_rejects_drift_despite_later_patch(self):
-        tree = self.replay("android")
+    def test_drift_is_rejected_despite_later_patch(self):
+        tree = checkout(self, "lib/rt64")
+        patches = series_for("android")["lib/rt64"]
+        apply_series(tree, patches)
         for relative, old, new in (
             ("src/hle/rt64_game_frame.cpp", b"#include <chrono>", b"// local edit"),
             ("CMakeLists.txt", b"set(DXC ${LAMBO_HOST_DXC})", b"set(DXC local-dxc)"),
@@ -163,136 +127,74 @@ class PatchCompositionTests(unittest.TestCase):
                 original = path.read_bytes()
                 self.assertIn(old, original)
                 path.write_bytes(original.replace(old, new, 1))
-                self.git("-C", str(tree), "add", relative)
-                # A marker-only guard would accept this incomplete series.
-                self.git("-C", str(tree), "apply", "--reverse", "--check", str(resolve_patch("0039")))
-                before = self.snapshot(tree)
-                with self.assertRaisesRegex(RuntimeError, "Patch series conflicts"):
-                    self.prepare_android(tree)
-                self.assertEqual(self.snapshot(tree), before)
+                git("-C", str(tree), "add", relative)
+                # Checking only the newest patch would accept this incomplete series.
+                git("-C", str(tree), "apply", "--reverse", "--check", str(patches[-1]))
+                before = snapshot(tree)
+                with self.assertRaisesRegex(PatchError, "does not match any prefix"):
+                    apply_series(tree, patches)
+                self.assertEqual(snapshot(tree), before)
                 path.write_bytes(original)
+                git("-C", str(tree), "add", relative)
 
 
-@unittest.skipUnless(
-    (ROOT / "lib" / "rt64" / "src" / "contrib" / "plume" / ".git").exists()
-    and shutil.which("cmake"),
-    "plume submodule or cmake unavailable",
-)
-class PlumeRepeatConfigureTests(unittest.TestCase):
-    """build.ps1 configures twice, so the plume patch steps must run twice."""
+@unittest.skipUnless((ROOT / PLUME / ".git").exists(), "plume submodule not initialized")
+class PlumeSeriesTests(unittest.TestCase):
+    def setUp(self):
+        self.tree = checkout(self, PLUME)
+        self.patches = series_for("android")[PLUME]
 
-    def plume_steps(self):
-        frontend = (ROOT / "cmake" / "Frontend.cmake").read_text(encoding="utf-8")
-        function = re.search(r"find_package\(Git REQUIRED\).*?endfunction\(\)", frontend, re.S)
-        cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
-        steps = re.search(r"include\(cmake/Frontend\.cmake\)\n(.*?)\n# Later RT64 patches", cmake, re.S)
-        self.assertTrue(function and steps, "patch step markers moved")
-        self.assertIn("contrib/plume", steps.group(1))
-        return function.group(0) + "\n" + steps.group(1) + "\n"
-
-    def plume_checkout(self):
-        sha = subprocess.check_output(
-            ["git", "rev-parse", "HEAD:src/contrib/plume"], cwd=RT64_DIR, text=True
-        ).strip()
-        tmp = tempfile.TemporaryDirectory(prefix="lambo-plume-configure-")
-        self.addCleanup(tmp.cleanup)
-        root = Path(tmp.name)
-        shutil.copytree(PATCHES_DIR, root / "patches")
-        tree = root / "lib" / "rt64" / "src" / "contrib" / "plume"
-        plume = RT64_DIR / "src" / "contrib" / "plume"
-        subprocess.check_call(["git", "-C", str(plume), "worktree", "add", "--detach", str(tree), sha],
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self.addCleanup(subprocess.run, ["git", "-C", str(plume), "worktree", "remove", "--force", str(tree)],
-                        capture_output=True)
-        # Match the Android prefix used by the recording fixtures too.
-        subprocess.run(["git", "-C", str(tree), "apply", str(resolve_patch("0014"))],
-                       check=True, capture_output=True)
-        return root, tree
-
-    def configure(self, root, steps, label):
-        script = root / "plume_patches.cmake"
-        script.write_text(steps, encoding="utf-8")
-        result = subprocess.run(["cmake", "-P", str(script)], cwd=root, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, f"{label} configure:\n{result.stderr}")
-
-    def test_second_configure_accepts_applied_plume_series(self):
-        root, tree = self.plume_checkout()
-        for run in ("first", "second"):
-            self.configure(root, self.plume_steps(), run)
-        self.assertTrue(subprocess.check_output(["git", "-C", str(tree), "diff", "--stat"]))
+    def test_recording_fixture_matches_applied_series(self):
+        apply_series(self.tree, self.patches)
         from tests.patched_source import patched_file
-        plume = RT64_DIR / "src/contrib/plume"
-        recording = root / "recording"
+        recording = self.tree.parent / "recording"
         for name in ("plume_vulkan.cpp", "plume_vulkan.h"):
-            patched_file(plume, name, recording)
-            self.assertEqual((recording / name).read_bytes(), (tree / name).read_bytes(),
-                             f"recording fixture differs from repeated CMake result: {name}")
+            patched_file(ROOT / PLUME, name, recording)
+            self.assertEqual((recording / name).read_bytes(), (self.tree / name).read_bytes(),
+                             f"recording fixture differs from the applied series: {name}")
 
-    def test_upgrade_from_original_mapped_memory_patch_preserves_edits(self):
-        self.check_mapping_upgrade(from_recovery=False)
+    def test_upgrade_from_earlier_mapping_patches_preserves_edits(self):
+        names = [patch.name[:4] for patch in self.patches]
+        for last in ("0050", "0052"):
+            with self.subTest(previous_state=last):
+                reset(self.tree)
+                self.check_upgrade(names.index(last) + 1)
 
-    def test_upgrade_from_recovery_patch_preserves_edits(self):
-        self.check_mapping_upgrade(from_recovery=True)
-
-    def check_mapping_upgrade(self, from_recovery):
-        root, tree = self.plume_checkout()
-        patch = resolve_patch("0050")
-        # Freeze the first published patch as data, independent of Git history
-        # availability in CI. Upgrading an applied patch is a different case
-        # from configuring the latest revision twice.
-        shutil.copyfile(ROOT / "tests/fixtures/plume_mapped_memory_v1.patch", root / "patches" / patch.name)
-        steps = self.plume_steps()
-        final_patch = resolve_patch("0052").name if from_recovery else patch.name
-        prefix_end = steps.index("\n", steps.rindex(final_patch)) + 1
-        prefix = steps[:prefix_end]
-        # The selected prefix can end inside recognition guards. Close only
-        # those active conditionals so the production prefix runs unchanged.
-        depth = sum(bool(re.match(r"\s*if\(", line)) - bool(re.match(r"\s*endif\(", line))
-                    for line in prefix.splitlines())
-        self.assertGreaterEqual(depth, 0)
-        self.configure(root, prefix + "\nendif()" * depth, "previous mapping patch state")
-
-        cpp = tree / "plume_vulkan.cpp"
-        header = tree / "plume_vulkan.h"
+    def check_upgrade(self, applied):
+        apply_series(self.tree, self.patches[:applied])
+        cpp = self.tree / "plume_vulkan.cpp"
+        header = self.tree / "plume_vulkan.h"
         cpp.write_bytes(cpp.read_bytes() + b"\n// Keep this unrelated developer edit.\n")
         header.write_bytes(header.read_bytes() + b"\n// Keep this unrelated header edit.\n")
-        note = tree / "personal.txt"
+        note = self.tree / "personal.txt"
         note.write_bytes(b"staged note\n")
-        subprocess.run(["git", "add", "personal.txt"], cwd=tree, check=True)
+        git("-C", str(self.tree), "add", "personal.txt")
         note.write_bytes(b"unstaged note\r\n")
-        untracked = tree / "untracked.txt"
-        untracked.write_bytes(b"keep untracked note\r\n")
-        index = Path(subprocess.check_output(["git", "rev-parse", "--git-path", "index"],
-                                            cwd=tree, text=True).strip())
-        before = {path: path.read_bytes() for path in (note, untracked, index)}
-        expected = root / "expected"
+        (self.tree / "untracked.txt").write_bytes(b"keep untracked note\r\n")
+        index = Path(git("-C", str(self.tree), "rev-parse", "--git-path", "index").decode().strip())
+        kept = {path: path.read_bytes() for path in (note, self.tree / "untracked.txt", index)}
+
+        expected = self.tree.parent / "expected"
+        shutil.rmtree(expected, ignore_errors=True)
         expected.mkdir()
         (expected / "plume_vulkan.cpp").write_bytes(cpp.read_bytes())
         (expected / "plume_vulkan.h").write_bytes(header.read_bytes())
-        suffix = ["0053", "0055"] if from_recovery else ["0051", "0052", "0053", "0055"]
-        for number in suffix:
+        for patch in self.patches[applied:]:
             subprocess.run(["git", "apply", "--include=plume_vulkan.cpp", "--include=plume_vulkan.h",
-                            str(resolve_patch(number))], cwd=expected, check=True, capture_output=True)
-        expected_cpp = (expected / "plume_vulkan.cpp").read_bytes()
-        expected_header = (expected / "plume_vulkan.h").read_bytes()
+                            str(patch)], cwd=expected, check=True, capture_output=True)
 
-        shutil.copyfile(patch, root / "patches" / patch.name)
-        self.configure(root, steps, "upgrade from original mapping patch")
-        self.assertEqual({path: path.read_bytes() for path in before}, before)
-        self.assertEqual(cpp.read_bytes(), expected_cpp)
-        self.assertEqual(header.read_bytes(), expected_header)
+        self.assertEqual(apply_series(self.tree, self.patches), len(self.patches) - applied)
+        self.assertEqual({path: path.read_bytes() for path in kept}, kept)
+        self.assertEqual(cpp.read_bytes(), (expected / "plume_vulkan.cpp").read_bytes())
+        self.assertEqual(header.read_bytes(), (expected / "plume_vulkan.h").read_bytes())
         comment = b"Invalidating read maps cannot nest; finish and flush active mappings first."
         self.assertEqual(header.read_bytes().count(comment), 1)
-        upgraded_header = header.read_bytes()
-        self.configure(root, steps, "repeat upgraded mapping patch")
-        self.assertEqual(header.read_bytes(), upgraded_header)
-        self.assertEqual(cpp.read_bytes(), expected_cpp)
-        self.assertEqual({path: path.read_bytes() for path in before}, before)
+        self.assertEqual(apply_series(self.tree, self.patches), 0)
 
 
 class DxilGuardTests(unittest.TestCase):
     def test_dxil_blob_use_arrives_with_platform_guard(self):
-        # DXIL shader blobs are only generated (and declared) on Windows â€”
+        # DXIL shader blobs are only generated (and declared) on Windows:
         # rt64's CMake builds them under if(WIN32). Any patch hunk that
         # references a BlobDXIL symbol must bring its own _WIN32 guard, or
         # non-Windows builds fail with "not declared in this scope".

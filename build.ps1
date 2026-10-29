@@ -13,21 +13,18 @@
          and MinGW's bin ahead of any cc shim.
       2. Initialise submodules (recursive; long paths for RT64's deep nesting).
       3. ROM check (skippable via -RomPath; CI forwards its $env:ROM_FILENAME).
-      4. Defensive submodule reset before patching (a half-applied patch from a
-         prior run would otherwise break the next apply).
-      5. Apply Lamborghini patches (Windows: 0001, 0007, 0012, 0006, 0005, 0009, 0010, 0011, 0004) with
-         --ignore-whitespace (CRLF mismatches on Windows git). 0007 adds the
-         save-state thread-context registry; without it, src/lambo_savestate.c
-         fails to link with "undefined reference to ultramodern_relink_thread_contexts".
-      6. First CMake configure (without RecompiledFuncs/ yet — that's the
+      4. Reset the patched dependencies and apply patches/series.txt with
+         tools/apply_patches.py (a run that died mid-apply would otherwise
+         leave patch-created files that block the next apply).
+      5. First CMake configure (without RecompiledFuncs/ yet — that's the
          whole point: build the recompiler tools first).
-      7. Build N64RecompCLI + RSPRecomp.
-      8. Run them against the ROM to (re)generate RecompiledFuncs/ and
+      6. Build N64RecompCLI + RSPRecomp.
+      7. Run them against the ROM to (re)generate RecompiledFuncs/ and
          src/aspMain.cpp (git-ignored; deterministic given the ROM).
-      9. SECOND CMake configure — picks up the newly generated sources via
+      8. SECOND CMake configure — picks up the newly generated sources via
          CONFIGURE_DEPENDS / EXISTS checks. Without this, src/aspMain.cpp is
          silently excluded.
-     10. Build lamborghini_modern.exe and run the Windows RDRAM allocation
+      9. Build lamborghini_modern.exe and run the Windows RDRAM allocation
          regression test.
 
     The output binary lands at build\lamborghini_modern.exe (run from the repo
@@ -168,9 +165,9 @@ try {
     # `git apply` invocations for 0004/0005 also honour it (RT64's deep
     # nesting can produce paths >260 chars). Match that here.
     git config --global core.longpaths true | Out-Null
-    # The Windows runner's git may inject CRLF on checkout; --ignore-whitespace
-    # in the apply step below neutralises that, but autocrlf=false is also
-    # defensive (CI runs this too).
+    # The Windows runner's git may inject CRLF on checkout; the patch tool
+    # tolerates whitespace-only context differences, but autocrlf=false is
+    # also defensive (CI runs this too).
     git config --global core.autocrlf false | Out-Null
     if ($PreserveSubmodules) {
         Write-Host "`n[1/5] Verifying existing submodule pins..." -ForegroundColor Cyan
@@ -186,107 +183,25 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'submodule update failed.' }
     }
 
-    # --- 5. Defensive submodule reset -----------------------------------------
-    # A prior run that patched only partially (or died mid-apply) would otherwise
-    # break the next apply: checkout restores tracked files, but patch-created new
-    # files survive as untracked and make `git apply --check` fail with "already
-    # exists in working directory". clean removes them. Nested submodules are left
-    # alone (clean needs -ff to recurse), so `git submodule update --init` stays
-    # authoritative for those. Keep this complete instead of listing patch-created
-    # paths by hand: such a list drifts from patches/ every time a patch adds a file.
-    # Cover every submodule patched by the scripts or cmake/Frontend.cmake.
-    # Keep this list aligned with patches/README.md; lambo_frontend_patch refuses
-    # conflicting edits rather than resetting them.
-    if (-not $PreserveSubmodules) {
-        Write-Host "[2/5] Resetting submodules to clean state before patching..." -ForegroundColor Cyan
-        foreach ($sub in @('lib/N64ModernRuntime', 'lib/rt64', 'lib/rt64/src/contrib/plume', 'lib/RecompFrontend')) {
-            git -C $sub checkout -- . | Out-Null
-            git -C $sub clean -fd | Out-Null
-        }
-    }
+    # --- 5. Reset and patch dependencies -------------------------------------
+    # The ordinary build reconstructs dependency files: a run that died
+    # mid-apply leaves patch-created files behind that would block the next
+    # apply. -PreserveSubmodules keeps local dependency edits; the tool then
+    # applies only what is missing and stops on conflicts. patches/series.txt
+    # names the directories and patches; CMake configure re-checks the series.
+    Write-Host "[2/5] Applying patches/series.txt..." -ForegroundColor Cyan
+    $PatchArgs = @('tools/apply_patches.py', '--platform', 'windows')
+    if (-not $PreserveSubmodules) { $PatchArgs += '--reset' }
+    & python @PatchArgs
+    if ($LASTEXITCODE -ne 0) { throw 'dependency patches were not applied.' }
 
-    # --- 6. Apply Lamborghini patches (Windows: 0001, 0007, 0012, 0006, 0005, 0009, 0010, 0011, 0004) -
-    # Mirrors CI's Windows job exactly (workflow lines 210-214). 0001 then 0007
-    # both patch N64ModernRuntime with disjoint hunks (verified to apply
-    # sequentially on the pinned commit). 0007 adds the save-state thread-
-    # context registry + `ultramodern_relink_thread_contexts` (issue #22, all
-    # platforms). Without it, src/lambo_savestate.c fails to link with
-    # "undefined reference to `ultramodern_relink_thread_contexts`".
-    # 0012 reserves the 4 GiB guest address range while committing only the
-    # accessible 512 MiB, avoiding false out-of-memory failures on Windows.
-    # Patch paths MUST be absolute — `git -C $sub apply $relpath` runs from
-    # inside the submodule, where the relative path doesn't resolve. CI uses
-    # "$(pwd)/patches/..." for the same reason.
-    Write-Host "[2/5] Applying Lamborghini submodule patches..." -ForegroundColor Cyan
-    $patches = @(
-        @{ Sub = 'lib/N64ModernRuntime';       Patch = 'patches/0001-lamborghini-runtime-scheduler-audio-vi.patch' },
-        @{ Sub = 'lib/N64ModernRuntime';       Patch = 'patches/0007-ultramodern-savestate-thread-context-relink.patch' },
-        @{ Sub = 'lib/N64ModernRuntime';       Patch = 'patches/0012-n64modernruntime-lazy-rdram-commit.patch' },
-        @{ Sub = 'lib/rt64';                   Patch = 'patches/0006-rt64-interp-angular-velocity-matching.patch' },
-        @{ Sub = 'lib/rt64';                   Patch = 'patches/0005-rt64-mingw-gcc-compat.patch' },
-        @{ Sub = 'lib/rt64';                   Patch = 'patches/0009-rt64-widescreen-split-subviewport.patch' },
-        @{ Sub = 'lib/rt64';                   Patch = 'patches/0010-rt64-intel-explicit-d3d12-escape-hatch.patch' },
-        @{ Sub = 'lib/rt64';                   Patch = 'patches/0011-rt64-fov-independent-backdrop.patch' },
-        @{ Sub = 'lib/rt64/src/contrib/plume'; Patch = 'patches/0004-plume-d3d12-mingw-com-abi-struct-return.patch' }
-    )
-    # Later RT64 patches change the context of earlier patches. As in CMake,
-    # recognize the final candidate or metadata patch before replaying the series.
-    # This guard is needed when dependency files are explicitly preserved.
-    $Rt64SeriesApplied = $false
-    if ($PreserveSubmodules) {
-        foreach ($GuardPatch in @('0039-rt64-shadow-traversal-performance.patch',
-                                 '0038-rt64-sun-shadow-robust-scene.patch',
-                                 '0030-rt64-sun-shadow-receiver.patch',
-                                 '0029-rt64-native-game-alpha-evidence.patch',
-                                 '0027-rt64-native-ray-candidate-coverage.patch',
-                                 '0025-rt64-workload-shadow-metadata.patch')) {
-            $Rt64Guard = Join-Path $RepoRoot "patches/$GuardPatch"
-            & git.exe -C lib/rt64 apply --reverse --check $Rt64Guard 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) { $Rt64SeriesApplied = $true; break }
-        }
-    }
-    foreach ($p in $patches) {
-        if ($Rt64SeriesApplied -and $p.Sub -eq 'lib/rt64') {
-            Write-Host "  skipped  $($p.Sub) <- $($p.Patch) (final RT64 patch present)" -ForegroundColor DarkGray
-            continue
-        }
-        $PatchAbs = Join-Path $RepoRoot $p.Patch
-        # Idempotency check: distinguish three states.
-        #   (a) --check 0      -> not yet applied, will apply cleanly
-        #   (b) --check !=0 && --reverse --check 0 -> already applied
-        #   (c) --check !=0 && --reverse --check !=0 -> context drift (submodule changed)
-        # Without distinguishing (b) from (c), drift silently masquerades as
-        # 'already applied' and produces a confusing compile error much later.
-        #
-        # NB: use `git.exe` (not `git`) + `2>&1 | Out-Null` to bypass any
-        # PowerShell module wrapper (e.g. posh-git) that intercepts stderr.
-        # patch 0001 emits ~300 "trailing whitespace" lines that git considers
-        # non-fatal but a wrapper may promote to terminating errors under
-        # $ErrorActionPreference='Stop'. (git apply has no --quiet option — it
-        # exits 129 "unknown option", which the fresh-worktree path misreads as
-        # drift and throws before applying any patch.)
-        & git.exe -C $p.Sub apply --ignore-whitespace --check $PatchAbs 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            & git.exe -C $p.Sub apply --ignore-whitespace $PatchAbs 2>&1 | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "patch failed: $($p.Sub) <- $($p.Patch)" }
-            Write-Host "  applied  $($p.Sub) <- $($p.Patch)" -ForegroundColor Green
-        } else {
-            & git.exe -C $p.Sub apply --ignore-whitespace --reverse --check $PatchAbs 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "  skipped  $($p.Sub) <- $($p.Patch) (already applied)" -ForegroundColor DarkGray
-            } else {
-                throw "patch $($p.Patch) does not apply cleanly to $($p.Sub) and is not already applied - likely submodule drift (upstream context changed). Re-pull the submodule or refresh the patch."
-            }
-        }
-    }
-
-    # --- 7. Optional clean ----------------------------------------------------
+    # --- 6. Optional clean ----------------------------------------------------
     if ($Clean -and (Test-Path build)) {
         Write-Host "`n[clean] Removing build/..." -ForegroundColor Yellow
         Remove-Item -Recurse -Force build
     }
 
-    # --- 8. CMake configure (FIRST) -------------------------------------------
+    # --- 7. CMake configure (FIRST) -------------------------------------------
     # Pin compilers explicitly: on this box a `cc` shim may sit ahead of gcc in
     # PATH and CMake's auto-detection would otherwise pick it up — "C compiler
     # is broken" at project() time.
@@ -298,12 +213,12 @@ try {
         -DCMAKE_CXX_COMPILER=g++.exe
     if ($LASTEXITCODE -ne 0) { throw 'cmake configure failed.' }
 
-    # --- 9. Build the recompiler tools ----------------------------------------
+    # --- 8. Build the recompiler tools ----------------------------------------
     Write-Host "[4/5] Building N64RecompCLI + RSPRecomp..." -ForegroundColor Cyan
     & $cmake --build build --target N64RecompCLI RSPRecomp -j
     if ($LASTEXITCODE -ne 0) { throw 'recompiler tool build failed.' }
 
-    # --- 10. Regenerate the ROM-derived translations --------------------------
+    # --- 9. Regenerate the ROM-derived translations --------------------------
     Write-Host "[4/5] Regenerating RecompiledFuncs/ and src/aspMain.cpp..." -ForegroundColor Cyan
     # Normalise the path to backslashes. PowerShell's `&` call operator hands
     # the literal string to CreateProcessW, which on some Windows builds
@@ -317,7 +232,7 @@ try {
     & $rsprecomp aspMain.us.toml
     if ($LASTEXITCODE -ne 0) { throw 'RSPRecomp failed.' }
 
-    # --- 11. CMake configure (SECOND) -----------------------------------------
+    # --- 10. CMake configure (SECOND) -----------------------------------------
     # Required: CMakeLists uses if(EXISTS src/aspMain.cpp) and a CONFIGURE_DEPENDS
     # glob for RecompiledFuncs/. The EXISTS check is configure-time only; the
     # second configure wires in the freshly generated files. Without it, the
@@ -329,12 +244,12 @@ try {
         -DCMAKE_CXX_COMPILER=g++.exe
     if ($LASTEXITCODE -ne 0) { throw 'cmake second configure failed.' }
 
-    # --- 12. Build lamborghini_modern -----------------------------------------
+    # --- 11. Build lamborghini_modern -----------------------------------------
     Write-Host "`n[5/5] Building lamborghini_modern..." -ForegroundColor Cyan
     & $cmake --build build --target lamborghini_modern -j
     if ($LASTEXITCODE -ne 0) { throw 'lamborghini_modern build failed.' }
 
-    # --- 13. Run the startup-allocation regression ---------------------------
+    # --- 12. Run the startup-allocation regression ---------------------------
     # This reproduces the old eager 4 GiB commit under a 1 GiB process limit,
     # then proves the production allocator can reserve 4 GiB while committing
     # only its accessible 512 MiB prefix.
@@ -344,7 +259,7 @@ try {
     & ctest.exe --test-dir build -R '^lambo_windows_rdram_reservation$' --output-on-failure
     if ($LASTEXITCODE -ne 0) { throw 'RDRAM allocation regression test failed.' }
 
-    # --- 14. Done -------------------------------------------------------------
+    # --- 13. Done -------------------------------------------------------------
     $exe = Join-Path $RepoRoot 'build\lamborghini_modern.exe'
     if (Test-Path $exe) {
         $stamp = (Get-Item $exe).LastWriteTime

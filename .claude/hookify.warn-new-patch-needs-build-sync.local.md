@@ -9,13 +9,12 @@ conditions:
     pattern: patches[/\\][^/\\]+\.patch$
 ---
 
-After changing a dependency patch, read the application matrix in
-`patches/README.md` and run `python tools/check_patch_series.py`.
+After changing a dependency patch, list it in `patches/series.txt` (append new
+patches to their dependency's series; add platforms only if it is
+platform-specific), explain it in `patches/README.md`, and run
+`python tools/apply_patches.py`.
 
-Windows, Linux and Android script prefixes live in `build.ps1`, `build.sh`
-and `scripts/build_android.py`. Shared patches live in `CMakeLists.txt` and
-`cmake/Frontend.cmake`. Release workflows call those scripts.
-
-For an RT64 series change, update the replay matrix in
-`tools/check_patch_series.py` and run `python -m unittest
-tests.test_patch_composability -v` with `lib/rt64` initialized.
+Then replay every platform's series with
+`python -m unittest tests.test_apply_patches tests.test_patch_composability -v`
+(needs initialized submodules). Do not add a patch list anywhere else: CMake,
+the build scripts and the Android script all read `series.txt`.

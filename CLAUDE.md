@@ -13,7 +13,9 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) and the
 - `RecompiledFuncs/` and `src/aspMain.cpp` are generated and ignored. Never
   edit them. Change the checked-in generation inputs or hand-written hooks.
 - `build.ps1`, `build.sh`, and `scripts/build_android.py` define the supported
-  build sequence. `patches/README.md` lists dependency patches.
+  build sequence. `patches/series.txt` is the only list of dependency patches
+  and their order; every build path applies it with `tools/apply_patches.py`.
+  `patches/README.md` explains each patch.
 
 ## Editing rules
 

@@ -12,25 +12,21 @@
 #      git-ignored; CI fetches it from a private assets repo, locally you
 #      place it next to this script).
 #   3. Submodule init (recursive; core.longpaths isn't needed on Linux).
-#   4. Defensive submodule reset before patching (half-applied patches from a
-#      prior run would otherwise break the next apply with "patch failed: ...").
-#   5. Apply Lamborghini patches (Linux: 0001, 0007, 0012, 0006, 0009, 0010, 0011 — no MinGW/D3D12
-#      fixes needed; no plume patch). 0007 adds the save-state thread-context
-#      registry; without it, src/lambo_savestate.c fails to link with
-#      "undefined reference to ultramodern_relink_thread_contexts".
-#      --ignore-whitespace is a belt-and-suspenders guard for any CRLF drift.
-#   6. First CMake configure — the initial one runs before N64Recomp/
+#   4. Reset the patched dependencies and apply patches/series.txt with
+#      tools/apply_patches.py (a run that died mid-apply would otherwise
+#      leave patch-created files that block the next apply).
+#   5. First CMake configure — the initial one runs before N64Recomp/
 #      RSPRecomp generate sources. The CMakeLists uses if(EXISTS) on the
 #      ROM-derived files so the first configure can succeed without them.
-#   7. Build N64RecompCLI + RSPRecomp tools.
-#   8. Run them against the ROM to (re)generate RecompiledFuncs/ and
+#   6. Build N64RecompCLI + RSPRecomp tools.
+#   7. Run them against the ROM to (re)generate RecompiledFuncs/ and
 #      src/aspMain.cpp (git-ignored; deterministic given the ROM).
-#   9. SECOND CMake configure — picks up the newly generated sources. The
+#   8. SECOND CMake configure — picks up the newly generated sources. The
 #      CMakeLists uses CONFIGURE_DEPENDS on RecompiledFuncs/ globs AND
 #      if(EXISTS src/aspMain.cpp). The EXISTS check is configure-time only;
 #      the second configure wires it in. Without this, src/aspMain.cpp is
 #      silently excluded.
-#  10. Build lamborghini_modern.
+#   9. Build lamborghini_modern.
 #
 # Usage:
 #   ./build.sh           # incremental build
@@ -60,7 +56,7 @@ die()  { printf '\033[1;31mERR\033[0m  %s\n' "$*" >&2; exit 1; }
 
 log "[repo] $(pwd)"
 
-for tool in cmake gcc g++ ninja git; do
+for tool in cmake gcc g++ ninja git python3; do
     if ! command -v "$tool" >/dev/null 2>&1; then
         die "missing tool: $tool. Install with:
   sudo apt-get install -y --no-install-recommends \\
@@ -90,84 +86,33 @@ log ""
 log "[1/5] Initialising submodules..."
 git submodule update --init --recursive
 
-# --- 5. Defensive submodule reset -------------------------------------------
-# A prior run that patched only partially (or died mid-apply) would otherwise
-# break the next apply: checkout restores tracked files, but patch-created new
-# files survive as untracked and make `git apply --check` fail with "already
-# exists in working directory". clean removes them. Nested submodules are left
-# alone (clean needs -ff to recurse), so `git submodule update --init` stays
-# authoritative for those. Keep this complete instead of listing patch-created
-# paths by hand: such a list drifts from patches/ every time a patch adds a file.
-# Cover every submodule patched by the scripts or cmake/Frontend.cmake.
-# Keep this list aligned with patches/README.md; lambo_frontend_patch refuses
-# conflicting edits rather than resetting them.
-log "[2/5] Resetting submodules to clean state before patching..."
-for sub in lib/N64ModernRuntime lib/rt64 lib/rt64/src/contrib/plume lib/RecompFrontend; do
-    git -C "$sub" checkout -- .
-    git -C "$sub" clean -fd
-done
+# --- 5. Reset and patch dependencies ---------------------------------------
+# The ordinary build reconstructs dependency files: a run that died mid-apply
+# leaves patch-created files behind that would block the next apply. Nested
+# submodules are left to `git submodule update`. patches/series.txt names the
+# directories and patches; CMake configure re-checks the same series.
+log "[2/5] Resetting dependencies and applying patches/series.txt..."
+python3 tools/apply_patches.py --platform linux --reset
 
-# --- 6. Apply Lamborghini patches (Linux: 0001, 0007, 0012, 0006, 0009, 0010, 0011) ----------------
-# Mirrors CI's Linux job exactly (workflow lines 93-95). 0001 then 0007 both
-# patch N64ModernRuntime with disjoint hunks (verified to apply sequentially
-# on the pinned commit). 0007 adds the save-state thread-context registry +
-# `ultramodern_relink_thread_contexts` (issue #22, all platforms). Without it,
-# src/lambo_savestate.c fails to link with "undefined reference to
-# `ultramodern_relink_thread_contexts`". 0012 reserves the 4 GiB guest address
-# range while committing only the accessible 512 MiB.
-log "[2/5] Applying Lamborghini submodule patches..."
-PATCHES=(
-    "lib/N64ModernRuntime:0001-lamborghini-runtime-scheduler-audio-vi.patch"
-    "lib/N64ModernRuntime:0007-ultramodern-savestate-thread-context-relink.patch"
-    "lib/N64ModernRuntime:0012-n64modernruntime-lazy-rdram-commit.patch"
-    "lib/rt64:0006-rt64-interp-angular-velocity-matching.patch"
-    "lib/rt64:0009-rt64-widescreen-split-subviewport.patch"
-    "lib/rt64:0010-rt64-intel-explicit-d3d12-escape-hatch.patch"
-    "lib/rt64:0011-rt64-fov-independent-backdrop.patch"
-)
-for entry in "${PATCHES[@]}"; do
-    sub="${entry%%:*}"
-    patch="${entry#*:}"
-    # Patch paths MUST be absolute — `git -C "$sub"` changes CWD into the
-    # submodule, so a relative path would resolve to `$sub/patches/$patch`
-    # (not the repo root's patches/). CI's original inline step used
-    # `$(pwd)/patches/...` for the same reason. Without this, apply --check
-    # fails with "can't open patch" and the script dies with a misleading
-    # "does not apply cleanly" error.
-    patch_abs="$SCRIPT_DIR/patches/$patch"
-    # Idempotency check: distinguish three states.
-    #   (a) --check 0                                         -> not yet applied
-    #   (b) --check !=0 && --reverse --check 0               -> already applied
-    #   (c) --check !=0 && --reverse --check !=0             -> context drift
-    if git -C "$sub" apply --ignore-whitespace --check "$patch_abs" >/dev/null 2>&1; then
-        git -C "$sub" apply --ignore-whitespace "$patch_abs"
-        echo "  applied  $sub <- $patch"
-    elif git -C "$sub" apply --ignore-whitespace --reverse --check "$patch_abs" >/dev/null 2>&1; then
-        echo "  skipped  $sub <- $patch (already applied)"
-    else
-        die "patch $patch does not apply cleanly to $sub and is not already applied — likely submodule drift (upstream context changed). Re-pull the submodule or refresh the patch."
-    fi
-done
-
-# --- 7. Optional clean ------------------------------------------------------
+# --- 6. Optional clean ------------------------------------------------------
 if [ "$CLEAN" -eq 1 ] && [ -d build ]; then
     log ""
     log "[clean] Removing build/..."
     rm -rf build
 fi
 
-# --- 8. CMake configure (FIRST) ---------------------------------------------
+# --- 7. CMake configure (FIRST) ---------------------------------------------
 log ""
 log "[3/5] Configuring CMake (first pass)..."
 mkdir -p build
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
 
-# --- 9. Build recompiler tools ----------------------------------------------
+# --- 8. Build recompiler tools ----------------------------------------------
 log "[4/5] Building N64RecompCLI + RSPRecomp..."
 cmake --build build --target N64RecompCLI RSPRecomp -j"$NPROC"
 
-# --- 10. Regenerate ROM-derived translations --------------------------------
+# --- 9. Regenerate ROM-derived translations --------------------------------
 log "[4/5] Regenerating RecompiledFuncs/ and src/aspMain.cpp..."
 N64RECOMP=build/lib/N64ModernRuntime/librecomp/N64Recomp/N64Recomp
 RSPRECOMP=build/lib/N64ModernRuntime/librecomp/N64Recomp/RSPRecomp
@@ -176,17 +121,17 @@ RSPRECOMP=build/lib/N64ModernRuntime/librecomp/N64Recomp/RSPRecomp
 "$N64RECOMP" lamborghini.us.toml
 "$RSPRECOMP" aspMain.us.toml
 
-# --- 11. CMake configure (SECOND) -------------------------------------------
+# --- 10. CMake configure (SECOND) -------------------------------------------
 log "[4/5] Configuring CMake (second pass — wires in generated sources)..."
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
 
-# --- 12. Build lamborghini_modern -------------------------------------------
+# --- 11. Build lamborghini_modern -------------------------------------------
 log ""
 log "[5/5] Building lamborghini_modern..."
 cmake --build build --target lamborghini_modern -j"$NPROC"
 
-# --- 13. Done ---------------------------------------------------------------
+# --- 12. Done ---------------------------------------------------------------
 EXE=build/lamborghini_modern
 if [ -x "$EXE" ]; then
     log ""

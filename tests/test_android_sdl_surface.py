@@ -18,6 +18,7 @@ from pathlib import Path
 
 from scripts import build_android as android
 from tests.patched_source import ROOT, method, patched_file
+from tools.apply_patches import PatchError, apply_series, series_for
 
 SDL = android.WORK / "deps/SDL"
 SOURCE = "src/core/android/SDL_android.c"
@@ -108,7 +109,7 @@ class SdlPatchPreparationTests(unittest.TestCase):
         # A shared clone leaves the developer's SDL checkout and its metadata untouched.
         self.git("clone", "-q", "--shared", "--no-checkout", str(SDL), str(self.tree))
         self.git("-C", str(self.tree), "checkout", "-q", "--detach", android.DEPS["SDL"][1])
-        self.patches = android.resolve_patches(android.SDL_PATCHES)
+        self.patches = series_for("android")["build-android/deps/SDL"]
 
     def git(self, *args):
         return subprocess.check_output(["git", *args], stderr=subprocess.STDOUT)
@@ -120,17 +121,18 @@ class SdlPatchPreparationTests(unittest.TestCase):
         self.assertEqual(self.git("-C", str(self.tree), "diff", "HEAD"), b"")
 
     def test_clean_checkout_then_repeat(self):
-        android.apply_patch_series(self.tree, self.patches)
-        android.apply_patch_series(self.tree, self.patches)
+        apply_series(self.tree, self.patches)
+        apply_series(self.tree, self.patches)
         self.assert_series_applied()
 
     def test_checkout_prepared_before_0048_is_completed(self):
         # Earlier builds applied only the USB receiver patch.
-        usb_receiver, = android.resolve_patches(["0015"])
+        usb_receiver = self.patches[0]
+        self.assertTrue(usb_receiver.name.startswith("0015-"))
         self.git("-C", str(self.tree), "apply", "--ignore-whitespace", str(usb_receiver))
         notes = self.tree / "notes.txt"
         notes.write_bytes(b"keep my notes\n")
-        android.apply_patch_series(self.tree, self.patches)
+        apply_series(self.tree, self.patches)
         self.assertEqual(notes.read_bytes(), b"keep my notes\n")
         notes.unlink()
         self.assert_series_applied()
@@ -141,8 +143,8 @@ class SdlPatchPreparationTests(unittest.TestCase):
         edited = original.replace(b"if (!data->backup_done) {", b"if (local_edit) {", 1)
         self.assertNotEqual(edited, original)
         path.write_bytes(edited)
-        with self.assertRaisesRegex(RuntimeError, "Patch series conflicts"):
-            android.apply_patch_series(self.tree, self.patches)
+        with self.assertRaisesRegex(PatchError, "does not match any prefix"):
+            apply_series(self.tree, self.patches)
         self.assertEqual(path.read_bytes(), edited)
 
 

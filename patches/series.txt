@@ -1,0 +1,80 @@
+# Dependency patch series: which patch applies to which dependency, in which
+# order, on which platforms. This is the only list. tools/apply_patches.py
+# reads it, and CMake configure, build.sh, build.ps1 and
+# scripts/build_android.py all apply patches through that tool.
+#
+# [directory] starts a dependency's series; the path is repository-relative.
+# Each following line is a patch file in patches/, in application order,
+# optionally followed by the only platforms it applies to (windows, linux,
+# android). A patch without platforms applies everywhere.
+#
+# Append new patches to the end of their series. Why each patch exists is in
+# patches/README.md.
+
+[lib/N64ModernRuntime]
+0001-lamborghini-runtime-scheduler-audio-vi.patch
+0007-ultramodern-savestate-thread-context-relink.patch
+0012-n64modernruntime-lazy-rdram-commit.patch
+0016-runtime-host-config-storage.patch
+0018-runtime-game-presentation.patch
+0035-runtime-live-mod-discovery.patch
+0036-runtime-mod-handle-complete-type.patch
+0057-runtime-app-suspension.patch
+
+[lib/rt64]
+0006-rt64-interp-angular-velocity-matching.patch
+0005-rt64-mingw-gcc-compat.patch                                windows
+0009-rt64-widescreen-split-subviewport.patch
+0010-rt64-intel-explicit-d3d12-escape-hatch.patch
+0011-rt64-fov-independent-backdrop.patch
+0013-rt64-android-cross-build.patch                             android
+0021-rt64-sun-shadow-groundwork.patch
+0022-rt64-render-evidence-hooks.patch
+0024-d3d12-raster-owner-evidence.patch
+0025-rt64-workload-shadow-metadata.patch
+0026-rt64-native-material-evaluation.patch
+0027-rt64-native-ray-candidate-coverage.patch
+0029-rt64-native-game-alpha-evidence.patch
+0030-rt64-sun-shadow-receiver.patch
+0033-rt64-fixed-texture-table-without-descriptor-indexing.patch
+0038-rt64-sun-shadow-robust-scene.patch
+0039-rt64-shadow-traversal-performance.patch
+0042-rt64-adreno-615-automatic-resolution-limit.patch
+0046-rt64-queue-barrier-wait.patch
+0056-rt64-present-resource-retirement.patch
+0058-rt64-render-cost-report.patch
+0059-rt64-android-automatic-resolution-budget.patch
+0060-rt64-frame-matching-reused-containers.patch
+
+[lib/rt64/src/contrib/plume]
+0004-plume-d3d12-mingw-com-abi-struct-return.patch              windows
+0014-plume-android-sdl-window.patch                             android
+0023-plume-texture-readback.patch
+0028-plume-d3d12-pipeline-failure.patch
+0041-plume-variable-descriptor-pool-retry.patch
+0043-plume-vulkan-clear-rect-bounds.patch
+0044-plume-vulkan-shader-nonuniform-without-descriptor-indexing.patch
+0047-plume-vulkan-surface-capabilities.patch
+0049-plume-android-surface-format-without-gralloc-probe.patch
+0050-plume-vulkan-mapped-memory.patch
+0051-plume-vulkan-mapped-memory-contract.patch
+0052-plume-vulkan-map-failure-recovery.patch
+0053-plume-vulkan-nested-read-map-guard.patch
+0055-plume-android-surface-recovery.patch
+
+[lib/RecompFrontend]
+0017-recompfrontend-lamborghini-integration.patch
+0019-recompfrontend-prompt-back-cancels.patch
+0020-recompfrontend-enum-wrap.patch
+0031-recompfrontend-document-source-url.patch
+0032-recompfrontend-settings-header-wrap.patch
+0034-recompfrontend-live-mod-refresh.patch
+0037-recompfrontend-optional-ui-debugger.patch
+0040-recompfrontend-config-open-event.patch
+0045-recompfrontend-android-swap-chain-format.patch
+
+# SDL is fetched by scripts/build_android.py, not a submodule.
+[build-android/deps/SDL]
+0015-sdl-android-usb-receiver.patch                             android
+0048-sdl-android-vulkan-surface-lifecycle.patch                 android
+0054-sdl-android-native-window-generation.patch                 android

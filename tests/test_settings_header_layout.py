@@ -7,13 +7,15 @@ out past its edge and cannot be clicked. Patch 0032 lets the tab side take only 
 width the right side leaves and wrap its labels onto further rows.
 
 The layout needs a live RmlUi context, which no host test has, so this test checks
-the build input instead: the patch is applied by CMake after 0031, the right side
+the build input instead: the patch is applied after 0031, the right side
 never shrinks, and the tab side shrinks and wraps. RT64 captures with eight and
 twelve tabs are recorded in docs/recompfrontend.md.
 """
 import re
 import unittest
 from pathlib import Path
+
+from tools.apply_patches import PLATFORMS, series_for
 
 ROOT = Path(__file__).resolve().parents[1]
 PATCH_NAME = "0032-recompfrontend-settings-header-wrap.patch"
@@ -33,12 +35,13 @@ class SettingsHeaderLayoutTests(unittest.TestCase):
         self.added = added_lines(PATCH.read_text(encoding="utf-8"), MODAL)
 
     def test_patch_is_applied_after_the_existing_frontend_patches(self):
-        cmake = (ROOT / "cmake" / "Frontend.cmake").read_text(encoding="utf-8")
-        self.assertIn(PATCH_NAME, cmake)
-        self.assertLess(
-            cmake.index("0031-recompfrontend-document-source-url.patch"),
-            cmake.index(PATCH_NAME),
-        )
+        for platform in PLATFORMS:
+            with self.subTest(platform=platform):
+                names = [patch.name for patch in series_for(platform)["lib/RecompFrontend"]]
+                self.assertLess(
+                    names.index("0031-recompfrontend-document-source-url.patch"),
+                    names.index(PATCH_NAME),
+                )
 
     def test_right_side_never_shrinks(self):
         self.assertTrue(
