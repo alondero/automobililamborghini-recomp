@@ -100,7 +100,7 @@ players field boots straight into any of these). The **race mode** at `0x800CE6B
 |---|---|---|---|
 | 1P arcade | `players=1`, `0x800CE6B4=2` | stretched wide | done (#2/#41) |
 | 1P time trial | `players=1`, `0x800CE6B4=0` (`LAMBO_WARP_MODE=0`) | stretched wide | done (#42): PREVIOUS left, RECORD/BEST-LAP right; LAPTIME centred; speedo+minimap shared with 1P (already pinned) |
-| 2P split | `players=2` | stretched wide (top/bottom, full width) | done (#42/#56): per half RANK right, LAP left, speed readout right, alt-dial gauge tracked by the bracket's matrix walker, **minimap pinned left** (2D per half) |
+| 2P split | `players=2` | stretched wide (top/bottom, full width) | done (#42/#56): per half RANK right, LAP left, alt-dial right (gauge via the matrix walker), minimap left. The ordinary text speed/place is the same right pin; that played result is not checked yet |
 | 3P/4P | `players=3`/`4` | **full widescreen quarters** (`G_EX_ORIGIN_WIDE` tag; was pillarboxed 4:3) | 3D views done; per-quadrant HUD text pinning is a follow-up (see below) |
 
 Before/after (widescreen output, edge-pinning off vs on):
@@ -112,10 +112,20 @@ Details verified live:
 - **2P split** (`L_80050BEC`): each half reuses the 1P RANK (`func_800583B8`, x=0x10E)
   / LAP (`func_80058464`, x=0x28) helpers, so the same `pin_right`/`pin_left` brackets
   apply per call site (top `0x80050CE8`/`0x80050D00`, bottom `0x80050F2C`/`0x80050F44`).
-  The per-half speed/place readout is drawn by the **alternate-dial orchestrator**
-  `func_800717E0` (a0 = player index; not in a 1P race) on the RIGHT (x=0xDC) — the
-  whole DIALORCH call is bracketed `pin_right` (top `0x80050E0C`, bottom `0x80051050`).
-  This pins the texrect **numbers**; `func_800717E0` also builds a **gauge as geometry**
+  Each half chooses its speed/place from one halfword (`0x800A5FBC` top,
+  `0x800A6040` bottom; stride 0x84 on the `0x800A5EE8` records). Nonzero takes
+  the dial below. Zero draws texrects: speed `func_80058614` at x=0xEB and place
+  `func_80058770` at x=0x118 (top jals `0x80050CC0`/`0x80050CD0`, bottom
+  `0x80050F04`/`0x80050F14`). Those calls are one `pin_right` bracket per half.
+  The helpers are the glyph and digit texrect drawers, so the reset's matrix
+  walker does not move them again. An expanded 2P frame shows this zero path
+  with RANK already at the right edge and the speed/place still in the 4:3
+  column. The new bracket is the same pin RANK uses; its played result has not
+  been checked in this worktree. Nonzero instead calls the **alternate-dial
+  orchestrator** `func_800717E0` (a0 = player index; not in a 1P race) on the RIGHT
+  (x=0xDC) — that whole call is bracketed `pin_right` (top `0x80050E0C`, bottom
+  `0x80051050`). This pins the texrect **numbers**; `func_800717E0` also builds a
+  **gauge as geometry**
   (via `func_80075278`, the modelview-translate builder behind the 1P needle), which
   `gEXSetRectAlign` can't move — but the bracket is `pin_right`/`pin_reset`, and the reset
   runs the same **matrix walker** as the 1P needle over the whole call span, so any gauge

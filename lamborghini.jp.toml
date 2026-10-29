@@ -2,7 +2,7 @@
 # N64Recomp configuration for the Japanese cartridge (Super Speed Race 64, NLCJ).
 # stubs and ignored carry the USA lists across by matched name. Gameplay and
 # platform hooks are not carried yet. Evidence: docs/japanese-rom.md.
-# Derived from USA inputs with SHA-1 7b1067c3d2dc42691b972ea4c7a8e9cd2c270d6e.
+# Derived from USA inputs with SHA-1 2eb4e18d66f5c61b1274bf5d88cbb735faad498d.
 #
 # Run from the repository root:
 #   ./build/lib/N64ModernRuntime/librecomp/N64Recomp/N64Recomp lamborghini.jp.toml

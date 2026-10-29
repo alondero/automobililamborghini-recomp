@@ -939,6 +939,37 @@ text = "{ extern unsigned int lambo_ws_minimap_outline_x(unsigned int); ctx->r5 
 # Each half reuses the 1P RANK (x=0x10E right) / LAP (x=0x28 left) helpers and anchors.
 #   top:    RANK jal 0x80050CE8, LAP jal 0x80050D00
 #   bottom: RANK jal 0x80050F2C, LAP jal 0x80050F44
+#
+# The ordinary speed and place text is a different branch from the alternate dial.
+# Each half loads one halfword (top 0x800A5FBC, bottom 0x800A6040; stride 0x84 from
+# the 0x800A5EE8 records). Nonzero takes func_800717E0, which is bracketed below.
+# Zero draws the speed and place as texrects and then RANK/LAP:
+#   speed func_80058614 at x=0xEB, place func_80058770 at x=0x118.
+#   top:    jal 0x80050CC0, jal 0x80050CD0 (reset before 0x80050CD8, not a delay slot)
+#   bottom: jal 0x80050F04, jal 0x80050F14 (reset before 0x80050F1C)
+# Both anchors are on the right. Leaving them unbracketed keeps the readout in the
+# 4:3 column after RANK has travelled to the expanded edge. The helpers emit no
+# G_MTX LOAD, so the reset's matrix walker does not move them a second time.
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050CC0
+text = "lambo_ws_pin_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050CD8
+text = "lambo_ws_pin_reset(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050F04
+text = "lambo_ws_pin_right(rdram);"
+
+[[patches.hook]]
+func = "func_80050860"
+before_vram = 0x80050F1C
+text = "lambo_ws_pin_reset(rdram);"
+
 [[patches.hook]]
 func = "func_80050860"
 before_vram = 0x80050CE8
@@ -979,9 +1010,9 @@ func = "func_80050860"
 before_vram = 0x80050F4C
 text = "lambo_ws_pin_reset(rdram);"
 
-# The per-half speed/position readout is drawn by the alternate-dial orchestrator
-# func_800717E0 (a0 = player index; not called in a 1P race) on the RIGHT (x=0xDC).
-# Bracket each per-half DIALORCH call RIGHT so the readout tracks the widescreen edge.
+# Nonzero gate (the halfwords above): the alternate-dial orchestrator func_800717E0
+# (a0 = player index; not called in a 1P race) draws that half instead, on the right
+# (x=0xDC). Bracket each call so its texrects and gauge matrix track the same edge.
 #   top half (a0=0):    DIALORCH jal 0x80050E0C
 #   bottom half (a0=1): DIALORCH jal 0x80051050
 [[patches.hook]]
