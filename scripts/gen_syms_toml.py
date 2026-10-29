@@ -625,10 +625,13 @@ EXTRA_FUNCS = [
 # single-.text ROM->runtime mapping, stubbed so the recompiler completes. This is NOT an
 # overlay-region list. The USA image has one .text section (rom=0x1000, vram=0x80000400)
 # and no code overlay; see docs/architecture.md. A 2026-10-29 scan of the ROM bytes over
-# these functions' declared ranges found no branch target outside that section: all 82
-# distinct out-of-range targets of the 69 affected stubs are covered by another declared
-# symbol (79 mid-function, 3 at a symbol start). Each failure is a declared-size
-# (split-merge) error -- fix it in SPLIT_MERGES above, not with a per-region mapping. The
+# these functions' declared ranges found no branch target outside that section: all 89
+# distinct out-of-range targets of the 75 affected stubs are covered by another declared
+# symbol (86 mid-function, 3 at a symbol start). The scan decodes every static branch form
+# the VR4300 has, including beql/bnel/blezl/bgtzl and the COP1 bc1f/bc1t/bc1fl/bc1tl
+# forms; a scanner missing those reports no target for a function that has one. Each
+# failure is a declared-size (split-merge) error -- fix it in SPLIT_MERGES above, not
+# with a per-region mapping. The
 # earlier "stage3/menu/race OVERLAY regions need PER-OVERLAY sections" note here was
 # wrong, as the func_800028D0 entry below already records. A stub is a compliance
 # measure, not proof the original body is unneeded: removing one needs a build and a
@@ -657,7 +660,7 @@ def parse_force_stub_file(path):
     table.
     """
     names = []
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         text = line.split("#", 1)[0].strip()
         if text:
             names.append(text.split()[0])

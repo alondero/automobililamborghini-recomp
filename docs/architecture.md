@@ -74,18 +74,23 @@ inside that one section.
 
 `force_stub.txt` is the record of why each stub is still one. Every line is
 `name disposition reason`. `pending` means the declared size is too small, and
-the reason names the target and the declared symbol that contains it; `overlap`
-means no target leaves the range, but the whole range sits inside a symbol that
-is emitted for real, so emitting this body would duplicate code. No entry is a
-native replacement: each is emitted with an empty body. `tests/test_force_stub.py`
-checks the format, keeps the file reconciled with the symbol table, and
-recomputes every recorded reason from the ROM.
+the reason names the lowest target the function branches to outside its own
+range, the declared symbol that covers it, and how many further targets there
+are; `overlap` means no static branch leaves the range, but the whole range sits
+inside a symbol that is emitted for real, so emitting this body would duplicate
+code. No entry is a native replacement: each is emitted with an empty body.
+`tests/test_force_stub.py` checks the format, keeps the file reconciled with the
+symbol table, and recomputes every recorded reason from the ROM. Its scanner
+decodes every static branch form the VR4300 has, including the branch-likely
+(`beql`/`bnel`/`blezl`/`bgtzl`) and COP1 (`bc1f`/`bc1t`/`bc1fl`/`bc1tl`) forms;
+a scanner without them reports no target for a function that has one, so the
+test pins each form.
 
 Measured on 2026-10-29, the file holds 76 entries, after 20 names that no longer
-had a symbol were removed. The 69 `pending` entries record 82 distinct branch
-targets, and every one lands inside another declared symbol. The cause is a
-declared size that is too small; the split-merge corrections in
-`scripts/gen_syms_toml.py` are the place to fix one.
+had a symbol were removed. 75 are `pending` and one is `overlap`. Together they
+reach 89 distinct out-of-range targets, and every one lands inside another
+declared symbol. The cause is a declared size that is too small; the split-merge
+corrections in `scripts/gen_syms_toml.py` are the place to fix one.
 
 The Japanese table is different. It describes two sections, `.text` and
 `.ovl_801F9800`, because that cartridge copies a code overlay to a runtime
