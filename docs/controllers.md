@@ -64,6 +64,27 @@ that turns a pad's B into the Back action was covered by
 [frontend notes](recompfrontend.md#the-quit-confirmation) for the route, the
 F15 substitution, and what the playthrough showed.
 
+## The Android touch overlay
+
+The on-screen controls send keyboard keys, and the frontend adds the keyboard
+and the gamepad profile together, so a connected gamepad and the touch pad can
+drive the same car twice. The Android app therefore hides the on-screen stick
+and buttons while a controller is connected, and shows them again when it
+disconnects. The Menu button remains, so Settings stays reachable, and the
+launcher offers **Touch controls: Auto / Always / Never**. See
+[Android](ANDROID.md) for the player-facing description.
+
+Presence decides this, not the Controls assignment. A gamepad connected but
+assigned to player two or three still hides player one's touch controls on a
+tablet, because the Android layer cannot read the controller profile. The
+launcher's **Always** choice is the way out of that case. No button press is
+needed to trigger it: Android's input-device listeners report connects and
+drops, and a device counts when SDL's own Android joystick handler accepts it.
+
+Status: **Experimental**. Host tests cover the visibility rule, the release of
+held keys, the stored choice, and which touches the overlay keeps while the pad
+is shown or hidden. A phone with a real Bluetooth gamepad is **Unverified**.
+
 ## Pre-race menu navigation
 
 The pre-race menus turn the analog stick into menu movement with a fixed

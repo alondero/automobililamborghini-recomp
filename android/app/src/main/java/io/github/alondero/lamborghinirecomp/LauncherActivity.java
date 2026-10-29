@@ -31,6 +31,7 @@ public final class LauncherActivity extends Activity {
     private Button select;
     private Button driver;
     private Button systemDriver;
+    private Button touchControls;
     private Button diagnostics;
     private boolean resumed;
 
@@ -91,6 +92,14 @@ public final class LauncherActivity extends Activity {
             startActivityForResult(intent, EXPORT_DIAGNOSTICS);
         });
         layout.addView(diagnostics);
+        // Auto, the default, is what hides the on-screen pad while a gamepad is connected.
+        touchControls = new Button(this);
+        touchControls.setText(TouchOverlayPolicy.label(touchControlsMode()));
+        touchControls.setOnClickListener(v -> {
+            setTouchControlsMode(TouchOverlayPolicy.next(touchControlsMode()));
+            touchControls.setText(TouchOverlayPolicy.label(touchControlsMode()));
+        });
+        layout.addView(touchControls);
         ScrollView scroll = new ScrollView(this);
         scroll.addView(layout);
         setContentView(scroll);
@@ -142,11 +151,22 @@ public final class LauncherActivity extends Activity {
         }
     }
 
+    private String touchControlsMode() {
+        return getSharedPreferences(TouchOverlayPolicy.STORE, MODE_PRIVATE)
+            .getString(TouchOverlayPolicy.KEY, TouchOverlayPolicy.AUTO);
+    }
+
+    private void setTouchControlsMode(String mode) {
+        getSharedPreferences(TouchOverlayPolicy.STORE, MODE_PRIVATE).edit()
+            .putString(TouchOverlayPolicy.KEY, mode).apply();
+    }
+
     private void setBusy(boolean busy) {
         select.setEnabled(!busy);
         play.setEnabled(!busy && new File(getFilesDir(), ROM).isFile());
         driver.setEnabled(!busy);
         systemDriver.setEnabled(!busy);
+        touchControls.setEnabled(!busy);
         diagnostics.setEnabled(!busy);
     }
 

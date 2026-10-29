@@ -21,8 +21,10 @@ import android.view.WindowInsets;
  * Z is not shown: it is a second accelerator button in the game (docs/analog-throttle.md),
  * redundant with A on a touch screen.
  *
- * The overlay is full screen and takes every touch, so a finger that lands off a control
- * does not stop later fingers from reaching the stick or buttons.
+ * The overlay is full screen and takes every touch it is shown for, so a finger that lands
+ * off a control does not stop later fingers from reaching the stick or buttons. While the
+ * controls are hidden it takes only the touches that land on a control it still shows, so
+ * the rest reach the game surface underneath. See {@link TouchOverlayPolicy}.
  */
 final class TouchOverlay extends View {
     // The menu toggle (F1), not Escape: the native loop toggles Settings on F1
@@ -51,6 +53,8 @@ final class TouchOverlay extends View {
     private static final float[] ALPHA = {1f, 1f, 0.55f, 0.55f, 0.55f, 0.55f, 0.8f};
 
     private int insetLeft, insetTop, insetRight, insetBottom; // px, system bars and cutouts
+    private boolean controlsShown = true; // stick and game buttons
+    private boolean menuShown = true;     // port Settings, the pointer route into the overlay
 
     TouchOverlay(Context context, TouchControls.KeySink sink) {
         super(context);
@@ -107,6 +111,11 @@ final class TouchOverlay extends View {
 
     @Override protected void onDraw(Canvas canvas) {
         TouchControls c = controls;
+        if (controlsShown) drawControls(canvas, c);
+        if (menuShown) drawMenu(canvas);
+    }
+
+    private void drawControls(Canvas canvas, TouchControls c) {
         // Stick: ring plus a knob that follows the thumb.
         fill.setColor(0x33FFFFFF);
         canvas.drawCircle(c.stickX, c.stickY, c.stickR, fill);
@@ -116,7 +125,9 @@ final class TouchOverlay extends View {
         canvas.drawCircle(c.stickX + c.knobX, c.stickY + c.knobY, c.stickR * 0.42f, fill);
 
         for (int i = 0; i < COLORS.length; i++) drawButton(canvas, c.buttons[i], COLORS[i], TEXT_SP[i], ALPHA[i]);
+    }
 
+    private void drawMenu(Canvas canvas) {
         // Menu is a port control, not an N64 button: outline only, no fill, hamburger icon.
         int line = menu.down ? 0xFFFFFFFF : 0x99FFFFFF;
         stroke.setColor(line);
@@ -149,6 +160,14 @@ final class TouchOverlay extends View {
         int index = e.getActionIndex();
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
+                boolean claimed = controls.down(e.getPointerId(index), e.getX(index), e.getY(index));
+                // While the pad is shown the overlay keeps every gesture, even one that starts
+                // on empty space: declining ACTION_DOWN removes this view from the gesture, so
+                // Android would stop delivering the second finger and the slide onto the stick.
+                // Only a hidden pad declines, and that refusal is what lets Android hand the
+                // whole gesture to SDL's view underneath.
+                if (!controlsShown && !claimed) return false;
+                break;
             case MotionEvent.ACTION_POINTER_DOWN:
                 controls.down(e.getPointerId(index), e.getX(index), e.getY(index));
                 break;
@@ -167,9 +186,25 @@ final class TouchOverlay extends View {
                 return false;
         }
         invalidate();
-        return true; // always claim the gesture so later fingers still arrive
+        return true; // this gesture is ours: later fingers arrive here too
     }
 
     /** Releases everything, for example when the activity pauses. */
     void reset() { controls.releaseAll(); invalidate(); }
+
+    /**
+     * Shows or hides the controls. Hiding releases every key the overlay holds, so no
+     * throttle, brake or stick direction stays pressed across the transition. Menu can
+     * stay shown while the rest is hidden: it is the only pointer route into Settings.
+     */
+    void setShown(boolean showControls, boolean showMenu) {
+        if (controlsShown == showControls && menuShown == showMenu) return;
+        controlsShown = showControls;
+        menuShown = showMenu;
+        controls.setStickVisible(showControls);
+        for (TouchControls.Button button : controls.buttons)
+            if (button != menu) controls.setButtonVisible(button, showControls);
+        controls.setButtonVisible(menu, showMenu);
+        invalidate();
+    }
 }

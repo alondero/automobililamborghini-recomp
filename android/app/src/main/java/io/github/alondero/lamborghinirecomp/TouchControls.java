@@ -7,6 +7,10 @@ package io.github.alondero.lamborghinirecomp;
  * Each pointer (finger) owns at most one control: the stick or one button. A pointer that
  * slides off its button releases it, and may then claim whatever it slides onto, so a
  * thumb can roll between B and A. A control is held by one pointer at a time.
+ *
+ * A hidden control is not drawn by the overlay and never claims a pointer, so a touch
+ * that lands on no shown control is left to the game surface underneath. Hiding a held
+ * control releases it, so no key stays pressed across the transition.
  */
 final class TouchControls {
     /** Receives key transitions for the game. */
@@ -27,6 +31,7 @@ final class TouchControls {
         float left, top, right, bottom; // px, view coordinates
         float slop;                     // extra px accepted around the shape
         boolean down;
+        boolean visible = true;         // a hidden button is not drawn and claims nothing
         int owner = NONE;
 
         Button(String label, int key, boolean round) { this.label = label; this.key = key; this.round = round; }
@@ -49,6 +54,7 @@ final class TouchControls {
     float stickX, stickY, stickR; // centre and radius, px
     float knobX, knobY;           // knob offset from the centre, px
     int stickPointer = NONE;
+    private boolean stickVisible = true;
 
     TouchControls(KeySink sink, int[] stickKeys, Button... buttons) {
         this.sink = sink;
@@ -56,7 +62,27 @@ final class TouchControls {
         this.buttons = buttons;
     }
 
-    void down(int pointer, float x, float y) { claim(pointer, x, y); }
+    /** Claims the touch, or reports that no shown control covers it. */
+    boolean down(int pointer, float x, float y) { return claim(pointer, x, y); }
+
+    /** Shows or hides the stick; hiding it releases the direction keys it holds. */
+    void setStickVisible(boolean visible) {
+        if (stickVisible == visible) return;
+        stickVisible = visible;
+        if (visible) return;
+        stickPointer = NONE;
+        knobX = knobY = 0;
+        for (int d = 0; d < 4; d++) setStick(d, false);
+    }
+
+    /** Shows or hides one button; hiding it releases the key it holds. */
+    void setButtonVisible(Button b, boolean visible) {
+        if (b.visible == visible) return;
+        b.visible = visible;
+        if (visible) return;
+        b.owner = NONE;
+        setButton(b, false);
+    }
 
     void move(int pointer, float x, float y) {
         if (pointer == stickPointer) { moveStick(x, y); return; }
@@ -78,19 +104,21 @@ final class TouchControls {
         for (Button b : buttons) { b.owner = NONE; setButton(b, false); }
     }
 
-    private void claim(int pointer, float x, float y) {
-        if (stickPointer == NONE && stickR > 0 && Math.hypot(x - stickX, y - stickY) <= stickR * STICK_GRAB) {
+    private boolean claim(int pointer, float x, float y) {
+        if (stickVisible && stickPointer == NONE && stickR > 0
+            && Math.hypot(x - stickX, y - stickY) <= stickR * STICK_GRAB) {
             stickPointer = pointer;
             moveStick(x, y);
-            return;
+            return true;
         }
         for (Button b : buttons) {
-            if (b.owner == NONE && b.contains(x, y)) {
+            if (b.visible && b.owner == NONE && b.contains(x, y)) {
                 b.owner = pointer;
                 setButton(b, true);
-                return;
+                return true;
             }
         }
+        return false;
     }
 
     private void release(int pointer) {
