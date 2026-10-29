@@ -436,6 +436,18 @@ refresh triggers instead of running assertions. `lambo_fog_benchmark` is a
 separate opt-in target for correction-table lookup cost. These measurements
 do not replace a rendered menu or fog check; see [Performance](performance.md).
 
+The opt-in synthesized visibility-row benchmark compares rebuilding a row with
+re-reading the inputs a safe cache check would need:
+
+~~~powershell
+cmake --build build --target lambo_no_lod_row_benchmark -j 4
+./build/lambo_no_lod_row_benchmark.exe
+~~~
+
+It keeps the whole track in the CPU cache, so it bounds the possible saving
+rather than predicting in-game cost. See the
+[no_lod audit](no_lod_audit.md#14-addendum-2026-10-29-synthesized-row-caching-measured-not-adopted).
+
 ## End-to-end scenario
 
 After a successful build, run the checked-in headless smoke scenario:
