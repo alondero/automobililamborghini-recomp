@@ -14,7 +14,31 @@ ROM is validated before replacing an existing import.
 
 Touch controls provide a steering stick, A and B, a small C pad for the camera, Start, and Menu (the port settings, top right). Z is not shown. It is a second accelerator button in the game, so A covers it. SDL gamepads and
 keyboards use the desktop control mappings. Importing a ROM does not replace
-your saves. Configuration, Controller Pak, and logs live in app-private storage;
+your saves.
+
+The touch controls hide while a Bluetooth or USB gamepad is connected. The game
+reads the keyboard and the gamepad at the same time, so both pads would drive
+the car. While the controls are hidden the Menu button stays on screen, because
+it is the only pointer route into Settings, and a touch that lands on no control
+reaches the game. Disconnecting the gamepad brings the controls back and
+reconnecting hides them again, without restarting. Hiding releases everything
+the controls held, so the accelerator, brake, or a steering direction cannot
+stay pressed.
+
+The launcher's **Touch controls** button selects the behaviour: **Auto**, the
+default, hides the controls while a controller is connected; **Always** keeps
+them; **Never** hides them, including Menu. To get Menu back after
+**Never**, choose Auto or Always in the launcher. The choice is stored on the
+device and does not affect the desktop port.
+
+Hiding follows whether a controller is connected, not which player it is
+assigned to in Controls. A gamepad connected but assigned to player two still
+hides the touch controls, because the app cannot read the controller profile.
+
+Status: **Experimental**. The rule, the release of held keys and the stored
+choice are covered by host tests that compile the Java sources against a stub
+Android boundary. Their behaviour on a phone with a real Bluetooth gamepad is
+**Unverified**; the manual check is in the [feature request](https://github.com/alondero/automobililamborghini-recomp/issues/373). Configuration, Controller Pak, and logs live in app-private storage;
 uninstalling or clearing the app's data removes them. An APK update signed with
 the same key retains this data.
 
