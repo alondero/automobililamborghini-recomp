@@ -69,11 +69,16 @@ Measured from the Japanese ROM bytes:
 - Boot also copies ROM `0x84D10`-`0xD55E0` to `0x80125000`. No code was found
   there.
 
-The USA build has one `.text` section and no code overlay. The extra Japanese
-section recompiles without the per-overlay sections that
-[issue 337](https://github.com/alondero/automobililamborghini-recomp/issues/337)
-adds under the
-[enhancement roadmap](https://github.com/alondero/automobililamborghini-recomp/issues/26).
+The USA build has one `.text` section and no code overlay, so its force-stubbed
+functions are declared-size problems rather than mapping problems; see
+[the architecture page](architecture.md#generated-and-hand-written-files). The
+extra Japanese section is described as its own `[[section]]` in
+`lamborghini.jp.syms.toml`, with its own mapping, and recompiles with no
+function branching outside its boundaries. [Issue
+337](https://github.com/alondero/automobililamborghini-recomp/issues/337)
+proposed the same shape for the USA regions; that premise does not hold for
+this cartridge.
+
 Whether the runtime registers its functions when the game copies the overlay,
 and what happens when the data block replaces it, are runtime questions for a
 later stage.

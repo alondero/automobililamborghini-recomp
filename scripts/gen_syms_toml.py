@@ -621,20 +621,48 @@ EXTRA_FUNCS = [
     ("func_80082524", 0x80082524, 0x348, "emit"),
 ]
 
-# Force-stub: named functions whose body "branches outside" because they live in the
-# stage3/menu/race OVERLAY regions, where the linear single-.text ROM->runtime mapping
-# (vram = rom + 0x7FFFF400) does not hold -- N64 overlays load to overlapping runtime
-# addresses at different times and need PER-OVERLAY sections (epic #54 phase 3). For the
-# boot-path ingestion proof we stub these so the recompiler completes; the boot segment
-# (ROM 0x1000-0x2398) itself lifts cleanly. Splat names (== jal-added func_<splat>).
+# Force-stub: functions whose recompiled body still "branches outside" under the linear
+# single-.text ROM->runtime mapping, stubbed so the recompiler completes. This is NOT an
+# overlay-region list. The USA image has one .text section (rom=0x1000, vram=0x80000400)
+# and no code overlay; see docs/architecture.md. A 2026-10-29 scan of the ROM bytes over
+# these functions' declared ranges found no branch target outside that section: all 82
+# distinct out-of-range targets of the 69 affected stubs are covered by another declared
+# symbol (79 mid-function, 3 at a symbol start). Each failure is a declared-size
+# (split-merge) error -- fix it in SPLIT_MERGES above, not with a per-region mapping. The
+# earlier "stage3/menu/race OVERLAY regions need PER-OVERLAY sections" note here was
+# wrong, as the func_800028D0 entry below already records. A stub is a compliance
+# measure, not proof the original body is unneeded: removing one needs a build and a
+# behaviour check. Splat names (== jal-added func_<splat>).
 FORCE_STUB = [
     # (func_800028D0 was here -- the per-frame-render blocker. It is NOT an overlay-section problem:
     # the "branching outside" was a splat SPLIT, fixed by the SPLIT_MERGES entry above that grows it
     # to its real 0x828 size and absorbs func_80002F98. Un-stubbed 2026-06-26.)
 ]
-# Additional force-stubs collected automatically by recomp/iterate_stubs.sh (overlay-region
-# functions that "branch outside" under the linear mapping). One splat name per line.
+# Additional force-stubs read from force_stub.txt (edit that file to add one). Each line
+# is `name disposition reason`; parse_force_stub_file() takes only the name. A name with
+# no symbol in the generated table is silently dropped by the `n in present` filter below,
+# so tests/test_force_stub.py keeps the file reconciled with lamborghini.syms.toml and
+# re-measures every recorded reason from the ROM. See the note above FORCE_STUB.
 FORCE_STUB_FILE = REPO / "force_stub.txt"
+
+
+def parse_force_stub_file(path):
+    """Names from force_stub.txt, one entry per line: `name disposition reason...`.
+
+    Only the first token is a name. Blank lines and `#` comments are ignored, and
+    anything after a `#` is ignored too. The disposition and the reason are the
+    checked-in record of why the entry is still a stub; the generator does not
+    interpret them. A name with no symbol in the generated table is dropped by the
+    caller, so tests/test_force_stub.py keeps this file reconciled with the symbol
+    table.
+    """
+    names = []
+    for line in path.read_text().splitlines():
+        text = line.split("#", 1)[0].strip()
+        if text:
+            names.append(text.split()[0])
+    return names
+
 
 # Force-EMIT: functions the race recipe lists as `ignored` (not emitted) but which the
 # whole-ROM link references, AND which emit as clean C under the linear mapping -> emit
@@ -2524,7 +2552,7 @@ def main():
     race_ignored += [n for n in NATIVE_OVERRIDES if n in present and n not in race_ignored]
     force = list(FORCE_STUB)
     if FORCE_STUB_FILE.exists():
-        force += [ln.strip() for ln in FORCE_STUB_FILE.read_text().splitlines() if ln.strip()]
+        force += parse_force_stub_file(FORCE_STUB_FILE)
     race_stubs += [n for n in force if n in present and n not in race_stubs]
     # Emit (don't ignore) functions the whole-ROM link references and that emit cleanly.
     race_ignored = [n for n in race_ignored if n not in FORCE_EMIT]

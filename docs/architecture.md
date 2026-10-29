@@ -67,6 +67,31 @@ force_stub.txt is also part of the generation boundary. A forced stub can keep
 the port running, but it is not proof that the original function is unneeded.
 Removing one requires a build and a behavior check.
 
+The USA symbol table describes one `.text` section, ROM `0x1000` to runtime
+`0x80000400`, and the USA image has no code overlay. A forced stub that fails
+to recompile is therefore not a mapping failure: its branch targets are already
+inside that one section.
+
+`force_stub.txt` is the record of why each stub is still one. Every line is
+`name disposition reason`. `pending` means the declared size is too small, and
+the reason names the target and the declared symbol that contains it; `overlap`
+means no target leaves the range, but the whole range sits inside a symbol that
+is emitted for real, so emitting this body would duplicate code. No entry is a
+native replacement: each is emitted with an empty body. `tests/test_force_stub.py`
+checks the format, keeps the file reconciled with the symbol table, and
+recomputes every recorded reason from the ROM.
+
+Measured on 2026-10-29, the file holds 76 entries, after 20 names that no longer
+had a symbol were removed. The 69 `pending` entries record 82 distinct branch
+targets, and every one lands inside another declared symbol. The cause is a
+declared size that is too small; the split-merge corrections in
+`scripts/gen_syms_toml.py` are the place to fix one.
+
+The Japanese table is different. It describes two sections, `.text` and
+`.ovl_801F9800`, because that cartridge copies a code overlay to a runtime
+address the linear rule does not predict. The generation pipeline already
+supports that shape; see [Japanese cartridge](japanese-rom.md).
+
 ## Guest memory is transitional infrastructure
 
 Port-side code currently reads and writes guest memory for input bridges,
