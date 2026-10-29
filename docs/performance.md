@@ -369,6 +369,11 @@ Remaining opportunities:
   inputs.
 - RT64 renders each interpolated frame and then waits for that frame's GPU
   work before starting the next (`execute` then `wait`). Overlapping CPU
-  recording with GPU work could add headroom; this is not measured.
+  recording with GPU work could add headroom; this is not measured
+  ([issue 377](https://github.com/alondero/automobililamborghini-recomp/issues/377)).
 - Matching still compares every pair of calls with equal hashes, which grows
-  quadratically with repeated scenery. It now costs about 3.5 ms.
+  quadratically with repeated scenery. It now costs about 3.5 ms
+  ([issue 378](https://github.com/alondero/automobililamborghini-recomp/issues/378)).
+- 120 Hz panels, player races, split screen and the touch overlay are not
+  measured yet
+  ([issue 379](https://github.com/alondero/automobililamborghini-recomp/issues/379)).

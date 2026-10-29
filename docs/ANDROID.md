@@ -868,7 +868,9 @@ this phone, so the budget keeps 3x.
 
 Not measured: the reporter's Xiaomi 12T Pro (Adreno 730, 120 Hz), any 120 Hz
 panel, a full player race, multiplayer, and the touch overlay's composition
-cost. GPUs slower than the Adreno 650 can still exceed their frame time within
+cost
+([issue 379](https://github.com/alondero/automobililamborghini-recomp/issues/379)).
+GPUs slower than the Adreno 650 can still exceed their frame time within
 the budget; a frame-time-driven limit is
 [issue 268](https://github.com/alondero/automobililamborghini-recomp/issues/268).
 
