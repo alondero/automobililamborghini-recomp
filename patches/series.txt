@@ -45,6 +45,7 @@
 0058-rt64-render-cost-report.patch
 0059-rt64-android-automatic-resolution-budget.patch
 0060-rt64-frame-matching-reused-containers.patch
+0061-rt64-frame-matching-joined-call-keys.patch
 
 [lib/rt64/src/contrib/plume]
 0004-plume-d3d12-mingw-com-abi-struct-return.patch              windows

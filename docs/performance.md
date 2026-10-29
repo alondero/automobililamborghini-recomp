@@ -373,9 +373,66 @@ Remaining opportunities:
   work before starting the next (`execute` then `wait`). Overlapping CPU
   recording with GPU work could add headroom; this is not measured
   ([issue 377](https://github.com/alondero/automobililamborghini-recomp/issues/377)).
-- Matching still compares every pair of calls with equal hashes, which grows
-  quadratically with repeated scenery. It now costs about 3.5 ms
+- Matching compared every pair of calls with equal hashes, which grows
+  quadratically with repeated geometry. Patch 0061 joins call keys instead;
+  see [frame matching pairs](#frame-matching-pairs-2026-10-29)
   ([issue 378](https://github.com/alondero/automobililamborghini-recomp/issues/378)).
 - 120 Hz panels, player races, split screen and the touch overlay are not
   measured yet
   ([issue 379](https://github.com/alondero/automobililamborghini-recomp/issues/379)).
+
+## Frame matching pairs (2026-10-29)
+
+[Issue 378](https://github.com/alondero/automobililamborghini-recomp/issues/378)
+asked where the remaining matching time goes. When RT64 interpolates, it pairs
+each draw call with every previous call of equal hash. The hash covers the
+combiner, other modes, geometry mode, triangle count and matrix IDs, so
+repeated geometry shares one.
+
+An uncommitted profiling build timed each matching stage and counted the
+equal-hash groups. It also hashed every transform, tile and look-at match of
+each game frame. Runs used the time-trial recordings in `scenarios/` in a
+window instead of headless, because headless runs skip RT64. Two runs of the
+same scenario gave the same match hash on every compared frame, so the hash
+compares builds frame by frame.
+
+The largest group was the same on every track: 224 current and 224 previous
+calls of two triangles under one world matrix, with six to eight textures, in
+the perspective scene. What they draw was not identified. The 50,000 call
+pairs gave only 24 to 65 distinct transform pairs. The pairing loop and the
+sort that removes duplicates took 92% to 94% of matching (97% in split screen). Two-player split
+screen doubled the group to 448 calls, about 200,000 pairs.
+
+Patch 0061 makes each call add keys that hold only what decides its check
+pairs. Equal keys merge, and the keys of each hash are joined. The check
+pairs, and so every match, are unchanged. Medians per game frame on an AMD
+Ryzen 9 3900X with D3D12, about 1,450 game frames per run:
+
+| Scenario | Calls paired (largest group) | Before (ms) | After (ms) | Distinct tile pairs |
+| --- | --- | --- | --- | --- |
+| Time trial, circuit 1 | 50,693 (224x224) | 1.92 | 0.50 | 6,948 |
+| Time trial, circuit 2 | 50,562 (224x224) | 1.59 | 0.50 | 6,987 |
+| Time trial, circuit 3 | 51,531 (224x224) | 1.97 | 0.61 | 9,617 |
+| Time trial, circuit 4 | 50,455 (224x224) | 2.07 | 0.44 | 6,811 |
+| Time trial, circuit 5 | 50,569 (224x224) | 1.93 | 0.46 | 6,845 |
+| Time trial, circuit 6 | 50,574 (224x224) | 1.77 | 0.60 | 7,272 |
+| Single race, circuit 1 | 50,851 (224x224) | 1.98 | 0.52 | 7,069 |
+| Single race, circuit 5 | 50,726 (224x224) | 1.92 | 0.64 | 7,041 |
+| Two-player race, circuit 4 | 202,254 (448x448) | 7.51 | 1.38 | 24,839 |
+
+Times are the sum of the matching stages; the counting itself is excluded.
+Every compared frame of all nine runs had the same match hash before and
+after, about 13,200 frames.
+
+Not measured yet: `match_ms` on the Adreno 650 phone. Debug APKs with and
+without patch 0061 were built for that comparison but not run, because the
+phone was locked.
+
+Most of the remaining time sorts the tile pairs. They are distinct: calls of
+equal hash and texture still pair with each other. Matching each current tile
+to its first compatible previous tile without listing every pair could remove
+that cost, but it would rewrite RT64's tile matching loop. That is not done.
+
+```sh
+python -m unittest tests.test_rt64_frame_matching -v
+```
