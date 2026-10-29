@@ -1,96 +1,111 @@
-func_8000F6D8
-func_80010B10
-func_80012E7C
-func_8001E01C
-func_80041204
-func_80053FCC
-func_800543FC
-func_8005F42C
-func_800620FC
-func_800626C8
-func_80064B10
-func_800662B4
-func_800664BC
-func_800665F8
-func_80066728
-func_800667A0
-func_80066828
-func_80066A30
-func_80066B70
-func_8006927C
-func_80069344
-func_8006962C
-func_80069CB4
-func_8006DD68
-func_80070548
-func_80072E34
-func_80073870
-func_80074B20
-func_80076950
-func_800769C0
-func_80076A10
-func_80076A60
-func_80076AB4
-func_80076B34
-func_80076C14
-func_80076C9C
-func_80076DC8
-func_80076E70
-func_80077034
-func_8007707C
-func_800770F0
-func_800780A0
-func_800781A4
-func_800783BC
-func_800783D8
-func_800783E8
-func_80078434
-func_80078868
-func_800788B8
-func_800788E8
-func_80078A00
-func_80078A40
-func_80078A80
-func_80078AC0
-func_80078B30
-func_80078CC0
-func_80078CE4
-func_80078D1C
-func_80078D50
-func_80078F28
-func_80079270
-func_80079768
-func_8007A5F0
-func_8007CC74
-func_8007CEB4
-func_8007CF30
-func_8007D0C0
-func_8007D120
-func_8007D168
-func_8007D1E8
-func_8007D874
-func_8007D890
-func_8007D95C
-func_8007E580
-func_8007E680
-func_8007E700
-func_8007E9F0
-func_8007EAC0
-func_8007EB10
-func_8007EB54
-func_8007EB80
-func_8007EC30
-func_8007EEA0
-func_8007F020
-func_8007F440
-func_8007F5F0
-func_8007F8C0
-func_8007F960
-func_8007FB30
-func_8007FE6C
-func_800800E0
-func_80082C84
-func_80083DC4
-func_80084660
-func_80085420
-func_80086724
+# Functions the symbol generator force-stubs (scripts/gen_syms_toml.py, FORCE_STUB_FILE).
+#
+# Line format: <splat name> <disposition> <reason>
+#   The generator reads only the first token. Blank lines and text after '#' are ignored.
+#   The disposition and reason are the checked-in record of why the entry is still a
+#   stub; tests/test_force_stub.py checks the format and re-measures the reasons.
+#
+# Dispositions:
+#   pending  The declared size is too small, so a branch or jump leaves the function and
+#            n64recomp rejects the body. The reason names the lowest out-of-range target,
+#            the declared symbol that covers it, and how many further targets there are.
+#            Fix with a SPLIT_MERGES entry, then re-run this file's test.
+#   overlap  No static branch leaves the declared range, but the whole range sits inside
+#            another symbol that is emitted real, so emitting this body would duplicate
+#            code.
+#
+# Measured from the ROM on 2026-10-29 over the 76 declared ranges: 75 entries are
+# `pending` and one is `overlap`. They reach 89 distinct out-of-range targets, and every
+# one of those 89 lands inside a declared symbol (three of them on a symbol start). No
+# target lies outside the single .text section, so none of this needs an overlay mapping.
+#
+# The scan decodes every static branch form the VR4300 has: REGIMM, j, beq, bne, blez,
+# bgtz, the branch-likely forms beql, bnel, blezl, bgtzl, and the COP1 forms bc1f, bc1t,
+# bc1fl, bc1tl. jal is a call and jr/jalr have no static target, so neither counts as a
+# range violation. A scanner missing the branch-likely or COP1 forms reports no target
+# for a function that has one; tests/test_force_stub.py pins each form.
+#
+# None of these is a native replacement: measured 2026-10-29, none is in the generated
+# `ignored` list, none is renamed to a libultra symbol, and none appears in
+# src/libultra_stubs.c. Every entry is emitted with an empty body.
+#
+# These are not overlay functions. The USA image has one .text section and no code
+# overlay; see docs/architecture.md. 20 earlier entries were removed on 2026-10-29
+# because the symbol table has no such name (a split-merge absorbed the body) and no jal
+# in the code region targets it; every jal target in that region starts a declared symbol.
+func_8000F6D8  pending  target 0x8000e6dc is inside func_8000F068
+func_80010B10  pending  target 0x8000fa48 is inside func_800102D8
+func_80012E7C  overlap  range is inside func_80011F70, which is emitted real; no static branch leaves the range
+func_8001E01C  pending  target 0x8001916c is inside func_80019D20
+func_80041204  pending  target 0x800405dc is inside func_80041014
+func_80053FCC  pending  target 0x80053260 is inside func_80053C2C
+func_800543FC  pending  target 0x80053748 is inside func_80053FCC
+func_8005F42C  pending  target 0x8005e734 is inside func_8005F12C
+func_800620FC  pending  target 0x800602b4 is inside func_80060DE4
+func_800626C8  pending  target 0x800602b4 is inside func_80060DE4 (+1 more)
+func_800662B4  pending  target 0x80065990 is inside func_800664BC
+func_800664BC  pending  target 0x8006529c is inside func_800657CC (+1 more)
+func_800665F8  pending  target 0x80065fc0 is inside func_80066B70
+func_80066728  pending  target 0x80065da0 is inside func_800668C0
+func_800667A0  pending  target 0x80065da0 is inside func_800668C0
+func_80066828  pending  target 0x80065da0 is inside func_800668C0
+func_80066A30  pending  target 0x80065e98 is inside func_80066A58
+func_80066B70  pending  target 0x800659e4 is inside func_800664BC
+func_8006927C  pending  target 0x80067b88 is inside func_80068390 (+5 more)
+func_80069344  pending  target 0x80067cf0 is inside func_80068390 (+5 more)
+func_8006962C  pending  target 0x80068400 is inside func_80068B10 (+2 more)
+func_8006DD68  pending  target 0x8006d654 is inside func_8006E064
+func_80070548  pending  target 0x8006ffac is inside func_80070AB8
+func_80072E34  pending  target 0x80071ea4 is inside func_800722F8
+func_80073870  pending  target 0x80072a18 is inside func_80073390
+func_80074B20  pending  target 0x80073ef0 is inside func_80074AB8
+func_80076950  pending  target 0x80075d30 is inside func_80076910
+func_80077034  pending  target 0x80076500 is inside func_800770F0 (+1 more)
+func_8007707C  pending  target 0x800764fc is inside func_800770F0 (+1 more)
+func_800770F0  pending  target 0x8007645c is inside func_80077034
+func_80078868  pending  target 0x80077abc is inside func_8007867C
+func_800788B8  pending  target 0x80077ce8 is the start of func_800788E8 (+1 more)
+func_800788E8  pending  target 0x80078050 is inside func_80078B30
+func_80078A00  pending  target 0x8007804c is inside func_80078B30 (+1 more)
+func_80078A40  pending  target 0x80077eb0 is inside func_80078A80 (+1 more)
+func_80078A80  pending  target 0x80077e68 is inside func_80078A40 (+1 more)
+func_80078AC0  pending  target 0x80077abc is inside func_8007867C
+func_80078B30  pending  target 0x80077abc is inside func_8007867C
+func_80078CC0  pending  target 0x80078178 is inside func_80078D50
+func_80078CE4  pending  target 0x80078170 is inside func_80078D50
+func_80078D1C  pending  target 0x8007815c is inside func_80078D50
+func_80078D50  pending  target 0x800780e0 is inside func_80078CC0
+func_80079270  pending  target 0x80078640 is inside func_800791B8
+func_80079768  pending  target 0x80078c88 is inside func_80079838
+func_8007A5F0  pending  target 0x80079954 is inside func_8007A530 (+1 more)
+func_8007CC74  pending  target 0x8007c320 is inside func_8007CEB4
+func_8007CEB4  pending  target 0x8007c2ac is inside func_8007CEA4 (+1 more)
+func_8007CF30  pending  target 0x8007c558 is inside func_8007D120
+func_8007D0C0  pending  target 0x8007c484 is inside func_8007D040 (+1 more)
+func_8007D120  pending  target 0x8007c600 is inside func_8007D1E8 (+1 more)
+func_8007D168  pending  target 0x8007c600 is inside func_8007D1E8 (+1 more)
+func_8007D1E8  pending  target 0x8007c5b4 is inside func_8007D168
+func_8007D874  pending  target 0x8007cd20 is inside func_8007D890
+func_8007D890  pending  target 0x8007cc44 is inside func_8007D660
+func_8007D95C  pending  target 0x8007ce54 is inside func_8007DA50
+func_8007E580  pending  target 0x8007da08 is inside func_8007E600 (+1 more)
+func_8007E680  pending  target 0x8007db44 is inside func_8007E700 (+1 more)
+func_8007E700  pending  target 0x8007dc2c is inside func_8007E81C
+func_8007E9F0  pending  target 0x8007dea4 is inside func_8007EAA0 (+1 more)
+func_8007EAC0  pending  target 0x8007ddc4 is inside func_8007E9AC
+func_8007EB10  pending  target 0x8007dca0 is inside func_8007E880
+func_8007EB54  pending  target 0x8007e09c is inside func_8007EC30
+func_8007EB80  pending  target 0x8007e0a4 is inside func_8007EC30
+func_8007EC30  pending  target 0x8007dca0 is inside func_8007E880
+func_8007EEA0  pending  target 0x8007e428 is inside func_8007F020
+func_8007F020  pending  target 0x8007e2e0 is inside func_8007EEA0
+func_8007F440  pending  target 0x8007e92c is inside func_8007F528
+func_8007F5F0  pending  target 0x8007ea84 is inside func_8007F670
+func_8007F8C0  pending  target 0x8007ec54 is inside func_8007F830 (+1 more)
+func_8007F960  pending  target 0x8007ed54 is inside func_8007F930
+func_8007FB30  pending  target 0x8007eedc is inside func_8007FAA0
+func_80082C84  pending  target 0x80081cdc is inside func_8008286C
+func_80083DC4  pending  target 0x800831b8 is inside func_80083BDC
+func_80084660  pending  target 0x80083784 is inside func_80084300
+func_80085420  pending  target 0x80084814 is inside func_800853D0
+func_80086724  pending  target 0x80085af4 is inside func_80086540
