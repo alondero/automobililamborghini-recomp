@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from tests.test_vulkan_descriptor_pool import method
-from tools.check_patch_series import CMAKE_SERIES, SCRIPT_SERIES, resolve_patch
+from tools.apply_patches import series_for
 
 ROOT = Path(__file__).resolve().parents[1]
 RT64 = ROOT / "lib/rt64"
@@ -23,10 +23,10 @@ class AndroidResolutionTests(unittest.TestCase):
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(subprocess.check_output(
                     ["git", "show", f"HEAD:src/hle/{name}"], cwd=RT64))
-            for number in SCRIPT_SERIES["android"] + CMAKE_SERIES:
+            for patch in series_for("android")["lib/rt64"]:
                 subprocess.run(["git", "apply", "--ignore-whitespace",
                                 "--include=src/hle/rt64_workload_queue.*",
-                                str(resolve_patch(ROOT, number))], cwd=tree,
+                                str(patch)], cwd=tree,
                                check=True, capture_output=True)
             source = (tree / "src/hle/rt64_workload_queue.cpp").read_text(encoding="utf-8")
             # Exercise the production switch, including the caller of the driver

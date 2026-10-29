@@ -25,8 +25,8 @@ jobs:
             libsdl2-dev libvulkan-dev libfreetype-dev \
             libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libdbus-1-dev
           python -m pip install numpy
-      - name: Apply Linux script patches
-        run: python tools/check_patch_series.py --apply-script linux
+      - name: Apply dependency patches
+        run: python tools/apply_patches.py --platform linux
       - name: Configure without ROM-derived output
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
       - name: Build host fixtures

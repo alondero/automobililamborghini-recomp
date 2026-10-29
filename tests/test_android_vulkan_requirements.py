@@ -11,6 +11,8 @@ import re
 import unittest
 from pathlib import Path
 
+from tools.apply_patches import PLATFORMS, series_for
+
 ROOT = Path(__file__).resolve().parents[1]
 PATCHES = ROOT / "patches"
 
@@ -46,11 +48,12 @@ class AndroidStartupCheckTests(unittest.TestCase):
 
 class FixedTextureTablePatchTests(unittest.TestCase):
     def test_every_platform_applies_the_fixed_table_after_0030(self):
-        cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
-        receiver = cmake.find("0030-rt64-sun-shadow-receiver.patch)")
-        fixed = cmake.find('lib/rt64" 0033-')
-        self.assertNotEqual(fixed, -1, "CMakeLists.txt must apply patch 0033 to lib/rt64")
-        self.assertGreater(fixed, receiver, "patch 0033 must apply after 0030")
+        for platform in PLATFORMS:
+            with self.subTest(platform=platform):
+                names = [patch.name[:4] for patch in series_for(platform)["lib/rt64"]]
+                self.assertIn("0033", names, "patch 0033 must apply to lib/rt64")
+                self.assertGreater(names.index("0033"), names.index("0030"),
+                                   "patch 0033 must apply after 0030")
 
 
 if __name__ == "__main__":

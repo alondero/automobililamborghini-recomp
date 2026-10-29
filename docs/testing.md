@@ -83,19 +83,17 @@ built N64Recomp and gcc. Locally they skip without them. One test needs no ROM
 and runs in the host suite on every pull request: it fails when the USA symbol
 table or configuration changed after the Japanese tables were generated.
 
-For dependency changes, run `python tools/check_patch_series.py`. It checks
-the RT64 replay order against each platform's script and shared CMake calls,
-and checks that every patch has a build application site. CI uses
-`--apply-script linux` to prepare a clean checkout before its first CMake
-configure, without needing a ROM. This command refuses conflicting changes.
-The replay matrix lives in `tools/check_patch_series.py`; its platform orders
-must match the supported build inputs. The checker also verifies Android's
-recognized CMake suffix against the shared application order. Android source
-preparation replays that suffix in a temporary index to recognize an already
-composed checkout without relying on a later patch marker.
+For dependency changes, run `python tools/apply_patches.py`. It checks that
+`patches/series.txt`, the only list of dependency patches, names every patch
+file once. `python tools/apply_patches.py --platform linux` applies one
+platform's series; CMake configure and the build scripts run the same tool,
+and CI uses it to prepare a checkout without a ROM. It refuses conflicting
+changes. It builds each cumulative state of a series in a temporary index, so
+an already patched checkout is recognized even where later patches rewrite
+earlier ones.
 
 ~~~text
-python -m unittest tests.test_android_build tests.test_patch_composability tests.test_patch_wiring -v
+python -m unittest tests.test_apply_patches tests.test_patch_composability -v
 ~~~
 
 The real-patch tests repeat preparation after each shared CMake patch,
@@ -212,8 +210,8 @@ without a ROM or GPU. Initialize RT64 and its nested Plume dependency first:
 
 ```sh
 python -m unittest tests.test_vulkan_mapped_memory -v
-python tools/check_patch_series.py
-python -m unittest tests.test_android_build tests.test_patch_composability tests.test_patch_wiring -v
+python tools/apply_patches.py
+python -m unittest tests.test_apply_patches tests.test_patch_composability -v
 ```
 
 The separate offscreen hardware probe builds patched Plume and small shaders
@@ -248,11 +246,11 @@ requirement flag. The launcher preserves the probe's exit code, including
 through adb. Enable synchronization validation with
 `VK_VALIDATION_VALIDATE_SYNC=1` when the installed Khronos layer supports it.
 
-Plume fixtures replay the platform prefixes followed by `PLUME_CMAKE_SERIES`,
-which `tools/check_patch_series.py` checks against shared CMake, including
-0050. Patch application is strict; replay errors include the command, exit
-code and captured output. The real repeated-configure test also compares
-the fixture's Vulkan source/header bytes with the CMake-patched files.
+Plume fixtures replay Plume's series from `patches/series.txt`, every
+platform's entries in series order. Patch application is strict; replay errors
+include the command, exit code and captured output. The real repeated-application
+test also compares the fixture's Vulkan source/header bytes with the files the
+production applier patched.
 
 Mapping and invalidation failures return null after releasing any newly
 acquired VMA reference. The recording fixture runs the production sunlight
@@ -478,7 +476,7 @@ headless CI job unless the job supplies a suitable display.
 Run the production-boundary checks without a ROM or GPU:
 
 ~~~text
-python tools/check_patch_series.py
+python tools/apply_patches.py
 python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_android_sdl_surface --require tests.test_vulkan_swapchain --require tests.test_android_presentation_lifecycle --require tests.test_android_activity_lifecycle
 ~~~
 

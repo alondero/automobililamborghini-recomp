@@ -209,7 +209,7 @@ Verification on this checkout:
 - `python -m unittest discover tests`: 229 tests ran successfully, with ten
   prerequisite skips (four Japanese-ROM checks and six NumPy-dependent shadow
   capture checks).
-- `python tools/check_docs.py`, `python tools/check_patch_series.py`,
+- `python tools/check_docs.py`, the patch-series check (now `python tools/apply_patches.py`),
   `python tools/check_branch.py --base origin/main --worktree`, and
   `git diff --check`: passed.
 - `python tools/run_game_scenario.py scenarios/harness-smoke.json`: headless
@@ -323,7 +323,7 @@ Verification on this checkout:
   build`: all 75 checks passed.
 - `python -m unittest discover tests`: 236 tests ran successfully, with four
   Japanese-ROM skips. `python tools/check_docs.py`,
-  `python tools/check_patch_series.py`,
+  the patch-series check (now `python tools/apply_patches.py`),
   `python tools/check_branch.py --base origin/main --worktree` and
   `git diff --check`: passed.
 - Desktop pacing is unchanged. `harness-smoke.json` passed with 1257 VIs for

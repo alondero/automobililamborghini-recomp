@@ -21,6 +21,8 @@ import re
 import unittest
 from pathlib import Path
 
+from tools.apply_patches import PLATFORMS, series_for
+
 ROOT = Path(__file__).resolve().parents[1]
 PATCH = ROOT / "patches" / "0019-recompfrontend-prompt-back-cancels.patch"
 PROMPT = "recompui/src/composites/ui_prompt.cpp"
@@ -113,21 +115,18 @@ class PromptBackActionTests(unittest.TestCase):
 
 
 class PatchInventoryTests(unittest.TestCase):
-    def test_frontend_cmake_applies_the_patch_to_the_frontend(self):
-        cmake = (ROOT / "cmake" / "Frontend.cmake").read_text(encoding="utf-8")
-        applied = re.findall(
-            r'lambo_frontend_patch\("\$\{CMAKE_CURRENT_SOURCE_DIR\}/lib/RecompFrontend"\s+(\S+)\)',
-            cmake,
-        )
-        self.assertIn("0019-recompfrontend-prompt-back-cancels.patch", applied)
+    def test_every_platform_applies_the_patch_to_the_frontend(self):
         # 0019 edits recompui/src/composites/ui_prompt.cpp, which 0017 does not
         # touch, so the order is a convention rather than a dependency. Keep 0017
         # first so the inventory numbering still matches the apply order.
-        self.assertLess(
-            applied.index("0017-recompfrontend-lamborghini-integration.patch"),
-            applied.index("0019-recompfrontend-prompt-back-cancels.patch"),
-            "0019 must be applied after 0017 in the patch order",
-        )
+        for platform in PLATFORMS:
+            with self.subTest(platform=platform):
+                applied = [patch.name for patch in series_for(platform)["lib/RecompFrontend"]]
+                self.assertLess(
+                    applied.index("0017-recompfrontend-lamborghini-integration.patch"),
+                    applied.index("0019-recompfrontend-prompt-back-cancels.patch"),
+                    "0019 must be applied after 0017 in the patch order",
+                )
 
     def test_patch_inventory_has_a_row_for_the_patch(self):
         inventory = (ROOT / "patches" / "README.md").read_text(encoding="utf-8")
@@ -141,30 +140,6 @@ class PatchInventoryTests(unittest.TestCase):
         }
         self.assertIn("0019", rows, "patches/README.md has no 0019 row")
         self.assertEqual(rows["0019"], "RecompFrontend")
-
-    def test_every_build_path_reaches_the_patch_through_cmake(self):
-        # The scripts apply the lower-numbered patches themselves; 0016 and up are
-        # CMake's job. Assert that per build path rather than counting a phrase, so
-        # a reworded matrix does not fail while a genuinely unpatched path does.
-        inventory = (ROOT / "patches" / "README.md").read_text(encoding="utf-8")
-        matrix = inventory.split("## Application matrix", 1)[1]
-        paths = {
-            cells[0]: cells[1]
-            for cells in (
-                [cell.strip() for cell in line.strip("|").split("|")]
-                for line in matrix.splitlines()
-                if line.startswith("| ") and "Build path" not in line
-                and "---" not in line
-            )
-            if cells[0] != "Build path"
-        }
-        self.assertEqual(
-            sorted(paths),
-            ["Android script", "Linux script", "Windows script"],
-            "the application matrix rows changed shape",
-        )
-        for name, applies in paths.items():
-            self.assertIn("CMake", applies, f"{name} does not reach 0019 through CMake")
 
 
 if __name__ == "__main__":

@@ -49,8 +49,9 @@ Generated files are:
 
 The source inputs are the symbol/config files, dump.toml,
 scripts/n64recomp_race.toml, force_stub.txt, and hand-written source hooks.
-The build scripts and CMake apply the dependency patches. The patch inventory
-is [patches/README.md](patches/README.md).
+[patches/series.txt](patches/series.txt) lists the dependency patches in
+application order; tools/apply_patches.py applies it for CMake and every build
+script. The patch inventory is [patches/README.md](patches/README.md).
 
 If a dependency change may be generic, compare it with the current upstream
 project and record that comparison here and in the pull request. This project
