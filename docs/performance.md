@@ -18,7 +18,7 @@ for less work.
 | 1 | Optional low-hardware preset | Defaults select window-scaled rendering, MSAA2X, display-rate presentation, expanded geometry and 1.5x draw distance. Reduce pixels, samples, presentations and scenery together. | Implemented in Graphics, with Apply/Discard. |
 | 2 | Capture drawing/camera environment overrides at startup | `lambo_config.cpp` previously searched the environment at every `no_lod`, draw-distance, fog and camera read, and parsed numeric overrides repeatedly. Drawing invokes several of these getters inside loops. | Implemented; live JSON-backed settings retain their atomics. |
 | 3 | Skip hidden settings synchronisation | `lambo_frontend.cpp::render` refreshed the whole settings schema on every presentation, including ordinary gameplay. This includes string construction/lookups, variants, and the player-name mutex. | Implemented; hidden gameplay inputs skip refresh too. Menu-opening events use the frontend's own resolver. |
-| 4 | Cache synthesized visibility rows | `lambo_no_lod.cpp` builds a row on each viewport walk; the policy scans the track records again even when the camera segment has not changed. | [Issue 266](https://github.com/alondero/automobililamborghini-recomp/issues/266). Track reload, savestate, Track Lab and viewport invalidation are essential. |
+| 4 | Cache synthesized visibility rows | `lambo_no_lod.cpp` builds a row on each viewport walk; the policy scans the track records again even when the camera segment has not changed. | Measured, not adopted ([issue 266](https://github.com/alondero/automobililamborghini-recomp/issues/266)). In races a safe validation cost as much as a rebuild, 0.3 to 1.3 microseconds per viewport walk on average. See the [no_lod audit](no_lod_audit.md#14-addendum-2026-10-29-synthesized-row-caching-measured-not-adopted). |
 | 5 | Reduce fog preparation work | The earlier renderer-side rewrite is now part of the shared HUD/fog producer walk. Active custom fog still made sparse correction-table lookups for unrelated commands. | A private correction bitmap skips unrelated lookups; authored-word tracking and restoration remain intact. [Issue 267](https://github.com/alondero/automobililamborghini-recomp/issues/267) records the original traversal proposal. |
 | 6 | Control rendering against a frame budget | Auto resolution and Display interpolation follow output demands, including high-resolution/high-refresh displays. Original resolutions and Manual refresh already exist. | [Issue 268](https://github.com/alondero/automobililamborghini-recomp/issues/268). Measure CPU/GPU separately before adaptive resolution or a presentation ceiling. Android Auto now has a fixed pixel-rate budget; see [Android render cost](#android-render-cost-2026-10-29). |
 | 7 | Reduce Windows guest-memory commit further | Patch 0012 already avoids committing the 4 GiB reservation, but the runtime still commits a 512 MiB accessible prefix on Windows. This is commit charge, not a measured physical working set. | [Issue 269](https://github.com/alondero/automobililamborghini-recomp/issues/269). Audit runtime/mod allocations and guards before smaller or demand commitment. |
@@ -236,10 +236,12 @@ A separate synthetic visibility prototype compared uncached row construction
 with validation of every segment's renderability and reuse of an unchanged row.
 At 55 segments, one million uncached rows took 149 ms and validation/reuse took
 72 ms, with equal checksums. That is about 0.15 versus 0.07 microseconds per
-row on this workstation. This does not establish the cost across actual tracks,
-nor implement all cache invalidations. The small absolute saving did not justify
-adding a persistent visibility cache in this session. Full replay profiling
-remains the next step for [issue 266](https://github.com/alondero/automobililamborghini-recomp/issues/266).
+row on this workstation. Later race measurements on all six circuits found the
+two passes cost about the same in the game, so no cache was added. That
+prototype was not committed; the committed benchmark times a different loop,
+so its figures differ. The
+[no_lod audit](no_lod_audit.md#14-addendum-2026-10-29-synthesized-row-caching-measured-not-adopted)
+records the results and the `lambo_no_lod_row_benchmark` target.
 
 ## Android frame pacing (2026-10-26)
 

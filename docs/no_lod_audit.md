@@ -461,3 +461,103 @@ synthesized extras only. Other camera rows are unchanged, and if an authored row
 explicitly names segment 55, the stock-prefix pass still emits it normally. The
 row builder checks only the existing road-pointer renderability field
 (`record+0x4`); wall and far-scenery pointers are not read by this exception.
+
+## 14. Addendum (2026-10-29): synthesized-row caching measured, not adopted
+
+[Issue 266](https://github.com/alondero/automobililamborghini-recomp/issues/266)
+asked whether the per-walk row synthesis (§9, §13) should keep a validated row
+while a viewport's camera stays in one segment. It should not. Building a row
+costs at most a few microseconds per frame, and in the game a safe cache check
+costs as much as the rebuild.
+
+**What a safe cache hit must still read.** The row depends on the circuit index
+and its `no_lod_circuit` toggle, the header pointer and its `+0x4`/`+0x8` PVS
+bounds, the live PVS pointer, the record-list pointer, the camera segment, the
+camera row's 10 authored slots (Track Lab corrections and savestate restores
+both rewrite these in guest RAM), and every record's road pointer
+(`record+0x4`). A key without the record scan is unsafe, because guest buffers
+are reused across track loads and a restore rewrites the records in place.
+That scan is the same per-segment read loop the builder already runs. A cache
+invalidated only by events (track load, restore, Track Lab, toggles) could skip
+the scan, but it would have to trust that nothing else writes those records.
+That is the general guest-memory revision tracking the issue ruled out. It
+would also save no more than the whole build, measured below at 2.4
+microseconds or less per walk.
+
+**Method.** Measured at commit `51187bf` on Windows 11 with a Ryzen 9 3900X,
+MinGW GCC 15.2.0 and the USA ROM (SHA-256
+`CAB2467684A58BC19C787423D704A961AA497629763367D9FE691172DE58591C`). A
+temporary probe in `lambo_no_lod_pvs_entry` (not committed) timed, with the
+CPU timestamp counter, the existing row build and a full validation of the
+inputs above on every viewport walk. It alternated which ran first so neither
+always found warm caches. On every would-be hit it compared the rebuilt row
+with that viewport's previous row. Global `no_lod` was on and
+`no_lod_circuit` was forced on for all six circuits; the pro circuits ship with
+it off. 1P runs replayed the checked-in
+`recordings/circuit-N-time-trial-car-0.jsonl` laps. 2P runs (all six circuits)
+and 4P runs (circuits 1-3) started from the warp with no input, so the cars
+stayed put: the best case for a cache. The warp source notes that the ROM
+offers only three tracks to three or four players; that was not checked in the
+menus.
+
+Headless runs, in microseconds per walk:
+
+| Circuit | Segments | 1P would-hit | 1P rebuild mean / p95 | 1P validate mean / p95 | 2P rebuild / validate mean | 4P rebuild / validate mean |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 25 | 1473 / 1500 | 0.85 / 1.51 | 1.10 / 1.72 | 0.41 / 0.62 | 0.28 / 0.35 |
+| 2 | 29 | 1769 / 1800 | 0.95 / 1.71 | 1.27 / 1.95 | 0.44 / 0.67 | 0.29 / 0.40 |
+| 3 | 30 | 1868 / 1900 | 0.93 / 1.58 | 1.09 / 1.76 | 0.48 / 0.81 | 0.30 / 0.40 |
+| 4 | 75 | 2347 / 2400 | 1.33 / 2.41 | 1.31 / 2.31 | 0.63 / 0.98 | n/a |
+| 5 | 55 | 2157 / 2200 | 1.16 / 1.98 | 1.21 / 2.01 | 0.56 / 0.93 | n/a |
+| 6 | 67 | 2548 / 2600 | 1.18 / 2.04 | 1.16 / 1.90 | 0.62 / 0.85 | n/a |
+
+The stationary runs would have hit on 2297-2298 of 2300 2P walks and 4493-4496
+of 4500 4P walks. All 15 runs had zero mismatches: unchanged inputs always
+rebuilt the identical row. The frame interval (time between successive walks
+of the first viewport, including the wait for the retrace) was 31.0-31.2 ms at
+p50 and 46.5-46.9 ms at p95 under the headless renderer. Two windowed D3D12
+runs on an RTX 3080, in microseconds per walk and milliseconds per frame:
+
+| Run | Rebuild mean / p95 | Validate mean / p95 | Frame p50 / p95 |
+| --- | --- | --- | --- |
+| Circuit 4, 1P replay | 0.97 / 1.83 | 0.91 / 1.81 | 33.4 / 35.7 |
+| Circuit 1, 4P from warp | 0.28 / 0.71 | 0.33 / 1.15 | 49.9 / 67.1 |
+
+The slowest p95 row build, 2.4 microseconds (headless, 75 segments), is under
+0.01% of the windowed 35.7 ms p95 frame. Four 4P walks average about 1.2
+microseconds per frame. A cache hit that cost nothing still could not move p95
+frame time measurably. In the game, validation was 17-34% slower than
+rebuilding on circuits 1-3 and within 5% on circuits 4-6. That is the issue's
+own condition for keeping the simpler implementation, so the uncached builder
+stays. It reads live guest memory on every walk, so by construction it needs no
+invalidation for track loads, savestate restores, Track Lab corrections, toggle
+changes or camera-segment changes.
+
+Not performed: Track Lab and savestate-restore runs, a 2P or 4P run with moving
+cars, and a measurement of game-thread CPU busy time (the frame interval above
+includes waiting). Production code is unchanged, so these would have been
+regression checks of existing behavior.
+
+The opt-in `lambo_no_lod_row_benchmark` repeats the per-segment part of the
+comparison without a ROM. It runs the production `build_synthesized_row`
+against a validation that re-reads the authored row and every record's
+renderability, one million rows per circuit size. Medians of three samples on
+the same machine and compiler:
+
+| Segments | Rebuild (ms per million rows) | Validate (ms per million rows) |
+| --- | --- | --- |
+| 25 | 61.5 | 40.8 |
+| 29 | 68.8 | 43.4 |
+| 30 | 67.0 | 43.3 |
+| 55 | 119.2 | 56.2 |
+| 67 | 140.5 | 63.5 |
+| 75 | 159.8 | 71.0 |
+
+Here validation is 1.5-2.25 times as fast as rebuilding, saving at most about
+0.09 microseconds per row. In the game, rebuilding cost 8-14 times its
+benchmark time and validation 18-29 times. A plausible but unmeasured cause is
+that the game's reads arrive about 30 ms apart and miss the CPU caches, while
+the benchmark loop keeps the whole track cached. Use the benchmark as an upper
+bound on the possible saving, not as the in-game ratio. Measure again with the
+probe method above if the row policy gains per-segment work beyond the record
+check and the exclusion table.

@@ -427,6 +427,12 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_no_lod_policy COMMAND lambo_no_lod_policy_tests)
 
+    add_executable(lambo_no_lod_row_benchmark EXCLUDE_FROM_ALL
+        tests/benchmark_no_lod_row.cpp src/lambo_no_lod_policy.cpp)
+    target_include_directories(lambo_no_lod_row_benchmark PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+
     add_executable(lambo_track_patch_tests
         tests/test_track_patch.cpp
         src/lambo_track_patch.cpp
