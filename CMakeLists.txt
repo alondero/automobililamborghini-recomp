@@ -16,7 +16,7 @@ cmake_minimum_required(VERSION 3.20)
 # The ROM path in lamborghini.us.toml is cwd-relative. The patch matrix is in
 # patches/README.md. RecompiledFuncs/ is regenerated from the supplied ROM.
 
-project(lamborghini_modern VERSION 0.10.2 LANGUAGES C CXX)
+project(lamborghini_modern VERSION 0.10.3 LANGUAGES C CXX)
 
 # Python applies the dependency patches and generates mod and test inputs.
 find_program(LAMBO_PYTHON_EXECUTABLE NAMES python python3 REQUIRED)
