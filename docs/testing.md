@@ -48,7 +48,7 @@ checkouts, fetches the pinned Android SDL source, checks the complete branch
 diff, then runs:
 
 ~~~text
-python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool --require tests.test_vulkan_mapped_memory --require tests.test_vulkan_clear_bounds --require tests.test_vulkan_shader_nonuniform --require tests.test_android_swapchain_format --require tests.test_android_sdl_surface --require tests.test_vulkan_swapchain --require tests.test_android_presentation_lifecycle --require tests.test_android_activity_lifecycle
+python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool --require tests.test_vulkan_mapped_memory --require tests.test_vulkan_texture_readback --require tests.test_vulkan_clear_bounds --require tests.test_vulkan_shader_nonuniform --require tests.test_android_swapchain_format --require tests.test_android_sdl_surface --require tests.test_vulkan_swapchain --require tests.test_android_presentation_lifecycle --require tests.test_android_activity_lifecycle
 ~~~
 
 Skipping a test in a required module, or failing to discover the module,
@@ -210,14 +210,21 @@ without a ROM or GPU. Initialize RT64 and its nested Plume dependency first:
 
 ```sh
 python -m unittest tests.test_vulkan_mapped_memory -v
+python -m unittest tests.test_vulkan_texture_readback -v
 python tools/apply_patches.py
 python -m unittest tests.test_apply_patches tests.test_patch_composability -v
 ```
 
+The texture-readback fixture compiles Plume's production Vulkan
+`copyTextureRegion` against a recording boundary and checks the aspect,
+buffer offset and pitch, subresource, image layout and extent. It needs no ROM
+or GPU.
+
 The separate offscreen hardware probe builds patched Plume and small shaders
-with the pinned DXC. It uploads vertices, draws, copies pixels to readback
-memory, waits for GPU completion and checks the pixels. It changes no game
-settings or saves. Windows/Linux hosts need g++; Android needs NDK 28.2.13676358 and an
+with the pinned DXC. It uploads vertices, draws, copies pixels to a padded,
+offset readback footprint through the production `copyTextureRegion`, waits
+for GPU completion and checks the pixels and untouched padding. It changes
+no game settings or saves. Windows/Linux hosts need g++; Android needs NDK 28.2.13676358 and an
 authorized ADB device. For example:
 
 ```sh

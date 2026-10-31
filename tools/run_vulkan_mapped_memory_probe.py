@@ -41,7 +41,8 @@ def main():
     # git apply in a repository subdirectory filters paths relative to that
     # repository. Replay outside it, just as the recording fixtures do.
     with tempfile.TemporaryDirectory(prefix="lambo-vulkan-probe-") as temporary:
-        for name in ("plume_vulkan.cpp", "plume_vulkan.h"):
+        for name in ("plume_vulkan.cpp", "plume_vulkan.h", "plume_render_interface.h",
+                     "plume_render_interface_types.h"):
             source = patched_file(PLUME, name, temporary)
             (output / name).write_bytes(source.encode("utf-8"))
     architecture = "arm64" if os.name != "nt" and platform.machine().lower() in ("arm64", "aarch64") else "x64"
