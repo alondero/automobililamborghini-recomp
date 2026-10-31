@@ -206,3 +206,80 @@ directory first on `PATH`. Otherwise N64Recomp fails to start with exit code
 - No hook, instruction patch, cheat, HUD, widescreen, audio, save or race check
   has been run on the Japanese cartridge.
 - Japanese text rendering has not been checked.
+
+## Handwritten address migration
+
+Status: inferred address correspondence, not a runtime layout. The checked-in
+[address audit](japanese-address-audit.json) records candidates from both
+verified cartridges for the next part of issue 338. It does not enable the
+Japanese cartridge or establish feature parity.
+
+Regenerate or verify it with both cartridges at the repository root:
+
+~~~text
+python scripts/audit_jp_addresses.py
+python scripts/audit_jp_addresses.py --check
+python -m unittest -v tests.test_jp_addresses
+~~~
+
+Measured against port source at `1fe0ea1`, the inventory contains 108 distinct
+hexadecimal literals in 221 occurrences in handwritten C/C++ under `src/`.
+Comments, strings and generated audio code are excluded.
+The report stores occurrence counts by source file, so unrelated edits and
+line-number changes do not make it stale. It includes code addresses, masks,
+test-renderer buffers and port-owned allocations as well as cartridge data.
+Computed addresses, including a separate physical offset added to KSEG0,
+still need manual review; this is not an exhaustive guest-access audit.
+
+Of the 108 literals, 60 have one candidate Japanese address, none have
+conflicting candidates, and 48 have no candidate. These counts include
+non-cartridge values such as the KSEG0 base. They are not a count of migrated
+fields. There is no fallback that treats an unresolved address as unchanged.
+
+The tool uses only the 762 function matches whose non-relocation instruction
+fields agree under the symbol generator's matching rules. It tracks LUI and
+low-half address construction within basic blocks, drops provenance at joins
+and after transfer delay slots, and invalidates registers overwritten by
+integer loads. Functions containing indirect non-return jumps are omitted:
+their switch-case entry points cannot be inferred by this local scan.
+Address expressions with a variable index are labelled. Each
+candidate retains the number of distinct instruction witnesses and up to
+three examples with function names and both runtime instruction addresses.
+All competing targets would be retained if a conflict appeared. The report
+contains no ROM bytes or instruction words.
+
+These measurements rule out a uniform regional offset. For example, the US
+menu fields at `0x80098560` and `0x80098562` correspond to Japanese candidates
+`0x80096748` and `0x80096758`. Even adjacent US fields do not necessarily stay
+adjacent. The VI contexts and mode tables also move by different amounts:
+
+| US address | Japanese candidate | Meaning in the US bridge |
+| --- | --- | --- |
+| `0x8008D140` | `0x80081AC0` | First private VI context |
+| `0x8008D170` | `0x80081AF0` | Second private VI context |
+| `0x8008D1A0` | `0x80081B20` | Current context pointer |
+| `0x8008D1A4` | `0x80081B24` | Next context pointer |
+| `0x8008D4E0` | `0x80081B30` | PAL default mode |
+| `0x8008D530` | `0x80081BD0` | MPAL default mode |
+| `0x8008D580` | `0x80081B80` | NTSC default mode |
+
+All seven VI candidates have witnesses in `__osViInit`; the report gives the
+individual instruction addresses. Candidates still need review for field
+width, record stride, indices, thread ownership and lifetime before replacing
+port constants. Missing candidates include the difficulty fields, steering
+curves, selected-pad pointer and several rendering globals. Named matches
+alone cannot prove that their surrounding structures are compatible.
+
+The host suite checks the report's input digest and current source inventory
+without cartridges. It also exercises signed offsets, register clobbers,
+delay slots, branch joins, indexed expressions and conflicting candidates on
+synthetic instructions. With both cartridges it regenerates the complete
+report and compares it. The Linux release job requires this ROM-backed check
+to run without skips. `--check-inputs` runs only the ROM-free freshness check.
+
+Runtime integration remains blocked on reviewing these layouts and resolving
+the missing hook counterparts listed above. Next steps are to classify the
+remaining accesses, verify structure layouts, port the hooks, namespace and
+link both images, and then run the issue's gameplay and visual parity matrix.
+No Japanese boot, race, text, audio or save check has been performed by this
+audit. The current support claim remains USA only.

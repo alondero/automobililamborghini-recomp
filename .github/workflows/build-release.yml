@@ -101,7 +101,7 @@ jobs:
         # the skip reason in the log.
         run: |
           python scripts/gen_jp_syms_toml.py --check
-          python tools/run_host_tests.py --require tests.test_jp_recompile
+          python tools/run_host_tests.py --require tests.test_jp_recompile --require tests.test_jp_addresses
 
       - name: Remove ROM before packaging
         if: always()

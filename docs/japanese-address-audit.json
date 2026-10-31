@@ -1,0 +1,2265 @@
+{
+  "schema": 1,
+  "input_sha256": "e3cd86603fe17ba19f9d256e94bac9bbecf52b56f782dd02a06921917a0527be",
+  "rom_sha1": {
+    "usa": "78b36b48040426478011caef5e11884af2e80375",
+    "japan": "98009e4948faf885864e52e1268700a0144c1b2e"
+  },
+  "scope": "Explicit 0x80000000..0x81FFFFFF literals in handwritten src C/C++; includes masks, code and port allocations. Excludes comments, strings and computed/split addresses. Candidates are not approved runtime mappings.",
+  "addresses": [
+    {
+      "usa": "0x80000000",
+      "uses": {
+        "src/lambo_analog_brake.cpp": 1,
+        "src/lambo_analog_throttle.cpp": 1,
+        "src/lambo_automatic_pit_stops.cpp": 1,
+        "src/lambo_crash.cpp": 3,
+        "src/lambo_graphics_task.cpp": 1,
+        "src/lambo_harness_report.cpp": 2,
+        "src/lambo_hud_widescreen.c": 1,
+        "src/lambo_main_loop_idle.cpp": 1,
+        "src/lambo_mod_api.cpp": 3,
+        "src/lambo_no_lod.cpp": 1,
+        "src/lambo_rt_shadows.cpp": 2,
+        "src/lambo_sky_widescreen.cpp": 3,
+        "src/lambo_track_patch.cpp": 1,
+        "src/lambo_vi.cpp": 3,
+        "src/lambo_warp.c": 2,
+        "src/libultra_stubs.c": 2,
+        "src/stub_renderer.cpp": 5
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80000000",
+          "witness_count": 1,
+          "witnesses": [
+            {
+              "function": "__osInitialize_common",
+              "usa_pc": "0x80073000",
+              "japan_pc": "0x8006CB40",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80000060",
+      "uses": {
+        "src/stub_renderer.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80000060",
+          "witness_count": 1,
+          "witnesses": [
+            {
+              "function": "func_8004384C",
+              "usa_pc": "0x800430CC",
+              "japan_pc": "0x80206564",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80000300",
+      "uses": {
+        "src/libultra_stubs.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80000300",
+          "witness_count": 5,
+          "witnesses": [
+            {
+              "function": "__osInitialize_common",
+              "usa_pc": "0x80073160",
+              "japan_pc": "0x8006CCA0",
+              "indexed": false
+            },
+            {
+              "function": "__osInitialize_common",
+              "usa_pc": "0x80073184",
+              "japan_pc": "0x8006CCC4",
+              "indexed": false
+            },
+            {
+              "function": "__osViInit",
+              "usa_pc": "0x8007D590",
+              "japan_pc": "0x80077A40",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80000400",
+      "uses": {
+        "src/main.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80000450",
+      "uses": {
+        "src/main.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80001000",
+      "uses": {
+        "src/stub_renderer.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80001CD0",
+      "uses": {
+        "src/main.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80002000",
+      "uses": {
+        "src/stub_renderer.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80002010",
+      "uses": {
+        "src/stub_renderer.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80002020",
+      "uses": {
+        "src/stub_renderer.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x800024F8",
+      "uses": {
+        "src/main.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80002800",
+      "uses": {
+        "src/stub_renderer.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80003000",
+      "uses": {
+        "src/stub_renderer.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80009AC0",
+      "uses": {
+        "src/lambo_rt_shadows.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x8000E468",
+      "uses": {
+        "src/lambo_rt_shadows.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x8000F6D8",
+      "uses": {
+        "src/lambo_rt_shadows.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x800159FC",
+      "uses": {
+        "src/lambo_rt_shadows.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80088FD0",
+      "uses": {
+        "src/lambo_no_lod.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80089054",
+      "uses": {
+        "src/lambo_sky_widescreen.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x8007D614",
+          "witness_count": 4,
+          "witnesses": [
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000FBF8",
+              "japan_pc": "0x80011A8C",
+              "indexed": true
+            },
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000FE90",
+              "japan_pc": "0x80011D24",
+              "indexed": true
+            },
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x80010130",
+              "japan_pc": "0x80011FC4",
+              "indexed": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80089174",
+      "uses": {
+        "src/lambo_steering.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x800891F0",
+      "uses": {
+        "src/lambo_steering.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x8008D140",
+      "uses": {
+        "src/libultra_stubs.c": 2
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80081AC0",
+          "witness_count": 2,
+          "witnesses": [
+            {
+              "function": "__osViInit",
+              "usa_pc": "0x8007D52C",
+              "japan_pc": "0x800779DC",
+              "indexed": false
+            },
+            {
+              "function": "__osViInit",
+              "usa_pc": "0x8007D53C",
+              "japan_pc": "0x800779EC",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x8008D170",
+      "uses": {
+        "src/libultra_stubs.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80081AF0",
+          "witness_count": 1,
+          "witnesses": [
+            {
+              "function": "__osViInit",
+              "usa_pc": "0x8007D54C",
+              "japan_pc": "0x800779FC",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x8008D1A0",
+      "uses": {
+        "src/lambo_vi.cpp": 1,
+        "src/libultra_stubs.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80081B20",
+          "witness_count": 6,
+          "witnesses": [
+            {
+              "function": "__osViInit",
+              "usa_pc": "0x8007D544",
+              "japan_pc": "0x800779F4",
+              "indexed": false
+            },
+            {
+              "function": "__osViInit",
+              "usa_pc": "0x8007D560",
+              "japan_pc": "0x80077A10",
+              "indexed": false
+            },
+            {
+              "function": "__osViInit",
+              "usa_pc": "0x8007D580",
+              "japan_pc": "0x80077A30",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x8008D1A4",
+      "uses": {
+        "src/lambo_harness_report.cpp": 1,
+        "src/lambo_vi.cpp": 1,
+        "src/libultra_stubs.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80081B24",
+          "witness_count": 20,
+          "witnesses": [
+            {
+              "function": "__osViInit",
+              "usa_pc": "0x8007D550",
+              "japan_pc": "0x80077A00",
+              "indexed": false
+            },
+            {
+              "function": "__osViInit",
+              "usa_pc": "0x8007D570",
+              "japan_pc": "0x80077A20",
+              "indexed": false
+            },
+            {
+              "function": "__osViInit",
+              "usa_pc": "0x8007D5A0",
+              "japan_pc": "0x80077A50",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x8008D4E0",
+      "uses": {
+        "src/libultra_stubs.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80081B30",
+          "witness_count": 1,
+          "witnesses": [
+            {
+              "function": "__osViInit",
+              "usa_pc": "0x8007D5A8",
+              "japan_pc": "0x80077A58",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x8008D530",
+      "uses": {
+        "src/libultra_stubs.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80081BD0",
+          "witness_count": 1,
+          "witnesses": [
+            {
+              "function": "__osViInit",
+              "usa_pc": "0x8007D5D4",
+              "japan_pc": "0x80077A84",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x8008D580",
+      "uses": {
+        "src/libultra_stubs.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80081B80",
+          "witness_count": 1,
+          "witnesses": [
+            {
+              "function": "__osViInit",
+              "usa_pc": "0x8007D5EC",
+              "japan_pc": "0x80077A9C",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x8008D8C0",
+      "uses": {
+        "src/lambo_no_lod.cpp": 2
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x8008D8C8",
+      "uses": {
+        "src/lambo_no_lod.cpp": 2
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80098238",
+      "uses": {
+        "src/lambo_no_lod.cpp": 1,
+        "src/lambo_race_field.cpp": 3,
+        "src/lambo_sky_widescreen.cpp": 1,
+        "src/lambo_track_patch.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800841A0",
+          "witness_count": 4,
+          "witnesses": [
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000FA80",
+              "japan_pc": "0x80011914",
+              "indexed": false
+            },
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000FD18",
+              "japan_pc": "0x80011BAC",
+              "indexed": false
+            },
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000FFB8",
+              "japan_pc": "0x80011E4C",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80098240",
+      "uses": {
+        "src/lambo_main_loop_idle.h": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80084110",
+          "witness_count": 1,
+          "witnesses": [
+            {
+              "function": "func_8000A5FC",
+              "usa_pc": "0x80009A80",
+              "japan_pc": "0x8000B3C8",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80098270",
+      "uses": {
+        "src/lambo_reset.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80084140",
+          "witness_count": 4,
+          "witnesses": [
+            {
+              "function": "func_80006018",
+              "usa_pc": "0x80005740",
+              "japan_pc": "0x80006DF4",
+              "indexed": false
+            },
+            {
+              "function": "func_80006018",
+              "usa_pc": "0x8000574C",
+              "japan_pc": "0x80006E00",
+              "indexed": false
+            },
+            {
+              "function": "func_8000A520",
+              "usa_pc": "0x80009994",
+              "japan_pc": "0x8000B2DC",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80098278",
+      "uses": {
+        "src/libultra_stubs.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80084148",
+          "witness_count": 7,
+          "witnesses": [
+            {
+              "function": "func_8000A520",
+              "usa_pc": "0x80009934",
+              "japan_pc": "0x8000B27C",
+              "indexed": false
+            },
+            {
+              "function": "func_8000A5FC",
+              "usa_pc": "0x80009A14",
+              "japan_pc": "0x8000B35C",
+              "indexed": false
+            },
+            {
+              "function": "func_8000A5FC",
+              "usa_pc": "0x80009A24",
+              "japan_pc": "0x8000B36C",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80098398",
+      "uses": {
+        "src/lambo_vehicle.h": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x8008C7D8",
+          "witness_count": 4,
+          "witnesses": [
+            {
+              "function": "func_8002A070",
+              "usa_pc": "0x8002947C",
+              "japan_pc": "0x8002EE40",
+              "indexed": false
+            },
+            {
+              "function": "func_8002A070",
+              "usa_pc": "0x800294B0",
+              "japan_pc": "0x8002EE74",
+              "indexed": false
+            },
+            {
+              "function": "func_8002A070",
+              "usa_pc": "0x800295B4",
+              "japan_pc": "0x8002EF78",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80098560",
+      "uses": {
+        "src/lambo_harness_report.cpp": 1,
+        "src/stub_renderer.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80096748",
+          "witness_count": 13,
+          "witnesses": [
+            {
+              "function": "func_800383A8",
+              "usa_pc": "0x800377B4",
+              "japan_pc": "0x801F9AA4",
+              "indexed": false
+            },
+            {
+              "function": "func_800383A8",
+              "usa_pc": "0x800377CC",
+              "japan_pc": "0x801F9ABC",
+              "indexed": false
+            },
+            {
+              "function": "func_800383A8",
+              "usa_pc": "0x80037814",
+              "japan_pc": "0x801F9B04",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80098562",
+      "uses": {
+        "src/lambo_car_card.cpp": 1,
+        "src/lambo_harness_report.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80096758",
+          "witness_count": 3,
+          "witnesses": [
+            {
+              "function": "func_800383A8",
+              "usa_pc": "0x80037868",
+              "japan_pc": "0x801F9B58",
+              "indexed": false
+            },
+            {
+              "function": "func_800486D8",
+              "usa_pc": "0x80048368",
+              "japan_pc": "0x80208970",
+              "indexed": false
+            },
+            {
+              "function": "func_80048C94",
+              "usa_pc": "0x80048368",
+              "japan_pc": "0x80208970",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80098694",
+      "uses": {
+        "src/lambo_steering.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x800986C8",
+      "uses": {
+        "src/lambo_race_field.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80098720",
+      "uses": {
+        "src/lambo_no_lod.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80098788",
+      "uses": {
+        "src/lambo_main_loop_idle.h": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800C4FC0",
+          "witness_count": 2,
+          "witnesses": [
+            {
+              "function": "func_80006018",
+              "usa_pc": "0x8000569C",
+              "japan_pc": "0x80006D50",
+              "indexed": false
+            },
+            {
+              "function": "func_8000A520",
+              "usa_pc": "0x80009958",
+              "japan_pc": "0x8000B2A0",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800987E0",
+      "uses": {
+        "src/lambo_sky_widescreen.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800967BA",
+          "witness_count": 35,
+          "witnesses": [
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000F9E0",
+              "japan_pc": "0x80011874",
+              "indexed": false
+            },
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000FA0C",
+              "japan_pc": "0x800118A0",
+              "indexed": false
+            },
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000FD14",
+              "japan_pc": "0x80011BA8",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80098E58",
+      "uses": {
+        "src/lambo_sky_widescreen.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x8009688C",
+          "witness_count": 34,
+          "witnesses": [
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000F77C",
+              "japan_pc": "0x80011610",
+              "indexed": false
+            },
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000F784",
+              "japan_pc": "0x80011618",
+              "indexed": false
+            },
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000F7A8",
+              "japan_pc": "0x8001163C",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800A2BFC",
+      "uses": {
+        "src/lambo_car_card.cpp": 1,
+        "src/lambo_rt_shadows.cpp": 1,
+        "src/lambo_sky_widescreen.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80096F88",
+          "witness_count": 14,
+          "witnesses": [
+            {
+              "function": "func_80032450",
+              "usa_pc": "0x800323F4",
+              "japan_pc": "0x800382B4",
+              "indexed": false
+            },
+            {
+              "function": "func_80032450",
+              "usa_pc": "0x800331F0",
+              "japan_pc": "0x800390B0",
+              "indexed": false
+            },
+            {
+              "function": "func_80032450",
+              "usa_pc": "0x80035270",
+              "japan_pc": "0x8003B130",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800A2F90",
+      "uses": {
+        "src/lambo_rt_shadows.cpp": 1,
+        "src/lambo_sky_widescreen.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80097320",
+          "witness_count": 2,
+          "witnesses": [
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000F908",
+              "japan_pc": "0x8001179C",
+              "indexed": false
+            },
+            {
+              "function": "func_80036FC0",
+              "usa_pc": "0x800364EC",
+              "japan_pc": "0x8003C3AC",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800A2FB8",
+      "uses": {
+        "src/lambo_rt_shadows.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x800A39CC",
+      "uses": {
+        "src/lambo_car_card.cpp": 1,
+        "src/lambo_flare_widescreen.c": 1,
+        "src/lambo_hud_widescreen.c": 1,
+        "src/lambo_interpolation.cpp": 1,
+        "src/lambo_rt_shadows.cpp": 1,
+        "src/lambo_sky_widescreen.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800A9D64",
+          "witness_count": 2237,
+          "witnesses": [
+            {
+              "function": "func_80006018",
+              "usa_pc": "0x8000542C",
+              "japan_pc": "0x80006AE0",
+              "indexed": false
+            },
+            {
+              "function": "func_80006018",
+              "usa_pc": "0x8000556C",
+              "japan_pc": "0x80006C20",
+              "indexed": false
+            },
+            {
+              "function": "func_8000F068",
+              "usa_pc": "0x8000E594",
+              "japan_pc": "0x80010428",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800A39DC",
+      "uses": {
+        "src/lambo_analog_brake.cpp": 1,
+        "src/lambo_analog_throttle.cpp": 1,
+        "src/lambo_steering.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x800A39E0",
+      "uses": {
+        "src/lambo_analog_brake.cpp": 1,
+        "src/lambo_analog_throttle.cpp": 1,
+        "src/lambo_driving_assists_runtime.cpp": 1,
+        "src/lambo_replay_runtime.cpp": 1,
+        "src/lambo_steering.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800A9E88",
+          "witness_count": 5,
+          "witnesses": [
+            {
+              "function": "func_8000A520",
+              "usa_pc": "0x800099B4",
+              "japan_pc": "0x8000B2FC",
+              "indexed": false
+            },
+            {
+              "function": "func_8004AFD8",
+              "usa_pc": "0x8004A428",
+              "japan_pc": "0x8020AA48",
+              "indexed": true
+            },
+            {
+              "function": "func_800716B8",
+              "usa_pc": "0x80070AE0",
+              "japan_pc": "0x80064F30",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800A39F8",
+      "uses": {
+        "src/lambo_replay_runtime.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x800A3A00",
+      "uses": {
+        "src/lambo_replay_runtime.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x800A3A0E",
+      "uses": {
+        "src/lambo_steering.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x800A4819",
+      "uses": {
+        "src/lambo_player_name.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800BA169",
+          "witness_count": 2,
+          "witnesses": [
+            {
+              "function": "func_8003FFC0",
+              "usa_pc": "0x8003F3F8",
+              "japan_pc": "0x80202414",
+              "indexed": true
+            },
+            {
+              "function": "func_8003FFC0",
+              "usa_pc": "0x8003F434",
+              "japan_pc": "0x80202450",
+              "indexed": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800BF1CC",
+      "uses": {
+        "src/lambo_no_lod.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x800BF1D0",
+      "uses": {
+        "src/lambo_no_lod.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800C4E68",
+          "witness_count": 13,
+          "witnesses": [
+            {
+              "function": "func_80010ED4",
+              "usa_pc": "0x8001030C",
+              "japan_pc": "0x800121A0",
+              "indexed": false
+            },
+            {
+              "function": "func_80010ED4",
+              "usa_pc": "0x80010764",
+              "japan_pc": "0x800125F8",
+              "indexed": false
+            },
+            {
+              "function": "func_80010ED4",
+              "usa_pc": "0x800107C8",
+              "japan_pc": "0x8001265C",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800BF1D8",
+      "uses": {
+        "src/lambo_sky_widescreen.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800A9F10",
+          "witness_count": 7,
+          "witnesses": [
+            {
+              "function": "func_80006018",
+              "usa_pc": "0x80005458",
+              "japan_pc": "0x80006B0C",
+              "indexed": false
+            },
+            {
+              "function": "func_80006018",
+              "usa_pc": "0x800054EC",
+              "japan_pc": "0x80006BA0",
+              "indexed": false
+            },
+            {
+              "function": "func_80006018",
+              "usa_pc": "0x80005554",
+              "japan_pc": "0x80006C08",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800BF240",
+      "uses": {
+        "src/lambo_car_card.cpp": 1,
+        "src/lambo_rt_shadows.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x800CE678",
+      "uses": {
+        "src/lambo_no_lod.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x800CE6A4",
+      "uses": {
+        "src/lambo_hud_widescreen.c": 1,
+        "src/lambo_race_field.cpp": 1,
+        "src/lambo_rt_shadows.cpp": 1,
+        "src/lambo_sky_widescreen.cpp": 1,
+        "src/lambo_warp.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800C4E98",
+          "witness_count": 14,
+          "witnesses": [
+            {
+              "function": "func_80032450",
+              "usa_pc": "0x80033260",
+              "japan_pc": "0x80039120",
+              "indexed": false
+            },
+            {
+              "function": "func_80032450",
+              "usa_pc": "0x80033298",
+              "japan_pc": "0x80039158",
+              "indexed": false
+            },
+            {
+              "function": "func_8003E6D0",
+              "usa_pc": "0x8003DAE0",
+              "japan_pc": "0x802009BC",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800CE6A6",
+      "uses": {
+        "src/lambo_car_card.cpp": 1,
+        "src/lambo_interpolation.cpp": 1,
+        "src/lambo_player_name.cpp": 1,
+        "src/lambo_sky_widescreen.cpp": 1,
+        "src/lambo_warp.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800C4E9A",
+          "witness_count": 18,
+          "witnesses": [
+            {
+              "function": "func_8000F068",
+              "usa_pc": "0x8000E4B4",
+              "japan_pc": "0x80010348",
+              "indexed": false
+            },
+            {
+              "function": "func_8000F068",
+              "usa_pc": "0x8000E4EC",
+              "japan_pc": "0x80010380",
+              "indexed": false
+            },
+            {
+              "function": "func_8000F068",
+              "usa_pc": "0x8000E524",
+              "japan_pc": "0x800103B8",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800CE6AA",
+      "uses": {
+        "src/lambo_analog_brake.cpp": 1,
+        "src/lambo_analog_throttle.cpp": 1,
+        "src/lambo_race_field.cpp": 1,
+        "src/lambo_rt_shadows.cpp": 1,
+        "src/lambo_steering.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800C4E9E",
+          "witness_count": 223,
+          "witnesses": [
+            {
+              "function": "func_80025834",
+              "usa_pc": "0x80024C44",
+              "japan_pc": "0x8002A520",
+              "indexed": false
+            },
+            {
+              "function": "func_80025834",
+              "usa_pc": "0x80024C6C",
+              "japan_pc": "0x8002A548",
+              "indexed": false
+            },
+            {
+              "function": "func_80025834",
+              "usa_pc": "0x80024C98",
+              "japan_pc": "0x8002A574",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800CE6AC",
+      "uses": {
+        "src/lambo_camera.cpp": 2,
+        "src/lambo_driving_assists_runtime.cpp": 1,
+        "src/lambo_harness_report.cpp": 1,
+        "src/lambo_replay_runtime.cpp": 1,
+        "src/lambo_rt_shadows.cpp": 1,
+        "src/lambo_savestate.c": 1,
+        "src/lambo_vehicle.h": 1,
+        "src/stub_renderer.cpp": 3
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800C4EA0",
+          "witness_count": 1,
+          "witnesses": [
+            {
+              "function": "func_80008E90",
+              "usa_pc": "0x800082B0",
+              "japan_pc": "0x80009C08",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800CE6B0",
+      "uses": {
+        "src/lambo_camera.cpp": 2,
+        "src/lambo_driving_assists_runtime.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800C4EA4",
+          "witness_count": 3,
+          "witnesses": [
+            {
+              "function": "func_80032450",
+              "usa_pc": "0x80031860",
+              "japan_pc": "0x80037720",
+              "indexed": false
+            },
+            {
+              "function": "func_80032450",
+              "usa_pc": "0x8003222C",
+              "japan_pc": "0x800380EC",
+              "indexed": false
+            },
+            {
+              "function": "func_80032450",
+              "usa_pc": "0x80033368",
+              "japan_pc": "0x80039228",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800CE6B4",
+      "uses": {
+        "src/lambo_camera.cpp": 2,
+        "src/lambo_driving_assists_runtime.cpp": 1,
+        "src/lambo_race_field.cpp": 1,
+        "src/lambo_rt_shadows.cpp": 1,
+        "src/lambo_warp.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800C4EA8",
+          "witness_count": 11,
+          "witnesses": [
+            {
+              "function": "func_80032450",
+              "usa_pc": "0x8003324C",
+              "japan_pc": "0x8003910C",
+              "indexed": false
+            },
+            {
+              "function": "func_80032450",
+              "usa_pc": "0x80033D04",
+              "japan_pc": "0x80039BC4",
+              "indexed": false
+            },
+            {
+              "function": "func_80032450",
+              "usa_pc": "0x80035514",
+              "japan_pc": "0x8003B3D4",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800CE6BA",
+      "uses": {
+        "src/lambo_race_field.cpp": 1,
+        "src/lambo_warp.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800C4EAE",
+          "witness_count": 20,
+          "witnesses": [
+            {
+              "function": "func_8003EBCC",
+              "usa_pc": "0x8003DFD0",
+              "japan_pc": "0x80200EA4",
+              "indexed": false
+            },
+            {
+              "function": "func_8003EBCC",
+              "usa_pc": "0x8003DFE8",
+              "japan_pc": "0x80200EBC",
+              "indexed": false
+            },
+            {
+              "function": "func_8003EBCC",
+              "usa_pc": "0x8003E008",
+              "japan_pc": "0x80200EDC",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800CE6C0",
+      "uses": {
+        "src/lambo_warp.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800C4EB0",
+          "witness_count": 38,
+          "witnesses": [
+            {
+              "function": "func_8003E998",
+              "usa_pc": "0x8003DDB0",
+              "japan_pc": "0x80200C84",
+              "indexed": false
+            },
+            {
+              "function": "func_8003E998",
+              "usa_pc": "0x8003DDB4",
+              "japan_pc": "0x80200C88",
+              "indexed": false
+            },
+            {
+              "function": "func_8003E998",
+              "usa_pc": "0x8003DDBC",
+              "japan_pc": "0x80200C90",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800CE6E0",
+      "uses": {
+        "src/lambo_warp.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800C4ED0",
+          "witness_count": 24,
+          "witnesses": [
+            {
+              "function": "func_8003EAD0",
+              "usa_pc": "0x8003DED4",
+              "japan_pc": "0x80200DA8",
+              "indexed": false
+            },
+            {
+              "function": "func_8003EAD0",
+              "usa_pc": "0x8003DED8",
+              "japan_pc": "0x80200DAC",
+              "indexed": false
+            },
+            {
+              "function": "func_8003EAD0",
+              "usa_pc": "0x8003DEE0",
+              "japan_pc": "0x80200DB4",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800CE700",
+      "uses": {
+        "src/lambo_warp.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800C4EF0",
+          "witness_count": 3,
+          "witnesses": [
+            {
+              "function": "func_8003EE90",
+              "usa_pc": "0x8003E29C",
+              "japan_pc": "0x80201170",
+              "indexed": false
+            },
+            {
+              "function": "func_8003EE90",
+              "usa_pc": "0x8003E2A8",
+              "japan_pc": "0x8020117C",
+              "indexed": true
+            },
+            {
+              "function": "func_8003EE90",
+              "usa_pc": "0x8003E2B0",
+              "japan_pc": "0x80201184",
+              "indexed": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800CE774",
+      "uses": {
+        "src/stub_renderer.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x800CE794",
+      "uses": {
+        "src/lambo_harness_report.cpp": 1,
+        "src/lambo_no_lod.cpp": 1,
+        "src/lambo_rt_shadows.cpp": 1,
+        "src/lambo_sky_widescreen.cpp": 1,
+        "src/lambo_track_patch.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800C4FFA",
+          "witness_count": 16,
+          "witnesses": [
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000FBD8",
+              "japan_pc": "0x80011A6C",
+              "indexed": false
+            },
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000FE70",
+              "japan_pc": "0x80011D04",
+              "indexed": false
+            },
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x80010110",
+              "japan_pc": "0x80011FA4",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800CE79C",
+      "uses": {
+        "src/lambo_vehicle.h": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x800CE7A4",
+      "uses": {
+        "src/lambo_vehicle.h": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x800CE7A8",
+      "uses": {
+        "src/lambo_race_field.cpp": 1,
+        "src/lambo_warp.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800C5006",
+          "witness_count": 1,
+          "witnesses": [
+            {
+              "function": "func_80032450",
+              "usa_pc": "0x800324F4",
+              "japan_pc": "0x800383B4",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800CE7AC",
+      "uses": {
+        "src/lambo_race_field.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x800C500A",
+          "witness_count": 5,
+          "witnesses": [
+            {
+              "function": "func_80054FFC",
+              "usa_pc": "0x80055160",
+              "japan_pc": "0x80042AA0",
+              "indexed": false
+            },
+            {
+              "function": "func_80055718",
+              "usa_pc": "0x80055160",
+              "japan_pc": "0x80042AA0",
+              "indexed": false
+            },
+            {
+              "function": "func_800583B8",
+              "usa_pc": "0x80057810",
+              "japan_pc": "0x80045150",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800CE7E8",
+      "uses": {
+        "src/lambo_race_field.cpp": 1,
+        "src/lambo_vehicle.h": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x800CE802",
+      "uses": {
+        "src/lambo_car_card.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x8008CA52",
+          "witness_count": 2,
+          "witnesses": [
+            {
+              "function": "func_80056318",
+              "usa_pc": "0x80056A18",
+              "japan_pc": "0x80044358",
+              "indexed": false
+            },
+            {
+              "function": "func_80058614",
+              "usa_pc": "0x80057A2C",
+              "japan_pc": "0x8004536C",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800CE808",
+      "uses": {
+        "src/lambo_driving_assists_runtime.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x8008CA56",
+          "witness_count": 4,
+          "witnesses": [
+            {
+              "function": "func_80032450",
+              "usa_pc": "0x80033358",
+              "japan_pc": "0x80039218",
+              "indexed": false
+            },
+            {
+              "function": "func_80032450",
+              "usa_pc": "0x800340F8",
+              "japan_pc": "0x80039FB8",
+              "indexed": false
+            },
+            {
+              "function": "func_80032450",
+              "usa_pc": "0x80034638",
+              "japan_pc": "0x8003A4F8",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80110D60",
+      "uses": {
+        "src/libultra_stubs.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80107638",
+          "witness_count": 2,
+          "witnesses": [
+            {
+              "function": "func_80069ED8",
+              "usa_pc": "0x800692F0",
+              "japan_pc": "0x8005C9D0",
+              "indexed": false
+            },
+            {
+              "function": "func_8006A910",
+              "usa_pc": "0x80069DD4",
+              "japan_pc": "0x8005D3DC",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80110D68",
+      "uses": {
+        "src/libultra_stubs.c": 3
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80107640",
+          "witness_count": 3,
+          "witnesses": [
+            {
+              "function": "func_8006A7A0",
+              "usa_pc": "0x80069BD0",
+              "japan_pc": "0x8005D1D8",
+              "indexed": false
+            },
+            {
+              "function": "func_8006A82C",
+              "usa_pc": "0x80069C5C",
+              "japan_pc": "0x8005D264",
+              "indexed": false
+            },
+            {
+              "function": "func_8006A910",
+              "usa_pc": "0x80069DB8",
+              "japan_pc": "0x8005D3C0",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80110F08",
+      "uses": {
+        "src/libultra_stubs.c": 2
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x801077E0",
+          "witness_count": 6,
+          "witnesses": [
+            {
+              "function": "func_800400EC",
+              "usa_pc": "0x8003F574",
+              "japan_pc": "0x80202588",
+              "indexed": true
+            },
+            {
+              "function": "func_8004EC98",
+              "usa_pc": "0x8004E0C0",
+              "japan_pc": "0x8020CE60",
+              "indexed": true
+            },
+            {
+              "function": "func_8006A7A0",
+              "usa_pc": "0x80069BBC",
+              "japan_pc": "0x8005D1C4",
+              "indexed": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80110F18",
+      "uses": {
+        "src/libultra_stubs.c": 3
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x801077F0",
+          "witness_count": 6,
+          "witnesses": [
+            {
+              "function": "func_8006A7A0",
+              "usa_pc": "0x80069C10",
+              "japan_pc": "0x8005D218",
+              "indexed": true
+            },
+            {
+              "function": "func_8006A82C",
+              "usa_pc": "0x80069C98",
+              "japan_pc": "0x8005D2A0",
+              "indexed": true
+            },
+            {
+              "function": "func_8006A870",
+              "usa_pc": "0x80069C98",
+              "japan_pc": "0x8005D2A0",
+              "indexed": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80110F28",
+      "uses": {
+        "src/libultra_stubs.c": 2
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80107800",
+          "witness_count": 3,
+          "witnesses": [
+            {
+              "function": "func_8006A8B4",
+              "usa_pc": "0x80069CFC",
+              "japan_pc": "0x8005D304",
+              "indexed": true
+            },
+            {
+              "function": "func_8006A910",
+              "usa_pc": "0x80069D58",
+              "japan_pc": "0x8005D360",
+              "indexed": true
+            },
+            {
+              "function": "func_8006A910",
+              "usa_pc": "0x80069E00",
+              "japan_pc": "0x8005D408",
+              "indexed": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80110F38",
+      "uses": {
+        "src/libultra_stubs.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80107810",
+          "witness_count": 7,
+          "witnesses": [
+            {
+              "function": "func_8006A910",
+              "usa_pc": "0x80069E14",
+              "japan_pc": "0x8005D41C",
+              "indexed": true
+            },
+            {
+              "function": "func_8006A910",
+              "usa_pc": "0x80069E2C",
+              "japan_pc": "0x8005D434",
+              "indexed": false
+            },
+            {
+              "function": "func_8006A910",
+              "usa_pc": "0x80069E38",
+              "japan_pc": "0x8005D440",
+              "indexed": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80112658",
+      "uses": {
+        "src/libultra_stubs.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x801075E0",
+          "witness_count": 2,
+          "witnesses": [
+            {
+              "function": "func_8000A5FC",
+              "usa_pc": "0x80009A64",
+              "japan_pc": "0x8000B3AC",
+              "indexed": false
+            },
+            {
+              "function": "func_8006A910",
+              "usa_pc": "0x80069D24",
+              "japan_pc": "0x8005D32C",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80112670",
+      "uses": {
+        "src/libultra_stubs.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x801075F8",
+          "witness_count": 3,
+          "witnesses": [
+            {
+              "function": "func_8004ED64",
+              "usa_pc": "0x8004E178",
+              "japan_pc": "0x8020CF18",
+              "indexed": false
+            },
+            {
+              "function": "func_8004FE54",
+              "usa_pc": "0x8004F268",
+              "japan_pc": "0x8020E03C",
+              "indexed": false
+            },
+            {
+              "function": "func_8006A910",
+              "usa_pc": "0x80069D20",
+              "japan_pc": "0x8005D328",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x8011C640",
+      "uses": {
+        "src/libultra_stubs.c": 2
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80112C60",
+          "witness_count": 17,
+          "witnesses": [
+            {
+              "function": "func_80074D30",
+              "usa_pc": "0x80074164",
+              "japan_pc": "0x80069724",
+              "indexed": false
+            },
+            {
+              "function": "func_80074D30",
+              "usa_pc": "0x800741A0",
+              "japan_pc": "0x80069760",
+              "indexed": true
+            },
+            {
+              "function": "func_80074D30",
+              "usa_pc": "0x800741C0",
+              "japan_pc": "0x80069780",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x8011C680",
+      "uses": {
+        "src/libultra_stubs.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80112CA0",
+          "witness_count": 10,
+          "witnesses": [
+            {
+              "function": "func_80074D30",
+              "usa_pc": "0x80074148",
+              "japan_pc": "0x80069708",
+              "indexed": false
+            },
+            {
+              "function": "func_80074D30",
+              "usa_pc": "0x800741DC",
+              "japan_pc": "0x8006979C",
+              "indexed": false
+            },
+            {
+              "function": "func_8007A170",
+              "usa_pc": "0x80079738",
+              "japan_pc": "0x80068FD8",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x8011C681",
+      "uses": {
+        "src/libultra_stubs.c": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80112CA1",
+          "witness_count": 28,
+          "witnesses": [
+            {
+              "function": "func_80074DF4",
+              "usa_pc": "0x800741F8",
+              "japan_pc": "0x800697B8",
+              "indexed": false
+            },
+            {
+              "function": "func_80074DF4",
+              "usa_pc": "0x80074270",
+              "japan_pc": "0x80069830",
+              "indexed": false
+            },
+            {
+              "function": "func_80074DF4",
+              "usa_pc": "0x800742DC",
+              "japan_pc": "0x8006989C",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x8011F450",
+      "uses": {
+        "src/lambo_sky_widescreen.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80125518",
+          "witness_count": 4,
+          "witnesses": [
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000FC48",
+              "japan_pc": "0x80011ADC",
+              "indexed": false
+            },
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000FEE8",
+              "japan_pc": "0x80011D7C",
+              "indexed": false
+            },
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x80010188",
+              "japan_pc": "0x8001201C",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x8011F5D0",
+      "uses": {
+        "src/lambo_sky_widescreen.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80125698",
+          "witness_count": 5,
+          "witnesses": [
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000FC98",
+              "japan_pc": "0x80011B2C",
+              "indexed": false
+            },
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x8000FF3C",
+              "japan_pc": "0x80011DD0",
+              "indexed": false
+            },
+            {
+              "function": "func_800102D8",
+              "usa_pc": "0x800101DC",
+              "japan_pc": "0x80012070",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x8013D3C8",
+      "uses": {
+        "src/lambo_rt_admission.cpp": 1,
+        "src/lambo_rt_evidence.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x8013D490",
+      "uses": {
+        "src/lambo_car_card.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x8013E290",
+      "uses": {
+        "src/lambo_car_trace.c": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x8013E2D0",
+      "uses": {
+        "src/lambo_car_trace.c": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x8013F820",
+      "uses": {
+        "src/lambo_car_card.cpp": 1,
+        "src/lambo_race_field.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x8014DB68",
+          "witness_count": 1,
+          "witnesses": [
+            {
+              "function": "func_8004CCB4",
+              "usa_pc": "0x8004C454",
+              "japan_pc": "0x80048554",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x8015DA16",
+      "uses": {
+        "src/lambo_car_card.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x8016BD5E",
+          "witness_count": 1,
+          "witnesses": [
+            {
+              "function": "func_8004CCB4",
+              "usa_pc": "0x8004C3F0",
+              "japan_pc": "0x800484F0",
+              "indexed": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x8015DA8A",
+      "uses": {
+        "src/lambo_car_card.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x8016BDD2",
+          "witness_count": 1,
+          "witnesses": [
+            {
+              "function": "func_8004CCB4",
+              "usa_pc": "0x8004C2D8",
+              "japan_pc": "0x800483D8",
+              "indexed": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80167170",
+      "uses": {
+        "src/lambo_hud.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x801797E0",
+      "uses": {
+        "src/lambo_race_field.cpp": 4
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x8017D8D0",
+          "witness_count": 32,
+          "witnesses": [
+            {
+              "function": "func_80041C14",
+              "usa_pc": "0x80041118",
+              "japan_pc": "0x80204260",
+              "indexed": false
+            },
+            {
+              "function": "func_80041C14",
+              "usa_pc": "0x80041158",
+              "japan_pc": "0x802042A0",
+              "indexed": false
+            },
+            {
+              "function": "func_80041C14",
+              "usa_pc": "0x80041198",
+              "japan_pc": "0x802042E0",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x80800000",
+      "uses": {
+        "src/lambo_harness_report.cpp": 1,
+        "src/lambo_no_lod.cpp": 1,
+        "src/lambo_sky_widescreen.cpp": 2,
+        "src/lambo_track_patch.cpp": 1,
+        "src/lambo_vi.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80900000",
+      "uses": {
+        "src/lambo_race_field.h": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80900E00",
+      "uses": {
+        "src/lambo_rt_shadows.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80901000",
+      "uses": {
+        "src/lambo_race_field.h": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80901100",
+      "uses": {
+        "src/lambo_race_field.h": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80901200",
+      "uses": {
+        "src/lambo_race_field.h": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80901300",
+      "uses": {
+        "src/lambo_race_field.h": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80902000",
+      "uses": {
+        "src/lambo_race_field.h": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80910000",
+      "uses": {
+        "src/lambo_vehicle.h": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    }
+  ]
+}
