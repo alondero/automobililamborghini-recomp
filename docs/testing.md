@@ -73,7 +73,7 @@ and runs:
 
 ~~~text
 python scripts/gen_jp_syms_toml.py --check
-python tools/run_host_tests.py --require tests.test_jp_recompile
+python tools/run_host_tests.py --require tests.test_jp_recompile --require tests.test_jp_addresses
 ~~~
 
 The first command prints the ROM hashes it verified. The second fails the job
@@ -82,6 +82,12 @@ need both ROMs; the recompile tests also need a
 built N64Recomp and gcc. Locally they skip without them. One test needs no ROM
 and runs in the host suite on every pull request: it fails when the USA symbol
 table or configuration changed after the Japanese tables were generated.
+
+The address-audit tests also check the handwritten literal inventory and
+relocation-analysis rules without ROMs. With both cartridges they reproduce
+`docs/japanese-address-audit.json`. Regenerate that evidence with
+`python scripts/audit_jp_addresses.py` after changing its inputs or address
+inventory; see [the migration limits](japanese-rom.md#handwritten-address-migration).
 
 For dependency changes, run `python tools/apply_patches.py`. It checks that
 `patches/series.txt`, the only list of dependency patches, names every patch
