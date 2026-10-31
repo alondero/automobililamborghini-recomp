@@ -62,6 +62,7 @@
 0052-plume-vulkan-map-failure-recovery.patch
 0053-plume-vulkan-nested-read-map-guard.patch
 0055-plume-android-surface-recovery.patch
+0062-plume-vulkan-texture-readback.patch
 
 [lib/RecompFrontend]
 0017-recompfrontend-lamborghini-integration.patch

@@ -1,6 +1,7 @@
 // ROM-free offscreen upload/draw/readback through the patched Plume backend.
 #include "plume_vulkan.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -96,10 +97,23 @@ static void draw(VulkanDevice &device, const std::vector<char> &vs, const std::v
 
     // A full-screen triangle with uploaded positions and red vertex colors.
     const float vertices[] = {-1,-1, 1,0,0,1, -1,3, 1,0,0,1, 3,-1, 1,0,0,1};
-    const RenderRange noRead{0, 0}, written{16, 16 + sizeof(vertices)}, read{16, 80};
+    const RenderRange noRead{0, 0}, written{16, 16 + sizeof(vertices)};
+    // Read back into a padded, byte-offset footprint: four 8-texel rows
+    // starting at offset 32. Pixels land in the first four texels of each row.
+    const uint32_t readOffset = 32;
+    const RenderRange read{0, readOffset + 4 * 8 * 4};
     auto *bytes = static_cast<uint8_t *>(upload->map(0, &noRead));
     memcpy(bytes + written.begin, vertices, sizeof(vertices));
     upload->unmap(0, partial ? &written : nullptr);
+    // Prefill the readback buffer so the offset and row padding are observable.
+    const uint8_t sentinel = 0xCD;
+    const RenderRange prefilled{0, 256};
+    bytes = static_cast<uint8_t *>(readback->map(0, &noRead));
+    require(bytes != nullptr, "readback prefill map failed");
+    memset(bytes, sentinel, 256);
+    // Mirror the upload's ranges=omitted/partial matrix: flush exactly the
+    // prefilled range, which is what the host actually wrote.
+    readback->unmap(0, partial ? &prefilled : nullptr);
 
     RenderPipelineLayoutDesc layoutDesc;
     layoutDesc.allowInputLayout = true;
@@ -146,38 +160,38 @@ static void draw(VulkanDevice &device, const std::vector<char> &vs, const std::v
     list->setVertexBuffers(0, &view, 1, &slot);
     list->drawInstanced(3, 1, 0, 0);
     list->barriers(RenderBarrierStage::COPY, RenderTextureBarrier(target.get(), RenderTextureLayout::COPY_SOURCE));
-    // Plume's pinned image-to-buffer copy dereferences a null dstTexture.
-    // Use native Vulkan here to isolate mapped-memory visibility from that bug.
-    const auto command = static_cast<VulkanCommandList *>(list.get())->vk;
-    VkBufferImageCopy copy{};
-    copy.bufferOffset = read.begin;
-    copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    copy.imageSubresource.layerCount = 1;
-    copy.imageExtent = {4, 4, 1};
-    vkCmdCopyImageToBuffer(command, static_cast<VulkanTexture *>(target.get())->vk,
-        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback->vk, 1, &copy);
-    VkBufferMemoryBarrier hostBarrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-    hostBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    hostBarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-    hostBarrier.srcQueueFamilyIndex = hostBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    hostBarrier.buffer = readback->vk;
-    hostBarrier.offset = read.begin;
-    hostBarrier.size = read.end - read.begin;
-    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
-        0, 0, nullptr, 1, &hostBarrier, 0, nullptr);
+    // Exercise the production readback path through the patched Plume branch.
+    list->copyTextureRegion(
+        RenderTextureCopyLocation::PlacedFootprint(readback.get(), RenderFormat::R8G8B8A8_UNORM,
+            4, 4, 1, 8, readOffset),
+        RenderTextureCopyLocation::Subresource(target.get()));
     list->end();
     queue->executeCommandLists(list.get(), fence.get());
     const auto nativeFence = static_cast<VulkanCommandFence *>(fence.get())->vk;
     require(vkWaitForFences(device.vk, 1, &nativeFence, VK_TRUE, 30000000000ULL) == VK_SUCCESS,
         "GPU completion fence failed");
     printf("graphics family=%u, GPU completion fence waited\n", device.queueFamilyIndices[0]);
+    // Mapping invalidates the read range only after the completion fence.
     bytes = static_cast<uint8_t *>(readback->map(0, partial ? &read : nullptr));
-    for (unsigned i = 16; i < 80; i += 4) {
-        require(bytes[i] == 255 && bytes[i+1] == 0 && bytes[i+2] == 0 && bytes[i+3] == 255,
-            "upload/draw/readback pixel mismatch");
+    require(bytes != nullptr, "readback map failed");
+    for (unsigned y = 0; y < 4; ++y) {
+        for (unsigned x = 0; x < 4; ++x) {
+            const unsigned i = readOffset + y * 8 * 4 + x * 4;
+            require(bytes[i] == 255 && bytes[i+1] == 0 && bytes[i+2] == 0 && bytes[i+3] == 255,
+                "upload/draw/readback pixel mismatch");
+        }
+        for (unsigned x = 4; x < 8; ++x) {
+            const unsigned i = readOffset + y * 8 * 4 + x * 4;
+            require(std::all_of(bytes + i, bytes + i + 4, [sentinel](uint8_t value) {
+                return value == sentinel;
+            }), "texture readback overwrote padded row bytes");
+        }
     }
+    require(std::all_of(bytes, bytes + readOffset, [sentinel](uint8_t value) {
+        return value == sentinel;
+    }), "texture readback ignored the buffer offset");
     readback->unmap(0, nullptr);
-    puts("PASS: 16 red pixels read back");
+    puts("PASS: 16 red pixels read back at a padded, offset footprint");
 }
 
 int main(int argc, char **argv) {
