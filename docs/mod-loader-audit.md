@@ -66,6 +66,17 @@ port integration and build changes. The revision and patch series together
 identify the reproducible source state; generated ROM output stays untracked.
 The [tree comparison record](evidence/mod-loader-dependency-trees.json) retains
 the pins, patch counts and resulting tree hashes for independent reproduction.
+The tracked [verifier](../tools/verify_dependency_trees.py) generates that record
+and checks an existing record without changing dependency files or their real
+Git indices. After a normal Windows build, reproduce it with:
+
+~~~text
+python tools/verify_dependency_trees.py --platform windows --check docs/evidence/mod-loader-dependency-trees.json
+~~~
+
+Use `--output PATH` to write a new record after a successful comparison. The
+verifier fails for missing checkouts or unpublished source differences instead
+of silently excluding them from the evidence.
 
 ## Historical audit: what already existed
 

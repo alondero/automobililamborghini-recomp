@@ -83,11 +83,13 @@ until destroyed or a fresh game boot.
 
 ### Pool-reset caller evidence
 
-The USA reset routine has exactly three stock `jal` sites. A temporary
-diagnostic configuration added a `printf` hook immediately before each call;
-the generated C was rebuilt, not edited. The headless
-`recordings/menu-to-race-smoke.jsonl` run consumed 1272/1272 frames, reached
-state 8 and produced the following measurements:
+The USA reset routine has exactly three stock `jal` sites. The tracked
+[diagnostic generator](../scripts/gen_mod_pool_trace.py) creates a separate
+configuration with a `printf` hook immediately before each call; generated C
+is rebuilt, not edited. The headless [scenario](../scenarios/mod-pool-callers.json)
+uses `recordings/menu-to-race-smoke.jsonl`. It runs with the ordinary executable;
+the diagnostic build is needed only to collect the dynamic reset counts.
+The recorded run consumed 1272/1272 frames, reached state 8 and produced:
 
 | Call site | Generated caller | Dispatcher states with a direct call path | Observed state at reset |
 | --- | --- | --- | --- |
@@ -111,11 +113,31 @@ three sites, the dispatcher jump-table mapping and the direct-call sets above.
 without ROM bytes. Diagnostic hooks were removed by regenerating from the
 canonical configuration before the final build and package tests.
 
+To regenerate the dynamic evidence on Windows after the normal build:
+
+~~~text
+python scripts/gen_mod_pool_trace.py --output build/mod-pool-trace.toml
+build/lib/N64ModernRuntime/librecomp/N64Recomp/N64Recomp.exe build/mod-pool-trace.toml
+cmake --build build --target lamborghini_modern
+Copy-Item build/lamborghini_modern.exe build/lamborghini_modern_pool_trace.exe
+python tools/run_game_scenario.py scenarios/mod-pool-callers.json --exe build/lamborghini_modern_pool_trace.exe
+~~~
+
+The runner prints its artifact directory. Pass that directory to
+`python scripts/gen_mod_pool_trace.py --summarize ARTIFACT_DIRECTORY --output build/mod-pool-reset-usa.json`
+to regenerate the summary. Timing counters such as VIs can vary between runs.
+The summarizer rejects successful ordinary runs without diagnostic markers.
+Restore the production executable afterwards:
+
+~~~text
+build/lib/N64ModernRuntime/librecomp/N64Recomp/N64Recomp.exe lamborghini.us.toml
+cmake --build build --target lamborghini_modern
+~~~
+
 No observed caller runs inside the continuing state-8 race, so no state guard
 was added. The reset hook still invalidates handles for every actual pool
-reset. A mod that explicitly resets the pool creates a new object lifetime
-even if it leaves the game-state halfword at 8; retaining old extension pointers
-across that operation is outside the contract.
+reset. Retaining old extension pointers across a pool reset is outside the
+contract. The v1 interface does not expose an operation to reset the pool.
 
 ## Utility stores
 

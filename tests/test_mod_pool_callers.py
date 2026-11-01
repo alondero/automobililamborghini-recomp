@@ -2,6 +2,8 @@
 
 This bounds the stock direct-call paths, not arbitrary mod/native/indirect
 calls. The measured menu-to-race trace is recorded in docs/mod-api.md.
+Named function ranges can overlap, so a call may belong to multiple functions.
+This over-approximates reachability, which is conservative for the no-path claim.
 """
 from functools import lru_cache
 import hashlib
