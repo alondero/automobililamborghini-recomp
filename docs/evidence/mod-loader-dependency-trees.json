@@ -1,0 +1,34 @@
+{
+  "platform": "windows",
+  "comparison": "Temporary Git index: pinned HEAD plus ordered committed patches, compared with a separate index of tracked and untracked source files.",
+  "dependencies": [
+    {
+      "directory": "lib/N64ModernRuntime",
+      "pin": "cdf5abbd5026fef5c364c676e4667c45e42b6863",
+      "patch_count": 8,
+      "patched_tree": "8e28a0d5209b66f646ecca024c1ba81c144a73ad",
+      "worktree_matches": true
+    },
+    {
+      "directory": "lib/rt64",
+      "pin": "f0728a2520d5aa735886240de3fee75cc805f6d6",
+      "patch_count": 23,
+      "patched_tree": "97eb6b3ac81318ad2efa8e19d4a92b3d5bea68fb",
+      "worktree_matches": true
+    },
+    {
+      "directory": "lib/rt64/src/contrib/plume",
+      "pin": "51b1ad443b9f202c5cfc930ae25345d3f2ba7716",
+      "patch_count": 14,
+      "patched_tree": "2b029cc4df99d50bc0b3f3a7b9ea3375407b90b7",
+      "worktree_matches": true
+    },
+    {
+      "directory": "lib/RecompFrontend",
+      "pin": "b1a1477c6556aeb7ed45defbfb5924f721efebc1",
+      "patch_count": 9,
+      "patched_tree": "0bc7f845416619dff8859eb5d102408d1de39599",
+      "worktree_matches": true
+    }
+  ]
+}

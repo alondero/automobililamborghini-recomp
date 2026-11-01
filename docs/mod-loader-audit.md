@@ -1,12 +1,90 @@
 # Mod loader audit
 
-Status: **Confirmed** source audit, checked 2026-10-26 against port commit
+Status: **Experimental** A21 implementation; see the current coverage below.
+The historical source audit was checked 2026-10-26 against port commit
 `aebda1d` and its pinned dependencies. Peer execution and JP feature behaviour
 are **Unverified**. This is the gap analysis for
 [A21 / issue 19](https://github.com/alondero/automobililamborghini-recomp/issues/19),
-not a claim that its full API contract is complete.
+with its original gaps retained below as historical context.
 
-## What already exists
+## A21 implementation coverage
+
+The [versioned game interface](mod-api.md) fills the port-owned interfaces
+identified by the audit. It adapts object extensions to race entrants rather
+than copying another game's actor allocator or promising lifetimes for props.
+
+| Original gap | Implementation and acceptance fixture |
+| --- | --- |
+| Guest UI exports and persisted config reads | Registered during startup; the real package checks UI imports and default/saved enum reads. |
+| Generic data utilities | Per-mod u32 map, set and slot-map stores, with owner checks, bounds and non-recycled handles. Host and package fixtures exercise all three kinds. |
+| Named game data | Six documented USA halfword symbols in `lamborghini.datasyms.toml`, plus versioned getters. The package checks an absolute data-symbol relocation against its getter. |
+| Object extensions | Private, zeroed guest storage attached to race-entrant handles; frame discovery and explicit pool-reset invalidation. Host checks cover teardown, stale/foreign handles, allocation failure and RAM restore; a race package callback allocates and reuses real guest extension memory. |
+| Initialization and gameplay/save events | Registered base events for init, dispatch, race/entrant lifecycle, Pak image load/write notification and developer RAM restore. Event timing and coalescing are explicit in the interface contract. |
+| Native modules | A host-native sibling library with runtime API version 1 is imported and called by MIPS code. Missing library/export and incompatible API version fixtures fail before guest thread creation. |
+
+Execution on Windows x64, MinGW GCC 15.2 and Zig 0.16.0's bundled Clang/LLD,
+with freshly regenerated USA code, passed the enabled, disabled, minimum-version,
+protected-hook, UI/config, native/data/store, Pak-load and circuit-1 lifecycle cases.
+All 77 project CTests passed. These fixtures establish the documented v1
+interface; Linux/Android execution, rendered custom UI and arbitrary gameplay
+hook sites remain unverified. The historical peer-port inventory is a design
+comparison, not a claim of binary compatibility with Zelda or Banjo mods.
+
+Issues 339/340 can use package configuration, native imports and race/frame
+events without waiting for the old blanket A21 dependency. They still need
+their JP measurements, consuming US sites and reference parity checks. This
+change does not locate the missing JP fields or make protected ROM functions
+safe for regeneration. Per-mod save-file extensions remain issue 21.
+
+## Dependency build inputs and reproduction
+
+The tested dependency state is each pinned submodule **plus the committed
+patch series**, not an unmodified upstream checkout. This is the repository's
+supported build contract: [CMake](../cmake/Patches.cmake), `build.ps1`, `build.sh`
+and the Android script apply [patches/series.txt](../patches/series.txt) through
+[the shared tool](../tools/apply_patches.py). This PR adds no dependency patches
+and changes no dependency pins; it relies on the same patched dependencies as
+its base revision.
+
+The feedback round independently composed the Windows patches into temporary
+Git indices starting from each pinned `HEAD`, then compared each resulting
+tree with a separate temporary index of the actual tracked and untracked
+source files. All four dependency trees matched exactly. In particular,
+RecompFrontend pin `b1a1477c6556aeb7ed45defbfb5924f721efebc1` plus its nine
+committed patches produces tree `0bc7f845416619dff8859eb5d102408d1de39599`.
+That reproduces all 20 modified files and both new headers
+(`ui_debugger.h`, `ui_document_source.h`); none are unpublished local edits.
+Their individual purposes are in the [patch inventory](../patches/README.md).
+
+An ordinary `./build.ps1` invocation, without `-PreserveSubmodules`, resets and
+reconstructs these dependencies from the pins and patch series before building.
+It was rerun for feedback verification, followed by CTest and the real-package
+checker with `--check-lifecycle`. A successful build therefore leaves expected
+patch-generated submodule differences in `git status`. Requiring the final
+submodule worktree to remain identical to its upstream pin would omit required
+port integration and build changes. The revision and patch series together
+identify the reproducible source state; generated ROM output stays untracked.
+The [tree comparison record](evidence/mod-loader-dependency-trees.json) retains
+the pins, patch counts and resulting tree hashes for independent reproduction.
+The tracked [verifier](../tools/verify_dependency_trees.py) generates that record
+and checks an existing record without changing dependency files or their real
+Git indices. It first requires each checkout's `HEAD` to match the gitlink
+recorded by its parent. Nested pins are read through the recorded parent tree:
+the top-level repository pins rt64, and that rt64 commit pins Plume. A wrong
+checkout or intermediate parent fails even without `--check`, so `--output`
+cannot certify a different checkout as the recorded pin. Regression fixtures
+cover wrong top-level, nested and intermediate-parent checkouts.
+After a normal Windows build, reproduce it with:
+
+~~~text
+python tools/verify_dependency_trees.py --platform windows --check docs/evidence/mod-loader-dependency-trees.json
+~~~
+
+Use `--output PATH` to write a new record after a successful comparison. The
+verifier fails for missing checkouts or unpublished source differences instead
+of silently excluding them from the evidence.
+
+## Historical audit: what already existed
 
 The port already assigns the `lamborghini` mod game ID, registers runtime
 configuration storage, registers generated base sections and protected patches,
@@ -34,7 +112,7 @@ The package still supplies an import and the desired hook/replacement.
 [Native loading](https://github.com/N64Recomp/N64ModernRuntime/blob/cdf5abbd5026fef5c364c676e4667c45e42b6863/librecomp/src/mods.cpp),
 [Banjo authoring manifest](https://github.com/BanjoRecomp/BKRecompModTemplate/blob/06bbc59c840ecdd0f2d094fdf5df50710c1475b4/mod.toml).
 
-## Peer comparison and remaining gaps
+## Historical peer comparison and gaps
 
 Banjo was inspected at `dbd52154bc1e00e56867b1fac94a8f907052f41b`;
 Zelda64Recomp at `b65c482ed672258eb684ab94a4e8c8aa662615ee`.
@@ -74,7 +152,7 @@ for this port.
 [Project description](https://github.com/coop-deluxe/sm64coopdx/blob/8cd6e5977d9f920d51ca71f2c61801d019ed79c6/README.md),
 [hook contract](https://github.com/coop-deluxe/sm64coopdx/blob/8cd6e5977d9f920d51ca71f2c61801d019ed79c6/docs/lua/guides/hooks.md).
 
-## What blocks the JP mods
+## JP mod prerequisites at the audit baseline
 
 [Issue 339](https://github.com/alondero/automobililamborghini-recomp/issues/339)
 still needs the measured JP difficulty field, its width/values, the consuming US
@@ -99,7 +177,7 @@ the mod. A generic loader cannot promise that an unknown AI site is hookable.
 [guard registration](../src/register_overlays.cpp),
 [code mod contract](modding.md#code-mod-contract).
 
-## Changes verified after the audit
+## Earlier changes verified after the audit
 
 Startup now registers the frontend guest UI exports, including in headless
 runs. The rebuilt smoke package imports and calls `recompui_context_root` and
@@ -117,8 +195,7 @@ skips and no failures; documentation and branch-whitespace checks also passed.
 See [Modding](modding.md#developer-smoke-package) for reproduction commands.
 Rendered custom UI, native-library execution and peer gameplay remain unverified.
 
-**Inferred next steps:** exercise native imports and keep A21 open for documented
-lifecycle events, data/object interfaces and their acceptance fixtures.
-Reassess the JP issues' loader dependency against the measured hook sites; their missing JP
-measurements remain independent blockers. The full Zelda/Banjo API inventory is
-not a prerequisite for every individual Lamborghini mod.
+The native-import and lifecycle/data/object fixture follow-ups are implemented
+in the A21 coverage above. The JP measurements remain independent blockers.
+The full Zelda/Banjo API inventory is not a prerequisite for every individual
+Lamborghini mod.

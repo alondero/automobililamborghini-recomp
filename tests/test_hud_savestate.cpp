@@ -50,6 +50,7 @@ extern "C" void lambo_log_write(LamboLogLevel, const char*, const char* format, 
 }
 extern "C" void ultramodern_relink_thread_contexts(uint8_t*) { ++relinks; }
 extern "C" void lambo_replay_state_loaded(void) {}
+extern "C" void lambo_mod_state_restored(void) {}
 extern "C" void lambo_track_patch_on_savestate_loaded(uint8_t*) {}
 extern "C" void lambo_rt_probe_invalidate(void) {}
 

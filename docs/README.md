@@ -97,7 +97,9 @@ status line before relying on a historical measurement.
 
 - [Mod support comparison](mod-support-research.md) records the Banjo and
   Donkey Kong runtime, frontend, and authoring patterns used by this integration.
-- [Mod loader audit](mod-loader-audit.md) records the remaining A21 API gaps,
+- [Mod game interface](mod-api.md) defines versioned guest data, lifecycle
+  events, racer extensions and private utility stores.
+- [Mod loader audit](mod-loader-audit.md) records A21 coverage,
   peer comparisons, and the actual prerequisites for the JP gameplay mods.
 
 - [Peer-project comparison](peer-projects.md) records durable documentation

@@ -83,6 +83,29 @@ if(BUILD_TESTING)
         ${N64MR}/N64Recomp/include ${N64MR}/librecomp/include ${N64MR}/ultramodern/include)
     add_test(NAME lambo_mod_logging COMMAND lambo_mod_api_tests)
 
+    add_executable(lambo_mod_game_tests tests/test_mod_game.cpp tests/mod_data_symbol_writer.cpp
+        src/lambo_mod_game.cpp src/lambo_mod_storage.cpp)
+    target_include_directories(lambo_mod_game_tests PRIVATE src include
+        ${N64MR}/N64Recomp/include ${N64MR}/librecomp/include
+        ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
+    add_test(NAME lambo_mod_game_api COMMAND lambo_mod_game_tests)
+    target_compile_options(lambo_mod_game_tests PRIVATE -O2)
+
+    add_library(lambo_mod_native_smoke SHARED tests/mods/smoke/native.cpp)
+    target_include_directories(lambo_mod_native_smoke PRIVATE ${N64MR}/N64Recomp/include)
+    set_target_properties(lambo_mod_native_smoke PROPERTIES PREFIX ""
+        ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/mod-smoke
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/mod-smoke
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/mod-smoke)
+    add_library(lambo_mod_native_bad_api SHARED tests/mods/smoke/native.cpp)
+    target_include_directories(lambo_mod_native_bad_api PRIVATE ${N64MR}/N64Recomp/include)
+    target_compile_definitions(lambo_mod_native_bad_api PRIVATE LAMBO_SMOKE_API_VERSION=999)
+    set_target_properties(lambo_mod_native_bad_api PROPERTIES PREFIX ""
+        OUTPUT_NAME lambo_mod_native_smoke
+        ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/mod-smoke/bad-api
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/mod-smoke/bad-api
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/mod-smoke/bad-api)
+
     add_executable(lambo_vi_context_tests tests/test_vi_context.cpp src/lambo_vi.cpp)
     target_include_directories(lambo_vi_context_tests PRIVATE src)
     add_test(NAME lambo_vi_context COMMAND lambo_vi_context_tests)
@@ -818,6 +841,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_startup.cpp  # runtime-ready -> Play startup state machine
         src/lambo_mods.cpp
         src/lambo_mod_api.cpp
+        src/lambo_mod_game.cpp
+        src/lambo_mod_storage.cpp
         src/lambo_input_gate.cpp # controller capture/neutral-release barrier
         src/lambo_window_resize.cpp # live window-size applies from the settings menu
         src/lambo_replay.cpp

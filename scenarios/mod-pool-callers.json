@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "name": "mod-pool-callers",
+  "headless": true,
+  "max_vis": 3600,
+  "input": {
+    "replay": "../recordings/menu-to-race-smoke.jsonl",
+    "start_state": 6,
+    "start_delay": 0,
+    "exit_on_end": true
+  },
+  "expect": {
+    "max_state_at_least": 8,
+    "replay_complete": true,
+    "min_swaps": 600
+  },
+  "developer_env": {
+    "LAMBO_LAUNCHER": "0"
+  }
+}

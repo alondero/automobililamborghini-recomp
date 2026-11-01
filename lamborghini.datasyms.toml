@@ -1,0 +1,14 @@
+# USA guest halfwords; evidence and timing: docs/modding.md, src/lambo_vehicle.h,
+# src/lambo_warp.c and docs/race-fields.md. Absolute references (no ROM section).
+[[section]]
+name = ".lambo_data_v1"
+vram = 0x80000000
+size = 0x1000000
+symbols = [
+    { name = "lambo_game_state", vram = 0x800CE6AC },
+    { name = "lambo_race_mode", vram = 0x800CE6B4 },
+    { name = "lambo_player_count", vram = 0x800CE6A4 },
+    { name = "lambo_field_count", vram = 0x800CE7AC },
+    { name = "lambo_race_difficulty", vram = 0x800CE79C },
+    { name = "lambo_menu_track", vram = 0x800CE6C0 },
+]

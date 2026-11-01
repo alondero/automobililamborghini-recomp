@@ -17,6 +17,7 @@
 #include "recomp.h"
 #include "lambo_pak_io.h"
 #include "lambo_pak_storage.h"
+#include "lambo_mod_game.h"
 #include "lambo_log.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -180,12 +181,14 @@ static void lambo_pak_ensure_loaded(void) {
     loaded = 1;
     result = lambo_pak_storage_load(g_lambo_pak_image);
     if (result.ok) {
+        lambo_mod_pak_loaded();
         LAMBO_LOG_INFO("pak", "loaded %s from %s\n",
                        lambo_pak_format_name(result.format), lambo_pak_storage_path());
         return;
     }
     LAMBO_LOG_WARN("pak", "%s; using a fresh formatted Pak in memory\n", result.error);
     lambo_pak_format();                                         /* fresh formatted pak (memory only) */
+    lambo_mod_pak_loaded();
 }
 
 // Copy the current image into the host storage module. Its worker coalesces a burst of 32-byte
@@ -193,6 +196,7 @@ static void lambo_pak_ensure_loaded(void) {
 // off this emulation thread. Explicit application-exit paths flush any pending image.
 static void lambo_pak_save(void) {
     lambo_pak_storage_schedule_save(g_lambo_pak_image);
+    lambo_mod_pak_written();
 }
 
 // LAMBO_PAK_TRACE=1: per-frame joybus log for save-path diagnosis -- shows exactly what the save

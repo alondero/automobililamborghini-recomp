@@ -729,12 +729,25 @@ text = "{ extern void lambo_savestate_tick(uint8_t*, recomp_context*); lambo_sav
 [[patches.hook]]
 func = "func_800028D0"
 before_vram = 0x80001CD8
-text = "{ extern void lambo_replay_dispatch_begin(uint8_t*); extern void lambo_car_trace_tick(uint8_t*, recomp_context*); lambo_replay_dispatch_begin(rdram); lambo_car_trace_tick(rdram, ctx); extern void lambo_camera_sequence_probe(uint8_t*); lambo_camera_sequence_probe(rdram); }"
+text = "{ extern void lambo_replay_dispatch_begin(uint8_t*); extern void lambo_car_trace_tick(uint8_t*, recomp_context*); lambo_replay_dispatch_begin(rdram); lambo_car_trace_tick(rdram, ctx); extern void lambo_camera_sequence_probe(uint8_t*); lambo_camera_sequence_probe(rdram); extern void lambo_mod_frame(uint8_t*, recomp_context*); lambo_mod_frame(rdram, ctx); }"
 
 [[patches.hook]]
 func = "func_800028D0"
 before_vram = 0x800024E8
 text = "{ extern void lambo_replay_dispatch_end(uint8_t*); lambo_replay_dispatch_end(rdram); }"
+
+# Mod init runs on a valid guest thread stack, after code loading and heap init.
+# Pool initialization ends the previous race before recycled slots are touched.
+# Timing, USA layouts and callback contracts: docs/modding.md.
+[[patches.hook]]
+func = "BootLoadInitialAssets"
+before_vram = 0x80000564
+text = "{ extern void lambo_mod_boot(uint8_t*, recomp_context*); lambo_mod_boot(rdram, ctx); }"
+
+[[patches.hook]]
+func = "func_80011710"
+before_vram = 0x80010B10
+text = "{ extern void lambo_mod_scene_reset(uint8_t*, recomp_context*); lambo_mod_scene_reset(rdram, ctx); }"
 
 [[patches.hook]]
 func = "BootLoadInitialAssets"

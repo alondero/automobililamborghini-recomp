@@ -73,6 +73,7 @@ extern void ultramodern_relink_thread_contexts(uint8_t* rdram);
 // deterministic input harness so a load can arm an as-yet-unstarted replay, while a
 // mid-replay load is reported as an explicit determinism failure.
 extern void lambo_replay_state_loaded(void);
+extern void lambo_mod_state_restored(void);
 // Track Lab packages are process configuration, not guest RAM. Re-apply the
 // active correction after restoring guest RAM, but keep this general-purpose
 // save-state header independent of optional runtime packages.
@@ -238,6 +239,7 @@ static int do_load(uint8_t* rdram, const char* path) {
     // process's addresses; without this the scheduler dereferences garbage on the next tick.
     ultramodern_relink_thread_contexts(rdram);
     lambo_replay_state_loaded();
+    lambo_mod_state_restored();
     lambo_rt_probe_invalidate();
     // An active package is reapplied idempotently after the wholesale copy;
     // the patch hook decides whether the restored table is a known base or is

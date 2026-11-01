@@ -3,8 +3,8 @@
 Status: experimental. The port uses N64ModernRuntime packages and the shared
 RecompFrontend mod manager, following Banjo and Donkey Kong Recompiled.
 See the [source comparison](mod-support-research.md).
-The [mod loader audit](mod-loader-audit.md) separates the existing loader from
-the remaining A21 APIs and the JP mods' game-specific prerequisites.
+The [mod loader audit](mod-loader-audit.md) records A21 coverage and the JP mods'
+game-specific prerequisites.
 
 ## Install and manage mods
 
@@ -96,8 +96,9 @@ instruction patches, or stubs are marked unhookable: rebuilding them from the
 original ROM would remove port fixes. Ordinary replacements of those functions
 report a base-recomp conflict. The runtime's explicit force-patch mechanism
 bypasses replacement conflicts; authors then own the removed port behavior.
-There is no general named game-data API, game-specific event API, or guarantee
-that arbitrary guest-memory edits remain compatible with future releases.
+Use the [versioned game interface](mod-api.md) for named data, events, utility
+stores and racer extensions. Arbitrary guest-memory edits have no compatibility
+guarantee.
 
 The runtime supplies per-mod enum, bool, number and string configuration.
 Declare options in `manifest.config_options`; the Mods tab renders and saves
@@ -114,8 +115,8 @@ The runtime's `native_libraries` manifest field can load a platform-specific
 library beside the package. Its exports use the runtime guest-context ABI and
 must declare a matching `recomp_api_version`. This is separate from a base-port
 native override: importing a native function does not replace a stock function
-until the package supplies the hook or replacement. Native module execution
-has not been verified here.
+until the package supplies the hook or replacement. The developer fixture below
+exercises a native import and the runtime's native-library rejection paths.
 
 CMake derives protected function metadata from the checked-in symbol and
 recompiler configuration files. Generated native functions reserve entry space
@@ -129,27 +130,33 @@ Guest byte order is handled by the export. Use `--verbose` to include info logs.
 
 ## Developer smoke package
 
-[The smoke fixture](../tests/mods/smoke/smoke.c) is original test code. It hooks
-the first game-thread entry and logs `[mod-smoke] boot hook executed` once. It
-also calls a UI export and reads its own `mode` enum. Building
-the package needs MIPS-capable Clang, LLD, and the pinned `RecompModTool`; it does
-not need a ROM. Running it requires the matching USA ROM.
+[The smoke fixture](../tests/mods/smoke/smoke.c) is original test code. It subscribes
+to main game-thread initialization and logs `[mod-smoke] init callback executed`
+once. It also hooks `BootIdleThread` and checks UI/config, native imports, data
+symbols, utility stores and racer extensions. Building needs MIPS-capable Clang,
+LLD (or Zig's bundled
+tools), and the pinned `RecompModTool`; it does not need a ROM. Running it
+requires the matching USA ROM.
 
-From the repository root, create `build/mod-smoke`, then run:
+From the repository root, run:
 
 ~~~text
-clang -target mips -mips2 -mabi=32 -O2 -G0 -mno-abicalls -mno-odd-spreg -mno-check-zero-division -fno-pic -ffunction-sections -nostdinc -c tests/mods/smoke/smoke.c -o build/mod-smoke/smoke.o
-ld.lld -nostdlib -T tests/mods/smoke/mod.ld --unresolved-symbols=ignore-all --emit-relocs -e 0 --no-nmagic --gc-sections build/mod-smoke/smoke.o -o build/mod-smoke/smoke.elf
-cmake --build build --target RecompModTool
-build/lib/N64ModernRuntime/librecomp/N64Recomp/RecompModTool tests/mods/smoke/mod.toml build/mod-smoke
+cmake --build build --target RecompModTool lambo_mod_native_smoke lambo_mod_native_bad_api
+python scripts/build_mod_smoke.py
 ~~~
+
+Pass `--zig PATH` to use Zig instead of Clang/LLD. The script also builds the
+protected-hook variant under `build/mod-smoke/protected/`. Keep the native
+`lambo_mod_native_smoke.dll` (Linux: `.so`) beside the NRM when installing it.
+The library must match the host architecture and use the runtime guest-context
+ABI.
 
 Install the resulting `.nrm`, start the game with `--verbose`, and check the log
 for the marker.
 Disable it and restart to check that the marker disappears. Also test an unmet
 minimum version and a hook targeting a protected function; neither should enter
-gameplay. These checks exercise loading and rejection, not every hook target,
-mod dependency combination, native library, or platform.
+gameplay. These checks cover loading and rejection. Arbitrary gameplay hooks,
+dependency combinations and other platforms need their own tests.
 
 ## Track Lab
 
@@ -161,6 +168,10 @@ See [Track Lab](TRACK_LAB.md).
 
 ## Verification recorded for this integration
 
+The counts and rendered-menu check in the next paragraph record the earlier
+package-manager integration. Current A21 execution coverage is in
+[the loader audit](mod-loader-audit.md#a21-implementation-coverage).
+
 Confirmed on Windows x64, MinGW GCC 15.2, with freshly generated game code and
 the USA ROM identified in [Testing](testing.md): the build, 33 project CTests,
 29 Python tests, documentation checks, and the headless race/replay scenario
@@ -170,13 +181,13 @@ A rejected mod was disabled through the menu and Play successfully retried
 without restarting the application.
 
 `tools/check_mod_support.py` runs the package in isolated profiles. Enabled and
-disabled runs produced one and zero log markers respectively, both reaching
-gameplay. An excessive minimum version and a protected-function hook both
-returned exit code 2 before a guest game thread started. The latter test uses
-the same fixture with `BootIdleThread` changed to `BootLoadInitialAssets`.
+disabled runs produced one and zero log markers respectively, both starting
+guest threads. An excessive minimum version and a protected-function hook both
+returned exit code 2 before a guest game thread started. The protected variant targets
+`BootLoadInitialAssets` with an ordinary hook.
 
 ~~~text
-python tools/check_mod_support.py --exe build/lamborghini_modern.exe --package build/mod-smoke/lambo_mod_smoke.nrm --rom "Automobili Lamborghini (USA).z64"
+python tools/check_mod_support.py --exe build/lamborghini_modern.exe --package build/mod-smoke/lambo_mod_smoke.nrm --native-library build/mod-smoke/lambo_mod_native_smoke.dll --rom "Automobili Lamborghini (USA).z64"
 ~~~
 
 Add `--check-api` with a freshly rebuilt smoke package to check the UI import,
@@ -204,6 +215,11 @@ visible replacement artwork or RT64 rendering. Test those separately with a
 renderer and a pack whose artwork you have permission to use. The ROM-free
 checker tests run with `python -m unittest discover -s tests -p test_check_mod_support.py`.
 
-Unverified: Linux and Android execution, native-library mods, arbitrary gameplay
-hook targets, and visual texture replacement with real artwork. The boot smoke
-proves hook execution; it does not certify every mod or ABI combination.
+Add `--check-lifecycle --bad-api-library build/mod-smoke/bad-api/lambo_mod_native_smoke.dll`
+to require API/race/frame markers during a circuit-1 warp and check native
+missing-library, missing-export and incompatible-ABI rejection before guest
+thread creation. `--native-library PATH` overrides the default sibling.
+
+Unverified: Linux and Android execution, arbitrary gameplay hook targets,
+rendered custom mod UI, and visual texture replacement with real artwork.
+The fixtures do not certify every mod or ABI combination.
