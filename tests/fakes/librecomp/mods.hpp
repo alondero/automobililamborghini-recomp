@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-struct recomp_context;
+#include "recomp.h"
 
 namespace recomp::mods {
 

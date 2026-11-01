@@ -1,0 +1,118 @@
+[manifest]
+id = "lambo_jp_weather"
+version = "0.2.0"
+display_name = "JP weather (experimental)"
+description = "Japanese race-slot weather on the USA cartridge. Development build."
+authors = ["Lamborghini Recompiled contributors"]
+game_id = "lamborghini"
+minimum_recomp_version = "0.10.3"
+
+[[manifest.config_options]]
+id = "weather.mode"
+name = "Weather"
+description = "US default disables overrides. Otherwise selects time-trial/single-race weather; championship uses the round settings below."
+type = "Enum"
+options = ["US default", "Dry", "Wet", "Night"]
+default = "US default"
+
+[[manifest.config_options]]
+id = "weather.round1"
+name = "Championship round 1"
+description = "Weather for this race slot, regardless of circuit. Used when Weather is enabled."
+type = "Enum"
+options = ["Dry", "Wet", "Night"]
+default = "Dry"
+
+[[manifest.config_options]]
+id = "weather.round2"
+name = "Championship round 2"
+description = "Weather for this race slot, regardless of circuit. Used when Weather is enabled."
+type = "Enum"
+options = ["Dry", "Wet", "Night"]
+default = "Dry"
+
+[[manifest.config_options]]
+id = "weather.round3"
+name = "Championship round 3"
+description = "Weather for this race slot, regardless of circuit. Used when Weather is enabled."
+type = "Enum"
+options = ["Dry", "Wet", "Night"]
+default = "Dry"
+
+[[manifest.config_options]]
+id = "weather.round4"
+name = "Championship round 4"
+description = "Weather for this race slot, regardless of circuit. Used when Weather is enabled."
+type = "Enum"
+options = ["Dry", "Wet", "Night"]
+default = "Dry"
+
+[[manifest.config_options]]
+id = "weather.round5"
+name = "Championship round 5"
+description = "Weather for this race slot, regardless of circuit. Used when Weather is enabled."
+type = "Enum"
+options = ["Dry", "Wet", "Night"]
+default = "Dry"
+
+[[manifest.config_options]]
+id = "weather.round6"
+name = "Championship round 6"
+description = "Weather for this race slot, regardless of circuit. Used when Weather is enabled."
+type = "Enum"
+options = ["Dry", "Wet", "Night"]
+default = "Dry"
+
+[[manifest.config_options]]
+id = "weather.round7"
+name = "Championship round 7"
+description = "Weather for this race slot, regardless of circuit. Used when Weather is enabled."
+type = "Enum"
+options = ["Dry", "Wet", "Night"]
+default = "Dry"
+
+[[manifest.config_options]]
+id = "weather.round8"
+name = "Championship round 8"
+description = "Weather for this race slot, regardless of circuit. Used when Weather is enabled."
+type = "Enum"
+options = ["Dry", "Wet", "Night"]
+default = "Dry"
+
+[[manifest.config_options]]
+id = "weather.round9"
+name = "Championship round 9"
+description = "Weather for this race slot, regardless of circuit. Used when Weather is enabled."
+type = "Enum"
+options = ["Dry", "Wet", "Night"]
+default = "Dry"
+
+[[manifest.config_options]]
+id = "weather.round10"
+name = "Championship round 10"
+description = "Weather for this race slot, regardless of circuit. Used when Weather is enabled."
+type = "Enum"
+options = ["Dry", "Wet", "Night"]
+default = "Dry"
+
+[[manifest.config_options]]
+id = "weather.round11"
+name = "Championship round 11"
+description = "Weather for this race slot, regardless of circuit. Used when Weather is enabled."
+type = "Enum"
+options = ["Dry", "Wet", "Night"]
+default = "Dry"
+
+[[manifest.config_options]]
+id = "weather.round12"
+name = "Championship round 12"
+description = "Weather for this race slot, regardless of circuit. Used when Weather is enabled."
+type = "Enum"
+options = ["Dry", "Wet", "Night"]
+default = "Dry"
+
+[inputs]
+elf_path = "../../build/jp-weather/weather.elf"
+mod_filename = "lambo_jp_weather"
+func_reference_syms_file = "../../lamborghini.syms.toml"
+data_reference_syms_files = []

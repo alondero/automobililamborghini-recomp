@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "evidence_type": "controlled-live-jp-race-loader",
+  "captured_at_utc": "2026-11-01T13:56:14.377550+00:00",
+  "probe_sha256": "59cad3ef2684683f98e64812955b53222f56c98f389bbc596513fc09caf6eb1c",
+  "rom_sha256": "06c9c992014da5982e747117c690c1590a011c0c6756b0522df126366bf8b9a1",
+  "emulator_sha256": "e07ea6efda27c5dd60939b78c2e9c1aa25845ecb465f4d2114f615fe6b75507c",
+  "boot_wait_seconds": 20,
+  "method": "Cold boot; debugger writes single-race menu selections and state 7; observe weather and state writes. Audio quiesce callbacks are not invoked.",
+  "limitations": [
+    "Not an ordinary menu playthrough",
+    "No AI trajectory or port comparison",
+    "No elapsed-frame or perspective-distance measurement"
+  ],
+  "requested_cases": [
+    {
+      "circuit_index": 0,
+      "selected_weather": 1,
+      "players": 3
+    },
+    {
+      "circuit_index": 0,
+      "selected_weather": 2,
+      "players": 3
+    }
+  ],
+  "complete": true,
+  "runs": [
+    {
+      "circuit_index": 0,
+      "players": 3,
+      "selected_weather": 1,
+      "resolved_weather": 0,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "pause_stop": "S05",
+      "active_circuit_index": 0,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 980,
+      "fog_far": 1000,
+      "fog_rgb": [
+        4,
+        4,
+        16
+      ]
+    },
+    {
+      "circuit_index": 0,
+      "players": 3,
+      "selected_weather": 2,
+      "resolved_weather": 0,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "pause_stop": "S05",
+      "active_circuit_index": 0,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 980,
+      "fog_far": 1000,
+      "fog_rgb": [
+        4,
+        4,
+        16
+      ]
+    }
+  ],
+  "failures": [],
+  "source_base_revision": "71c2e415ec406c7ca2d221f467b1a659aa840f37",
+  "capture_source_note": "Uncommitted probe in this change, including strict packet validation and pause acknowledgement."
+}

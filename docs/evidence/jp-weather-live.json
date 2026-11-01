@@ -1,0 +1,436 @@
+{
+  "schema": 1,
+  "evidence_type": "controlled-live-jp-race-loader",
+  "rom_sha256": "06c9c992014da5982e747117c690c1590a011c0c6756b0522df126366bf8b9a1",
+  "emulator_sha256": "e07ea6efda27c5dd60939b78c2e9c1aa25845ecb465f4d2114f615fe6b75507c",
+  "boot_wait_seconds": 20,
+  "method": "Cold boot; debugger writes single-race menu selections and state 7; observe weather and state writes. Audio quiesce callbacks are not invoked.",
+  "limitations": [
+    "Not an ordinary menu playthrough",
+    "No AI trajectory or port comparison",
+    "No elapsed-frame or perspective-distance measurement"
+  ],
+  "runs": [
+    {
+      "circuit_index": 0,
+      "players": 1,
+      "selected_weather": 0,
+      "resolved_weather": 0,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 0,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 995,
+      "fog_far": 1000,
+      "fog_rgb": [
+        57,
+        48,
+        55
+      ]
+    },
+    {
+      "circuit_index": 0,
+      "players": 1,
+      "selected_weather": 1,
+      "resolved_weather": 1,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 0,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 930,
+      "fog_far": 999,
+      "fog_rgb": [
+        64,
+        64,
+        70
+      ]
+    },
+    {
+      "circuit_index": 0,
+      "players": 1,
+      "selected_weather": 2,
+      "resolved_weather": 2,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 0,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 850,
+      "fog_far": 999,
+      "fog_rgb": [
+        7,
+        7,
+        11
+      ]
+    },
+    {
+      "circuit_index": 1,
+      "players": 1,
+      "selected_weather": 0,
+      "resolved_weather": 0,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 1,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 985,
+      "fog_far": 1000,
+      "fog_rgb": [
+        5,
+        6,
+        12
+      ]
+    },
+    {
+      "circuit_index": 1,
+      "players": 1,
+      "selected_weather": 1,
+      "resolved_weather": 1,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 1,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 930,
+      "fog_far": 999,
+      "fog_rgb": [
+        64,
+        64,
+        70
+      ]
+    },
+    {
+      "circuit_index": 1,
+      "players": 1,
+      "selected_weather": 2,
+      "resolved_weather": 2,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 1,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 850,
+      "fog_far": 999,
+      "fog_rgb": [
+        7,
+        7,
+        11
+      ]
+    },
+    {
+      "circuit_index": 2,
+      "players": 1,
+      "selected_weather": 0,
+      "resolved_weather": 0,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 2,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 995,
+      "fog_far": 1000,
+      "fog_rgb": [
+        57,
+        48,
+        55
+      ]
+    },
+    {
+      "circuit_index": 2,
+      "players": 1,
+      "selected_weather": 1,
+      "resolved_weather": 1,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 2,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 930,
+      "fog_far": 999,
+      "fog_rgb": [
+        64,
+        64,
+        70
+      ]
+    },
+    {
+      "circuit_index": 2,
+      "players": 1,
+      "selected_weather": 2,
+      "resolved_weather": 2,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 2,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 850,
+      "fog_far": 999,
+      "fog_rgb": [
+        7,
+        7,
+        11
+      ]
+    },
+    {
+      "circuit_index": 3,
+      "players": 1,
+      "selected_weather": 0,
+      "resolved_weather": 0,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 3,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 995,
+      "fog_far": 1000,
+      "fog_rgb": [
+        57,
+        48,
+        55
+      ]
+    },
+    {
+      "circuit_index": 3,
+      "players": 1,
+      "selected_weather": 1,
+      "resolved_weather": 1,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 3,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 930,
+      "fog_far": 999,
+      "fog_rgb": [
+        64,
+        64,
+        70
+      ]
+    },
+    {
+      "circuit_index": 3,
+      "players": 1,
+      "selected_weather": 2,
+      "resolved_weather": 2,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 3,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 850,
+      "fog_far": 999,
+      "fog_rgb": [
+        7,
+        7,
+        11
+      ]
+    },
+    {
+      "circuit_index": 4,
+      "players": 1,
+      "selected_weather": 0,
+      "resolved_weather": 0,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 4,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 975,
+      "fog_far": 1000,
+      "fog_rgb": [
+        64,
+        64,
+        72
+      ]
+    },
+    {
+      "circuit_index": 4,
+      "players": 1,
+      "selected_weather": 1,
+      "resolved_weather": 1,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 4,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 930,
+      "fog_far": 999,
+      "fog_rgb": [
+        64,
+        64,
+        70
+      ]
+    },
+    {
+      "circuit_index": 4,
+      "players": 1,
+      "selected_weather": 2,
+      "resolved_weather": 2,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 4,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 850,
+      "fog_far": 999,
+      "fog_rgb": [
+        7,
+        7,
+        11
+      ]
+    },
+    {
+      "circuit_index": 5,
+      "players": 1,
+      "selected_weather": 0,
+      "resolved_weather": 0,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 5,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 995,
+      "fog_far": 1000,
+      "fog_rgb": [
+        57,
+        48,
+        55
+      ]
+    },
+    {
+      "circuit_index": 5,
+      "players": 1,
+      "selected_weather": 1,
+      "resolved_weather": 1,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 5,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 930,
+      "fog_far": 999,
+      "fog_rgb": [
+        64,
+        64,
+        70
+      ]
+    },
+    {
+      "circuit_index": 5,
+      "players": 1,
+      "selected_weather": 2,
+      "resolved_weather": 2,
+      "initial_state": 6,
+      "loaded_state": 8,
+      "active_circuit_index": 5,
+      "weather_stop": "T05watch:800c503c;",
+      "state_stop": "T05watch:800c4ea0;",
+      "fog_near": 850,
+      "fog_far": 999,
+      "fog_rgb": [
+        7,
+        7,
+        11
+      ]
+    }
+  ],
+  "failures": [],
+  "captured_date_utc": "2026-11-01",
+  "source_base_revision": "71c2e415ec406c7ca2d221f467b1a659aa840f37",
+  "capture_source_note": "Initial uncommitted probe version, before strict packet checksum/EOF and pause-acknowledgement checks were added. Weather/state watchpoint stops and memory lengths were checked. Final probe adds explicit campaign completion metadata; this retained matrix was separately checked for all 18 unique cases and zero failures.",
+  "requested_cases": [
+    {
+      "circuit_index": 0,
+      "selected_weather": 0,
+      "players": 1
+    },
+    {
+      "circuit_index": 0,
+      "selected_weather": 1,
+      "players": 1
+    },
+    {
+      "circuit_index": 0,
+      "selected_weather": 2,
+      "players": 1
+    },
+    {
+      "circuit_index": 1,
+      "selected_weather": 0,
+      "players": 1
+    },
+    {
+      "circuit_index": 1,
+      "selected_weather": 1,
+      "players": 1
+    },
+    {
+      "circuit_index": 1,
+      "selected_weather": 2,
+      "players": 1
+    },
+    {
+      "circuit_index": 2,
+      "selected_weather": 0,
+      "players": 1
+    },
+    {
+      "circuit_index": 2,
+      "selected_weather": 1,
+      "players": 1
+    },
+    {
+      "circuit_index": 2,
+      "selected_weather": 2,
+      "players": 1
+    },
+    {
+      "circuit_index": 3,
+      "selected_weather": 0,
+      "players": 1
+    },
+    {
+      "circuit_index": 3,
+      "selected_weather": 1,
+      "players": 1
+    },
+    {
+      "circuit_index": 3,
+      "selected_weather": 2,
+      "players": 1
+    },
+    {
+      "circuit_index": 4,
+      "selected_weather": 0,
+      "players": 1
+    },
+    {
+      "circuit_index": 4,
+      "selected_weather": 1,
+      "players": 1
+    },
+    {
+      "circuit_index": 4,
+      "selected_weather": 2,
+      "players": 1
+    },
+    {
+      "circuit_index": 5,
+      "selected_weather": 0,
+      "players": 1
+    },
+    {
+      "circuit_index": 5,
+      "selected_weather": 1,
+      "players": 1
+    },
+    {
+      "circuit_index": 5,
+      "selected_weather": 2,
+      "players": 1
+    }
+  ],
+  "complete": true
+}

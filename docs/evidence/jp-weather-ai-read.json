@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "evidence_type": "controlled-live-jp-ai-read-and-write",
+  "captured_at_utc": "2026-11-01T14:24:13.686519+00:00",
+  "rom_sha256": "06c9c992014da5982e747117c690c1590a011c0c6756b0522df126366bf8b9a1",
+  "emulator_sha256": "e07ea6efda27c5dd60939b78c2e9c1aa25845ecb465f4d2114f615fe6b75507c",
+  "probe_sha256": "e26c41788cc0d4473ea291e605e7a229b66f42c80bd4e69004b3123475b32c7f",
+  "requested_cases": [
+    {
+      "weather": 1,
+      "difficulty": 0
+    }
+  ],
+  "boot_wait_seconds": 20,
+  "timeout_seconds": 30,
+  "max_countdown_events": 40,
+  "complete": true,
+  "runs": [
+    {
+      "selected_weather": 1,
+      "selected_difficulty": 0,
+      "circuit_index": 0,
+      "players": 1,
+      "complete": false,
+      "countdown_events": [],
+      "pause_stop": "S05",
+      "initial_state": 6,
+      "weather_stop": "T05watch:800c503c;",
+      "active_weather": 1,
+      "state_stop": "T05watch:800c4ea0;",
+      "loaded_state": 8,
+      "active_difficulty": 0,
+      "active_circuit": 0,
+      "speed_parameter": 220.0,
+      "speed_parameter_address": "0x8007DB00",
+      "countdown_table_value": 50,
+      "expected_countdown_initialization": 25,
+      "speed_parameter_stop": "T05rwatch:8007db00;",
+      "pc_register_index": null,
+      "speed_reader_racer": 5,
+      "vehicle_index_at_speed_read": 17,
+      "vehicle_speed_at_parameter_read": 173,
+      "throttle_demand_at_parameter_read": 98,
+      "error": "TimeoutError: timed out"
+    }
+  ],
+  "limitations": [
+    "Debugger writes race selections; not a menu playthrough",
+    "No port trajectory comparison or AI sight-distance measurement",
+    "Difficulty values are JP indices, not an asserted USA tier mapping"
+  ],
+  "source_base_revision": "5b72f15",
+  "capture_source_note": "Uncommitted AI probe before removal of optional unsuccessful PC-index calibration. Null pc_register_index means no PC identified. Countdown observation timed out; run remains incomplete. Campaign complete means all requested cases attempted, not all observations succeeded."
+}

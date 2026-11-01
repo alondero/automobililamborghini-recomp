@@ -168,6 +168,11 @@ overlay recompile. A race-start/per-frame **named event API** is missing;
 ordinary stock-function hooks may suffice once the actual sites are identified.
 The shared weather key and hook ownership with issues 72/73 also need agreement.
 
+Subsequent [weather discovery](jp-weather.md) identifies JP race-slot weather
+selection and AI speed/countdown parameters. It does not establish an AI vision
+algorithm. The corresponding USA AI routine is protected by existing port
+patches, so the newly identified read site alone is not a usable mod hook.
+
 For both issues, hookability is unresolved until the US targets are measured.
 The port deliberately marks injected, instruction-patched and stubbed functions
 unhookable because runtime regeneration reads the original ROM and would remove

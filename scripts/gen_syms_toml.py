@@ -1876,6 +1876,20 @@ text = "{ extern void lambo_player_name_restore_for_record(uint8_t*, int); lambo
 func = "func_800401F0"
 before_vram = 0x8003F5F0
 text = "{ extern void lambo_player_name_restore_for_record(uint8_t*, int); lambo_player_name_restore_for_record(rdram, (int16_t)ctx->r4); }"
+
+# Optional mod-owned maneuver cap, after the original compare/default load.
+# These sites are confined to the AI speed<60 acceleration branch. Preserve
+# the signed halfword reload and every vehicle-pool relocation hook. No
+# registered mod means cap100 and identical register results. docs/jp-weather.md.
+[[patches.hook]]
+func = "func_8002D37C"
+before_vram = 0x8002FEFC
+text = "{ extern unsigned int lambo_ai_maneuver_cap(uint8_t*); ctx->r1 = SIGNED(ctx->r24) < (int64_t)(lambo_ai_maneuver_cap(rdram) + 1u); }"
+
+[[patches.hook]]
+func = "func_8002D37C"
+before_vram = 0x8002FF14
+text = "{ extern unsigned int lambo_ai_maneuver_cap(uint8_t*); ctx->r8 = lambo_ai_maneuver_cap(rdram); }"
 """
 
 UNSTUB = [
