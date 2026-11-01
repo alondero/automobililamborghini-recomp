@@ -1,0 +1,127 @@
+{
+  "schema": 1,
+  "input_sha256": "2e475c16764a062b8e0f9d47636600af2df639e78cdb86f2beac67692882b314",
+  "evidence_type": "static cartridge extraction with selected instruction checks",
+  "roms": {
+    "usa": {
+      "size": 4194304,
+      "sha256": "cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c"
+    },
+    "japan": {
+      "size": 8388608,
+      "sha256": "06c9c992014da5982e747117c690c1590a011c0c6756b0522df126366bf8b9a1"
+    }
+  },
+  "limitations": [
+    "No live reference or port behavior is measured by this report.",
+    "Selected witnesses are checked, not an exhaustive control-flow proof.",
+    "The weather array is indexed by race slot, separately from circuit ID.",
+    "No AI line-of-sight or sensing-distance algorithm is identified.",
+    "Countdown values are update counts; elapsed time and maneuver semantics remain unverified."
+  ],
+  "menu": {
+    "labels": [
+      {
+        "id": 90,
+        "text": "WEATHER",
+        "pointer_vram": "0x8024F1E4"
+      },
+      {
+        "id": 91,
+        "text": "DRY",
+        "pointer_vram": "0x8024F1F0"
+      },
+      {
+        "id": 92,
+        "text": "WET",
+        "pointer_vram": "0x8024F1F8"
+      },
+      {
+        "id": 93,
+        "text": "NIGHT",
+        "pointer_vram": "0x8024F200"
+      }
+    ],
+    "weather_array": "0x800C4F30",
+    "slot_index": "0x800C4EAE",
+    "track_array": "0x800C4EB0",
+    "active_weather": "0x800C503C",
+    "element_type": "big-endian signed halfword",
+    "cycle_function": "0x80201220",
+    "race_slot_copy": "0x80007470"
+  },
+  "default_championship": {
+    "track_order_rom": "0x000869D2",
+    "circuit_indices": [
+      0,
+      4,
+      2,
+      3,
+      1,
+      5
+    ],
+    "weather_values": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "scope": "reset callback slots 1 through 6",
+    "reset_function": "0x80201724",
+    "zero_store": "0x802017AC"
+  },
+  "ai_speed_control_parameter": {
+    "interpretation": "speed-control parameter, not established vision distance; physical units unverified",
+    "japan_table_rom": "0x0007E6F0",
+    "japan_read": "0x800365B8",
+    "index": "weather * 4 + difficulty",
+    "japan_rows": {
+      "dry": [
+        290.0,
+        290.0,
+        240.0,
+        240.0
+      ],
+      "wet": [
+        220.0,
+        220.0,
+        180.0,
+        180.0
+      ],
+      "night": [
+        290.0,
+        290.0,
+        240.0,
+        240.0
+      ]
+    },
+    "usa_table_rom": "0x0008A044",
+    "usa_read": "0x80030738",
+    "usa_values": [
+      290.0,
+      240.0
+    ]
+  },
+  "ai_countdown": {
+    "table_rom": "0x0007E678",
+    "index": "difficulty",
+    "dry_and_night": [
+      50,
+      35,
+      25,
+      15
+    ],
+    "wet": [
+      25,
+      17,
+      12,
+      7
+    ],
+    "wet_test": "0x80035840",
+    "wet_shift": "0x800358B8",
+    "wet_store": "0x800358BC",
+    "units": "update counts, not proven frames or distance"
+  }
+}

@@ -79,6 +79,7 @@ status line before relying on a historical measurement.
 | [Player names](player-names.md) | Driver-name persistence notes. |
 | [Android guide](ANDROID.md) | ARM64 build, launcher, signing, and device limits. |
 | [Japanese cartridge](japanese-rom.md) | Experimental *Super Speed Race 64* identity, code layout and symbol table. |
+| [Japanese weather](jp-weather.md) | Race-slot weather discovery, AI parameter findings and unresolved mod integration. |
 
 ## Reference pages
 
