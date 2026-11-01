@@ -85,8 +85,9 @@ void api_version(uint8_t*, recomp_context* ctx) { ctx->r2 = 1; }
 void game_value(uint8_t* rdram, recomp_context* ctx) {
     // USA s16 fields, read on the game thread. Evidence: lambo_vehicle.h,
     // lambo_warp.c and docs/race-fields.md. Unknown keys return INT32_MIN.
-    constexpr uint32_t addresses[] = {LAMBO_GUEST_GAME_STATE_ADDR, 0x800CE6B4,
-        0x800CE6A4, 0x800CE7AC, LAMBO_GUEST_RACE_DIFFICULTY_ADDR, 0x800CE6C0};
+    constexpr uint32_t addresses[] = {LAMBO_GUEST_GAME_STATE_ADDR, LAMBO_GUEST_RACE_MODE_ADDR,
+        LAMBO_GUEST_PLAYER_COUNT_ADDR, LAMBO_GUEST_FIELD_COUNT_ADDR,
+        LAMBO_GUEST_RACE_DIFFICULTY_ADDR, LAMBO_GUEST_MENU_TRACK_ADDR};
     uint32_t key = ctx->r4;
     ctx->r2 = key < std::size(addresses)
         ? static_cast<gpr>(MEM_H(0, static_cast<int32_t>(addresses[key])))
@@ -175,7 +176,7 @@ extern "C" void lambo_mod_frame(uint8_t* rdram, recomp_context* ctx) {
     else {
         const bool starting = !racing;
         racing = true;
-        const int count = MEM_H(0, static_cast<int32_t>(0x800CE7AC));
+        const int count = MEM_H(0, static_cast<int32_t>(LAMBO_GUEST_FIELD_COUNT_ADDR));
         for (size_t i = 0; i < racers.size(); ++i) {
             // One-based entrant -> shared body index, USA halfword map.
             // Pool reset invalidates all handles even if the same slot is reused

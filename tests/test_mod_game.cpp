@@ -8,6 +8,7 @@
 #include "librecomp/addresses.hpp"
 #include "librecomp/overlays.hpp"
 #include <cassert>
+#include <cfenv>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -107,6 +108,13 @@ int main() {
     ctx.mips3_float_mode = 0;
     ctx.f_odd = &ctx.f0.u32h;
     original = ctx;
+    on_event = [](uint8_t*, recomp_context*, const std::string&) {
+        assert(std::fesetround(FE_UPWARD) == 0);
+    };
+    assert(std::fesetround(FE_TONEAREST) == 0);
+    frame();
+    assert(std::fegetround() == FE_TONEAREST);
+    on_event = {};
     assert(call("lambo_mod_api_version") == 1);
     assert(call("lambo_get_game_value_v1", 0) == 4);
     assert(call("lambo_get_game_value_v1", 99) == 0x80000000);
@@ -116,7 +124,7 @@ int main() {
     assert(call("lambo_get_racer_v1", 17) == 0);
 
     half(LAMBO_GUEST_GAME_STATE_ADDR) = 8;
-    half(0x800CE7AC) = 1;
+    half(LAMBO_GUEST_FIELD_COUNT_ADDR) = 1;
     half(LAMBO_FIELD_BODIES + 2) = 3;
     const uint32_t body = LAMBO_VEHICLE_BASE + 3 * sizeof(LamboVehicleRecord);
     half(body) = 8;

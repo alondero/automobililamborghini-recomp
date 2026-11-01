@@ -81,6 +81,42 @@ allocator hook for transient props. RAM snapshots do not serialize extensions
 or utility stores. Snapshot restore rebuilds racer extensions; stores continue
 until destroyed or a fresh game boot.
 
+### Pool-reset caller evidence
+
+The USA reset routine has exactly three stock `jal` sites. A temporary
+diagnostic configuration added a `printf` hook immediately before each call;
+the generated C was rebuilt, not edited. The headless
+`recordings/menu-to-race-smoke.jsonl` run consumed 1272/1272 frames, reached
+state 8 and produced the following measurements:
+
+| Call site | Generated caller | Dispatcher states with a direct call path | Observed state at reset |
+| --- | --- | --- | --- |
+| `0x800062D8` | `boot_pad_apply_calibration` | 7 (race setup) | 7, once |
+| `0x80037E1C` | `func_800389A4` | 5, 9, 11, 15 (menu initializers) | 5, once |
+| `0x8003C1CC` | `func_8003CD84` | 5, 6, 9, 10, 11, 12, 13, 14, 15, 16 (menu/results setup and rebuilding) | 6, six times |
+
+The state-to-function map comes from dispatcher `func_800028D0` and its USA
+jump table at `0x8008D610`. `func_800389A4` is entered through the initializers
+`func_80038BD8`, `func_80038C88`, `func_80038CD4` and `func_80038D20`.
+`func_8003CD84` also has paths through `func_80038D6C` and the state-13 results
+initializer `func_8004DCC0`. These are direct-call reachability sets, not a
+measurement of every menu choice. The state-8 updater `func_800030F8` has no
+stock direct-call path to a reset caller. No resets occurred after race entry
+in the measured run. The native race-load branch in `func_80038D6C` writes
+state 7 at USA `0x800385F4` and branches past the menu rebuild call.
+
+[The ROM-backed regression](../tests/test_mod_pool_callers.py) checks the
+three sites, the dispatcher jump-table mapping and the direct-call sets above.
+[The trace summary](evidence/mod-pool-reset-usa.json) records the measurement
+without ROM bytes. Diagnostic hooks were removed by regenerating from the
+canonical configuration before the final build and package tests.
+
+No observed caller runs inside the continuing state-8 race, so no state guard
+was added. The reset hook still invalidates handles for every actual pool
+reset. A mod that explicitly resets the pool creates a new object lifetime
+even if it leaves the game-state halfword at 8; retaining old extension pointers
+across that operation is outside the contract.
+
 ## Utility stores
 
 `lambo_store_create_v1` creates a u32-key/u32-value map, a u32 set, or a slot map.

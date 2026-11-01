@@ -44,8 +44,8 @@ def main():
         subprocess.run(linker + ["-nostdlib", "-T", str(ROOT / "tests/mods/smoke/mod.ld"),
                                 "--unresolved-symbols=ignore-all", "--emit-relocs", "-e", "0",
                                 "--no-nmagic", "--gc-sections", str(obj), "-o", str(elf)], check=True)
-        # Stage the manifest at its original directory-relative location only in
-        # memory; write an absolute-path config under build for alternate builds.
+        # Keep the checked-in manifest unchanged and write a config with absolute
+        # input paths under build so alternate build directories work too.
         text = (ROOT / "tests/mods/smoke/mod.toml").read_text(encoding="utf-8")
         text = text.replace('../../../build/mod-smoke/smoke.elf', elf.as_posix())
         for filename in ("lamborghini.syms.toml", "lamborghini.datasyms.toml"):

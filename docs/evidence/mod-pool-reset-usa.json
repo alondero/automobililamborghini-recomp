@@ -1,0 +1,30 @@
+{
+  "status": "confirmed measurement with diagnostic pre-call hooks",
+  "rom_region": "USA",
+  "rom_sha256": "cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c",
+  "recording": "recordings/menu-to-race-smoke.jsonl",
+  "headless": true,
+  "replay_frames": 1272,
+  "vis": 3488,
+  "swaps": 1474,
+  "final_state": 8,
+  "reset_calls": [
+    {
+      "caller": "0x800062d8",
+      "state": 7,
+      "count": 1
+    },
+    {
+      "caller": "0x80037e1c",
+      "state": 5,
+      "count": 1
+    },
+    {
+      "caller": "0x8003c1cc",
+      "state": 6,
+      "count": 6
+    }
+  ],
+  "race_state_8_resets": 0,
+  "scope": "Direct-call inventory and one menu-to-race run; not every menu choice or arbitrary mod/native/indirect call."
+}

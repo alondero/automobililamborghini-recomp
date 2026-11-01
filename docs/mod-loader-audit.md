@@ -36,6 +36,37 @@ their JP measurements, consuming US sites and reference parity checks. This
 change does not locate the missing JP fields or make protected ROM functions
 safe for regeneration. Per-mod save-file extensions remain issue 21.
 
+## Dependency build inputs and reproduction
+
+The tested dependency state is each pinned submodule **plus the committed
+patch series**, not an unmodified upstream checkout. This is the repository's
+supported build contract: [CMake](../cmake/Patches.cmake), `build.ps1`, `build.sh`
+and the Android script apply [patches/series.txt](../patches/series.txt) through
+[the shared tool](../tools/apply_patches.py). This PR adds no dependency patches
+and changes no dependency pins; it relies on the same patched dependencies as
+its base revision.
+
+The feedback round independently composed the Windows patches into temporary
+Git indices starting from each pinned `HEAD`, then compared each resulting
+tree with a separate temporary index of the actual tracked and untracked
+source files. All four dependency trees matched exactly. In particular,
+RecompFrontend pin `b1a1477c6556aeb7ed45defbfb5924f721efebc1` plus its nine
+committed patches produces tree `0bc7f845416619dff8859eb5d102408d1de39599`.
+That reproduces all 20 modified files and both new headers
+(`ui_debugger.h`, `ui_document_source.h`); none are unpublished local edits.
+Their individual purposes are in the [patch inventory](../patches/README.md).
+
+An ordinary `./build.ps1` invocation, without `-PreserveSubmodules`, resets and
+reconstructs these dependencies from the pins and patch series before building.
+It was rerun for feedback verification, followed by CTest and the real-package
+checker with `--check-lifecycle`. A successful build therefore leaves expected
+patch-generated submodule differences in `git status`. Requiring the final
+submodule worktree to remain identical to its upstream pin would omit required
+port integration and build changes. The revision and patch series together
+identify the reproducible source state; generated ROM output stays untracked.
+The [tree comparison record](evidence/mod-loader-dependency-trees.json) retains
+the pins, patch counts and resulting tree hashes for independent reproduction.
+
 ## Historical audit: what already existed
 
 The port already assigns the `lamborghini` mod game ID, registers runtime
