@@ -21,6 +21,11 @@ size_t context_order_index = 0;
 std::filesystem::path context_filename;
 }
 
+namespace lambo::mods {
+void register_game_api() {}
+void register_storage_api() {}
+}
+
 namespace {
 int failures = 0;
 void expect(bool condition, const char* message) {

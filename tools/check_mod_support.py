@@ -6,19 +6,30 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import zipfile
 
 
-MARKER = "[mod-smoke] boot hook executed"
+MARKER = "[mod-smoke] init callback executed"
 TEXTURE_ID = "texture_smoke"
 UI_MARKER = "[mod-smoke] UI import executed"
 CONFIG_DEFAULT_MARKER = "[mod-smoke] config default read"
 CONFIG_OVERRIDE_MARKER = "[mod-smoke] config override read"
+LIFECYCLE_MARKERS = ("[mod-smoke] boot hook executed",
+                     "[mod-smoke] full API initialized",
+                     "[mod-smoke] Pak load event executed",
+                     "[mod-smoke] race extension initialized",
+                     "[mod-smoke] race frame executed")
+NATIVE_ERRORS = {
+    "missing-library": "Failed to load mod library:lambo_mod_native_smoke",
+    "missing-export": "Failed to find native export:lambo_mod_native_smoke:missing_smoke_export",
+    "incompatible-api": "Mod DLL has an unsupported API version:lambo_mod_native_smoke",
+}
 
 
 def run_case(executable, package, rom, enabled, minimum_version=None, *, texture=False,
-             mod_config=None):
+             mod_config=None, native_library=None, lifecycle=False, native_error=None):
     with tempfile.TemporaryDirectory(prefix="lambo-mod-") as directory:
         root = Path(directory)
         config = root / "LamborghiniRecomp"
@@ -35,12 +46,23 @@ def run_case(executable, package, rom, enabled, minimum_version=None, *, texture
                 manifest = json.loads(source.read("mod.json"))
                 if minimum_version is not None:
                     manifest["minimum_recomp_version"] = minimum_version
+                if native_error == "missing-export":
+                    manifest["native_libraries"] = {
+                        "lambo_mod_native_smoke": ["missing_smoke_export"]}
                 with zipfile.ZipFile(destination, "w") as output:
                     for entry in source.infolist():
                         data = (json.dumps(manifest).encode() if entry.filename == "mod.json"
                                 else source.read(entry.filename))
                         output.writestr(entry, data)
             mod_id = manifest["id"]
+            # Libraries are runtime siblings of the package, not ZIP members.
+            # Preserve the manifest basename even when testing a bad ABI binary.
+            if native_error != "missing-library":
+                suffix = ".dll" if sys.platform == "win32" else ".dylib" if sys.platform == "darwin" else ".so"
+                for library in manifest.get("native_libraries", {}):
+                    filename = library + suffix
+                    source = native_library or package.parent / filename
+                    shutil.copyfile(source, mods / filename)
         if mod_config is not None:
             settings = config / "mod_config"
             settings.mkdir()
@@ -58,6 +80,8 @@ def run_case(executable, package, rom, enabled, minimum_version=None, *, texture
             "XDG_STATE_HOME": str(root), "LAMBO_HEADLESS": "1",
             "LAMBO_LAUNCHER": "0", "LAMBO_MODERN_MAX_VIS": "120",
         })
+        if lifecycle:
+            environment.update({"LAMBO_WARP": "1", "LAMBO_MODERN_MAX_VIS": "600"})
         # Use an empty cwd so a developer's portable.txt cannot redirect writes
         # into a real player profile. The executable must not be portable-marked.
         result = subprocess.run(
@@ -75,6 +99,12 @@ def main():
     parser.add_argument("--protected-package", type=Path)
     parser.add_argument("--check-api", action="store_true",
                         help="check the current smoke fixture's UI import and default/persisted config reads")
+    parser.add_argument("--check-lifecycle", action="store_true",
+                        help="warp to a race and require native/data/storage/extension/frame markers")
+    parser.add_argument("--native-library", type=Path,
+                        help="native library to stage beside each code package; defaults to its sibling")
+    parser.add_argument("--bad-api-library", type=Path,
+                        help="optional native fixture with incompatible recomp_api_version")
     parser.add_argument("--texture-package", type=Path,
                         help="optional RT64 .rtz with rt64.json and no mod.json")
     parser.add_argument("--rom", required=True, type=Path)
@@ -104,8 +134,9 @@ def main():
              ("minimum-version", package, True, "999.0.0", 2, 0)]
     if args.protected_package:
         cases.append(("protected-hook", args.protected_package.resolve(), True, None, 2, 0))
+    native = {"native_library": args.native_library.resolve()} if args.native_library else {}
     for name, path, enabled, minimum, expected_code, markers in cases:
-        code, output = run_case(executable, path, rom, enabled, minimum)
+        code, output = run_case(executable, path, rom, enabled, minimum, **native)
         (args.output / f"{name}.log").write_text(output, encoding="utf-8")
         passed = code == expected_code and output.count(MARKER) == markers
         if expected_code == 0:
@@ -119,13 +150,33 @@ def main():
         for name, settings, expected_marker, absent_marker in (
                 ("api-default", None, CONFIG_DEFAULT_MARKER, CONFIG_OVERRIDE_MARKER),
                 ("api-config-override", {"mode": "Override"}, CONFIG_OVERRIDE_MARKER, CONFIG_DEFAULT_MARKER)):
-            code, output = run_case(executable, package, rom, True, mod_config=settings)
+            code, output = run_case(executable, package, rom, True, mod_config=settings, **native)
             (args.output / f"{name}.log").write_text(output, encoding="utf-8")
             passed = (code == 0 and output.count(MARKER) == 1
                       and output.count(UI_MARKER) == 1 and output.count(expected_marker) == 1
                       and absent_marker not in output and "game thread #1 started" in output
                       and "Error loading mods:" not in output)
             print(f"{'PASS' if passed else 'FAIL'} {name}: exit={code}")
+            if not passed:
+                return 1
+    if args.check_lifecycle:
+        code, output = run_case(executable, package, rom, True, lifecycle=True, **native)
+        (args.output / "lifecycle.log").write_text(output, encoding="utf-8")
+        passed = (code == 0 and all(output.count(marker) == 1 for marker in LIFECYCLE_MARKERS)
+                  and "game thread #1 started" in output and "Error loading mods:" not in output)
+        print(f"{'PASS' if passed else 'FAIL'} lifecycle: exit={code}")
+        if not passed:
+            return 1
+        rejections = [("missing-library", native), ("missing-export", native)]
+        if args.bad_api_library:
+            rejections.append(("incompatible-api", {"native_library": args.bad_api_library.resolve()}))
+        for name, libraries in rejections:
+            code, output = run_case(executable, package, rom, True, native_error=name, **libraries)
+            (args.output / f"native-{name}.log").write_text(output, encoding="utf-8")
+            passed = (code == 2 and "Error loading mods:" in output
+                      and NATIVE_ERRORS[name] in output and MARKER not in output
+                      and "game thread #1 started" not in output)
+            print(f"{'PASS' if passed else 'FAIL'} native-{name}: exit={code}")
             if not passed:
                 return 1
     if args.texture_package:

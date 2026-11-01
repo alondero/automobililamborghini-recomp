@@ -9,6 +9,8 @@
 extern "C" void lambo_log_v1(uint8_t*, recomp_context*);
 
 namespace lambo::mods {
+void register_game_api();
+void register_storage_api();
 namespace {
 // Runtime serializes content callbacks under its mod-context lock. Publish a
 // path snapshot so RT64 never calls back into that lock from its render thread.
@@ -29,6 +31,8 @@ void publish(recomp::mods::ModContext& context) {
 }
 
 void register_content() {
+    register_game_api();
+    register_storage_api();
     recomp::overlays::register_base_export("lambo_log_v1", lambo_log_v1);
     const auto textures = recomp::mods::register_mod_content_type({
         .content_filename = "rt64.json",

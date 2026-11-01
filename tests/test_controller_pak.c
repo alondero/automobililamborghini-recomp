@@ -4,6 +4,10 @@
 #include <string.h>
 
 #include "lambo_pak_storage.h"
+static unsigned mod_pak_loads;
+static unsigned mod_pak_writes;
+void lambo_mod_pak_loaded(void) { ++mod_pak_loads; }
+void lambo_mod_pak_written(void) { ++mod_pak_writes; }
 #include "recomp.h"
 
 void func_8007F780(uint8_t* rdram, recomp_context* ctx);
@@ -175,6 +179,11 @@ int main(void) {
     }
 
     lambo_pak_storage_shutdown();
+    if (mod_pak_loads != 1 || mod_pak_writes != 20) {
+        fprintf(stderr, "mod notifications did not match Pak initialization/block writes\n");
+        free(rdram);
+        return 1;
+    }
     remove(pak_path);
     free(rdram);
     return 0;

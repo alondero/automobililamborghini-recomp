@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "input_sha256": "e3cd86603fe17ba19f9d256e94bac9bbecf52b56f782dd02a06921917a0527be",
+  "input_sha256": "15522c150a21946b859f5a95a06465279ce78516e8ed81b8397ae1051b1da6af",
   "rom_sha1": {
     "usa": "78b36b48040426478011caef5e11884af2e80375",
     "japan": "98009e4948faf885864e52e1268700a0144c1b2e"
@@ -19,6 +19,8 @@
         "src/lambo_hud_widescreen.c": 1,
         "src/lambo_main_loop_idle.cpp": 1,
         "src/lambo_mod_api.cpp": 3,
+        "src/lambo_mod_game.cpp": 1,
+        "src/lambo_mod_guest.h": 2,
         "src/lambo_no_lod.cpp": 1,
         "src/lambo_rt_shadows.cpp": 2,
         "src/lambo_sky_widescreen.cpp": 3,
@@ -1106,6 +1108,7 @@
       "usa": "0x800CE6A4",
       "uses": {
         "src/lambo_hud_widescreen.c": 1,
+        "src/lambo_mod_game.cpp": 1,
         "src/lambo_race_field.cpp": 1,
         "src/lambo_rt_shadows.cpp": 1,
         "src/lambo_sky_widescreen.cpp": 1,
@@ -1280,6 +1283,7 @@
       "uses": {
         "src/lambo_camera.cpp": 2,
         "src/lambo_driving_assists_runtime.cpp": 1,
+        "src/lambo_mod_game.cpp": 1,
         "src/lambo_race_field.cpp": 1,
         "src/lambo_rt_shadows.cpp": 1,
         "src/lambo_warp.c": 1
@@ -1349,6 +1353,7 @@
     {
       "usa": "0x800CE6C0",
       "uses": {
+        "src/lambo_mod_game.cpp": 1,
         "src/lambo_warp.c": 1
       },
       "status": "candidate",
@@ -1531,6 +1536,7 @@
     {
       "usa": "0x800CE7AC",
       "uses": {
+        "src/lambo_mod_game.cpp": 2,
         "src/lambo_race_field.cpp": 1
       },
       "status": "candidate",

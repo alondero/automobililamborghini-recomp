@@ -2,10 +2,14 @@
 id = "lambo_mod_smoke"
 version = "1.0.0"
 display_name = "Mod execution smoke test"
-description = "Checks a boot hook, UI import and per-mod configuration. Developer test only."
+description = "Checks init/race/frame callbacks, data, extensions, stores, native/UI imports and mod config. Developer test only."
 authors = ["Lamborghini Recompiled contributors"]
 game_id = "lamborghini"
 minimum_recomp_version = "0.5.0"
+
+[[manifest.native_libraries]]
+name = "lambo_mod_native_smoke"
+funcs = ["lambo_native_smoke"]
 
 [[manifest.config_options]]
 id = "mode"
@@ -19,4 +23,4 @@ default = "Default"
 elf_path = "../../../build/mod-smoke/smoke.elf"
 mod_filename = "lambo_mod_smoke"
 func_reference_syms_file = "../../../lamborghini.syms.toml"
-data_reference_syms_files = []
+data_reference_syms_files = ["../../../lamborghini.datasyms.toml"]

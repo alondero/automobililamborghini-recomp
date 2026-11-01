@@ -132,6 +132,47 @@ class ModSupportTests(unittest.TestCase):
                         if expected == 0:
                             self.assertEqual(run.call_args.kwargs["mod_config"], {"mode": "Override"})
 
+    def test_native_sibling_and_lifecycle_environment_are_staged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "smoke.nrm"
+            native = root / "arbitrary-name.dll"
+            native.write_bytes(b"native fixture")
+            with zipfile.ZipFile(package, "w") as archive:
+                archive.writestr("mod.json", json.dumps({
+                    "id": "smoke", "native_libraries": {"lambo_mod_native_smoke": ["lambo_native_smoke"]}}))
+
+            def run(command, *, cwd, env, **kwargs):
+                suffix = ".dll" if sys.platform == "win32" else ".dylib" if sys.platform == "darwin" else ".so"
+                sibling = cwd / "LamborghiniRecomp/mods" / ("lambo_mod_native_smoke" + suffix)
+                self.assertEqual(sibling.read_bytes(), native.read_bytes())
+                self.assertEqual(env["LAMBO_WARP"], "1")
+                self.assertEqual(env["LAMBO_MODERN_MAX_VIS"], "600")
+                return subprocess.CompletedProcess(command, 0, b"", b"")
+
+            with patch.object(checker.subprocess, "run", side_effect=run):
+                checker.run_case(root / "game", package, root / "rom", True,
+                                 native_library=native, lifecycle=True)
+
+    def test_lifecycle_checks_require_every_marker_and_native_rejection(self):
+        boot = checker.MARKER + "\ngame thread #1 started\n"
+        lifecycle = boot + "\n".join(checker.LIFECYCLE_MARKERS)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = ["checker", "--exe", str(root / "game"), "--package", str(root / "smoke.nrm"),
+                    "--rom", str(root / "rom"), "--output", str(root / "logs"), "--check-lifecycle"]
+            for log, rejected, expected in (
+                    (lifecycle, (2, "Error loading mods:\n" + "\n".join(checker.NATIVE_ERRORS.values())), 0),
+                    *((lifecycle.replace(marker, ""), (2, "Error loading mods:"), 1)
+                      for marker in checker.LIFECYCLE_MARKERS),
+                    (lifecycle, (0, boot), 1),
+                    (lifecycle, (2, "Error loading mods: wrong reason"), 1)):
+                with self.subTest(log=log, rejected=rejected):
+                    results = [(0, boot), (0, "game thread #1 started"),
+                               (2, "Error loading mods:"), (0, log), rejected, rejected]
+                    with patch.object(sys, "argv", args), patch.object(checker, "run_case", side_effect=results), contextlib.redirect_stdout(io.StringIO()):
+                        self.assertEqual(checker.main(), expected)
+
     def test_texture_requires_loaded_identity_and_successful_boot(self):
         good = "Loading mod texture_smoke\ngame thread #1 started\n"
         for code, output, expected in [
