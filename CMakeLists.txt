@@ -105,6 +105,10 @@ if(BUILD_TESTING)
         ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/mod-smoke/bad-api
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/mod-smoke/bad-api
         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/mod-smoke/bad-api)
+    add_executable(lambo_mod_gameplay_tests tests/test_mod_gameplay.cpp src/lambo_mod_gameplay.cpp)
+    target_include_directories(lambo_mod_gameplay_tests PRIVATE src
+        ${N64MR}/N64Recomp/include ${N64MR}/librecomp/include ${N64MR}/ultramodern/include)
+    add_test(NAME lambo_mod_gameplay_bridge COMMAND lambo_mod_gameplay_tests)
 
     add_executable(lambo_vi_context_tests tests/test_vi_context.cpp src/lambo_vi.cpp)
     target_include_directories(lambo_vi_context_tests PRIVATE src)
@@ -143,8 +147,9 @@ if(BUILD_TESTING)
 
     # Links the production lambo_mods.cpp against test fakes for the runtime
     # mod API (tests/fakes); production builds use the submodule headers.
-    add_executable(lambo_mods_rtz_tests tests/test_mods_rtz.cpp src/lambo_mods.cpp)
-    target_include_directories(lambo_mods_rtz_tests PRIVATE src tests/fakes)
+    add_executable(lambo_mods_rtz_tests tests/test_mods_rtz.cpp src/lambo_mods.cpp src/lambo_mod_gameplay.cpp)
+    target_include_directories(lambo_mods_rtz_tests PRIVATE src tests/fakes
+        ${N64MR}/N64Recomp/include ${N64MR}/librecomp/include ${N64MR}/ultramodern/include)
     target_link_libraries(lambo_mods_rtz_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_mods_rtz_container COMMAND lambo_mods_rtz_tests)
 
@@ -843,6 +848,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_mod_api.cpp
         src/lambo_mod_game.cpp
         src/lambo_mod_storage.cpp
+        src/lambo_mod_gameplay.cpp
         src/lambo_input_gate.cpp # controller capture/neutral-release barrier
         src/lambo_window_resize.cpp # live window-size applies from the settings menu
         src/lambo_replay.cpp

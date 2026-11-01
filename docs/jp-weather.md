@@ -2,8 +2,8 @@
 
 Status: discovery for [issue 340](https://github.com/alondero/automobililamborghini-recomp/issues/340).
 An [experimental package](../mods/jp_weather/README.md) now implements the
-confirmed race-slot rules, fog and two AI table changes. The exact wet throttle
-branch and full parity remain unfinished. The measurements below distinguish the JP
+confirmed race-slot rules, fog, two AI table changes and the exact wet throttle
+branch. Full visual/physics parity remains unfinished. The measurements below distinguish the JP
 cartridge's behavior from the issue's proposed per-circuit and AI-vision model.
 The supported port remains USA only.
 
@@ -178,13 +178,31 @@ hook is a possible design, but its consumers, restoration and ownership have
 not been validated for the full set of JP effects. The loader-tail hook below
 supports the current data-table changes, not the instruction-encoded AI cap.
 
-The user selected reproduction of JP race-slot behavior. The package uses the
+The user selected reproduction of JP race-slot behavior and authorized the
+minimal base-port bridge needed for the protected throttle branch. The package uses the
 unprotected `func_80066F84` loader-tail call at USA `0x800081E0` for confirmed
-data changes. The protected routine's wet throttle cap remains instruction-
-encoded; no exact mod-only integration has been established for that branch.
-A minimal inert base-port bridge has been proposed, with approval pending
-because the original issue prohibits core changes. AI behavior parity is still
-unverified; a per-frame global throttle clamp would not be equivalent.
+data changes. A versioned export registers an aligned guest word containing the
+maneuver cap. Two injected hooks in `func_8002D37C` use it before USA
+`0x8002FEFC` (comparison result in `r1`) and `0x8002FF14` (store value in `r8`).
+They follow the original comparison and constant load, retaining every vehicle
+relocation patch. The base returns 100 without registration or for an invalid
+cap value. Wet registers 60; other modes register 100. Initialization clears
+registration before any new game's mods execute.
+
+Both regions first check signed speed below 60, add 10 to throttle, store a
+halfword and reload it signed. USA compares against 101 and caps at 100; JP wet
+compares against 61 and caps at 60. JP adds no extra speed condition. The other
+branch subtracts 10 and clamps negative results to zero; it has no upper cap.
+The bridge does not run in that branch. For example, speed 59/throttle 90 gives
+60 in wet and 100 in dry; speed 60/throttle 100 gives 90 in either mode.
+
+`tests/test_jp_weather_throttle_bridge.py` verifies those ROM instructions and
+compiles the actual emitted hook text. It covers signed overflow, every cap
+from 0 through 100, unchanged unrelated registers and exhaustive equivalence
+to the unmodified branch for all 65,536 halfword inputs when the cap is 100.
+These scoped differential tests do not establish full race-trajectory parity.
+The developer savestate format omits the mod heap, so restoring between races
+with different weather settings remains unsupported.
 
 ## Reproduce
 

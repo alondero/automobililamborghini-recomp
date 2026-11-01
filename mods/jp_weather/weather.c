@@ -10,6 +10,8 @@ __attribute__((noinline, weak, used, section(".recomp_import.*")))
 unsigned recomp_get_config_u32(const char *key) { return 0; }
 __attribute__((noinline, weak, used, section(".recomp_import.*")))
 int lambo_log_v1(const char *message) { return 0; }
+__attribute__((noinline, weak, used, section(".recomp_import.*")))
+unsigned lambo_register_ai_maneuver_cap_v1(const unsigned *cap) { return 0; }
 
 #define H(address) (*(volatile short *)(address))
 #define B(address) (*(volatile unsigned char *)(address))
@@ -24,6 +26,11 @@ static const char *const round_keys[JP_WEATHER_MAX_ROUNDS] = {
 static int changed_ai;
 static float saved_speed[2];
 static short saved_countdown[2];
+/* The base retains only this address, never a host-side copy of the cap.
+ * Developer savestates currently omit the mod heap; they are not supported
+ * for restoring weather across differently configured races.
+ */
+static unsigned maneuver_cap = 100;
 
 /* Table writes retain the native AI routine, including port relocation fixes.
  * The original values are captured once, then restored when US default is
@@ -79,6 +86,11 @@ void jp_weather_race_start(unsigned a0, unsigned a1, unsigned a2, unsigned a3) {
         slots[i + 1] = recomp_get_config_u32(round_keys[i]);
     weather = jp_weather_resolve(mode >= 1 && mode <= 3,
         H(0x800CE6B4u), H(0x800CE6A4u), H(0x800CE6BAu), slots);
+    maneuver_cap = weather == JP_WEATHER_WET ? 60 : 100;
+    if (!lambo_register_ai_maneuver_cap_v1(&maneuver_cap)) {
+        lambo_log_v1("[jp-weather] bridge registration failed");
+        return;
+    }
     apply_ai(weather);
     if (weather == JP_WEATHER_US_DEFAULT) {
         lambo_log_v1("[jp-weather] US default");

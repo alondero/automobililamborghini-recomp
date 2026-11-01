@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "executable_sha256": "59289730b77489ffaa264badc0777ddc0f0d40529d52ba0adb935c7a475bbb4f",
-  "package_sha256": "384f534e644bc13a179d6215fd7cabf77ca6f722879b2e2c529f09278df20e97",
+  "executable_sha256": "4ea15015efb607f9758913a73e521248d9a84189c494bb041bfdde1f055c80b1",
+  "package_sha256": "d68426147034c6b3fe6a55ac39e9a3c73e289202647e7194e8180d2dcbc6dc9f",
   "rom_sha256": "cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c",
   "scope": "Package loading and race-start resolution; no JP behavioral parity claim",
   "requested_cases": [
@@ -93,5 +93,7 @@
       "reached_race": true
     }
   ],
-  "validation_note": "Captured against existing local executable, which predates current source checkout (UI smoke export unavailable). All retained markers also passed stricter exact-marker validation after checker review. No current-source full build or JP AI trajectory parity established."
+  "captured_date_utc": "2026-11-01",
+  "source_base_revision": "acaec25",
+  "validation_note": "Fresh full Windows build with the current uncommitted maneuver bridge, regenerated USA code and package0.2.0. Local branch semantics are separately checked by compiling emitted hooks and verifying ROM witnesses. Loader success is not a whole-race JP trajectory parity claim."
 }

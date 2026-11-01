@@ -1,11 +1,11 @@
 [manifest]
 id = "lambo_jp_weather"
-version = "0.1.0"
+version = "0.2.0"
 display_name = "JP weather (experimental)"
 description = "Japanese race-slot weather on the USA cartridge. Development build."
 authors = ["Lamborghini Recompiled contributors"]
 game_id = "lamborghini"
-minimum_recomp_version = "0.5.0"
+minimum_recomp_version = "0.10.3"
 
 [[manifest.config_options]]
 id = "weather.mode"

@@ -1,4 +1,5 @@
 #include "lambo_mods.h"
+#include "lambo_mod_gameplay.h"
 #include "lambo_log.h"
 #include "librecomp/mods.hpp"
 #include "librecomp/overlays.hpp"
@@ -34,6 +35,8 @@ void register_content() {
     register_game_api();
     register_storage_api();
     recomp::overlays::register_base_export("lambo_log_v1", lambo_log_v1);
+    recomp::overlays::register_base_export("lambo_register_ai_maneuver_cap_v1",
+                                         lambo_register_ai_maneuver_cap_v1);
     const auto textures = recomp::mods::register_mod_content_type({
         .content_filename = "rt64.json",
         .allow_runtime_toggle = true,

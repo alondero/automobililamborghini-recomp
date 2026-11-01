@@ -73,6 +73,12 @@ unsigned recomp_get_config_u32(const char *key) {
     return 0;
 }
 
+static const unsigned *registered_cap;
+unsigned lambo_register_ai_maneuver_cap_v1(const unsigned *cap) {
+    registered_cap = cap;
+    return 1;
+}
+
 int lambo_log_v1(const char *message) {
     ++log_count;
     if (strcmp(message, "[jp-weather] data verified") == 0) ++verified_logs;
@@ -89,6 +95,8 @@ int lambo_log_v1(const char *message) {
 
 static void start_race(void) {
     jp_weather_race_start(1, 0x3F000000u, 0x4002, 0x40);
+    assert(registered_cap == &maneuver_cap);
+    assert(*registered_cap == (strcmp(last_log, "[jp-weather] wet") == 0 ? 60u : 100u));
 }
 
 static void stock_fog(void) {

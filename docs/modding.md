@@ -128,6 +128,18 @@ import namespace. It logs an info-level message and returns its byte count, or
 -1 for an invalid KSEG0 pointer or a string without a NUL in the first 1024 bytes.
 Guest byte order is handled by the export. Use `--verbose` to include info logs.
 
+The versioned `lambo_register_ai_maneuver_cap_v1` export registers a guest pointer
+to an unsigned 32-bit cap for one measured AI acceleration branch. The word must
+be aligned, in KSEG0, and wholly within runtime RAM; zero unregisters it. The
+return value is 1 for success and 0 for an invalid pointer, which preserves the
+previous registration. The last successful registrant owns the setting and
+must keep its storage alive. Registration and updates belong to the guest game
+thread. The helper reads the word each time, uses values 0 through 100, and
+falls back to the stock 100 for other values or no registration. A new game
+clears the pointer before mods load. This is not a global throttle clamp; see
+[the weather investigation](jp-weather.md#mod-integration-boundary) for its two
+instruction sites. Developer snapshots exclude normal mod allocations.
+
 ## Developer smoke package
 
 [The smoke fixture](../tests/mods/smoke/smoke.c) is original test code. It subscribes

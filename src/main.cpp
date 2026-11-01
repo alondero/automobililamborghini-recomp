@@ -54,6 +54,7 @@
 #include "lambo_audio.h"
 #include "lambo_config.h"
 #include "lambo_mods.h"
+#include "lambo_mod_gameplay.h"
 #include "lambo_paths.h"
 #include "lambo_rom_path.h"
 #include "lambo_crash.h"   // native crash reporting
@@ -113,6 +114,8 @@ static int watchdog_seconds() {
 }
 
 static void on_init_cb(uint8_t*, recomp_context*) {
+    // Runtime calls this before mod loading and guest-thread startup.
+    lambo_reset_mod_gameplay_bridges();
     LAMBO_LOG("probe", "init complete; entering recomp_entrypoint @ 0x80000400\n");
 }
 
