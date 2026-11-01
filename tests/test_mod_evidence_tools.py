@@ -7,7 +7,7 @@ import tomllib
 import unittest
 
 from scripts.gen_mod_pool_trace import ROOT, SITES, summarize_run, trace_config
-from tools.verify_dependency_trees import verify_dependency
+from tools.verify_dependency_trees import recorded_pin, verify_dependency
 
 
 class DependencyTreeTests(unittest.TestCase):
@@ -23,6 +23,7 @@ class DependencyTreeTests(unittest.TestCase):
         (self.repo / "base.txt").write_bytes(b"base\n")
         self.git("add", ".")
         self.git("-c", "commit.gpgsign=false", "commit", "-qm", "base")
+        self.pin = self.git("rev-parse", "HEAD").decode().strip()
         self.patch = self.root / "change.patch"
         self.patch.write_text(
             "diff --git a/base.txt b/base.txt\n--- a/base.txt\n+++ b/base.txt\n"
@@ -38,7 +39,7 @@ class DependencyTreeTests(unittest.TestCase):
     def test_patch_created_untracked_file_matches_and_real_index_is_untouched(self):
         index = self.repo / ".git/index"
         before = index.read_bytes()
-        report = verify_dependency(self.repo, [self.patch])
+        report = verify_dependency(self.repo, [self.patch], self.pin)
         self.assertTrue(report["worktree_matches"])
         self.assertEqual(index.read_bytes(), before)
         self.assertEqual((self.repo / "base.txt").read_bytes(), b"patched\n")
@@ -50,14 +51,59 @@ class DependencyTreeTests(unittest.TestCase):
             with self.subTest(name=name):
                 path = self.repo / name
                 path.write_bytes(b"unpublished\n")
-                self.assertFalse(verify_dependency(self.repo, [self.patch])["worktree_matches"])
+                self.assertFalse(verify_dependency(self.repo, [self.patch], self.pin)["worktree_matches"])
                 self.assertEqual(path.read_bytes(), b"unpublished\n")
                 if name == "base.txt":
                     path.write_bytes(b"patched\n")
 
     def test_missing_checkout_is_an_error(self):
         with self.assertRaisesRegex(ValueError, "not initialized"):
-            verify_dependency(self.root / "missing", [self.patch])
+            verify_dependency(self.root / "missing", [self.patch], self.pin)
+
+    def commit_link(self, parent, name, pin):
+        self.git("init", "-q", str(parent), cwd=self.root)
+        self.git("config", "user.name", "Fixture", cwd=parent)
+        self.git("config", "user.email", "fixture@example.invalid", cwd=parent)
+        self.git("update-index", "--add", "--cacheinfo", f"160000,{pin},{name}", cwd=parent)
+        self.git("-c", "commit.gpgsign=false", "commit", "-qm", "record gitlink", cwd=parent)
+
+    def test_wrong_parent_gitlink_is_rejected_even_when_the_patch_tree_matches(self):
+        self.commit_link(self.root, "dependency", self.pin)
+        self.git("-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "wrong checkout")
+        pin = recorded_pin(self.root, "dependency")
+        self.assertEqual(pin, self.pin)
+        before = (self.repo / ".git/index").read_bytes()
+        with self.assertRaisesRegex(ValueError, "differs from recorded gitlink"):
+            verify_dependency(self.repo, [self.patch], pin)
+        self.assertEqual((self.repo / ".git/index").read_bytes(), before)
+
+    def nested_links(self):
+        # The existing fixture repository becomes the parent of a synthetic
+        # nested gitlink, mirroring top-level -> rt64 -> Plume.
+        nested = self.repo / "nested"
+        self.git("init", "-q", str(nested))
+        self.git("config", "user.name", "Fixture", cwd=nested)
+        self.git("config", "user.email", "fixture@example.invalid", cwd=nested)
+        self.git("-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "nested pin", cwd=nested)
+        nested_pin = self.git("rev-parse", "HEAD", cwd=nested).decode().strip()
+        self.commit_link(self.repo, "nested", nested_pin)
+        parent_pin = self.git("rev-parse", "HEAD").decode().strip()
+        self.commit_link(self.root, "dependency", parent_pin)
+        return nested, nested_pin
+
+    def test_nested_pin_comes_from_the_recorded_parent_tree(self):
+        nested, pin = self.nested_links()
+        self.assertEqual(recorded_pin(self.root, "dependency/nested"), pin)
+        self.assertTrue(verify_dependency(nested, [], pin)["worktree_matches"])
+        self.git("-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "nested drift", cwd=nested)
+        with self.assertRaisesRegex(ValueError, "differs from recorded gitlink"):
+            verify_dependency(nested, [], recorded_pin(self.root, "dependency/nested"))
+
+    def test_drifted_parent_cannot_supply_a_nested_pin(self):
+        self.nested_links()
+        self.git("-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "parent drift")
+        with self.assertRaisesRegex(ValueError, "differs from recorded gitlink"):
+            recorded_pin(self.root, "dependency/nested")
 
 
 class PoolDiagnosticTests(unittest.TestCase):

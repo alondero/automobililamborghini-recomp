@@ -68,7 +68,13 @@ The [tree comparison record](evidence/mod-loader-dependency-trees.json) retains
 the pins, patch counts and resulting tree hashes for independent reproduction.
 The tracked [verifier](../tools/verify_dependency_trees.py) generates that record
 and checks an existing record without changing dependency files or their real
-Git indices. After a normal Windows build, reproduce it with:
+Git indices. It first requires each checkout's `HEAD` to match the gitlink
+recorded by its parent. Nested pins are read through the recorded parent tree:
+the top-level repository pins rt64, and that rt64 commit pins Plume. A wrong
+checkout or intermediate parent fails even without `--check`, so `--output`
+cannot certify a different checkout as the recorded pin. Regression fixtures
+cover wrong top-level, nested and intermediate-parent checkouts.
+After a normal Windows build, reproduce it with:
 
 ~~~text
 python tools/verify_dependency_trees.py --platform windows --check docs/evidence/mod-loader-dependency-trees.json

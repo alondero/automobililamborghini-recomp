@@ -1,4 +1,4 @@
-"""Compare dependency worktrees with HEAD plus the committed patch series.
+"""Compare dependency worktrees with recorded gitlinks plus committed patches.
 
 Uses disposable Git indices; leaves source files and the user's index alone.
 Run after the normal platform patch application. --check compares the resulting
@@ -7,7 +7,7 @@ record with committed evidence; --output writes a fresh record after success.
 import argparse
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import subprocess
 import sys
 import tempfile
@@ -20,25 +20,57 @@ COMPARISON = ("Temporary Git index: pinned HEAD plus ordered committed patches, 
               "compared with a separate index of tracked and untracked source files.")
 
 
-def verify_dependency(directory, patches):
-    directory = Path(directory)
+def git(directory, *args, env=None):
+    return subprocess.check_output(["git", "-C", str(directory), *args], env=env, text=True).strip()
+
+
+def require_pin(directory, pin):
     if not (directory / ".git").exists():
         raise ValueError(f"dependency is not initialized: {directory}")
+    actual = git(directory, "rev-parse", "HEAD")
+    if actual != pin:
+        raise ValueError(f"{directory}: checkout HEAD {actual} differs from recorded gitlink {pin}")
 
-    def git(*args, env=None):
-        return subprocess.check_output(["git", "-C", str(directory), *args], env=env, text=True).strip()
+
+def recorded_pin(root, relative):
+    """Walk recorded gitlinks, validating parents before reading nested pins."""
+    path = PurePosixPath(relative)
+    if path.is_absolute() or ".." in path.parts or not path.parts:
+        raise ValueError(f"invalid dependency path: {relative}")
+    directory, revision, remaining = Path(root), "HEAD", path.parts
+    while remaining:
+        for length in range(1, len(remaining) + 1):
+            prefix = "/".join(remaining[:length])
+            entry = git(directory, "ls-tree", "-z", revision, "--", prefix)
+            if not entry.startswith("160000 commit "):
+                continue
+            pin = entry.split("\t", 1)[0].split()[2]
+            if length == len(remaining):
+                return pin
+            directory = directory.joinpath(*remaining[:length])
+            require_pin(directory, pin)
+            revision, remaining = pin, remaining[length:]
+            break
+        else:
+            raise ValueError(f"dependency has no recorded gitlink: {relative}")
+
+
+def verify_dependency(directory, patches, pin):
+    directory = Path(directory)
+    require_pin(directory, pin)
 
     with tempfile.TemporaryDirectory(prefix="lambo-verify-deps-") as temporary:
         expected_env = dict(os.environ, GIT_INDEX_FILE=str(Path(temporary) / "expected"))
         actual_env = dict(os.environ, GIT_INDEX_FILE=str(Path(temporary) / "actual"))
-        git("read-tree", "HEAD", env=expected_env)
+        git(directory, "read-tree", pin, env=expected_env)
         for patch in patches:
-            git("apply", "--cached", "--whitespace=nowarn", str(patch), env=expected_env)
-        expected = git("write-tree", env=expected_env)
-        git("read-tree", "HEAD", env=actual_env)
-        git("add", "-A", "--", ".", env=actual_env)
-        actual = git("write-tree", env=actual_env)
-    return {"pin": git("rev-parse", "HEAD"), "patch_count": len(patches),
+            git(directory, "apply", "--cached", "--whitespace=nowarn", str(patch), env=expected_env)
+        expected = git(directory, "write-tree", env=expected_env)
+        git(directory, "read-tree", pin, env=actual_env)
+        git(directory, "add", "-A", "--", ".", env=actual_env)
+        actual = git(directory, "write-tree", env=actual_env)
+    require_pin(directory, pin)
+    return {"pin": pin, "patch_count": len(patches),
             "patched_tree": expected, "worktree_matches": expected == actual}
 
 
@@ -46,7 +78,7 @@ def dependency_report(platform, root=ROOT):
     dependencies = []
     for relative, patches in series_for(platform, root).items():
         dependencies.append({"directory": relative,
-                             **verify_dependency(root / relative, patches)})
+                             **verify_dependency(root / relative, patches, recorded_pin(root, relative))})
     return {"platform": platform, "comparison": COMPARISON, "dependencies": dependencies}
 
 
