@@ -1,0 +1,97 @@
+{
+  "schema": 1,
+  "executable_sha256": "59289730b77489ffaa264badc0777ddc0f0d40529d52ba0adb935c7a475bbb4f",
+  "package_sha256": "384f534e644bc13a179d6215fd7cabf77ca6f722879b2e2c529f09278df20e97",
+  "rom_sha256": "cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c",
+  "scope": "Package loading and race-start resolution; no JP behavioral parity claim",
+  "requested_cases": [
+    "absent",
+    "us-default",
+    "dry",
+    "wet",
+    "night",
+    "three-player",
+    "time-challenge",
+    "championship"
+  ],
+  "complete": true,
+  "cases": [
+    {
+      "name": "absent",
+      "passed": true,
+      "exit_code": 0,
+      "markers": [],
+      "reached_race": true
+    },
+    {
+      "name": "us-default",
+      "passed": true,
+      "exit_code": 0,
+      "markers": [
+        "US default"
+      ],
+      "reached_race": true
+    },
+    {
+      "name": "dry",
+      "passed": true,
+      "exit_code": 0,
+      "markers": [
+        "data verified",
+        "dry"
+      ],
+      "reached_race": true
+    },
+    {
+      "name": "wet",
+      "passed": true,
+      "exit_code": 0,
+      "markers": [
+        "data verified",
+        "wet"
+      ],
+      "reached_race": true
+    },
+    {
+      "name": "night",
+      "passed": true,
+      "exit_code": 0,
+      "markers": [
+        "data verified",
+        "night"
+      ],
+      "reached_race": true
+    },
+    {
+      "name": "three-player",
+      "passed": true,
+      "exit_code": 0,
+      "markers": [
+        "data verified",
+        "dry"
+      ],
+      "reached_race": true
+    },
+    {
+      "name": "time-challenge",
+      "passed": true,
+      "exit_code": 0,
+      "markers": [
+        "data verified",
+        "dry"
+      ],
+      "reached_race": true
+    },
+    {
+      "name": "championship",
+      "passed": true,
+      "exit_code": 0,
+      "markers": [
+        "data verified",
+        "wet"
+      ],
+      "reached_race": true
+    }
+  ],
+  "validation_note": "Captured against existing local executable, which predates current source checkout (UI smoke export unavailable). All retained markers also passed stricter exact-marker validation after checker review. No current-source full build or JP AI trajectory parity established."
+}

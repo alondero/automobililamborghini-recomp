@@ -1,7 +1,9 @@
 # Japanese weather investigation
 
 Status: discovery for [issue 340](https://github.com/alondero/automobililamborghini-recomp/issues/340).
-No weather mod is implemented. The measurements below distinguish the JP
+An [experimental package](../mods/jp_weather/README.md) now implements the
+confirmed race-slot rules, fog and two AI table changes. The exact wet throttle
+branch and full parity remain unfinished. The measurements below distinguish the JP
 cartridge's behavior from the issue's proposed per-circuit and AI-vision model.
 The supported port remains USA only.
 
@@ -152,13 +154,20 @@ and stride `0x84`. The function decrements that field by one when nonzero at
 durations nor an AI sight distance has been measured. A wet branch at
 `0x80035B6C` also changes a throttle-demand cap from 100 to 60.
 
-These are static AI findings. No AI behavior delta has been demonstrated.
+The initial findings above were static. A later controlled JP wet/difficulty-0
+run [observed a read watchpoint](evidence/jp-weather-ai-read.json) on speed-table cell `0x8007DB00`, whose live value
+was `220`. Countdown initialization was not observed within the bounded run.
+The reusable `tools/emu_instrumentation/probe_jp_weather_ai.py` retains partial
+observations and marks incomplete cases as failures. It does not infer a guest
+PC from the legacy debugger helper's unverified register-index convention.
+No port-versus-JP AI behavior delta has been demonstrated.
 
 ## Mod integration boundary
 
 The [mod loader](modding.md#code-mod-contract) supplies persistent enum
 configuration. A shared package can own one `weather.mode` option for issues
-340, 72 and 73; this investigation does not register it or change the base.
+340, 72 and 73. The experimental package now registers it without changing the
+base, alongside per-round selections for championship races.
 
 The identified USA AI routine is protected: `lamborghini.us.toml` supplies
 hooks and instruction replacements for `func_8002D37C`, including relocated
@@ -166,11 +175,16 @@ vehicle/AI pool accesses. The [guard generator](../scripts/gen_mod_patch_guards.
 marks it unhookable. Forcing a replacement with the original ROM routine would
 discard those fixes. A data-table update through another verified lifecycle
 hook is a possible design, but its consumers, restoration and ownership have
-not been validated. No safe race-start/per-frame hook set is established here.
+not been validated for the full set of JP effects. The loader-tail hook below
+supports the current data-table changes, not the instruction-encoded AI cap.
 
-Issue 340 therefore still needs a scope decision about race-slot versus
-fixed-circuit weather, verified AI behavior, and a safe mod-only integration.
-No invented circuit assignments or renamed rendering distances fill those gaps.
+The user selected reproduction of JP race-slot behavior. The package uses the
+unprotected `func_80066F84` loader-tail call at USA `0x800081E0` for confirmed
+data changes. The protected routine's wet throttle cap remains instruction-
+encoded; no exact mod-only integration has been established for that branch.
+A minimal inert base-port bridge has been proposed, with approval pending
+because the original issue prohibits core changes. AI behavior parity is still
+unverified; a per-frame global throttle clamp would not be equivalent.
 
 ## Reproduce
 
