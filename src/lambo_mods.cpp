@@ -37,6 +37,7 @@ void register_content() {
     recomp::overlays::register_base_export("lambo_log_v1", lambo_log_v1);
     recomp::overlays::register_base_export("lambo_register_ai_maneuver_cap_v1",
                                          lambo_register_ai_maneuver_cap_v1);
+    recomp::overlays::register_base_export("lambo_register_rain_v1", lambo_register_rain_v1);
     const auto textures = recomp::mods::register_mod_content_type({
         .content_filename = "rt64.json",
         .allow_runtime_toggle = true,

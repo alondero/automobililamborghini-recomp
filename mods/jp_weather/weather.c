@@ -12,6 +12,8 @@ __attribute__((noinline, weak, used, section(".recomp_import.*")))
 int lambo_log_v1(const char *message) { return 0; }
 __attribute__((noinline, weak, used, section(".recomp_import.*")))
 unsigned lambo_register_ai_maneuver_cap_v1(const unsigned *cap) { return 0; }
+__attribute__((noinline, weak, used, section(".recomp_import.*")))
+unsigned lambo_register_rain_v1(const unsigned *settings) { return 0; }
 
 #define H(address) (*(volatile short *)(address))
 #define B(address) (*(volatile unsigned char *)(address))
@@ -31,6 +33,7 @@ static short saved_countdown[2];
  * for restoring weather across differently configured races.
  */
 static unsigned maneuver_cap = 100;
+static unsigned rain_settings;
 
 /* Table writes retain the native AI routine, including port relocation fixes.
  * The original values are captured once, then restored when US default is
@@ -92,6 +95,15 @@ void jp_weather_race_start(unsigned a0, unsigned a1, unsigned a2, unsigned a3) {
         return;
     }
     apply_ai(weather);
+    {
+        unsigned style = recomp_get_config_u32("rain.style");
+        unsigned intensity = recomp_get_config_u32("rain.intensity");
+        unsigned drops = recomp_get_config_u32("rain.camera");
+        rain_settings = weather == JP_WEATHER_WET && style <= 2 && intensity <= 2 && drops <= 1
+            ? style | ((40 + intensity * 30) << 8) | (drops << 16) : 0;
+        if (!lambo_register_rain_v1(&rain_settings))
+            lambo_log_v1("[jp-weather] rain registration failed");
+    }
     if (weather == JP_WEATHER_US_DEFAULT) {
         lambo_log_v1("[jp-weather] US default");
         return;

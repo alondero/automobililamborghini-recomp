@@ -12,6 +12,7 @@
 #include "lambo_camera_projection.h"
 #include "lambo_config.h"
 #include "lambo_sky_panorama.h"
+#include "lambo_rain.h"
 #include "librecomp/addresses.hpp"
 #include "recomp.h"
 #include "rt64_extended_gbi.h"
@@ -76,7 +77,7 @@ extern "C" void lambo_sky_extend_panorama(uint8_t* rdram) {
     const int track = half(0x800CE794u);
     const int center = half(0x800987E0u);
     const uint32_t textures = word(0x80098238u);
-    if (player < 0 || player >= 4 || track < 0 || track >= 6 ||
+    if (player < 0 || player > 4 || track < 0 || track >= 6 ||
         center < 0 || center >= 8 || textures < 0x80000000u || textures >= 0x80800000u - 0x294u) {
         return;
     }
@@ -109,7 +110,7 @@ extern "C" void lambo_sky_extend_panorama(uint8_t* rdram) {
     // Less than 180 degrees is visible: at most five tiles, subdivided so
     // affine N64 UV interpolation approximates the angular mapping closely.
     constexpr int max_quads = 4 * 5 * kSkySlicesPerTile;
-    constexpr uint32_t buffer_size = max_quads * (64 + 9 * 8) + 8;
+    constexpr uint32_t buffer_size = max_quads * (64 + 9 * 8) + 32;
     static std::map<std::pair<uint32_t, int>, uint32_t> buffers;
     auto& buffer = buffers[{task, player}];
     if (buffer == 0) {
@@ -133,6 +134,13 @@ extern "C" void lambo_sky_extend_panorama(uint8_t* rdram) {
         word(cursor + 4) = static_cast<int32_t>(w1);
         cursor += 8;
     };
+    const bool storm = lambo_rain_active(rdram) != 0;
+    if (storm) {
+        GfxCommand state{};
+        gEXPushOtherMode(&state);
+        command(state.values.word0, state.values.word1);
+        command(0xBA000C02u, 0x00002000u); // Bilinear cloud sampling.
+    }
     // Keep the existing coverage envelope independent of angular motion.
     const double left = lambo_sky_panorama_at_x(-radius * 128.0, phase);
     const double right = lambo_sky_panorama_at_x((radius + 1) * 128.0, phase);
@@ -153,6 +161,8 @@ extern "C" void lambo_sky_extend_panorama(uint8_t* rdram) {
             const double u0 = std::max(left, slice * kSkySliceWidth);
             const double u1 = std::min(right, (slice + 1) * kSkySliceWidth);
             const int tile = lambo_sky_tile_index(center, column);
+            const uint32_t original_image = word(textures + 0x254 + row * 32 + tile * 4);
+            const uint32_t tile_image = lambo_rain_sky(rdram, tile, row, original_image);
             // The two ROM vertex banks differ only in horizontal texture
             // orientation. Copy the middle quad, including colour and UVs.
             const uint32_t source = ((mirrored & (1u << tile)) ? 0x8011F5D0u : 0x8011F450u)
@@ -175,13 +185,14 @@ extern "C" void lambo_sky_extend_panorama(uint8_t* rdram) {
                 const double uv_left = half(source + source_left * 16 + 8);
                 const double uv_right = half(source + source_right * 16 + 8);
                 half(vertex + v * 16 + 8) = static_cast<int16_t>(std::lround(uv_left + fraction * (uv_right - uv_left)));
+                if (tile_image != original_image)
+                    half(vertex + v * 16 + 10) = source_vertex < 2 ? 31 * 32 : 0;
                 if (cap && ((row == 0 && v < 2) || (row == 1 && v >= 2))) {
                     half(vertex + v * 16 + 2) = row == 0 ? kSkyEdgeExtent : -kSkyEdgeExtent;
                 }
             }
             // Same RGBA16 tile load and two F3DEX triangles as the original
             // emitter (0x8000FA48..0x8000FCDC), using vertex-cache slots 0..3.
-            const uint32_t tile_image = word(textures + 0x254 + row * 32 + tile * 4);
             command(0xFD100000u, tile_image);
             command(0xF5100000u, 0x07094060u);
             command(0xE6000000u, 0);
@@ -193,6 +204,11 @@ extern "C" void lambo_sky_extend_panorama(uint8_t* rdram) {
             command(0xB1000204u, 0x00040600u);
             vertex += 64;
         }
+    }
+    if (storm) {
+        GfxCommand state{};
+        gEXPopOtherMode(&state);
+        command(state.values.word0, state.values.word1);
     }
     command(0xB8000000u, 0);
 

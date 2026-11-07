@@ -35,6 +35,27 @@ int main() {
     uint8_t* rdram = memory.data();
     const auto set_cap = [&](uint32_t value) { MEM_W(0, static_cast<int32_t>(0x80000004u)) = value; };
     lambo_reset_mod_gameplay_bridges();
+    expect(lambo_rain_settings(nullptr) == 0, "absent rain bridge is inert");
+    recomp_context rain_ctx{};
+    rain_ctx.r4 = static_cast<int32_t>(0x80000008u);
+    lambo_register_rain_v1(rdram, &rain_ctx);
+    expect(rain_ctx.r2 == 1, "rain word can be registered");
+    for (unsigned style = 0; style <= 2; ++style) {
+        for (unsigned intensity = 0; intensity <= 100; ++intensity) {
+            unsigned value = style | (intensity << 8) | 0x10000;
+            MEM_W(0, static_cast<int32_t>(0x80000008u)) = value;
+            expect(lambo_rain_settings(rdram) == value, "rain settings preserve all valid combinations");
+        }
+    }
+    for (uint32_t value : {3u, 0x6501u, 4u, 0x20001u, 0xFFFFFFFFu}) {
+        MEM_W(0, static_cast<int32_t>(0x80000008u)) = value;
+        expect(lambo_rain_settings(rdram) == 0, "invalid rain words fail closed");
+    }
+    rain_ctx.r4 = static_cast<int32_t>(0x80000009u);
+    lambo_register_rain_v1(rdram, &rain_ctx);
+    expect(rain_ctx.r2 == 0, "unaligned rain registration is rejected");
+    lambo_reset_mod_gameplay_bridges();
+    expect(lambo_rain_settings(nullptr) == 0, "reset clears the rain pointer");
     expect(lambo_ai_maneuver_cap(nullptr) == 100, "absent bridge does not dereference RAM");
     set_cap(60);
     register_address(rdram, 0x80000004u, true);

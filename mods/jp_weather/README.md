@@ -6,6 +6,11 @@ throttle cap to the USA game. Lights, grass traction and perspective-distance
 changes remain separate work. It is not full JP parity.
 See [the investigation](../../docs/jp-weather.md).
 
+Wet races now offer Retro and Modern rain styles, with puddles, storm clouds
+and optional camera droplets. Rain style Off preserves fog and AI changes.
+Intensity and style apply next race, independently of texture packs.
+See [rain rendering](../../docs/rain.md) for the experimental rendering limits.
+
 The package hooks the unprotected final audio call in the race loader. It
 matches the loader phase and argument tuple, after the selected circuit,
 championship round and fog fields have been initialized. It does not replace
@@ -59,9 +64,9 @@ The builder can use Clang in WSL while keeping the linker and packager native:
 python scripts/build_jp_weather_mod.py --wsl-distro Ubuntu --clang /usr/bin/clang --linker PATH_TO_LD_LLD_EXE --mod-tool PATH_TO_RECOMP_MOD_TOOL_EXE
 ~~~
 
-Package version 0.2.0 requires a port built with the
-`lambo_register_ai_maneuver_cap_v1` export introduced by this change. Older
-0.10.3 builds lack it and reject the package before gameplay.
+Package version 0.3.0 requires a port built with both
+`lambo_register_ai_maneuver_cap_v1` and `lambo_register_rain_v1` exports.
+Older builds lack these exports and reject the package before gameplay.
 Install `build/jp-weather/lambo_jp_weather.nrm` through the Mods tab and restart.
 The builder accepts `--output` for an alternate build directory. It does not
 install tools or modify the base port.

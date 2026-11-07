@@ -12,6 +12,8 @@ extern "C" void lambo_sky_backdrop_end(uint8_t*);
 extern "C" unsigned int lambo_camera_backdrop_projection_scale_bits(uint8_t*) { return 0x3F800000u; }
 extern "C" float lambo_camera_sky_vertical_fov(uint8_t*) { return 100.0f; }
 extern "C" float lambo_sky_target_aspect() { return 32.0f / 9.0f; }
+extern "C" uint32_t lambo_rain_sky(uint8_t*,int,int,uint32_t original) { return original; }
+extern "C" unsigned lambo_rain_active(uint8_t*) { return 0; }
 namespace lambo::config { bool widescreen_sky_match() { return true; } }
 namespace recomp {
 void* alloc(uint8_t* rdram, size_t size) {

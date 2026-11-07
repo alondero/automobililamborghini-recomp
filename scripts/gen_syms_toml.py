@@ -1216,17 +1216,17 @@ text = "{ extern void lambo_steering_direct(uint8_t*); lambo_steering_direct(rdr
 [[patches.hook]]
 func = "BootLoadInitialAssets"
 before_vram = 0x8000102C
-text = "{ extern void lambo_rt_probe_task_begin(uint8_t*); lambo_rt_probe_task_begin(rdram); }"
+text = "{ extern void lambo_rt_probe_task_begin(uint8_t*); lambo_rt_probe_task_begin(rdram); extern void lambo_rain_frame(uint8_t*); lambo_rain_frame(rdram); }"
 
 [[patches.hook]]
 func = "func_800030F8"
 before_vram = 0x80002560
-text = "{ extern void lambo_rt_probe_task_begin(uint8_t*); lambo_rt_probe_task_begin(rdram); }"
+text = "{ extern void lambo_rt_probe_task_begin(uint8_t*); lambo_rt_probe_task_begin(rdram); extern void lambo_rain_frame(uint8_t*); lambo_rain_frame(rdram); }"
 
 [[patches.hook]]
 func = "func_80036854"
 before_vram = 0x80035C54
-text = "{ extern void lambo_rt_probe_sun_art(uint8_t*); lambo_rt_probe_sun_art(rdram); }"
+text = "{ extern void lambo_rt_probe_sun_art(uint8_t*); lambo_rt_probe_sun_art(rdram); extern unsigned lambo_rain_active(uint8_t*); if (lambo_rain_active(rdram)) return; }"
 
 # Capture after each camera calculation even when the flare is not submitted
 # (two-player/city views). Emitter spans are diagnostic PC/cursor provenance,
@@ -1235,6 +1235,30 @@ text = "{ extern void lambo_rt_probe_sun_art(uint8_t*); lambo_rt_probe_sun_art(r
 func = "func_80032450"
 before_vram = 0x80035C40
 text = "{ extern void lambo_rt_probe_sun_art(uint8_t*); lambo_rt_probe_sun_art(rdram); }"
+
+# Rain producers use the same fenced task slots. The two road seams follow
+# the store of SegmentRecord+4's road display-list pointer, before the wall
+# list; t2/t8 still hold the segment record. Camera seams precede native HUD.
+# Source witnesses and failure behavior: docs/rain.md.
+[[patches.hook]]
+func = "func_8000A6C0"
+before_vram = 0x8000CF2C
+text = "{ extern void lambo_rain_road(uint8_t*, uint32_t); lambo_rain_road(rdram, (uint32_t)ctx->r10); }"
+
+[[patches.hook]]
+func = "func_8000A6C0"
+before_vram = 0x8000D7C0
+text = "{ extern void lambo_rain_road(uint8_t*, uint32_t); lambo_rain_road(rdram, (uint32_t)ctx->r24); }"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x80005114
+text = "{ extern void lambo_rain_camera(uint8_t*); lambo_rain_camera(rdram); }"
+
+[[patches.hook]]
+func = "func_800030F8"
+before_vram = 0x800053F4
+text = "{ extern void lambo_rain_camera(uint8_t*); lambo_rain_camera(rdram); }"
 
 # Apply HUD/fog policy, then copy native records before osSendMesg publishes the completed task.
 # At 0x80005728, t5 holds the scheduler message; OSTask begins at t5 + 0x10.
