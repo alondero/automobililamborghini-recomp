@@ -287,7 +287,7 @@ groups include:
 ctest --test-dir build -R "lambo_(portable_paths|logging_policy|config_live_updates)"
 ctest --test-dir build -R "lambo_rom_path"
 ctest --test-dir build -R "lambo_(controls|input|analog)"
-ctest --test-dir build -R "lambo_automatic_pit_stops"
+ctest --test-dir build -R "lambo_(automatic_pit_stops|pit_stop_parity)"
 ctest --test-dir build -R "lambo_cheats|lambo_frontend_settings"
 ctest --test-dir build -R "lambo_prompt_back_action"
 ctest --test-dir build -R "lambo_(native_menu_retired|quit_path)"

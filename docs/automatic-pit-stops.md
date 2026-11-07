@@ -1,82 +1,93 @@
 # Automatic pit-stops
 
-Status: implemented; verified against the generated USA pit input routine.
-Interactive pit-stop presentation and Android device behavior remain unverified.
-
 Enable **Automatic pit-stops (refuelling and tyres)** in **Enhancements**.
-It is off by default and is saved as `automatic_pit_stops` in `graphics.json`.
-Changes apply immediately. Players still drive into the pits. The game operates
-fuel pressure and tyre fitting, retaining the original service animations and
-completion rules. The existing button to finish refuelling early still works.
+It is off by default and saved as `automatic_pit_stops` in `graphics.json`.
+Players still drive into the pits. Assistance supplies fuel and tyre input;
+the original pressure ramp, spill penalties, animations, completion rules and
+button to finish refuelling early remain active. Changes apply on the next
+pit update. Interactive presentation and Android device behavior are unverified.
 
-## Guest boundary
+## Source replacement
 
-The USA ROM SHA-256 used for this investigation is
+[guest/pit_stop.c](../guest/pit_stop.c) reconstructs the entire USA pit input
+handler, `func_8006B470`: runtime `0x8006A870`, ROM `0x6B470..0x6CA74`
+(1,409 instructions). The evidence is the USA ROM with SHA-256
 `CAB2467684A58BC19C787423D704A961AA497629763367D9FE691172DE58591C`.
-Runtime code addresses are ROM offsets minus `0xC00`, plus `0x80000000`.
-`func_8006B470` starts at runtime `0x8006A870`. Its caller,
-`func_800716B8`, supplies signed stick X/Y, buttons, previous buttons, and
-one of two zero-based pit slots. These are pit presentation slots, not a
-four-player controller array. The caller skips input processing while paused.
+The earlier decomp project's disassembly supplied a starting point; its
+instruction words were checked against this ROM. The committed C expresses
+the recovered behavior; it is not a matching build of the original source.
 
-All hooks execute synchronously on the game thread inside this handler.
-Its stack frame is `0x48` bytes. Saved X/Y are signed bytes at `sp+0x4B`
-and `sp+0x4F`; the slot is an unsigned byte at `sp+0x5B`. The hooks only
-replace the saved stick inputs. They never write the shared controller buffer,
-buttons, fuel quantity, tyre condition, or game phase. Runtime `MEM_*` accessors
-handle the word-swapped representation of big-endian guest memory.
+The caller, `func_800716B8`, supplies signed stick X/Y, two unused button masks
+and an unsigned pit slot. These are two presentation slots, not four controller
+indices. The caller skips input processing while paused. The guest function
+runs synchronously on the game thread and rejects slots outside 0..1.
 
-| Runtime hook | Evidence and action |
-| --- | --- |
-| `0x8006AAD8` | Waiting stage tests Y >= 8. Supply 8 to start refuelling. |
-| `0x8006AC8C` | Fuel stage subtracts 7, clamps to 0..63 and truncates after multiplying by 0.7. Choose the highest representable pressure with one extra unit of margin below the spill limit. |
-| `0x8006B610` | Tyre stage has loaded its expected direction into `s0`. Supply X=-60, X=60, Y=60 or Y=-60 for directions 1, 2, 3 or 4 respectively. |
+Clang compiles the C to MIPS; LLD retains its relocations; the pinned N64Recomp
+produces host code plus patch bytes and registration metadata under `build/guest/`.
+See [Building](../BUILDING.md#guest-source-patches). The ROM configuration omits
+the original handler and its instruction hooks. Registration preserves its
+original entry address for indirect calls. Compiled patch sections supply the
+bytes needed for runtime mod-hook regeneration and replacement conflict checks.
 
-The fuel stage computes a signed 32-bit limit at `0x80229CA8 + slot*4`
-as `44 - (fuel >> 7)`, where fuel is at `0x8020FCA4 + slot*4`.
-Pressure is a signed 32-bit value at `0x8020FC9C + slot*4`. The original
-code ramps it by at most +12/-6 per update. Pressure at or above the limit
-can trigger a spill once the nozzle animation reaches frame 13. The margin
-allows the limit to drop by one on the following update without spilling.
-The original sine-shaped fuel delivery calculation and full-tank transition
-at `fuel >> 6 >= 46` remain active.
+The only host interface is `lambo_get_automatic_pit_stops()`, returning the atomic
+setting. It receives no game pointer and writes no guest memory. The three old
+hooks reading stack offsets and register `s0` have been removed. No host progress
+is retained, so toggling and savestate loading require no extra state reset.
 
-Tyre progress is at `0x8020FBA0 + slot*4`, with a rotation index at
-`0x8020FBB0 + slot*4` into the direction table at `0x8020FB90`.
-The stock input handler advances one quarter turn per call and caps progress
-at 16. Its alternative control scheme already advances automatically and
-branches around the tyre hook.
+## Guest layouts and behavior
 
-The enabled flag is atomic because UI and game threads differ. Hooks retain
-no host progress, so savestate loading and toggling need no synchronization
-beyond that flag. Disabled hooks, slots outside 0..1, unrecognized directions,
-and fuel limits outside 1..44 are no-ops. These fixed seams should eventually
-be replaced by named decompiled pit-service interfaces.
+[pit_stop.h](../guest/pit_stop.h) declares the recovered field widths and
+structure strides; [symbols.ld](../guest/symbols.ld) holds USA addresses.
+These declarations are compiled for big-endian MIPS and never cast over host
+RDRAM. Unknown fields remain unnamed. Addresses and layouts remain ROM-specific;
+this migration does not claim a Japanese replacement.
+
+The vehicle and racer tables use this port's existing relocated layouts:
+`racer_bodies` at `0x80901100` has 12 signed-halfword entries per record,
+vehicles at `0x80910000` have stride `0x10C`, and racers at `0x80902000` have
+stride `0x84`. The pit reads record zero's slot-plus-one vehicle map. Vehicle
+category, channel, tyre coefficients and racer fuel have compile-time offset
+assertions. Other bindings retain the original ROM addresses. Changes to the
+port's race layouts must update these bindings and rerun parity tests.
+
+Fuel quantity and pressure are signed 32-bit game units. Each update computes
+the pressure limit as `44 - (fuel >> 7)`. Assistance selects the greatest
+representable pressure with one extra unit below that limit, preserving the
+original +12/-6 pressure ramp and sine-shaped delivery. Limits outside 1..44
+leave physical input unchanged. Full fuel is `fuel >> 6 >= 46`.
+
+Tyre assistance supplies one of four signed stick directions. The stock
+quarter-turn counter, wrong-direction reset, timeout and sixteen-turn cap still
+run. Unrecognized directions retain physical input. Control scheme 2 already
+advances tyres automatically. Signed-byte narrowing and float/double rounding
+in the recovered code are deliberate compatibility details.
 
 ## Verification
 
-`lambo_automatic_pit_stops` extracts the complete freshly generated handler;
-no ROM-derived code is committed. Sound calls are stubbed and the sine call
-uses host `sin`. Fixtures exercise both pit slots, stock spill detection,
-full-tank completion, all four tyres, conflicting stick input, live disable,
-and invalid slots. This validates the input handler, not the whole animated
-pit presentation. Config and frontend tests cover the off default, persistence,
-reload, and live UI changes.
+`lambo_pit_stop_parity` compares the compiled guest replacement against an
+independent recompilation of the complete original ROM handler. The oracle
+applies only the existing race-table relocations and, for assisted cases, the
+three frozen old input substitutions. It is generated locally; no ROM code is
+committed. Across 5,120 deterministic cases, both implementations must agree
+on persistent game RAM and ordered service calls, including their arguments.
+Cases cover both slots, all five stages, manual/assisted input, spills, button
+completion, control schemes, tyre errors, difficulty and timing variation.
+Caller/callee stack scratch is excluded because the compilers use different
+frames. Sound calls are recorded stubs and sine uses host `sin`.
 
-Run after building:
+`lambo_automatic_pit_stops` additionally runs multi-update service sequences
+for both slots, checking completion, no spills, conflicting physical input,
+live disable and invalid slots. These tests validate service logic, not the
+whole animated pit presentation.
+
+The migration was also checked on Windows/MinGW with the full port build and
+the headless driving smoke (600/600 replay frames). A local NRM fixture hooked
+the pit function's entry and return, called it through the original symbol,
+and verified the regenerated helper and host setting query. An ordinary mod
+replacement was rejected as a base-patch conflict. These runtime checks used
+the default-off setting and do not establish interactive or Android behavior.
 
 ~~~text
-ctest --test-dir build -R "lambo_(automatic_pit_stops|config_live_updates|frontend_settings)" --output-on-failure
+cmake --build build --target lambo_pit_stop_tests lambo_pit_parity_tests
+ctest --test-dir build -R "lambo_(automatic_pit_stops|pit_stop_parity)" --output-on-failure
 ~~~
-
-Verification on 2026-09-25 used Windows, MinGW GCC 15.2.0, and changes based
-on `6c5dc09`. `build.ps1` completed, then N64Recomp regenerated the checked-in
-configuration and the game plus the three focused test targets built successfully.
-All three CTests above passed. The 29-test Python suite, documentation checker,
-and `git diff --check` passed. The headless command
-`python tools/run_game_scenario.py scenarios/harness-smoke.json --artifacts-dir verify_pit_smoke`
-passed with 1,275 VIs, 601 swaps, state 8 and 600/600 replay frames. This smoke
-run checks ordinary driving with the default-off setting; the generated-handler
-test supplies the pit-specific coverage. Local captures and reports are under
-`verify_pit_smoke` (ignored). No interactive renderer or Android device check
-was performed.

@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <vector>
 #include "lambo_mod_patch_guards.inc"
+#include "lambo_guest_calls.h"
 
 #ifndef ARRLEN
 #define ARRLEN(x) (sizeof(x) / sizeof((x)[0]))
@@ -20,6 +21,7 @@
 
 extern "C" void lambo_crash_register_code_ptrs(
     uint32_t ram_addr, uint32_t size, FuncEntry* funcs, size_t num_funcs);
+void lambo_register_guest_patches(const std::vector<SectionTableEntry>& protected_sections);
 
 void register_overlays() {
     // Hook regeneration reads the original ROM, which has none of the port's
@@ -27,9 +29,20 @@ void register_overlays() {
     // register them as base patches so ordinary replacements report a conflict.
     // Storage must live for the runtime's lifetime. No guest memory is changed.
     static std::vector<std::vector<FuncEntry>> patched_functions(ARRLEN(section_table));
+    static std::vector<std::vector<FuncEntry>> base_functions(ARRLEN(section_table));
     static std::vector<SectionTableEntry> patched_sections;
     for (size_t i = 0; i < ARRLEN(section_table); i++) {
-        const SectionTableEntry& sec = section_table[i];
+        SectionTableEntry& sec = section_table[i];
+        // The ROM generator omits source replacements. Keep their original
+        // entry addresses in the base table for indirect calls and mod lookup.
+        // Nonzero size lets the runtime redirect hooks to our compiled patch
+        // bytes instead of regenerating the unmodified ROM handler.
+        if (sec.ram_addr <= 0x8006a870u && 0x8006a870u < sec.ram_addr + sec.size) {
+            base_functions[i].assign(sec.funcs, sec.funcs + sec.num_funcs);
+            base_functions[i].push_back({func_8006B470, 0x8006a870u - sec.ram_addr, 0x1604});
+            sec.funcs = base_functions[i].data();
+            sec.num_funcs = base_functions[i].size();
+        }
         lambo_crash_register_code_ptrs(sec.ram_addr, sec.size, sec.funcs, sec.num_funcs);
         for (size_t j = 0; j < sec.num_funcs; ++j) {
             auto& function = sec.funcs[j];
@@ -60,7 +73,5 @@ void register_overlays() {
     };
 
     recomp::overlays::register_overlays(sections, overlays);
-    static constexpr char empty_patch_data = 0;
-    recomp::overlays::register_patches(&empty_patch_data, 0,
-        patched_sections.data(), patched_sections.size());
+    lambo_register_guest_patches(patched_sections);
 }

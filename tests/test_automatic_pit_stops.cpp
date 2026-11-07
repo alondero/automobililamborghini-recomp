@@ -1,14 +1,13 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <vector>
 #include "recomp.h"
+#include "guest_patch_data.inc"
 
 extern "C" void switch_error(const char*, uint32_t, uint32_t) { std::abort(); }
 extern "C" void func_8006B470(uint8_t*, recomp_context*);
-extern "C" void lambo_pit_start(uint8_t*, recomp_context*);
-extern "C" void lambo_pit_fuel(uint8_t*, recomp_context*);
-extern "C" void lambo_pit_tyres(uint8_t*, recomp_context*);
 namespace { bool enabled = false; int errors = 0; }
 namespace lambo::config { bool automatic_pit_stops() { return enabled; } }
 // Sound calls have no effect on service progress. The ROM sine call uses f12/f0.
@@ -32,6 +31,8 @@ int main() {
     for (unsigned slot = 0; slot < 2; ++slot) {
         std::vector<uint8_t> ram(0x924000);
         auto* rdram = ram.data();
+        for (size_t i = 0; i < sizeof(guest_patch_data); ++i)
+            MEM_B(i, a(0x80801000)) = guest_patch_data[i];
         recomp_context ctx{};
         ctx.f_odd = &ctx.f0.u32h;
         ctx.r29 = a(0x807FF000);
@@ -79,14 +80,19 @@ int main() {
         enabled = false;
         tick();
         expect(MEM_W(slot * 4, a(0x8020FBA0)) == 0, "disabled assistance leaves tyres manual");
-        // Disabled hooks are byte-for-byte no-ops, including hostile slot values.
-        MEM_B(0x5B, ctx.r29) = 255;
+        // The public guest function rejects invalid slots before touching state.
         const auto before = ram;
-        lambo_pit_start(rdram, &ctx); lambo_pit_fuel(rdram, &ctx); lambo_pit_tyres(rdram, &ctx);
-        expect(before == ram, "disabled hooks preserve memory");
+        MEM_W(0x10, ctx.r29) = 255;
+        func_8006B470(rdram, &ctx);
+        // Function stack scratch is not part of the persistent game state.
+        expect(std::equal(before.begin(), before.begin() + 0x7FE000, ram.begin()) &&
+               std::equal(before.begin() + 0x7FF020, before.end(), ram.begin() + 0x7FF020),
+               "invalid slot leaves game memory untouched");
         enabled = true;
-        lambo_pit_start(rdram, &ctx); lambo_pit_fuel(rdram, &ctx); lambo_pit_tyres(rdram, &ctx);
-        expect(before == ram, "invalid slot fails closed");
+        func_8006B470(rdram, &ctx);
+        expect(std::equal(before.begin(), before.begin() + 0x7FE000, ram.begin()) &&
+               std::equal(before.begin() + 0x7FF020, before.end(), ram.begin() + 0x7FF020),
+               "invalid slot fails closed with assistance enabled");
     }
     return failures ? 1 : 0;
 }

@@ -318,6 +318,7 @@ ignored = [
     "func_8006A910",
     "func_8007AC78",
     "func_8007AB10",
+    "func_8006B470",
 ]
 
 # Optional car-select info card, drawn at the join just before the frame's
@@ -420,22 +421,6 @@ value = 0x00000000
 # 0x800A39CC; natives in src/lambo_hud_widescreen.c. TIME stays centered (no tag needed
 # under RT64 Expand); the minimap is polyline/viewport-drawn, not texrects — pinning it
 # is a separate follow-up (rect-align cannot move it).
-# Opt-in pit-stop inputs; ROM evidence: docs/automatic-pit-stops.md.
-[[patches.hook]]
-func = "func_8006B470"
-before_vram = 0x8006AAD8
-text = "{ extern void lambo_pit_start(uint8_t*, recomp_context*); lambo_pit_start(rdram, ctx); }"
-
-[[patches.hook]]
-func = "func_8006B470"
-before_vram = 0x8006AC8C
-text = "{ extern void lambo_pit_fuel(uint8_t*, recomp_context*); lambo_pit_fuel(rdram, ctx); }"
-
-[[patches.hook]]
-func = "func_8006B470"
-before_vram = 0x8006B610
-text = "{ extern void lambo_pit_tyres(uint8_t*, recomp_context*); lambo_pit_tyres(rdram, ctx); }"
-
 # Issue #238 — opt-in menu-navigation stick sensitivity. func_800427D4 (runtime
 # 0x80041BD4) reads the parsed controller pad at 0x800A39E0 + channel*6 (OSContPad
 # shape: buttons +0, stick_x +2, stick_y +3) and derives menu movement two ways: a
@@ -26197,105 +26182,6 @@ value = 0
 func = "func_80066AB4"
 before_vram = 0x80065f1c
 text = "MEM_W(0, ADD32(ctx->r1, 8781924)) = ctx->f6.u32l;"
-
-
-[[patches.instruction]]
-func = "func_8006B470"
-vram = 0x8006b220
-value = 0
-
-[[patches.hook]]
-func = "func_8006B470"
-before_vram = 0x8006b220
-text = "MEM_W(0, ADD32(ctx->r1, 8790104)) = ctx->f10.u32l;"
-
-
-[[patches.instruction]]
-func = "func_8006B470"
-vram = 0x8006bbd8
-value = 0
-
-[[patches.hook]]
-func = "func_8006B470"
-before_vram = 0x8006bbd8
-text = "ctx->r14 = MEM_H(0, ADD32(ctx->r14, 8589570));"
-
-
-[[patches.instruction]]
-func = "func_8006B470"
-vram = 0x8006bc08
-value = 0
-
-[[patches.hook]]
-func = "func_8006B470"
-before_vram = 0x8006bc08
-text = "ctx->r8 = MEM_HU(0, ADD32(ctx->r8, 8781842));"
-
-
-[[patches.instruction]]
-func = "func_8006B470"
-vram = 0x8006bc54
-value = 0
-
-[[patches.hook]]
-func = "func_8006B470"
-before_vram = 0x8006bc54
-text = "ctx->r10 = MEM_H(0, ADD32(ctx->r10, 8781838));"
-
-
-[[patches.instruction]]
-func = "func_8006B470"
-vram = 0x8006bcc0
-value = 0
-
-[[patches.hook]]
-func = "func_8006B470"
-before_vram = 0x8006bcc0
-text = "MEM_W(0, ADD32(ctx->r1, 8782032)) = ctx->f16.u32l;"
-
-
-[[patches.instruction]]
-func = "func_8006B470"
-vram = 0x8006bd30
-value = 0
-
-[[patches.hook]]
-func = "func_8006B470"
-before_vram = 0x8006bd30
-text = "MEM_W(0, ADD32(ctx->r1, 8782032)) = ctx->f10.u32l;"
-
-
-[[patches.instruction]]
-func = "func_8006B470"
-vram = 0x8006bd70
-value = 0
-
-[[patches.hook]]
-func = "func_8006B470"
-before_vram = 0x8006bd70
-text = "ctx->r9 = MEM_H(0, ADD32(ctx->r9, 8781838));"
-
-
-[[patches.instruction]]
-func = "func_8006B470"
-vram = 0x8006bddc
-value = 0
-
-[[patches.hook]]
-func = "func_8006B470"
-before_vram = 0x8006bddc
-text = "MEM_W(0, ADD32(ctx->r1, 8782032)) = ctx->f16.u32l;"
-
-
-[[patches.instruction]]
-func = "func_8006B470"
-vram = 0x8006be4c
-value = 0
-
-[[patches.hook]]
-func = "func_8006B470"
-before_vram = 0x8006be4c
-text = "MEM_W(0, ADD32(ctx->r1, 8782032)) = ctx->f10.u32l;"
 
 
 [[patches.instruction]]
