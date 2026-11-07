@@ -31,6 +31,12 @@ Generated C is not a decompilation of the original source. It is generated from
 the supplied ROM and the checked-in recompiler configuration. The port still
 contains unnamed symbols, stubs, native hooks, and direct guest-memory access.
 
+The first decompiled source replacement is the [pit handler](automatic-pit-stops.md).
+`guest/` C is compiled to MIPS by Clang/LLD and passed through N64Recomp.
+The host exposes a setting query; guest source owns the service logic. Runtime
+registration retains the original entry address and supplies compiled patch
+bytes and relocations for mod hook regeneration.
+
 ## Ownership and boundaries
 
 | Area | Current owner | Boundary that must remain clear |
@@ -59,6 +65,8 @@ offsets into the emulated RDRAM image and use N64 byte order.
 | RecompiledFuncsJP/ | Generated and ignored; not linked yet | Change the Japanese inputs. Do not edit. |
 | lamborghini.jp.syms.toml, lamborghini.jp.toml | Checked-in generated configuration for the [Japanese cartridge](japanese-rom.md) | Regenerate with scripts/gen_jp_syms_toml.py after a USA symbol or patch-list change. Review the diff. |
 | dump.toml, scripts/n64recomp_race.toml | Hand-maintained generation inputs | Record evidence for every symbol, hook, split, stub, or ignored function. |
+| guest/ | Hand-written guest C, layouts and linker symbols | Compile through cmake/GuestPatches.cmake; verify behavior against the ROM oracle. |
+| build/guest/ | Generated and ignored | Rebuild from guest source. Do not edit. |
 | src/ | Hand-written port and tests | Preserve guest layout, units, ownership, and thread assumptions. |
 | patches/ | Hand-written dependency deltas | Apply through the build scripts. Do not edit a dependency checkout and forget to update the patch. |
 | tests/, scenarios/, recordings/ | Hand-written evidence and regression fixtures | Keep fixtures small, deterministic, and documented. |

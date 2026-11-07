@@ -200,18 +200,6 @@ if(BUILD_TESTING)
             ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
         target_link_libraries(lambo_player_records_tests PRIVATE Threads::Threads)
         add_test(NAME lambo_player_records COMMAND lambo_player_records_tests)
-        add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/pit_stop_funcs.c
-            COMMAND ${LAMBO_PYTHON_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_pit_stop_funcs.py
-                ${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs
-                ${CMAKE_CURRENT_BINARY_DIR}/pit_stop_funcs.c
-            DEPENDS tests/extract_pit_stop_funcs.py ${ROM_RECOMP_SOURCES}
-            VERBATIM)
-        add_executable(lambo_pit_stop_tests tests/test_automatic_pit_stops.cpp
-            ${CMAKE_CURRENT_BINARY_DIR}/pit_stop_funcs.c src/lambo_automatic_pit_stops.cpp)
-        target_include_directories(lambo_pit_stop_tests PRIVATE src RecompiledFuncs
-            ${N64MR}/N64Recomp/include ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
-        add_test(NAME lambo_automatic_pit_stops COMMAND lambo_pit_stop_tests)
         add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/race_field_funcs.c
             COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_race_field_funcs.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs ${CMAKE_CURRENT_BINARY_DIR}/race_field_funcs.c
@@ -815,6 +803,7 @@ endif()
 file(GLOB FUNC_C_SOURCES   CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs/*.c)
 file(GLOB FUNC_CXX_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs/*.cpp)
 if(FUNC_C_SOURCES OR FUNC_CXX_SOURCES)
+    include(cmake/GuestPatches.cmake)
     add_library(RecompiledFuncs STATIC)
     target_sources(RecompiledFuncs PRIVATE ${FUNC_C_SOURCES} ${FUNC_CXX_SOURCES})
 
@@ -986,7 +975,11 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         Threads::Threads
     )
     if(TARGET RecompiledFuncs)
-        target_link_libraries(lamborghini_modern PRIVATE RecompiledFuncs)
+        target_link_libraries(lamborghini_modern PRIVATE RecompiledFuncs GuestPatches)
+        target_sources(lamborghini_modern PRIVATE src/lambo_guest_patches.cpp)
+        # The registration TU must include guest metadata, not the base table.
+        set_source_files_properties(src/lambo_guest_patches.cpp PROPERTIES
+            INCLUDE_DIRECTORIES "${LAMBO_GUEST_DIR}")
     endif()
 
     # RT64 renderer: default presenter; see the RT64 block above.

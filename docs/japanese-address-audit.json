@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "input_sha256": "fe47768d5f141f635af2dcf2c0c3637959733fc0dc396c677a0e171760fbcdd8",
+  "input_sha256": "de53fa929a9b3f0ea85996c716000c045d296d6d1c624a154a0ae227d4f999f2",
   "rom_sha1": {
     "usa": "78b36b48040426478011caef5e11884af2e80375",
     "japan": "98009e4948faf885864e52e1268700a0144c1b2e"
@@ -12,7 +12,6 @@
       "uses": {
         "src/lambo_analog_brake.cpp": 1,
         "src/lambo_analog_throttle.cpp": 1,
-        "src/lambo_automatic_pit_stops.cpp": 1,
         "src/lambo_crash.cpp": 3,
         "src/lambo_graphics_task.cpp": 1,
         "src/lambo_harness_report.cpp": 2,
@@ -211,6 +210,14 @@
       "usa": "0x800159FC",
       "uses": {
         "src/lambo_rt_shadows.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x8006A870",
+      "uses": {
+        "src/register_overlays.cpp": 3
       },
       "status": "unresolved",
       "candidates": []
@@ -2221,8 +2228,17 @@
       "candidates": []
     },
     {
+      "usa": "0x80801000",
+      "uses": {
+        "src/lambo_guest_patches.cpp": 2
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
       "usa": "0x80900000",
       "uses": {
+        "src/lambo_guest_patches.cpp": 1,
         "src/lambo_race_field.h": 1
       },
       "status": "unresolved",

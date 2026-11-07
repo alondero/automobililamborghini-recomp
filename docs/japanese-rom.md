@@ -140,13 +140,15 @@ The generator prints these counts:
 | ... named by link-order slot (inferred) | 26 |
 | Japanese functions | 1188 |
 | USA stubs carried | 167 of 244 |
-| USA ignored functions carried | 34 of 48 |
-| USA hooked or patched functions with no Japanese name | 13 of 74 |
+| USA ignored functions carried | 35 of 49 |
+| USA hooked or patched functions with no Japanese name | 13 of 73 |
 
 It also names the functions behind each gap:
 
 - Two carried stubs, `func_8007DAB4` and `func_80086724`, rely on an inferred
   name. A wrong inference would stub the wrong Japanese function.
+- The ignored pit handler, `func_8006B470`, also relies on an inferred name.
+  The new USA guest source replacement has not been mapped or linked for Japan.
 - 72 of the 77 USA stubs that were not carried are alternate entries inside a
   larger USA function. The other five have no Japanese name yet. Their
   Japanese code is recompiled as ordinary code, so whatever the USA stub
@@ -231,8 +233,8 @@ test-renderer buffers and port-owned allocations as well as cartridge data.
 Computed addresses, including a separate physical offset added to KSEG0,
 still need manual review; this is not an exhaustive guest-access audit.
 
-Of the 108 literals, 60 have one candidate Japanese address, none have
-conflicting candidates, and 48 have no candidate. These counts include
+Of the 110 literals, 60 have one candidate Japanese address, none have
+conflicting candidates, and 50 have no candidate. These counts include
 non-cartridge values such as the KSEG0 base. They are not a count of migrated
 fields. There is no fallback that treats an unresolved address as unchanged.
 

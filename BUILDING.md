@@ -18,6 +18,7 @@ All desktop builds need:
 - CMake 3.20 or newer;
 - Python 3.11 or newer;
 - Ninja;
+- Clang with the MIPS target and LLD, for the guest C patches;
 - a legal copy of the North American USA ROM;
 - a network connection for dependency configuration.
 
@@ -58,6 +59,32 @@ On Windows, enable long paths for the deeply nested RT64 files:
 ~~~powershell
 git -c core.longpaths=true submodule update --init --recursive
 ~~~
+
+## Guest source patches
+
+The build compiles `guest/pit_stop.c` to MIPS, then recompiles it with the
+pinned N64Recomp. The ELF, binary, generated C and registration metadata stay
+under `build/guest/`. Do not edit those outputs.
+
+On Ubuntu install `clang lld`. On Windows the release build uses
+[Zig 0.13.0](https://ziglang.org/download/0.13.0/release-notes.html), whose bundled
+Clang supports MIPS. Set `$env:LAMBO_GUEST_ZIG` to the full path to `zig.exe`
+before the first `build.ps1` run, or set the same CMake cache variable for an
+existing build. A standalone Clang/LLD pair also works if
+`clang --print-targets` includes `mips` and `ld.lld --version` works.
+
+WSL is another option. Install `clang lld` in that distro, then
+configure the existing build directory before running `build.ps1`:
+
+~~~powershell
+cmake -S . -B build -G Ninja '-DLAMBO_GUEST_WSL_DISTRO=Ubuntu'
+~~~
+
+`LAMBO_GUEST_CLANG` and `LAMBO_GUEST_LINKER` can select specific tool paths.
+With WSL enabled those paths are Linux paths; N64Recomp still runs on Windows.
+Zig and WSL are mutually exclusive; clear `LAMBO_GUEST_ZIG` when switching to WSL.
+Quote each complete `-DNAME=value` argument in PowerShell. A clean build removes
+these cache choices, so configure them again after cleaning.
 
 ## Windows
 

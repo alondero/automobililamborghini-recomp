@@ -823,22 +823,6 @@ value = 0x00000000
 # 0x800A39CC; natives in src/lambo_hud_widescreen.c. TIME stays centered (no tag needed
 # under RT64 Expand); the minimap is polyline/viewport-drawn, not texrects — pinning it
 # is a separate follow-up (rect-align cannot move it).
-# Opt-in pit-stop inputs; ROM evidence: docs/automatic-pit-stops.md.
-[[patches.hook]]
-func = "func_8006B470"
-before_vram = 0x8006AAD8
-text = "{ extern void lambo_pit_start(uint8_t*, recomp_context*); lambo_pit_start(rdram, ctx); }"
-
-[[patches.hook]]
-func = "func_8006B470"
-before_vram = 0x8006AC8C
-text = "{ extern void lambo_pit_fuel(uint8_t*, recomp_context*); lambo_pit_fuel(rdram, ctx); }"
-
-[[patches.hook]]
-func = "func_8006B470"
-before_vram = 0x8006B610
-text = "{ extern void lambo_pit_tyres(uint8_t*, recomp_context*); lambo_pit_tyres(rdram, ctx); }"
-
 # Issue #238 — opt-in menu-navigation stick sensitivity. func_800427D4 (runtime
 # 0x80041BD4) reads the parsed controller pad at 0x800A39E0 + channel*6 (OSContPad
 # shape: buttons +0, stick_x +2, stick_y +3) and derives menu movement two ways: a
@@ -2635,6 +2619,8 @@ def main():
     race_stubs += [n for n in extra_stub if n in present and n not in race_stubs]
     race_ignored += [n for n in extra_ignore if n in present and n not in race_ignored]
     race_ignored += [n for n in NATIVE_OVERRIDES if n in present and n not in race_ignored]
+    # Replaced by readable MIPS source in guest/pit_stop.c, built by CMake.
+    race_ignored.append("func_8006B470")
     force = list(FORCE_STUB)
     if FORCE_STUB_FILE.exists():
         force += parse_force_stub_file(FORCE_STUB_FILE)
