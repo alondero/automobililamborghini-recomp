@@ -77,8 +77,8 @@ indices, wrap points and reachable availability states; retain progress and
 unrelated-player sentinels. Establish the stock precondition for an all-locked
 table before testing it, since a skip loop may not terminate. Verify the ROM
 descriptor data, signed loads and narrowing, rather than trusting synthetic
-fixtures alone. Then run the menu smoke and mod entry/return/conflict checks
-used by the [pit migration](automatic-pit-stops.md).
+fixtures alone. Run a menu walk, plus the headless driving smoke and mod
+entry/return/conflict checks used by the [pit migration](automatic-pit-stops.md).
 
 No related issue listed in #393 owns this reconstruction. #394 concerns future
 extension contracts; the existing boolean query is sufficient here. #338 still
