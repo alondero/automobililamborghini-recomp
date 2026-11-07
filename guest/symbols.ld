@@ -39,3 +39,29 @@ pit_rear_tyre_values = 0x8013E2D0;
 
 /* N64Recomp's reserved manual host-call range. */
 lambo_get_automatic_pit_stops = 0x8F000000;
+lambo_get_extra_vehicles = 0x8F000004;
+
+/* USA vehicle-selection state; descriptors are loaded from ROM 0xAEE80. */
+selection_player = 0x800CE6A6;
+selection_models = 0x800CE7E8;
+selection_availability = 0x800985C0;
+selection_descriptors = 0x8013D490;
+
+/* USA menu input state and setting query. */
+lambo_get_menu_stick_sensitivity = 0x8F000008;
+menu_state = 0x80098560;
+menu_pads = 0x800A39E0;
+menu_pressed = 0x800A3A00;
+menu_consumed = 0x800A39F8;
+menu_repeat = 0x800A3A08;
+menu_back_enabled = 0x80089A94;
+menu_selected_player = 0x800CE6A6;
+menu_default_port = 0x800A39DA;
+menu_velocity_x = 0x8009873E;
+menu_velocity_y = 0x80098760;
+menu_transition_busy = 0x800A2D08;
+menu_game_state = 0x800CE6AC;
+menu_names = 0x800A4819;
+menu_button_scratch = 0x80098830;
+lambo_vehicle_input = 0x8F00000C;
+lambo_vehicle_observe = 0x8F000010;

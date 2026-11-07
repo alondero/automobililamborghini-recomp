@@ -1,7 +1,9 @@
 # Analog brake
 
-Status: implemented host bridge with focused tests; guest hook remains a
-transitional fixed-layout seam.
+Status: implemented in the [compiled guest vehicle updater](vehicle-source.md).
+The former host bridge below is historical evidence retained for the independent
+parity oracle. Guest source now owns brake demand, latch and ramp history;
+the linked source note explains the deliberate snapshot-history change.
 
 A controller axis can be mapped to the brake pedal
 in the controls mapper's DRIVING column; the native bridge drives the ROM's own

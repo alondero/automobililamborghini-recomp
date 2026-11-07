@@ -6,6 +6,10 @@ reconstruction. No runtime or new ROM-oracle measurements were made for this
 inventory. This is the bridge inventory for the audit requested by
 [#393](https://github.com/alondero/automobililamborghini-recomp/issues/393).
 
+This is the pre-migration inventory. Current source ownership and verification
+for the selected replacements live in [vehicle selection](guest-vehicle-select.md),
+[menu input](menu-input.md) and [vehicle update](vehicle-source.md).
+
 ## How to read the inventory
 
 **Host access** means handwritten code reads or writes emulated RAM.
@@ -29,7 +33,7 @@ owners, evidence and parity plans for selectors, menu input and vehicle update.
 | Area and code | Mechanism and ownership | Disposition |
 | --- | --- | --- |
 | [Pedals](../src/lambo_analog_throttle.cpp), [brake](../src/lambo_analog_brake.cpp), [steering](../src/lambo_steering.cpp) | Host atomics/settings feed game-thread generated hooks inside `func_80019D20`; hooks read/write guest fields, and steering also rewrites a loaded register. | Rank 3 as one complete updater; host sampling remains outside guest source. |
-| [Menu stick](../src/lambo_menu_stick.cpp) | Four generated register substitutions in `func_800427D4`; host only scales a value using an atomic setting. | Rank 2: recover the full handler before replacing the hooks. |
+| [Menu stick](https://github.com/alondero/automobililamborghini-recomp/blob/b5ae30c/src/lambo_menu_stick.cpp) | Four generated register substitutions in `func_800427D4`; host only scales a value using an atomic setting. | Rank 2: recover the full handler before replacing the hooks. |
 | [Cheats](../src/lambo_cheats_runtime.cpp) | Generated register substitutions in selectors, setup menus and the boot dispatcher's timer block. Host exposes flags, guest code owns writes. | Selector pair is rank 1. Timer and reverse gates sit inside larger owners; existing extracted-block tests do not establish standalone callable functions. |
 | [Driving assists](../src/lambo_driving_assists_runtime.cpp) and [replay](../src/lambo_replay_runtime.cpp) | Game-thread hooks consume host-produced input or recording state and modify guest controller data at dispatch timing. | Retain host device/recording policy. Recover a named guest input-consumption seam before considering source migration; avoid changing menu edges or replay order. |
 | [Pit service](../guest/pit_stop.c) | Complete compiled guest replacement, host setting query only; original entry preserved. | Completed pattern, not a new candidate. [Parity evidence](automatic-pit-stops.md) defines the verification standard. |

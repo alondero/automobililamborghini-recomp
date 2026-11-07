@@ -29,17 +29,21 @@ def build(output, recompiler, clang="clang", linker="ld.lld", distro=None, zig=N
             command = [zig, "cc" if tool == clang else "ld.lld"]
         subprocess.run(command + args, check=True)
 
-    obj, elf = output / "pit_stop.o", output / "guest_patches.elf"
+    elf = output / "guest_patches.elf"
     # Zig's target features override Clang's -m flags, including odd FPR use.
     cpu = "mips2+noabicalls+nooddspreg" if zig else "mips2"
-    run_tool(clang, ["-target", "mips-freestanding" if zig else "mips", f"-mcpu={cpu}", "-mabi=32", "-O2", "-G0",
+    objects = []
+    for source in ("pit_stop", "vehicle_select", "menu_input", "vehicle_update"):
+        obj = output / f"{source}.o"
+        objects.append(path(obj))
+        run_tool(clang, ["-target", "mips-freestanding" if zig else "mips", f"-mcpu={cpu}", "-mabi=32", "-O2", "-G0",
         "-mno-abicalls", "-mno-odd-spreg", "-mno-check-zero-division", "-fno-pic",
         "-ffreestanding", "-fno-builtin", "-fno-strict-aliasing", "-ffp-contract=off",
         "-fno-jump-tables", "-Wall", "-Wextra", "-Werror", "-c",
-        path(ROOT / "guest/pit_stop.c"), "-o", path(obj)])
+        path(ROOT / f"guest/{source}.c"), "-o", path(obj)])
     run_tool(linker, ["-nostdlib", "-T", path(ROOT / "guest/patches.ld"),
         "-T", path(ROOT / "guest/symbols.ld"), "--emit-relocs",
-        "--unresolved-symbols=ignore-all", "-e", "0", path(obj), "-o", path(elf)])
+        "--unresolved-symbols=ignore-all", "-e", "0", *objects, "-o", path(elf)])
     config = output / "recompile.toml"
     config.write_text("[input]\n" + "\n".join(
         f"{key} = {json.dumps(str(value))}" for key, value in {

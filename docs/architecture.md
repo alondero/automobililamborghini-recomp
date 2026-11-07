@@ -31,9 +31,12 @@ Generated C is not a decompilation of the original source. It is generated from
 the supplied ROM and the checked-in recompiler configuration. The port still
 contains unnamed symbols, stubs, native hooks, and direct guest-memory access.
 
-The first decompiled source replacement is the [pit handler](automatic-pit-stops.md).
+Guest source replacements include the [pit handler](automatic-pit-stops.md),
+[vehicle selectors](guest-vehicle-select.md), [menu input](menu-input.md) and
+[vehicle update](vehicle-source.md).
 `guest/` C is compiled to MIPS by Clang/LLD and passed through N64Recomp.
-The host exposes a setting query; guest source owns the service logic. Runtime
+The host exposes settings/input queries and read-only diagnostics; guest source
+owns the game logic. Runtime
 registration retains the original entry address and supplies compiled patch
 bytes and relocations for mod hook regeneration.
 
@@ -133,11 +136,12 @@ exists today. The [experimental package loader](modding.md) now provides
 stock-function hooks, package configuration, and a versioned logging export;
 it does not establish a general gameplay data API.
 
-The [guest-source candidate audit](guest-source-candidates.md) ranks the next
-three bounded migrations and links the bridge inventory. It recommends the
-vehicle-selector pair first, followed by menu input and the larger per-vehicle
-updater. Host lifecycle work and mechanical relocations remain separate from
-guest-owned behavior reconstruction.
+The [guest-source candidate audit](guest-source-candidates.md) records the
+pre-migration ranking and bridge inventory that led to these replacements.
+Host lifecycle work and mechanical relocations remain separate from guest-owned
+behavior reconstruction. The vehicle updater's per-port brake ramp lives at
+`0x80901440..0x80901450`, inside the existing race snapshot region; input
+publication and diagnostic counters stay on the host.
 
 ## Runtime, threads, and failure behavior
 

@@ -19,10 +19,9 @@ extern "C" void lambo_cheat_lap_timer(uint8_t*, recomp_context* ctx) {
     }
 }
 
-extern "C" int lambo_cheat_extra_vehicles() {
-    // Used only after the selector loads a category's availability halfword.
-    // Bypassing the branch preserves both earned availability and save data.
-    return lambo::cheats::enabled(lambo::cheats::Cheat::ExtraVehicles);
+extern "C" void lambo_get_extra_vehicles(uint8_t*, recomp_context* ctx) {
+    // Guest source owns selection state; this adapter only samples the flag.
+    ctx->r2 = lambo::cheats::enabled(lambo::cheats::Cheat::ExtraVehicles);
 }
 
 extern "C" int lambo_cheat_reverse_tracks() {

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "input_sha256": "de53fa929a9b3f0ea85996c716000c045d296d6d1c624a154a0ae227d4f999f2",
+  "input_sha256": "4d9e06be62af7bf750fdfc847a56b9fc02d10280aab3dddd6c66eb4503d72bb7",
   "rom_sha1": {
     "usa": "78b36b48040426478011caef5e11884af2e80375",
     "japan": "98009e4948faf885864e52e1268700a0144c1b2e"
@@ -215,9 +215,41 @@
       "candidates": []
     },
     {
+      "usa": "0x80019120",
+      "uses": {
+        "src/register_overlays.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x8003E80C",
+      "uses": {
+        "src/register_overlays.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x8003E96C",
+      "uses": {
+        "src/register_overlays.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
+      "usa": "0x80041BD4",
+      "uses": {
+        "src/register_overlays.cpp": 1
+      },
+      "status": "unresolved",
+      "candidates": []
+    },
+    {
       "usa": "0x8006A870",
       "uses": {
-        "src/register_overlays.cpp": 3
+        "src/register_overlays.cpp": 1
       },
       "status": "unresolved",
       "candidates": []

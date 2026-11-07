@@ -70,6 +70,8 @@ status line before relying on a historical measurement.
 | [Rumble audit](rumble-triggers.md) | Rumble discovery and Controller Pak coexistence evidence. |
 | [Automatic pit-stops](automatic-pit-stops.md) | Guest source replacement, assistance and ROM parity tests. |
 | [Guest-source candidates](guest-source-candidates.md) | Ranked migration shortlist and links to the guest bridge inventory. |
+| [Vehicle selection source](guest-vehicle-select.md) | Complete selector replacements, ROM evidence and parity checks. |
+| [Vehicle update source](vehicle-source.md) | Complete race updater, guest input ownership and verification limits. |
 | [Cheats](cheats.md) | Live cheat toggles, reference review, native seams and tests. |
 | [Analog throttle](analog-throttle.md) | Throttle bridge measurements and tests. |
 | [Analog brake](analog-brake.md) | Brake bridge measurements and tests. |

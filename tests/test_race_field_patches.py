@@ -24,9 +24,12 @@ class RaceFieldPatchTests(unittest.TestCase):
         rom = (ROOT / 'Automobili Lamborghini (USA).z64').read_bytes()
         refs = fields.references(rom, functions)
         fingerprint = hashlib.sha256('\n'.join(f'{pc:08x}:{word:08x}' for _,pc,word,_ in refs).encode()).hexdigest()
-        # The pit source replacement owns its relocated fields directly.
-        self.assertNotIn('func_8006B470', {name for name, _, _ in functions})
-        self.assertEqual(fingerprint, '155e23bc5f6676f67fab83d354b5aa5e63de5f4f430de722359d7f4165bb360c')
+        # Compiled pit and vehicle source now own their relocated fields.
+        # All remaining hook/instruction records match the pre-migration map.
+        names = {name for name, _, _ in functions}
+        self.assertNotIn('func_8006B470', names)
+        self.assertNotIn('func_80019D20', names)
+        self.assertEqual(fingerprint, '0e787366c9b8e18b637ca48d68d16c46767f6b4935fa34fc4278f5164a35d5d9')
         # Minimap aliases start at entrant one while its loop is zero-based.
         # Both the AI route point and the player-label body lookup must move.
         pcs = {pc for _, pc, _, _ in refs}

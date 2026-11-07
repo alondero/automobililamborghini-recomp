@@ -1,7 +1,9 @@
 # Analog throttle
 
-Status: implemented host bridge with focused tests; guest hook remains a
-transitional fixed-layout seam.
+Status: implemented in the [compiled guest vehicle updater](vehicle-source.md).
+The former host hooks below are historical evidence retained for the independent
+parity oracle. Host code now publishes input and records read-only diagnostics;
+guest source owns throttle demand.
 
 Source of truth: src/lambo_analog_throttle.* and the tests listed below.
 

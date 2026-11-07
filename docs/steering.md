@@ -4,6 +4,12 @@ Status: **Experimental**. Implemented with host tests and headless traces.
 Physical-controller feel is **Unverified**: no playtest with a real stick has
 been recorded.
 
+The production implementation now lives in the
+[compiled guest vehicle updater](vehicle-source.md). The former instruction
+hooks described below are historical evidence for the independent parity oracle.
+The host publishes settings and records read-only traces; guest code owns the
+steering work and accumulator writes.
+
 The Driving tab offers two optional steering settings for player one. Both
 defaults are the original game. Nothing changes until you move a setting.
 

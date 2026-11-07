@@ -6,6 +6,7 @@ complete without a function that branches outside its own boundaries and must co
 """
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -93,6 +94,23 @@ class JapaneseInputStructureTests(unittest.TestCase):
             with self.subTest(name):
                 self.assertIn(name, names)
 
+    def test_usa_source_replacements_keep_the_japanese_originals(self):
+        names = {f["name"] for _, f in FUNCS}
+        self.assertTrue(gen.USA_ONLY_SOURCE_REPLACEMENTS <= names)
+        omitted = set(CONFIG["patches"]["stubs"]) | set(CONFIG["patches"]["ignored"])
+        self.assertFalse(gen.USA_ONLY_SOURCE_REPLACEMENTS & omitted,
+                         "JP has no linked USA guest patches; its original bodies must be emitted")
+
+    def test_every_guest_source_entry_has_an_explicit_japanese_policy(self):
+        # A newly added USA source replacement must not silently inherit the
+        # generic ignored-list propagation rule on the next JP generation.
+        entries = set()
+        for path in (ROOT / "guest").glob("*.c"):
+            entries.update(re.findall(
+                r'__attribute__\s*\(\(section\("\.recomp_patch"\)\)\)\s*void\s+(\w+)\s*\(',
+                path.read_text(encoding="utf-8")))
+        self.assertEqual(entries, gen.USA_ONLY_SOURCE_REPLACEMENTS)
+
     def test_function_start_addresses_are_unique(self):
         # Two functions starting at one address would give the recompiler two bodies
         # for one jump target. Alternate entries inside a body start elsewhere.
@@ -117,6 +135,15 @@ class GeneratorRuleTests(unittest.TestCase):
             patcher = mock.patch.object(gen, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
+
+    def test_patch_propagation_keeps_originals_without_disabling_platform_overrides(self):
+        replacements = sorted(gen.USA_ONLY_SOURCE_REPLACEMENTS)
+        patches = {"stubs": [replacements[0], "platform_stub", "absent", "shared"],
+                   "ignored": replacements[1:] + ["platform_override", "absent", "shared"]}
+        present = gen.USA_ONLY_SOURCE_REPLACEMENTS | {"platform_stub", "platform_override", "shared"}
+        stubs, ignored = gen.jp_patch_lists(patches, present)
+        self.assertEqual(stubs, ["platform_stub", "shared"])
+        self.assertEqual(ignored, ["platform_override"])
 
     def test_two_usa_functions_never_share_an_entry_address(self):
         # The short body is a prefix of the long one, so both match the same Japanese

@@ -207,8 +207,8 @@ void set_camera_fov_add(double v);
 // race steering path is a different consumer and never sees it. 1.0 = the ROM's
 // authored behaviour and a byte-for-byte no-op, so stock is the default; range
 // (1.0, 2.5]. graphics.json key "menu_stick_sensitivity", overridable by
-// LAMBO_MENU_STICK_SENSITIVITY for headless capture/testing. The native the hook
-// text calls lives in src/lambo_menu_stick.cpp.
+// LAMBO_MENU_STICK_SENSITIVITY for headless capture/testing. The guest menu
+// handler reads this setting through src/lambo_guest_settings.cpp.
 double menu_stick_sensitivity();
 void set_menu_stick_sensitivity(double v);
 

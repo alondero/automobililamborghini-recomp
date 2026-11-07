@@ -6,6 +6,10 @@ ranking and proposed interfaces are **Inferred**. This is the bounded audit for
 No replacement was implemented or run. See the [bridge inventory](guest-bridge-inventory.md)
 for the other architecture categories and exclusions.
 
+This records the original audit. Subsequent implementation is documented in
+[vehicle selection](guest-vehicle-select.md), [menu input](menu-input.md) and
+[vehicle update](vehicle-source.md); those pages own current verification status.
+
 ## Ranking
 
 Rank balances removable maintenance dependencies, behavior risk and the cost of
@@ -88,7 +92,7 @@ owns JP addresses and layouts.
 
 Owner: `func_800427D4`, runtime `0x80041BD4..0x80042C4C`, ROM
 `0x427D4..0x4384C`, declared size `0x1078`. It runs on the game thread in
-pre-race menus. [The native scale helper](../src/lambo_menu_stick.cpp) rewrites
+pre-race menus. [The native scale helper](https://github.com/alondero/automobililamborghini-recomp/blob/b5ae30c/src/lambo_menu_stick.cpp) rewrites
 t0/t1/t7/t6 at `0x80042500`, `0x800426E4`, `0x800428D4`, `0x8004294C`.
 
 The input is an OSContPad record at `0x800A39E0 + channel*6`: u16 buttons and
@@ -105,7 +109,7 @@ and the exact disabled return (including -128). Preserve the current per-site
 setting sampling or explicitly test a deliberate snapshot policy change.
 Dependencies include menu globals, input decoding and the host setting query.
 
-[Helper tests](../tests/test_menu_stick.cpp) and
+[Helper tests](https://github.com/alondero/automobililamborghini-recomp/blob/b5ae30c/tests/test_menu_stick.cpp) and
 [config tests](../tests/test_live_config.cpp) seed cases, but do not cover the
 complete handler. A separate ROM-handler oracle must compare cursor, direction,
 button-edge and other persistent state across stick boundaries, both axes,

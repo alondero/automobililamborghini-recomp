@@ -13,19 +13,16 @@ void publish(unsigned port, bool analog_mode, float effective_value);
 void disconnect(unsigned port, bool analog_mode);
 void set_probe(bool enabled);
 
-// Pure state/scale seams used by deterministic host tests.
+// Native sampling plus the exact packed interface consumed by guest source.
 bool sample(unsigned port, float& effective_value);
-int16_t scale_to_guest(uint16_t normalized, int16_t limit);
+// Guest source consumes exact quantized input: bit31 analog, bit30 probe,
+// low16 normalized pedal. No guest pointer or memory writes cross this seam.
+uint32_t guest_snapshot(unsigned port);
 
 } // namespace lambo::analog_throttle
 
-// Paired game-thread hooks at guest addresses 0x80019FBC and 0x8001A120.
-// They read one published atomic snapshot and the current vehicle record at
-// 0x80910000 + index*0x10C, then read/write the s16 throttle at +0xAA using
-// N64 word-swapped MEM access. Invalid channels and negative/inactive vehicle
-// indices are a no-op. The first hook captures the pre-ROM value; the second runs before
-// physics. See docs/analog-throttle.md and docs/architecture.md.
-extern "C" void lambo_analog_throttle_begin(uint8_t* rdram);
-extern "C" void lambo_analog_throttle_apply(uint8_t* rdram);
+// Read-only game-thread diagnostic after the compiled guest update. Guest
+// demand/ramp/latch writes live in guest/vehicle_update.c, not this adapter.
+extern "C" void lambo_analog_throttle_observe(uint8_t* rdram, uint32_t snapshot);
 
 #endif
