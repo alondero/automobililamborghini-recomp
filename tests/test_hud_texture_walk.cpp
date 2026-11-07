@@ -13,6 +13,9 @@
 #include "lambo_log.h"
 
 extern "C" void lambo_graphics_task_prepare(uint8_t*, uint32_t);
+extern "C" void lambo_rain_publish(uint8_t*,uint32_t,uint32_t) {}
+static bool wet_race = false;
+extern "C" unsigned lambo_rain_wet(uint8_t*) { return wet_race; }
 namespace {
 bool match_fog = false;
 double fog_scale = 1.0;
@@ -240,6 +243,11 @@ int main() {
     cmd(0x1000, 0xbc000008, 0x12345678);
     cmd(0x1008, 0xf8000000, 0xabcdef12);
     cmd(0x1010, 0xb8000000, 0);
+    wet_race = true; // Wet fog survives the multiplayer preset, even with art Off.
+    prepare();
+    assert(read(ram, 0x1004) == 0x12345678);
+    assert(read(ram, 0x100c) == 0xabcdef12);
+    wet_race = false;
     prepare();
     assert(read(ram, 0x1004) == 0x64009d00);
     assert(read(ram, 0x100c) == 0x39303712);

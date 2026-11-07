@@ -65,6 +65,9 @@ unsigned recomp_get_config_u32(const char *key) {
     char round_key[32];
     ++config_reads;
     if (strcmp(key, "weather.mode") == 0) return config_mode;
+    if (strcmp(key, "rain.style") == 0) return 1;
+    if (strcmp(key, "rain.intensity") == 0) return 1;
+    if (strcmp(key, "rain.camera") == 0) return 1;
     for (i = 0; i < 12; ++i) {
         snprintf(round_key, sizeof(round_key), "weather.round%u", i + 1);
         if (strcmp(key, round_key) == 0) return config_rounds[i];
@@ -74,6 +77,11 @@ unsigned recomp_get_config_u32(const char *key) {
 }
 
 static const unsigned *registered_cap;
+static const unsigned *registered_rain;
+unsigned lambo_register_rain_v1(const unsigned *settings) {
+    registered_rain = settings;
+    return 1;
+}
 unsigned lambo_register_ai_maneuver_cap_v1(const unsigned *cap) {
     registered_cap = cap;
     return 1;
@@ -147,6 +155,7 @@ int main(void) {
     start_race();
     expect_ai(220, 180, 20, 12);
     expect_fog(930, 999, 64, 64, 70);
+    assert(registered_rain && *registered_rain == (1u | (70u << 8) | (1u << 16)));
     assert(strcmp(last_log, "[jp-weather] wet") == 0);
     assert(verified_logs == 1 && mismatch_logs == 0);
     /* A second wet race halves the captured baseline, not the previous result. */
@@ -156,6 +165,7 @@ int main(void) {
     config_mode = 1;
     stock_fog();
     start_race();
+    assert(*registered_rain == 0);
     expect_ai(290, 240, 40, 25);
     expect_fog(995, 1000, 57, 48, 55);
     assert(fog_accesses == 0);

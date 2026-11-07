@@ -16,6 +16,8 @@
 #include "lambo_log.h"
 #include "lambo_race_field.h"
 #include "recomp.h"
+extern "C" void lambo_rain_publish(uint8_t*,uint32_t,uint32_t) {}
+extern "C" unsigned lambo_rain_wet(uint8_t*) { return 0; }
 
 extern "C" {
 void lambo_graphics_task_prepare(uint8_t*, uint32_t);

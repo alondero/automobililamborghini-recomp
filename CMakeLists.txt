@@ -58,6 +58,15 @@ if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/CMakeLists.txt)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(lambo_rain_tests tests/test_rain.cpp src/lambo_rain.cpp)
+    target_include_directories(lambo_rain_tests PRIVATE src)
+    add_test(NAME lambo_rain_geometry COMMAND lambo_rain_tests)
+    add_executable(lambo_rain_runtime_tests tests/test_rain_runtime.cpp
+        src/lambo_rain.cpp src/lambo_rain_runtime.cpp src/lambo_mod_gameplay.cpp)
+    target_include_directories(lambo_rain_runtime_tests PRIVATE src lib/rt64/include
+        ${N64MR}/N64Recomp/include ${N64MR}/librecomp/include
+        ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
+    add_test(NAME lambo_rain_producers COMMAND lambo_rain_runtime_tests)
     add_executable(lambo_hud_hash_padding_tests tests/test_hud_hash_padding.cpp)
     target_include_directories(lambo_hud_hash_padding_tests PRIVATE
         lib/rt64/src lib/rt64/src/contrib)
@@ -849,6 +858,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_mod_game.cpp
         src/lambo_mod_storage.cpp
         src/lambo_mod_gameplay.cpp
+        src/lambo_rain.cpp
+        src/lambo_rain_runtime.cpp
         src/lambo_input_gate.cpp # controller capture/neutral-release barrier
         src/lambo_window_resize.cpp # live window-size applies from the settings menu
         src/lambo_replay.cpp

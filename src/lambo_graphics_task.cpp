@@ -9,6 +9,7 @@
 #include "lambo_graphics_task.h"
 #include "lambo_hud_texture_bounds.h"
 #include "lambo_log.h"
+#include "lambo_rain.h"
 
 namespace {
 // Preparation and save/load run on the same guest producer thread.
@@ -48,7 +49,10 @@ extern "C" void lambo_graphics_task_prepare(uint8_t* ram, uint32_t task_address)
     using Clock = std::chrono::steady_clock;
     const auto start = timed ? Clock::now() : Clock::time_point{};
     lambo::HudTextureBounds hud(ram);
-    const auto fog = lambo::fog_policy(ram);
+    auto fog = lambo::fog_policy(ram);
+    // The multiplayer matching preset carries the stock dry fog constants.
+    // A Wet race already supplied its own fog; do not replace it with dry art.
+    if (lambo_rain_wet(ram)) fog.match_1p = false;
     fog_rewriter.begin(ram);
     const auto result = lambo::f3dex::walk(ram, root | 0x80000000u,
         [&](uint32_t offset, uint32_t w0, uint32_t w1) {
@@ -59,6 +63,9 @@ extern "C" void lambo_graphics_task_prepare(uint8_t* ram, uint32_t task_address)
         LAMBO_LOG_WARN("gfx-policy", "walk stopped: budget=%d depth=%d root=0x%08x commands=%u\n",
             result.budget_limit, result.depth_limit, root, result.commands);
     }
+    // Finish all native policies before copying the completed root. Rain never
+    // grows the original arena while the game is still writing into it.
+    lambo_rain_publish(ram,root,field(0x34));
     if (timed) {
         const double us = std::chrono::duration<double, std::micro>(Clock::now() - start).count();
         LAMBO_LOG("gfx-policy", "prepare commands=%u dial=%u maps=%u suffix=%u logo=%u elapsed_us=%.3f\n",

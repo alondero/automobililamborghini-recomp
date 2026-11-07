@@ -1,6 +1,6 @@
 [manifest]
 id = "lambo_jp_weather"
-version = "0.2.0"
+version = "0.3.0"
 display_name = "JP weather (experimental)"
 description = "Japanese race-slot weather on the USA cartridge. Development build."
 authors = ["Lamborghini Recompiled contributors"]
@@ -14,6 +14,30 @@ description = "US default disables overrides. Otherwise selects time-trial/singl
 type = "Enum"
 options = ["US default", "Dry", "Wet", "Night"]
 default = "US default"
+
+[[manifest.config_options]]
+id = "rain.style"
+name = "Rain style"
+description = "Visual effects in Wet races. Retro uses chunky rain and simple puddles; Modern uses softer rain, ripples and lens droplets. Applies next race."
+type = "Enum"
+options = ["Off", "Retro", "Modern"]
+default = "Retro"
+
+[[manifest.config_options]]
+id = "rain.intensity"
+name = "Rain intensity"
+description = "Rain density in Wet races. Does not change handling or AI. Applies next race."
+type = "Enum"
+options = ["Light", "Normal", "Heavy"]
+default = "Normal"
+
+[[manifest.config_options]]
+id = "rain.camera"
+name = "Camera droplets"
+description = "Show water droplets on each camera lens. Applies next race."
+type = "Enum"
+options = ["Off", "On"]
+default = "On"
 
 [[manifest.config_options]]
 id = "weather.round1"

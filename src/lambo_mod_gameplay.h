@@ -31,6 +31,15 @@ void lambo_register_ai_maneuver_cap_v1(uint8_t* rdram, recomp_context* ctx);
  */
 unsigned lambo_ai_maneuver_cap(uint8_t* rdram);
 
+/* Same ownership, pointer lifetime and snapshot limitations as the cap bridge.
+ * One guest u32 packs style (0 off, 1 retro, 2 modern) in bits 0..1,
+ * intensity (0..100 percent) in bits 8..14, camera drops in bit 16.
+ * All other bits must be zero. Invalid words render no rain. The mod publishes
+ * zero for every race that did not resolve to Wet. Reads are producer-only.
+ */
+void lambo_register_rain_v1(uint8_t* rdram, recomp_context* ctx);
+unsigned lambo_rain_settings(uint8_t* rdram);
+
 /* Runtime initialization only, before mods execute and before a game thread
  * can read the bridge. A new game must not inherit a previous mod's pointer.
  */
