@@ -11,18 +11,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--zig", type=Path, required=True)
     parser.add_argument("--mod-tool", type=Path, required=True)
+    parser.add_argument("--menu-walk-only", action="store_true")
     parser.add_argument("--output", type=Path, default=ROOT / "build/guest-source-smoke")
     args = parser.parse_args()
-    for variant in ["hooks", "func_8003F40C", "func_8003F56C", "func_800427D4", "func_80019D20"]:
+    variants = ["menu-walk"] if args.menu_walk_only else ["hooks", "func_8003F40C", "func_8003F56C", "func_800427D4", "func_80019D20"]
+    for variant in variants:
         output = args.output.resolve() / variant
         output.mkdir(parents=True, exist_ok=True)
-        source = "fixture.c" if variant == "hooks" else "conflict.c"
+        source = "menu_walk.c" if variant == "menu-walk" else ("fixture.c" if variant == "hooks" else "conflict.c")
         obj, elf = output / "fixture.o", output / "fixture.elf"
         flags = ["-target", "mips-freestanding", "-mcpu=mips2+noabicalls+nooddspreg",
                  "-mabi=32", "-O2", "-G0", "-mno-abicalls", "-mno-odd-spreg",
                  "-mno-check-zero-division", "-fno-pic", "-ffunction-sections",
                  "-ffreestanding", "-fno-builtin"]
-        if variant != "hooks":
+        if variant not in ("hooks", "menu-walk"):
             flags += [f"-DREPLACEMENT={variant}"]
         subprocess.run([str(args.zig.resolve()), "cc", *flags, "-c",
                         str(ROOT / "tests/mods/guest_source" / source), "-o", str(obj)], check=True)

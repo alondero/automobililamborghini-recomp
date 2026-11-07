@@ -112,3 +112,12 @@ the rebuilt Windows port: entry/return hooks were regenerated for the menu
 replacement, a call through its original symbol exercised sensitivity 1.5 and
 the compiled helper, and an ordinary replacement was rejected as a base-patch
 conflict. This synthetic init-time invocation does not verify interactive menus.
+
+
+A separate [normal menu walk](../tests/mods/guest_source/README.md#normal-menu-traversal)
+also passed on 2026-11-07 without warp or state loading. Scripted input traversed
+the normal menus, activated both vehicle arrows (`00 -> 01 -> 00`) through
+original-symbol hooks, and reached race state 8. The observer confirmed the
+complete menu handler returned on car screen 13; all 1488 replay frames were
+verified by the guest. This adds actual dispatcher coverage to the synthetic
+parity and init-time mod checks; visual feel and physical input remain untested.

@@ -108,3 +108,8 @@ All five runtime mod checks passed: original-symbol calls and entry/return
 hooks, active-race input queries/observers, and four expected ordinary-replacement
 conflicts. This is automated runtime evidence; no interactive visual or Android
 validation was performed. Logs are local build artifacts, not checked-in evidence.
+
+The full Python suite completed with 422 tests, OK (14 skipped). The branch
+also passed the documentation checker and a strict whitespace check with
+`core.whitespace=blank-at-eol,blank-at-eof,space-before-tab`; this explicit
+setting avoids local Git configuration masking CI whitespace failures.

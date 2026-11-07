@@ -40,3 +40,42 @@ Each ordinary replacement was rejected before the game thread started, naming
 the expected USA entry: `0x8003E80C`, `0x8003E96C`, `0x80041BD4` and
 `0x80019120`. Logs are generated locally under `build/guest-source-mod-check`.
 The isolated temporary profiles were removed and no game process remained.
+
+
+## Normal menu traversal
+
+Build the separate read-only observer and run the no-warp replay:
+
+```text
+python scripts/build_guest_source_smoke.py --menu-walk-only --zig build/toolchain/zig-windows-x86_64-0.13.0/zig.exe --mod-tool ../../build/lib/N64ModernRuntime/librecomp/N64Recomp/RecompModTool.exe
+python tools/check_guest_menu_walk.py --exe build/lamborghini_modern.exe
+```
+
+The checker stages the observer in a fresh artifact-local profile. The scenario
+and recording are `scenarios/guest-menu-walk.json` and
+`recordings/guest-menu-walk.jsonl`. Run this scenario through the checker: its
+log expectations require the observer package. Neither warp nor state loading
+is allowed. The observer has no init callback or synthetic calls, and only reads
+game state at actual original-symbol entry/return hooks. Its halfword addresses
+are the USA bindings verified in [vehicle selectors](../../../docs/guest-vehicle-select.md)
+and [menu input](../../../docs/menu-input.md). It compiles as big-endian guest
+MIPS, so ordinary halfword loads use guest byte order, not host RDRAM indexing.
+
+The replay extends the existing menu-to-race recording at dispatch frame 290.
+It moves from the car confirmation item onto the right arrow, presses A, moves
+through the center onto the left arrow, presses A, returns to the center and
+resumes confirmation. Each press lasts six dispatches and each release thirty.
+The USA ROM item records at offsets `0x14A000`, `0x14A020`, `0x14A040` verify
+center/right/left navigation and the arrow callbacks; selecting an arrow alone
+does not activate a vehicle change.
+
+On 2026-11-07 the rebuilt Windows executable passed: normal menu screens
+`1 -> 2 -> 11 -> 13 -> 21 -> 31`, menu-handler return on car screen 13, right
+selector `00 -> 01`, left selector `01 -> 00`, then race state 8 at VI 1779.
+All 1488 replay frames were guest-verified; the run ended normally after 3425 VIs
+and 1690 swaps. Both warp and state-load requested/applied flags were false.
+Evidence is under `build/menu-walk/guest-menu-walk-x3_6s6m7` (stderr, managed
+environment, replay, native and runner results). No game process remained.
+`python -m unittest tests.test_game_scenario` also passed all 16 tests.
+This is scripted headless dispatch evidence, not a visual or physical-controller
+acceptance test.
