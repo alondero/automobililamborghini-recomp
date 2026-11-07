@@ -1,4 +1,6 @@
-"""Extract USA-ROM selectors, timers and reverse-menu gates with injected hooks.
+"""Extract USA-ROM timers and reverse-menu gates with injected hooks.
+
+Selectors are now compiled guest source, linked separately into the cheat test.
 
 The timer block is inside the non-returning boot dispatcher. Extract its
 complete pause gate, countdown and both four-player clock loops; terminate
@@ -9,7 +11,7 @@ import re
 import sys
 
 source, output = map(pathlib.Path, sys.argv[1:])
-wanted = {"func_8003F40C", "func_8003F56C", "BootLoadInitialAssets", "func_8003CD84"}
+wanted = {"BootLoadInitialAssets", "func_8003CD84"}
 found = {}
 for path in source.glob("funcs_*.c"):
     for match in re.finditer(

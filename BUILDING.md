@@ -62,7 +62,8 @@ git -c core.longpaths=true submodule update --init --recursive
 
 ## Guest source patches
 
-The build compiles `guest/pit_stop.c` to MIPS, then recompiles it with the
+The build compiles the pit, vehicle-selection, menu-input and vehicle-update
+sources in `guest/` to MIPS, then recompiles them with the
 pinned N64Recomp. The ELF, binary, generated C and registration metadata stay
 under `build/guest/`. Do not edit those outputs.
 

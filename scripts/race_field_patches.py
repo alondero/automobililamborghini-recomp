@@ -106,8 +106,7 @@ def patch_blocks(rom, functions):
                           (0x80010C94, 32), (0x80010CFC, 32), (0x80010D14, 31 * 8 + 4)):
         word = struct.unpack_from('>I', rom, pc - 0x80000000 + 0xC00)[0]
         result.append(f'\n[[patches.instruction]]\nfunc = "func_80011710"\nvram = {pc:#x}\nvalue = {(word & 0xffff0000) | immediate:#x}\n')
-    hook('func_80019D20', 0x800191A4,
-         'extern int lambo_field_car(uint8_t*, int); if (ctx->r10 >= 13 && lambo_field_car(rdram, MEM_H(0, (gpr)(int32_t)0x80098398))) ctx->r10 = 5;')
+    # Expanded vehicle dispatch is owned by guest/vehicle_update.c.
     for name, pc, obj in [('func_8002807C', 0x8002751C, 'MEM_H(0, (gpr)(int32_t)0x80098398)'),
                           ('func_800657CC', 0x80064C28, 'MEM_H(0x46, ctx->r29)'),
                           ('func_800657CC', 0x80065A14, 'MEM_H(0x46, ctx->r29)')]:

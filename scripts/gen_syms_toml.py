@@ -780,26 +780,6 @@ func = "BootLoadInitialAssets"
 before_vram = 0x800015DC
 text = "{ extern void lambo_cheat_lap_timer(uint8_t*, recomp_context*); lambo_cheat_lap_timer(rdram, ctx); }"
 
-[[patches.hook]]
-func = "func_8003F40C"
-before_vram = 0x8003E8AC
-text = "{ extern int lambo_cheat_extra_vehicles(void); if (lambo_cheat_extra_vehicles()) ctx->r12 = 1; }"
-
-[[patches.hook]]
-func = "func_8003F40C"
-before_vram = 0x8003E954
-text = "{ extern int lambo_cheat_extra_vehicles(void); if (lambo_cheat_extra_vehicles()) ctx->r11 = 1; }"
-
-[[patches.hook]]
-func = "func_8003F56C"
-before_vram = 0x8003EA0C
-text = "{ extern int lambo_cheat_extra_vehicles(void); if (lambo_cheat_extra_vehicles()) ctx->r11 = 1; }"
-
-[[patches.hook]]
-func = "func_8003F56C"
-before_vram = 0x8003EAB4
-text = "{ extern int lambo_cheat_extra_vehicles(void); if (lambo_cheat_extra_vehicles()) ctx->r25 = 1; }"
-
 # Issue #4 — game-side geometry-LOD distance-test, NOT covered by RT64's
 # renderer-level forceBranch (which only touches RSP G_BRANCH_Z/W).
 # NOPs the bc1f +0xDC in func_80060464 that gates the per-car high-poly
@@ -823,36 +803,7 @@ value = 0x00000000
 # 0x800A39CC; natives in src/lambo_hud_widescreen.c. TIME stays centered (no tag needed
 # under RT64 Expand); the minimap is polyline/viewport-drawn, not texrects — pinning it
 # is a separate follow-up (rect-align cannot move it).
-# Issue #238 — opt-in menu-navigation stick sensitivity. func_800427D4 (runtime
-# 0x80041BD4) reads the parsed controller pad at 0x800A39E0 + channel*6 (OSContPad
-# shape: buttons +0, stick_x +2, stick_y +3) and derives menu movement two ways: a
-# cursor-velocity path (stick_x at 0x800424FC -> 0x8009873E, stick_y at 0x800426E0
-# -> 0x80098760; deadzone 7, clamped +/-48/+/-32), and a discrete +/-51 direction
-# threshold (stick_x at 0x800428D0 slti 0x33 -> synth D-right, and at 0x80042948
-# slti -0x32 -> synth D-left). Each hook rewrites the register that already holds
-# the loaded byte, just before its consumer, via the native in
-# src/lambo_menu_stick.cpp. 1.0 (default) is a byte-for-byte no-op; race steering
-# never passes through this routine. ROM evidence: docs/menu-input.md.
-[[patches.hook]]
-func = "func_800427D4"
-before_vram = 0x80042500
-text = "{ extern int lambo_menu_stick_scale(int); ctx->r8 = (gpr)(int32_t)lambo_menu_stick_scale((int32_t)ctx->r8); }"
-
-[[patches.hook]]
-func = "func_800427D4"
-before_vram = 0x800426E4
-text = "{ extern int lambo_menu_stick_scale(int); ctx->r9 = (gpr)(int32_t)lambo_menu_stick_scale((int32_t)ctx->r9); }"
-
-[[patches.hook]]
-func = "func_800427D4"
-before_vram = 0x800428D4
-text = "{ extern int lambo_menu_stick_scale(int); ctx->r15 = (gpr)(int32_t)lambo_menu_stick_scale((int32_t)ctx->r15); }"
-
-[[patches.hook]]
-func = "func_800427D4"
-before_vram = 0x8004294C
-text = "{ extern int lambo_menu_stick_scale(int); ctx->r14 = (gpr)(int32_t)lambo_menu_stick_scale((int32_t)ctx->r14); }"
-
+# Menu input and sensitivity are reconstructed in guest/menu_input.c.
 [[patches.hook]]
 func = "func_80050860"
 before_vram = 0x8004FF60
@@ -1148,51 +1099,7 @@ func = "BootLoadInitialAssets"
 before_vram = 0x80001CA4
 text = "{ extern void lambo_main_loop_idle(uint8_t*); lambo_main_loop_idle(rdram); }"
 
-# Issue #128 — true analog throttle. Capture the pedal demand immediately before the
-# stock human-driver A/Z branch, then apply the selected native port's continuous target
-# at the common merge. The two hooks preserve the ROM's +/-10 pedal ramp, including exact
-# released/full-A behavior. Digital mode is a no-op. The natives read atomics and RDRAM only.
-[[patches.hook]]
-func = "func_80019D20"
-before_vram = 0x80019FBC
-text = "{ extern void lambo_analog_throttle_begin(uint8_t*); lambo_analog_throttle_begin(rdram); }"
-
-[[patches.hook]]
-func = "func_80019D20"
-before_vram = 0x8001A120
-text = "{ extern void lambo_analog_throttle_apply(uint8_t*); lambo_analog_throttle_apply(rdram); }"
-
-# Analog brake. The stock brake block sits LATER in the same updater (0x8001A690-
-# 0x8001A990): its not-B release handler (func_8002A070, vram tail 0x800295D8)
-# zeroes the float demand at vehicle offset 0xA0 and strips bit0 of the 0xAC
-# braking latch every frame, so a capture/apply pair around the throttle sites
-# would be undone before the physics pass (func_8001EC1C, decel = demand*10 while
-# s16[0xAC] > 0) ever reads them. One apply-only hook at the brake block's own
-# merge (0x8001A9A0, reached from both the pressed and released paths) writes the
-# host-ramped demand + latch after the stock handlers are done with them. Digital
-# mode is a no-op; digital B keeps the full-stock path. See docs/analog-brake.md.
-[[patches.hook]]
-func = "func_80019D20"
-before_vram = 0x8001A9A0
-text = "{ extern void lambo_analog_brake_apply(uint8_t*); lambo_analog_brake_apply(rdram); }"
-
-# Steering deadzone and direct response (docs/steering.md). Two player-one seams
-# in the human steering updater; both are no-ops at the authored defaults.
-# 0x8001AA90 stores the raw pad stick byte ($t2) to the work halfword
-# 0x80098694; a non-authored deadzone rewrites $t2 so the ROM's own -4 trim
-# leaves exactly that deadzone. 0x8001B8E0 is the merge after the slew clamp,
-# speed suppression and speed adjust, before the demand store to vehicle+0xB2;
-# direct mode replaces the work value and accumulator vehicle+0xB4 with the
-# selected response-curve entry. Natives in src/lambo_steering.cpp.
-[[patches.hook]]
-func = "func_80019D20"
-before_vram = 0x8001AA90
-text = "{ extern int32_t lambo_steering_raw(uint8_t*, int32_t); ctx->r10 = (gpr)(int64_t)lambo_steering_raw(rdram, (int32_t)ctx->r10); }"
-
-[[patches.hook]]
-func = "func_80019D20"
-before_vram = 0x8001B8E0
-text = "{ extern void lambo_steering_direct(uint8_t*); lambo_steering_direct(rdram); }"
+# Pedal, steering and expanded-racer dispatch semantics live in guest/vehicle_update.c.
 
 # Task-owned sunlight provenance probe. Capture art inputs before flare visibility
 # culling. New task slots clear them even when a track does not call the flare.
@@ -2619,8 +2526,8 @@ def main():
     race_stubs += [n for n in extra_stub if n in present and n not in race_stubs]
     race_ignored += [n for n in extra_ignore if n in present and n not in race_ignored]
     race_ignored += [n for n in NATIVE_OVERRIDES if n in present and n not in race_ignored]
-    # Replaced by readable MIPS source in guest/pit_stop.c, built by CMake.
-    race_ignored.append("func_8006B470")
+    # Replaced by readable MIPS source in guest/, built by CMake.
+    race_ignored += ["func_8006B470", "func_8003F40C", "func_8003F56C", "func_800427D4", "func_80019D20"]
     force = list(FORCE_STUB)
     if FORCE_STUB_FILE.exists():
         force += parse_force_stub_file(FORCE_STUB_FILE)

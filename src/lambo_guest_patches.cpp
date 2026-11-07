@@ -21,6 +21,10 @@ void lambo_register_guest_patches(const std::vector<SectionTableEntry>& protecte
     recomp::overlays::register_patches(reinterpret_cast<const char*>(guest_patch_data),
         sizeof(guest_patch_data), sections.data(), sections.size());
     static const ManualPatchSymbol manual_calls[] = {
-        {0x8f000000, lambo_get_automatic_pit_stops}, {0, nullptr}};
+        {0x8f000000, lambo_get_automatic_pit_stops},
+        {0x8f000004, lambo_get_extra_vehicles},
+        {0x8f000008, lambo_get_menu_stick_sensitivity},
+        {0x8f00000c, lambo_vehicle_input},
+        {0x8f000010, lambo_vehicle_observe}, {0, nullptr}};
     recomp::overlays::register_manual_patch_symbols(manual_calls);
 }

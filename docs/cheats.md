@@ -47,6 +47,9 @@ Addresses below are runtime USA addresses, not the symbol names' historical
 0xC00-shifted addresses. Regenerate using scripts/gen_syms_toml.py and N64Recomp;
 never edit generated C. Hooks live in src/lambo_cheats_runtime.cpp, with the
 generation inputs in scripts/gen_syms_toml.py and lamborghini.us.toml.
+Vehicle selection now uses [complete guest-source replacements](guest-vehicle-select.md)
+and a setting-only host query; its former four register hooks exist only in the
+independent parity oracle.
 
 The UI publishes independent atomic flags. Hooks run on the game thread at the
 original arithmetic/branch sites. No host thread accesses guest RAM. There are
@@ -58,16 +61,16 @@ Disabled hooks leave the original registers and game behavior intact.
 | BootLoadInitialAssets, before 0x80001558 | 0x8000154C loads signed seconds from 0x800CE76E into t8; 0x80001554 decrements into t3. Restore t3 from t8 before sign extension, the halfword store and warning/zero checks. The ROM still owns countdown mode and pause gates. |
 | BootLoadInitialAssets, before 0x800015DC | The four-player loop increments the subsecond halfword at 0x80098768 + player*8 + 6 by two. Restore t3 from t8 before the store and rollover checks. |
 | BootLoadInitialAssets, before 0x80001754 | The same loop updates the current-lap bank at 0x80098850 + player*8 + 6. Restore t5 from t7 before store/rollover. The existing per-player race gate remains intact. |
-| func_8003F40C, before 0x8003E8AC and 0x8003E954 | Left selection loads the category's signed availability halfword from 0x800985C0 + category*2. Set the loaded branch operand (t4/t3) to one when enabled. |
-| func_8003F56C, before 0x8003EA0C and 0x8003EAB4 | Equivalent right-selection operands are t3/t9. The ROM retains cursor bounds, wrapping, descriptor lookup and player selection. |
+| Guest `func_8003F40C` | Left selection reads the category's signed availability halfword from 0x800985C0 + category*2 and samples `lambo_get_extra_vehicles()`. Guest code owns wrapping, skipping and the cursor store. |
+| Guest `func_8003F56C` | Equivalent right selection, retaining the original callable entry and independently verified against the ROM handler. |
 | func_8003CD84, before 0x8003C53C, 0x8003C5E0, 0x8003C684 and 0x8003C774 | Setup screens 3, 9, 12 and 10 test progress bit 0x2 from the unsigned halfword at 0x800A4170. Set only the masked branch operands (t7, t0, t3, t9) to 2 when enabled. The ROM enables its direction item without changing saved progress or live pit-stop setting. |
 
 Guest halfwords use N64 byte order through MEM_H, not native host struct casts.
 Clock subsecond fields count in sixtieths; the update adds two and rolls over at
-60. These seams override register values instead of introducing new memory
-writes. See [vehicle evidence](CAR_DIFFERENCES.md) for category availability.
-The source-level replacement would be named timer-update and vehicle-availability
-functions once those game routines are decompiled.
+60. Timer and setup-menu seams still override register values. Selectors use
+big-endian guest layouts and write their own cursors. See
+[vehicle evidence](CAR_DIFFERENCES.md) for category availability.
+Timer-update and reverse-setup source replacements remain future work.
 
 ### Reverse-track access
 
@@ -120,8 +123,8 @@ The selector data shapes and address provenance are also recorded in
 ## Verification
 
 `lambo_cheats` extracts the full timer block (including pause, mode, expiry,
-rollover and both four-player loops) and both complete selector functions from
-fresh generated output. It retains the actual injected hooks. Synthetic RAM
+rollover and both four-player loops) from fresh ROM-generated output, retaining
+its injected hooks. It links the compiled guest selector replacements. Synthetic RAM
 tests enabled/disabled behavior, four players, rollover boundaries, pause,
 expired countdown, all 24 model cursors, both directions and preserved unlocks.
 Extraction asserts each timer hook remains inside the extracted address region.

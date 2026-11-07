@@ -37,9 +37,20 @@ void register_overlays() {
         // entry addresses in the base table for indirect calls and mod lookup.
         // Nonzero size lets the runtime redirect hooks to our compiled patch
         // bytes instead of regenerating the unmodified ROM handler.
-        if (sec.ram_addr <= 0x8006a870u && 0x8006a870u < sec.ram_addr + sec.size) {
-            base_functions[i].assign(sec.funcs, sec.funcs + sec.num_funcs);
-            base_functions[i].push_back({func_8006B470, 0x8006a870u - sec.ram_addr, 0x1604});
+        const FuncEntry replacements[] = {
+            {func_8006B470, 0x8006a870u, 0x1604},
+            {func_8003F40C, 0x8003e80cu, 0x158},
+            {func_8003F56C, 0x8003e96cu, 0x158},
+            {func_800427D4, 0x80041bd4u, 0x1078},
+            {func_80019D20, 0x80019120u, 0x4efc},
+        };
+        base_functions[i].assign(sec.funcs, sec.funcs + sec.num_funcs);
+        for (auto replacement : replacements) {
+            if (replacement.offset < sec.ram_addr || replacement.offset >= sec.ram_addr + sec.size) continue;
+            replacement.offset -= sec.ram_addr;
+            base_functions[i].push_back(replacement);
+        }
+        if (base_functions[i].size() != sec.num_funcs) {
             sec.funcs = base_functions[i].data();
             sec.num_funcs = base_functions[i].size();
         }

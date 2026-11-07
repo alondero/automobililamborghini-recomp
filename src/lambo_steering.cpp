@@ -10,7 +10,7 @@
 #include "recomp.h"
 #include "lambo_vehicle.h"
 
-// Guest seams (USA ROM, func_80019D20; see docs/steering.md):
+// Read-only diagnostic layout (USA ROM; see docs/vehicle-source.md):
 // - 0x800CE6AA s16  current controller channel (1 = player one)
 // - 0x800A39DC u32  selected pad pointer; player one is 0x800A39E0
 // - 0x800A39E2 s8   port-zero pad stick X, +-80 at full deflection
@@ -20,7 +20,7 @@
 // - 0x800CE79C s16  race difficulty: nonzero selects curve A, zero curve B
 // - 0x80089174 / 0x800891F0  s16[62] response curves A (Expert) / B (Novice)
 // - vehicle+0xB4 s16 slew accumulator; vehicle+0xB2 s16 steering demand
-// All are game-thread state; the natives run inside the updater.
+// All are game-thread state; only the observer reads them after guest updates.
 
 namespace {
 
@@ -41,8 +41,6 @@ constexpr std::uint16_t kSchemeWithoutCurve = 2;
 
 std::mutex g_settings_mutex;
 lambo::steering::Settings g_published;
-
-int sign_of(std::int32_t value) { return value < 0 ? -1 : 1; }
 
 // The updater is reading player one's pad (channel 1, port-zero pad record).
 bool player_one_pad(std::uint8_t* rdram) {
@@ -122,17 +120,7 @@ Settings with_overrides(Settings s, const char* direct, const char* deadzone) {
     return sanitize(s);
 }
 
-// The ROM steers 0 while |raw| - 4 < 0 and uses curve[|raw| - 4] from there,
-// so |raw| == 4 already reads curve[0] (1 in both tables). Shifting by the
-// configured deadzone keeps that exact shape: 0 below it, curve[0] at it. A
-// centred stick always steers 0, including with deadzone 0.
-std::int32_t reshape_raw(std::int32_t raw, int native_deadzone) {
-    if (native_deadzone == kAuthoredDeadzone) return raw;
-    const std::int32_t magnitude = std::abs(raw);
-    if (raw == 0 || magnitude < native_deadzone) return 0;
-    return sign_of(raw) * (magnitude - native_deadzone + kAuthoredDeadzone);
-}
-
+// Diagnostic curve lookup mirrors the guest index; it does not reshape input.
 int curve_index(std::int32_t raw, int native_deadzone) {
     const std::int32_t trimmed = std::abs(raw) - native_deadzone;
     return raw == 0 || trimmed < 0 ? -1 : std::min<std::int32_t>(trimmed, kCurveMaxIndex);
@@ -156,48 +144,22 @@ Settings current() {
 
 } // namespace lambo::steering
 
-extern "C" std::int32_t lambo_steering_raw(std::uint8_t* rdram, std::int32_t raw) {
-    const int deadzone = lambo::steering::current().native_deadzone;
-    if (deadzone == lambo::steering::kAuthoredDeadzone) return raw;
-    int vehicle = -1;
-    if (!player_one_update(rdram, vehicle)) return raw;
-    return lambo::steering::reshape_raw(raw, deadzone);
-}
-
-extern "C" void lambo_steering_direct(std::uint8_t* rdram) {
+extern "C" void lambo_steering_observe(std::uint8_t* rdram, std::int32_t authored,
+                                      std::uint32_t snapshot) {
     using namespace lambo::steering;
-    const Settings settings = current();
     std::FILE* trace = trace_file();
-    if (!settings.direct && trace == nullptr) return;
+    if (trace == nullptr) return;
     int vehicle = -1;
     if (!player_one_update(rdram, vehicle)) return;
-
-    const std::int32_t raw = static_cast<std::int8_t>(MEM_B(2, guest(kPortZeroPadAddr)));
-    const int selector = static_cast<std::int16_t>(MEM_H(0,
-        guest(LAMBO_GUEST_RACE_DIFFICULTY_ADDR)));
-    const int index = curve_index(raw, settings.native_deadzone);
-    // Same selection as the ROM's beq on the difficulty word (0x8001AD10).
+    const int raw = static_cast<std::int8_t>(MEM_B(2, guest(kPortZeroPadAddr)));
+    const int selector = static_cast<std::int16_t>(MEM_H(0, guest(LAMBO_GUEST_RACE_DIFFICULTY_ADDR)));
+    const int index = curve_index(raw, static_cast<int>(snapshot & 255u));
     const std::uint32_t table = selector != 0 ? kCurveAAddr : kCurveBAddr;
-    const std::int32_t curve = index < 0 ? 0 : static_cast<std::int16_t>(MEM_H(0,
-        guest(table + static_cast<std::uint32_t>(index) * 2u)));
-    const std::int32_t authored = static_cast<std::int16_t>(MEM_H(0, guest(kWorkValueAddr)));
-    std::int32_t demand = authored;
-    if (settings.direct) {
-        // Overwrite the accumulator too: the next update's slew clamp measures
-        // from it, so direct response stays 1:1 instead of fighting the clamp.
-        demand = raw < 0 ? -curve : curve;
-        MEM_H(0, guest(kWorkValueAddr)) = static_cast<std::int16_t>(demand);
-        MEM_H(0, guest(vehicle_field(vehicle, kAccumulatorOffset))) =
-            static_cast<std::int16_t>(demand);
-    }
-    if (trace != nullptr) {
-        const int accumulator = static_cast<std::int16_t>(MEM_H(0,
-            guest(vehicle_field(vehicle, kAccumulatorOffset))));
-        const long speed = static_cast<std::int32_t>(MEM_W(0,
-            guest(vehicle_field(vehicle, kSpeedOffset))));
-        std::fprintf(trace, "%lu,%d,%d,%d,%d,%d,%d,%d,%ld,%d\n", ++g_trace.update,
-                     static_cast<int>(raw), selector, index, static_cast<int>(curve),
-                     static_cast<int>(authored), static_cast<int>(demand), accumulator, speed,
-                     settings.direct ? 1 : 0);
-    }
+    const int curve = index < 0 ? 0 : static_cast<std::int16_t>(MEM_H(0, guest(table + index * 2u)));
+    const int demand = static_cast<std::int16_t>(MEM_H(0, guest(kWorkValueAddr)));
+    const int accumulator = static_cast<std::int16_t>(MEM_H(0, guest(vehicle_field(vehicle, kAccumulatorOffset))));
+    const long speed = static_cast<std::int32_t>(MEM_W(0, guest(vehicle_field(vehicle, kSpeedOffset))));
+    std::fprintf(trace, "%lu,%d,%d,%d,%d,%d,%d,%d,%ld,%d\n", ++g_trace.update,
+                 raw, selector, index, curve, static_cast<int>(authored), demand,
+                 accumulator, speed, (snapshot & 256u) ? 1 : 0);
 }

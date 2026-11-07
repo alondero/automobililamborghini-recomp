@@ -544,15 +544,6 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_steering_response COMMAND lambo_steering_tests)
 
-    add_executable(lambo_menu_stick_tests
-        tests/test_menu_stick.cpp
-        src/lambo_menu_stick.cpp
-    )
-    target_include_directories(lambo_menu_stick_tests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-    )
-    add_test(NAME lambo_menu_stick_scale COMMAND lambo_menu_stick_tests)
-
     add_executable(lambo_replay_runtime_tests
         tests/test_lambo_replay_runtime.cpp
         src/lambo_driving_assists.cpp
@@ -860,7 +851,6 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_automatic_pit_stops.cpp
         src/lambo_cheats.cpp
         src/lambo_cheats_runtime.cpp
-        src/lambo_menu_stick.cpp   # opt-in pre-race menu stick scaling (issue #238)
         src/lambo_analog_throttle.cpp # host-to-guest throttle bridge + race hook
         src/lambo_analog_brake.cpp    # host-to-guest brake bridge + race hook
         src/lambo_steering.cpp        # opt-in steering deadzone and direct response
@@ -976,7 +966,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
     )
     if(TARGET RecompiledFuncs)
         target_link_libraries(lamborghini_modern PRIVATE RecompiledFuncs GuestPatches)
-        target_sources(lamborghini_modern PRIVATE src/lambo_guest_patches.cpp)
+        target_sources(lamborghini_modern PRIVATE src/lambo_guest_patches.cpp src/lambo_guest_settings.cpp
+            src/lambo_vehicle_input.cpp)
         # The registration TU must include guest metadata, not the base table.
         set_source_files_properties(src/lambo_guest_patches.cpp PROPERTIES
             INCLUDE_DIRECTORIES "${LAMBO_GUEST_DIR}")

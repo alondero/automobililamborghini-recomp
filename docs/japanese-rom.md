@@ -122,8 +122,11 @@ their USA counterparts.
    from the same position. This assumes link order inside a module did not
    change; it has not been checked independently.
 
-A named Japanese function keeps the USA name, so `stubs`, `ignored` and later
-hooks can use one name in both regions. Names that start with `jp_func_` carry
+A named Japanese function keeps the USA name, so applicable `stubs`, `ignored`
+entries and later hooks can use one name in both regions. Complete USA-only
+guest-source replacements are excluded from both carried lists: Japan retains
+its original bodies. Their USA entry addresses, guest layouts and host bindings
+have not been mapped or linked for Japan. Names that start with `jp_func_` carry
 the Japanese runtime address. A matched name has the same opcodes and
 registers as the USA function. An aligned or slotted name is an inference from
 similarity, not proof that the routine is the same.
@@ -140,20 +143,24 @@ The generator prints these counts:
 | ... named by link-order slot (inferred) | 26 |
 | Japanese functions | 1188 |
 | USA stubs carried | 167 of 244 |
-| USA ignored functions carried | 35 of 49 |
-| USA hooked or patched functions with no Japanese name | 13 of 73 |
+| USA ignored functions carried | 34 of 53 |
+| USA source replacements retained as Japanese originals | 5 |
+| USA hooked or patched functions with no Japanese name | 13 of 69 |
 
 It also names the functions behind each gap:
 
 - Two carried stubs, `func_8007DAB4` and `func_80086724`, rely on an inferred
   name. A wrong inference would stub the wrong Japanese function.
-- The ignored pit handler, `func_8006B470`, also relies on an inferred name.
-  The new USA guest source replacement has not been mapped or linked for Japan.
+- The pit handler `func_8006B470`, selectors `func_8003F40C`/`func_8003F56C`,
+  menu handler `func_800427D4` and vehicle updater `func_80019D20` retain their
+  original Japanese bodies despite being ignored in USA generation. Matching a
+  name does not authorize installing the USA source replacement at a JP address.
 - 72 of the 77 USA stubs that were not carried are alternate entries inside a
   larger USA function. The other five have no Japanese name yet. Their
   Japanese code is recompiled as ordinary code, so whatever the USA stub
   avoids is live there.
-- 12 of the 14 ignored USA names that were not carried are alternate entries.
+- Apart from those five intentionally retained originals, 14 ignored USA names
+  have no Japanese name; 12 of those are alternate entries.
   `func_8007E4E0` has two equally good Japanese candidates, `0x800694E0` and
   `0x80074FD0`. `func_8005F39C` has no close candidate.
 - Hooks and instruction patches are not carried to the Japanese configuration.
