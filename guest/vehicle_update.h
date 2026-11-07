@@ -198,16 +198,16 @@ typedef struct { u16 buttons; s8 stick_x, stick_y; u8 error, padding; } Pad;
 #define selected_pad (*(Pad**)0x800a39dcu)
 #define D_800B9814 (*(s16**)0x800b9814u)
 void func_80014D50(s16, s16);
-void func_80025834(s16);     
-void func_8002622C(void);        
-void func_80028250(void);        
-void func_80029DCC(void);        
-void func_8002A070(void);        
-void func_8002D37C(void);        
-void func_80037BC0(s16);     
-f32 func_80075720(f32);         
-f32 func_80075730(f32);         
-f32 func_800758F0(f32);         
+void func_80025834(s16);
+void func_8002622C(void);
+void func_80028250(void);
+void func_80029DCC(void);
+void func_8002A070(void);
+void func_8002D37C(void);
+void func_80037BC0(s16);
+f32 func_80075720(f32);
+f32 func_80075730(f32);
+f32 func_800758F0(f32);
 u32 lambo_vehicle_input(u32 port, u32 kind);
 void lambo_vehicle_observe(u32 kind, s32 authored, u32 snapshot);
 #endif
