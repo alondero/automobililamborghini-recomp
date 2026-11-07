@@ -133,6 +133,12 @@ exists today. The [experimental package loader](modding.md) now provides
 stock-function hooks, package configuration, and a versioned logging export;
 it does not establish a general gameplay data API.
 
+The [guest-source candidate audit](guest-source-candidates.md) ranks the next
+three bounded migrations and links the bridge inventory. It recommends the
+vehicle-selector pair first, followed by menu input and the larger per-vehicle
+updater. Host lifecycle work and mechanical relocations remain separate from
+guest-owned behavior reconstruction.
+
 ## Runtime, threads, and failure behavior
 
 - The game thread consumes the final controller state and runs recompiled game
