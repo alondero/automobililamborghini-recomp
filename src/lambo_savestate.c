@@ -48,7 +48,10 @@
 //
 // Threading mirrors src/lambo_warp.c: the SDL main thread only flips an atomic request bit
 // (F7/F8 edge-detected in main.cpp's input_sample); the actual RAM copy happens on the game
-// thread inside lambo_savestate_tick, at the frame-boundary hook.
+// thread inside lambo_savestate_tick, at the frame-boundary hook. The copy still has to happen
+// there (guest RAM is only stable at that boundary), but the filesystem work (temporary file,
+// flush, atomic rename) is handed to src/lambo_savestate_io.cpp so a slow disk cannot stall a
+// frame. The worker owns the completed image buffer, so it can never outlive rdram.
 
 #include <stdatomic.h>
 #include <stdint.h>
@@ -58,6 +61,7 @@
 
 #include "lambo_log.h"
 #include "lambo_graphics_task.h"
+#include "lambo_savestate_io.h"
 
 #include "recomp.h"
 #include "lambo_race_field.h"
@@ -122,62 +126,61 @@ static const char* slot_path(void) {
     return (p != NULL && p[0] != '\0') ? p : DEFAULT_STATE_PATH;
 }
 
-// Snapshot low RAM and the race-field extension via a temp file + rename, so a crash mid-write can
-// never leave a torn state file (same atomic-write discipline as lambo_pak_save).
+// Validate the path on the game thread (the worker only appends ".tmp"), then snapshot low RAM
+// and the race-field extension into one owned buffer. The worker publishes it via a temp file +
+// rename, so a crash mid-write can never leave a torn state file (same atomic-write discipline
+// as lambo_pak_save). Only the RAM copy needs the frame boundary; fopen/fwrite/fflush/rename do
+// not, so they run off-thread.
 static void do_save(uint8_t* rdram, const char* path) {
     char tmp[1100];
     if ((size_t)snprintf(tmp, sizeof(tmp), "%s.tmp", path) >= sizeof(tmp)) {
         LAMBO_LOG("state", "save: path too long: %s\n", path);
         return;
     }
-    FILE* f = fopen(tmp, "wb");
-    if (f == NULL) {
-        LAMBO_LOG("state", "save: cannot open %s for write\n", tmp);
-        return;
-    }
-    uint8_t* snapshot = (uint8_t*)malloc(RDRAM_SNAP_SIZE);
-    if (snapshot == NULL) {
+    const size_t payload_size = (size_t)RDRAM_SNAP_SIZE + (size_t)LAMBO_FIELD_SIZE;
+    const size_t image_size = sizeof(state_header_t) + payload_size;
+    uint8_t* image = (uint8_t*)malloc(image_size);
+    if (image == NULL) {
         LAMBO_LOG("state", "save: out of memory\n");
-        fclose(f);
-        remove(tmp);
         return;
     }
+
+    state_header_t* h = (state_header_t*)image;
+    uint8_t* snapshot = image + sizeof(*h);
+    const uint64_t copy_started = lambo_savestate_io_now_us();
     memcpy(snapshot, rdram, RDRAM_SNAP_SIZE);
     lambo_graphics_fog_snapshot(rdram, snapshot);
-    state_header_t h;
-    memset(&h, 0, sizeof(h));
-    memcpy(h.magic, STATE_MAGIC, 8);
-    h.version    = STATE_VERSION;
-    h.rdram_size = RDRAM_SNAP_SIZE;
-    h.state      = (uint16_t)MEM_H(0, (gpr)(int32_t)STATE_VAR);
-    h.reserved[0] = STATE_FOG_AUTHORED;
-    h.reserved[1] = 0x52414345u;
-    int ok = (fwrite(&h, 1, sizeof(h), f) == sizeof(h)) &&
-             (fwrite(snapshot, 1, RDRAM_SNAP_SIZE, f) == RDRAM_SNAP_SIZE) &&
-             (fwrite(rdram + (LAMBO_FIELD_BASE & 0xFFFFFFu), 1, LAMBO_FIELD_SIZE, f) == LAMBO_FIELD_SIZE);
-    free(snapshot);
-    // Flush before rename so the rename publishes a fully-written file.
-    ok = ok && (fflush(f) == 0);
-    fclose(f);
-    if (!ok) {
-        LAMBO_LOG("state", "save: write failed for %s\n", path);
-        remove(tmp);
-        return;
+    if (LAMBO_FIELD_SIZE != 0) {
+        memcpy(snapshot + RDRAM_SNAP_SIZE,
+               rdram + (LAMBO_FIELD_BASE & 0xFFFFFFu), LAMBO_FIELD_SIZE);
     }
-    // Publish atomically. POSIX rename() replaces the target in place; Windows rename() fails
-    // if the target exists, so only there do we remove-then-retry. Crucially we do NOT remove
-    // the existing good save until the first rename has failed, and on final failure we KEEP
-    // the .tmp (it holds the full snapshot) -- so a previously-working save is never lost with
-    // nothing to show for it.
-    if (rename(tmp, path) != 0) {
-        remove(path);
-        if (rename(tmp, path) != 0) {
-            LAMBO_LOG("state", "save: could not publish %s; snapshot kept at %s\n", path, tmp);
-            return;
-        }
+    const uint64_t copy_us = lambo_savestate_io_now_us() - copy_started;
+
+    memset(h, 0, sizeof(*h));
+    memcpy(h->magic, STATE_MAGIC, 8);
+    h->version    = STATE_VERSION;
+    h->rdram_size = RDRAM_SNAP_SIZE;
+    h->state      = (uint16_t)MEM_H(0, (gpr)(int32_t)STATE_VAR);
+    h->reserved[0] = STATE_FOG_AUTHORED;
+    h->reserved[1] = 0x52414345u;
+
+    LAMBO_LOG_DEBUG("state", "snapshot copy took %llu us (%zu bytes)\n",
+                    (unsigned long long)copy_us, payload_size);
+    if (lambo_savestate_io_submit(path, image, image_size) != 0) {
+        /* submit releases the buffer on failure */
+        LAMBO_LOG_ERROR("state", "save: could not queue %s\n", path);
     }
-    LAMBO_LOG("state", "saved %u bytes to %s (state=%u)\n",
-            RDRAM_SNAP_SIZE + LAMBO_FIELD_SIZE, path, h.state);
+}
+
+// Explicit exit paths that bypass atexit (std::_Exit) call this next to
+// lambo_pak_storage_flush() so an in-flight developer snapshot is completed.
+void lambo_savestate_flush(void) {
+    lambo_savestate_io_flush();
+}
+
+// Exit-time variant: complete queued work and join the writer thread.
+void lambo_savestate_shutdown(void) {
+    lambo_savestate_io_shutdown();
 }
 
 // Load <path> fully into a scratch buffer and validate BEFORE overwriting any live RAM, so

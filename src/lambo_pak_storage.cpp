@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -20,9 +21,15 @@ struct StorageState {
     std::condition_variable changed;
     std::thread worker;
     std::string path{"lambo_controller_pak.mpk"};
-    std::array<uint8_t, LAMBO_PAK_SIZE> pending{};
+    // The game-thread image. Writes go through lambo_pak_storage_write_block()
+    // under image_mutex; the worker copies it once at the debounce deadline
+    // instead of copying 32 KiB on every 32-byte Joybus block write.
+    std::mutex image_mutex;
+    const uint8_t* live_image = nullptr;
     std::chrono::steady_clock::time_point deadline{};
     uint64_t generation = 0;
+    uint64_t copy_count = 0;
+    uint64_t last_copy_us = 0;
     bool dirty = false;
     bool writing = false;
     bool flush_requested = false;
@@ -47,10 +54,9 @@ LamboPakIoResult idle_result() {
     return result;
 }
 
-void publish_snapshot(StorageState& storage, std::unique_lock<std::mutex>& lock) {
-    const auto image = storage.pending;
-    const std::string path = storage.path;
-    storage.dirty = false;
+void publish_snapshot(StorageState& storage, std::unique_lock<std::mutex>& lock,
+                      const std::array<uint8_t, LAMBO_PAK_SIZE>& image,
+                      const std::string& path) {
     storage.writing = true;
     lock.unlock();
     const LamboPakIoResult result =
@@ -87,7 +93,29 @@ void storage_worker() {
         }
 
         if (!storage.dirty) continue;
-        publish_snapshot(storage, lock);
+        if (storage.live_image == nullptr) {
+            storage.dirty = false;
+            continue;
+        }
+
+        // Snapshot once at the quiet end of the burst. image_mutex also guards
+        // game-thread block writes, so this copy cannot tear a 32-byte block.
+        auto image = std::make_unique<std::array<uint8_t, LAMBO_PAK_SIZE>>();
+        const auto copy_started = std::chrono::steady_clock::now();
+        {
+            std::lock_guard image_lock(storage.image_mutex);
+            std::memcpy(image->data(), storage.live_image, LAMBO_PAK_SIZE);
+        }
+        storage.last_copy_us = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - copy_started).count());
+        storage.copy_count++;
+        const std::string path = storage.path;
+        storage.dirty = false;
+        LAMBO_LOG_DEBUG("pak", "snapshot copy #%llu took %llu us\n",
+                        (unsigned long long)storage.copy_count,
+                        (unsigned long long)storage.last_copy_us);
+        publish_snapshot(storage, lock, *image, path);
         if (!storage.dirty) storage.flush_requested = false;
         storage.changed.notify_all();
         if (storage.stopping && !storage.dirty) return;
@@ -129,11 +157,31 @@ extern "C" void lambo_pak_storage_schedule_save(const uint8_t image[LAMBO_PAK_SI
     StorageState& storage = state();
     std::lock_guard lock(storage.mutex);
     start_worker(storage);
-    std::memcpy(storage.pending.data(), image, storage.pending.size());
+    const bool first_dirty = !storage.dirty;
+    storage.live_image = image;
     storage.dirty = true;
     storage.generation++;
     storage.deadline = std::chrono::steady_clock::now() + kSaveDebounce;
-    storage.changed.notify_all();
+    // Later blocks in a burst only extend the deadline; the worker does not
+    // need a wakeup until it either reaches the quiet deadline or flushes.
+    if (first_dirty) storage.changed.notify_all();
+}
+
+extern "C" void lambo_pak_storage_write_block(uint8_t image[LAMBO_PAK_SIZE],
+                                              unsigned address,
+                                              const uint8_t* data,
+                                              size_t size) {
+    StorageState& storage = state();
+    std::lock_guard lock(storage.image_mutex);
+    for (size_t k = 0; k < size; k++) {
+        image[(address + k) & (LAMBO_PAK_SIZE - 1u)] = data[k];
+    }
+}
+
+extern "C" uint64_t lambo_pak_storage_copy_count(void) {
+    StorageState& storage = state();
+    std::lock_guard lock(storage.mutex);
+    return storage.copy_count;
 }
 
 extern "C" LamboPakIoResult lambo_pak_storage_flush(void) {

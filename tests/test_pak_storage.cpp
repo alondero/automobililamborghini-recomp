@@ -68,8 +68,21 @@ int main() {
     expect(std::strcmp(lambo_pak_storage_path(), second.string().c_str()) == 0,
            "reconfiguration is not hidden by one-shot path caching");
 
-    for (unsigned write = 0; write < 20; ++write) {
-        image[0x500 + write] ^= 0xffu;
+    // A full Pak save is 1,024 32-byte block writes. Before issue #402 this
+    // copied the whole 32 KiB image per block (~32 MiB of memcpy); now the
+    // worker copies it once at the debounce boundary.
+    std::array<uint8_t, 32> block{};
+    for (unsigned write = 0; write < 1024; ++write) {
+        const unsigned address = write * block.size();
+        for (size_t k = 0; k < block.size(); ++k) {
+            const unsigned pos = address + k;
+            // Keep the four ID blocks (0x20..0x100) checksum-valid so the
+            // published file can be reloaded by the real reader.
+            block[k] = (pos >= 0x20u && pos < 0x100u)
+                           ? image[pos]
+                           : static_cast<uint8_t>(image[pos] ^ 0xffu);
+        }
+        lambo_pak_storage_write_block(image.data(), address, block.data(), block.size());
         lambo_pak_storage_schedule_save(image.data());
     }
     expect(!std::filesystem::exists(second),
@@ -77,11 +90,16 @@ int main() {
     for (unsigned attempt = 0; attempt < 200 && !std::filesystem::exists(second); ++attempt)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     expect(std::filesystem::exists(second), "the debounced worker publishes a completed save burst");
+    expect(lambo_pak_storage_copy_count() == 1,
+           "a 1,024-block write burst copies the 32 KiB image once at the debounce boundary");
 
-    image[0x600] ^= 0xffu;
+    const uint8_t byte = image[0x600] ^ 0xffu;
+    lambo_pak_storage_write_block(image.data(), 0x600, &byte, 1);
     lambo_pak_storage_schedule_save(image.data());
     const LamboPakIoResult flushed = lambo_pak_storage_flush();
     expect(flushed.ok, "explicit flush publishes the pending save batch");
+    expect(lambo_pak_storage_copy_count() == 2,
+           "an explicit flush copies the image once, not once per block");
     {
         std::lock_guard lock(writer_observation_mutex);
         expect(!writer_thread_changed,
