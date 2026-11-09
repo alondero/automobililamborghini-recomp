@@ -23,7 +23,8 @@ typedef struct LamboVehicleRecord {
     int16_t gear_state;
     int16_t throttle_demand;
     int16_t brake_latch;
-    uint8_t unknown_ae[6];
+    uint8_t unknown_ae[4];
+    int16_t steering_demand;
     int16_t steering_accumulator;
     uint8_t unknown_b6[0x1A];
     float physics_scratch[4];
@@ -60,6 +61,7 @@ LAMBO_LAYOUT_ASSERT(offsetof(LamboVehicleRecord, brake_demand) == 0xA0, "brake o
 LAMBO_LAYOUT_ASSERT(offsetof(LamboVehicleRecord, gear_state) == 0xA8, "gear offset");
 LAMBO_LAYOUT_ASSERT(offsetof(LamboVehicleRecord, throttle_demand) == 0xAA, "throttle offset");
 LAMBO_LAYOUT_ASSERT(offsetof(LamboVehicleRecord, brake_latch) == 0xAC, "latch offset");
+LAMBO_LAYOUT_ASSERT(offsetof(LamboVehicleRecord, steering_demand) == 0xB2, "steering demand offset");
 LAMBO_LAYOUT_ASSERT(offsetof(LamboVehicleRecord, steering_accumulator) == 0xB4, "steering offset");
 LAMBO_LAYOUT_ASSERT(offsetof(LamboVehicleRecord, physics_scratch) == 0xD0, "scratch offset");
 #undef LAMBO_LAYOUT_ASSERT

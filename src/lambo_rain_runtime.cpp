@@ -5,6 +5,7 @@
 #include "lambo_mod_gameplay.h"
 #include "lambo_sky_panorama.h"
 #include "lambo_log.h"
+#include "lambo_vehicle.h"
 #include "librecomp/addresses.hpp"
 #include "rt64_extended_gbi.h"
 #include <algorithm>
@@ -31,7 +32,12 @@ int slot(uint8_t* ram) {
     uint32_t task=word(ram,0x800A2BFC);
     return task==0x800BF240u ? 0 : task==0x800BF240u+0x7A50u ? 1 : -1;
 }
+// Race time while rain animates. Retro streaks use it directly; doubles keep
+// sub-microsecond precision for centuries of play.
+double race_time=0;
+// Race time wrapped at cycle_seconds: ripples, lens drops and the ripple cache key.
 float seconds=0;
+std::array<Flow,4> flows; // Modern streaks per view
 Counters stats;
 struct Buffer {
     uint32_t address=0,capacity=0;
@@ -295,6 +301,21 @@ bool shelter(uint8_t* ram,unsigned s) {
     uint32_t record=records+segment*64;
     return current(ram,record,s,segments.find(record)).sheltered;
 }
+// The motion of a view's car: speed (vehicle+0x90, the speedometer's km/h)
+// and steering demand (vehicle+0xB2, about +-35 at full lock). View N follows
+// the car on controller channel N+1. Without one, the rain stays at rest.
+Motion car_motion(uint8_t* ram,int player) {
+    for (uint32_t i=0;i<LAMBO_VEHICLE_CAPACITY;++i) {
+        uint32_t vehicle=LAMBO_VEHICLE_BASE+i*uint32_t(sizeof(LamboVehicleRecord));
+        // Flag 8 marks a populated car slot (docs/race-fields.md); a free slot keeps a stale channel.
+        if (!(half(ram,vehicle)&8) || half(ram,vehicle+offsetof(LamboVehicleRecord,channel))!=player+1) continue;
+        float forward=std::clamp(float(word(ram,vehicle+offsetof(LamboVehicleRecord,speed)))/3.6f,-40.0f,120.0f);
+        float steer=std::clamp(float(half(ram,vehicle+offsetof(LamboVehicleRecord,steering_demand)))/35,-1.0f,1.0f);
+        // A car turns harder as it gains speed, up to about 0.6 rad/s; reversing turns the other way.
+        return {forward,steer*0.6f*std::clamp(forward/15,-1.0f,1.0f)};
+    }
+    return {};
+}
 // Leaving the race or changing circuit starts a new epoch. Viewport count
 // does not change track geometry, so it is not part of the epoch.
 void epoch(uint8_t* ram) {
@@ -310,6 +331,7 @@ void epoch(uint8_t* ram) {
 namespace lambo::rain {
 const Counters& counters() { return stats; }
 float animation_seconds() { return seconds; }
+const Flow& view_flow(int player) { return flows[size_t(std::clamp(player,0,3))]; }
 }
 
 extern "C" void lambo_rain_invalidate(void) { invalidate(); }
@@ -327,9 +349,14 @@ extern "C" void lambo_rain_frame(uint8_t* ram) {
     using Clock=std::chrono::steady_clock;
     static auto last=Clock::now();
     auto now=Clock::now();
-    float dt=std::chrono::duration<float>(now-last).count(); last=now;
-    if (settings(ram) && half(ram,0x800CE808)==0) seconds+=std::min(dt,0.1f);
-    if (half(ram,0x800CE6AC)!=8) seconds=0;
+    float dt=std::min(std::chrono::duration<float>(now-last).count(),0.1f); last=now;
+    if (settings(ram) && half(ram,0x800CE808)==0) {
+        race_time+=dt;
+        int players=std::clamp(int(half(ram,LAMBO_GUEST_PLAYER_COUNT_ADDR)),1,4);
+        for (int p=0;p<players;++p) advance(flows[size_t(p)],car_motion(ram,p),dt);
+    }
+    if (half(ram,0x800CE6AC)!=8) { race_time=0; flows={}; }
+    seconds=float(std::fmod(race_time,double(cycle_seconds)));
 }
 
 extern "C" unsigned lambo_rain_active(uint8_t* ram) { return settings(ram)!=0; }
@@ -345,13 +372,15 @@ extern "C" void lambo_rain_publish(uint8_t* ram,uint32_t root,uint32_t bytes) {
     if (half(ram,0x800CE6AC)==8 && (++sampled<=4 || sampled%1800==0))
         LAMBO_LOG("rain", "publish slot=%d settings=%x insertions=%zu records=%u bytes=%u "
             "segments=%zu decodes=%llu builds=%llu full_writes=%llu ripple_writes=%llu "
-            "road_buffers=%u/%u road_bytes=%llu peak_road_bytes=%llu heap_bytes=%llu peak_heap_bytes=%llu\n",
+            "road_buffers=%u/%u road_bytes=%llu peak_road_bytes=%llu heap_bytes=%llu peak_heap_bytes=%llu "
+            "view1_motion=%.1fm/s,%.2frad/s\n",
             index,settings(ram),task.insertions.size(),task.records,bytes,segments.size(),
             (unsigned long long)stats.decodes,(unsigned long long)stats.builds,
             (unsigned long long)stats.full_writes,(unsigned long long)stats.ripple_writes,
             stats.road_buffers[0],stats.road_buffers[1],
             (unsigned long long)stats.road_bytes,(unsigned long long)stats.peak_road_bytes,
-            (unsigned long long)stats.heap_bytes,(unsigned long long)stats.peak_heap_bytes);
+            (unsigned long long)stats.heap_bytes,(unsigned long long)stats.peak_heap_bytes,
+            flows[0].motion.forward,flows[0].motion.yaw);
     root|=0x80000000u;
     uint32_t owner=word(ram,0x800A2BFC);
     if (task.insertions.empty() || root!=owner+0x1C0 || bytes<40 ||
@@ -460,7 +489,7 @@ void modern_camera(uint8_t* ram,int index,int players,int player,unsigned s) {
     // RT64 keeps an orthographic view's aspect and widens it to the output.
     const float wide=vw*output_width()/320;
     static ScreenMesh mesh;
-    screen_rain(wide,vh,player,seconds,float((s>>8)&127)/100,(s&0x10000)!=0,mesh);
+    screen_rain(wide,vh,player,seconds,flows[size_t(player)],float((s>>8)&127)/100,(s&0x10000)!=0,mesh);
     if (mesh.vertices.empty()) return;
 
     // Guest buffer, written in native word order through half()/store(): an
@@ -577,8 +606,9 @@ extern "C" void lambo_rain_camera(uint8_t* ram) {
     int count=int(48*intensity);
     for (int i=0;i<count;++i) {
         uint32_t seed=hash(uint32_t(i+player*619));
-        float y=std::floor(std::fmod(float(seed%1000)/1000*h+seconds*140,h+20)-20);
-        float x=std::floor(std::fmod(float((seed>>10)%1000)/1000*w+seconds*9,w));
+        // Unwrapped race time, in doubles: these speeds share no period with the cycle.
+        float y=float(std::floor(std::fmod(seed%1000/1000.0*h+race_time*140,h+20.0)-20));
+        float x=float(std::floor(std::fmod((seed>>10)%1000/1000.0*w+race_time*9,double(w))));
         for (int j=0;j<2;++j) rect(x0+x+float(j),y0+y+float(j)*2,1,4,0xB6CBDD4Cu);
     }
     if (s&0x10000) for (int i=0;i<7;++i) {

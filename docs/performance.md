@@ -483,6 +483,19 @@ These figures are in the range of the cached figures above. That was one run
 with other work on the machine, so it shows no measurable regression and makes
 no speed-up claim. Retro output is unchanged.
 
+Issue #410 made the streaks a drop volume that follows each view's car (see
+[Rain rendering](rain.md#streaks-follow-the-car)). One later run on the same
+machine, with the benchmark's views at rest:
+
+| Producers, 25 segments | Steady per task (µs) | Steady allocations |
+| --- | ---: | ---: |
+| 36 faces, Modern, 1P | 105 | 0 |
+| 36 faces, Modern, 4P | 112 | 0 |
+| 120 faces, Modern, 1P | 430 | 0 |
+| 120 faces, Modern, 4P | 523 | 0 |
+
+These are in the same range, so the volume adds no measurable cost.
+
 ## Rain road buffer memory (2026-11-09)
 
 Issue #398. Each road buffer was allocated at the 12,000-vertex worst case,

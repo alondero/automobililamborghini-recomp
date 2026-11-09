@@ -3,6 +3,7 @@
 #include "recomp.h"
 #include "rt64_extended_gbi.h"
 #include "lambo_log.h"
+#include "lambo_vehicle.h"
 #include "rain_reference.h"
 #include <algorithm>
 #include <array>
@@ -532,8 +533,11 @@ void run(uint8_t* ram) {
 
     // Every shape fits one vertex load, at every intensity and view size.
     lambo::rain::ScreenMesh mesh;
-    for (float wide:{213.0f,427.0f,853.0f}) for (float tall:{120.0f,240.0f}) for (float when:{0.0f,5.5f,9.9f}) {
-        lambo::rain::screen_rain(wide,tall,1,when,1.0f,true,mesh);
+    lambo::rain::Flow fast;
+    for (int i=0;i<60;++i) lambo::rain::advance(fast,{80,0.4f},1.0f/60);
+    for (float wide:{213.0f,427.0f,853.0f}) for (float tall:{120.0f,240.0f}) for (float when:{0.0f,5.5f,9.9f})
+    for (const auto& flow:{lambo::rain::Flow{},fast}) {
+        lambo::rain::screen_rain(wide,tall,1,when,flow,1.0f,true,mesh);
         for (const auto& shape:mesh.shapes)
             require(shape.count<=lambo::rain::screen_shape_vertices && shape.index_count%3==0,"rain shapes fit one vertex load");
     }
@@ -543,6 +547,35 @@ void run(uint8_t* ram) {
     require(wide.triangles.size()>=200 && wide.balanced,"Heavy Modern rain fits at 32:9");
     require_inside(wide,0,0,320,240,"32:9 rain fills the widened view");
     target_aspect=16.0f/9;
+
+    // Each view's streaks follow the car on its controller channel: speed at
+    // vehicle+0x90 (km/h) and steering demand at vehicle+0xB2.
+    auto car=[](uint32_t slot,int channel,int kmh,int steer,bool populated=true) {
+        uint32_t v=LAMBO_VEHICLE_BASE+slot*uint32_t(sizeof(LamboVehicleRecord));
+        h(v)=populated ? 8 : 0;
+        h(v+offsetof(LamboVehicleRecord,channel))=int16_t(channel);
+        w(v+offsetof(LamboVehicleRecord,speed))=kmh;
+        h(v+offsetof(LamboVehicleRecord,steering_demand))=int16_t(steer);
+    };
+    // A free slot keeps a stale channel; the populated car after it is the one followed.
+    car(1,1,300,-35,false); car(3,2,216,35); car(5,1,0,0);
+    for (int f=0;f<30;++f) { cameras(modern,2,f%2); cache::pause_tick(); }
+    const auto& driving=lambo::rain::view_flow(1);
+    require(lambo::rain::view_flow(0).motion.forward==0 && lambo::rain::view_flow(0).motion.yaw==0,
+        "a parked car leaves its view's rain at rest, whatever a free slot holds");
+    require(driving.motion.forward>40 && driving.motion.forward<=60 && driving.motion.yaw>0.3f,
+        "the second view follows the car on channel 2: 216 km/h is 60 m/s, steering right turns right");
+    // Pause holds the rain where it is.
+    h(0x800CE808)=1;
+    auto held=driving.slabs;
+    cameras(modern,2); cache::pause_tick(); cameras(modern,2,1);
+    require(driving.slabs[2].approach==held[2].approach && driving.slabs[0].fall==held[0].fall,"pause stops the streaks");
+    h(0x800CE808)=0;
+    // Leaving the race resets every view.
+    h(0x800CE6AC)=7; cameras(modern,2);
+    require(lambo::rain::view_flow(1).motion.forward==0,"leaving the race settles the rain");
+    h(0x800CE6AC)=8;
+    car(1,0,0,0,false); car(3,0,0,0,false); car(5,0,0,0,false);
 }
 }
 

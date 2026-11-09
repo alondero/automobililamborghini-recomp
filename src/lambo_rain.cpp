@@ -232,31 +232,104 @@ void blob(ScreenMesh& mesh,float x,float y,float rx,float ry,int sides,uint32_t 
         if (rings==2) { s.triangle(a,uint8_t(a+sides),uint8_t(b+sides)); s.triangle(a,uint8_t(b+sides),b); }
     }
 }
-// Far, middle and near rain: nearer streaks are longer, faster, wider and brighter.
-struct Layer { float share,speed,length,width,alpha; };
-constexpr Layer layers[3]{{0.45f,150,8,0.30f,70},{0.35f,250,15,0.42f,95},{0.20f,400,27,0.62f,125}};
+// The drop volume, in metres in front of the camera. Far, middle and near
+// slabs: nearer streaks are longer, faster, wider and brighter. At rest the
+// slabs reproduce the old flat layers (about 150, 250 and 400 native px/s
+// falls, 8-27 px streaks at 240 lines). Stylized, not the game's camera FOV.
+constexpr float tan_half_fov=0.6f;  // vertical
+constexpr float fall_speed=9;       // terminal velocity of rain
+constexpr float wind=0.17f*fall_speed; // streaks fall to the right, tails trail up-left
+constexpr float exposure=0.06f;     // motion-blur time that sets streak length
+constexpr float visible_streaks=250; // at full intensity in a 4:3 one-player view
+struct Layer {
+    float share,near,far,width,alpha;
+    // The box tiles sideways, so any view width is covered; vertically it
+    // covers the frustum at the far edge, with room for streak tails.
+    constexpr float height() const { return 2*far*tan_half_fov*1.25f; }
+    constexpr float width_box() const { return height()*4/3; }
+    constexpr float depth() const { return far-near; }
+    // Drops in the box, so a 4:3 view sees share * visible_streaks of them.
+    constexpr int drops() const {
+        float seen=(far*far*far-near*near*near)/(3*far*far*depth()*1.25f*1.25f);
+        return int(visible_streaks*share/seen);
+    }
+};
+constexpr Layer layers[3]{{0.45f,10,16,0.30f,70},{0.35f,5.5f,9,0.42f,95},{0.20f,3.2f,5.2f,0.62f,125}};
+float wrap(float value,float period) {
+    float r=value-period*std::floor(value/period);
+    return r<period ? r : 0; // floor rounding can land exactly on the period
 }
-void screen_rain(float width,float height,int player,float seconds,float intensity,bool droplets,ScreenMesh& mesh) {
+// A forward-moving drop that passes the near edge reappears at the far edge.
+// Fading both edges hides that jump; at rest nothing jumps, so nothing fades.
+float depth_fade(const Layer& l,float z,float forward) {
+    float edge=std::clamp(std::min(z-l.near,l.far-z)/(0.25f*l.depth()),0.0f,1.0f);
+    return 1-std::clamp(std::abs(forward)/4,0.0f,1.0f)*(1-edge);
+}
+}
+void advance(Flow& flow,Motion target,float dt) {
+    if (!(dt>0) || !std::isfinite(dt) || !std::isfinite(target.forward) || !std::isfinite(target.yaw)) return;
+    // Ease toward the car's motion so a warp or a crash does not snap the rain.
+    float k=std::min(dt/0.25f,1.0f);
+    flow.motion.forward+=(target.forward-flow.motion.forward)*k;
+    flow.motion.yaw+=(target.yaw-flow.motion.yaw)*k;
+    for (int i=0;i<3;++i) {
+        const Layer& l=layers[i];
+        auto& slab=flow.slabs[i];
+        // Turning sweeps the world sideways; at the slab's middle depth that is yaw * depth.
+        float side=wind-flow.motion.yaw*(l.near+l.far)/2;
+        slab.fall=wrap(slab.fall+fall_speed*dt,l.height());
+        slab.approach=wrap(slab.approach+flow.motion.forward*dt,l.depth());
+        slab.drift=wrap(slab.drift+side*dt,l.width_box());
+    }
+}
+void screen_rain(float width,float height,int player,float seconds,const Flow& flow,float intensity,
+        bool droplets,ScreenMesh& mesh) {
     mesh.vertices.clear(); mesh.indices.clear(); mesh.shapes.clear();
     if (!(width>0) || !(height>0) || !std::isfinite(seconds) || !(intensity>0)) return;
     intensity=std::min(intensity,1.0f);
     const float s=height/240; // split-screen views are half height
-    const float slant=0.17f;  // wind: streaks fall to the right, tails trail up-left
     // Count follows view area up to 16:9; wider outputs keep that count, so the
-    // camera buffer bound holds and rain is sparser there.
+    // camera buffer bound holds and rain is sparser there. A fixed subset of
+    // the drops gives it: a taller view's frustum sees more of the volume.
     constexpr float widest_area=(16.0f/9)/(4.0f/3);
-    const int count=int(250*intensity*std::min(width*height/(320.0f*240),widest_area));
-    for (int i=0;i<count;++i) {
-        uint32_t seed=hash(uint32_t(i)*0x9E3779B9u+uint32_t(player)*0x85EBCA6Bu+1);
-        float pick=unit(seed);
-        const Layer& layer=layers[pick<layers[0].share ? 0 : pick<layers[0].share+layers[1].share ? 1 : 2];
-        float length=layer.length*s*(0.75f+0.5f*unit(hash(seed+1)));
-        float speed=layer.speed*s*(0.9f+0.2f*unit(hash(seed+2)));
-        float span=height+length; // the head enters at the top edge, the tail leaves the bottom
-        float y=std::fmod(unit(hash(seed+3))*span+seconds*speed,span);
-        float x=std::fmod(unit(hash(seed+4))*width+slant*seconds*speed,width);
-        float alpha=layer.alpha*(0.7f+0.3f*unit(hash(seed+5)))*(0.75f+0.25f*intensity);
-        streak(mesh,x,y,-slant*length,-length,layer.width*std::max(s,0.75f),0xD2DEEA,alpha);
+    const float area=std::min(width*height/(320.0f*240),widest_area);
+    const float subset=intensity*area/((width/height)/(4.0f/3));
+    // Variance above the expected count is bounded so the worst case still fits the camera buffer.
+    const int limit=int(visible_streaks*intensity*area*1.15f);
+    const float f=height/2/tan_half_fov,cx=width/2,cy=height/2;
+    const float forward=flow.motion.forward,yaw=flow.motion.yaw;
+    int drawn=0;
+    for (int index=0;index<3;++index) {
+        const Layer& l=layers[index];
+        const auto& slab=flow.slabs[index];
+        const float box=l.width_box(),tall=l.height();
+        const int drops=int(float(l.drops())*subset);
+        for (int i=0;i<drops && drawn<limit;++i) {
+            uint32_t seed=hash(uint32_t(i)*0x9E3779B9u+uint32_t(player)*0x85EBCA6Bu+uint32_t(index)*0x632BE5ABu+1);
+            float z=l.near+wrap(unit(hash(seed+3))*l.depth()-slab.approach,l.depth());
+            float y=tall/2-wrap(unit(hash(seed+2))*tall+slab.fall,tall);
+            float x=wrap(unit(hash(seed+1))*box+slab.drift,box)-box/2;
+            // Where the drop was one exposure ago, relative to the moving camera.
+            float vx=wind-yaw*z,vy=-fall_speed,vz=-forward;
+            float tz=std::clamp(z-vz*exposure,z*0.55f,z*1.8f);
+            float tx=x-vx*exposure,ty=y-vy*exposure;
+            float alpha=l.alpha*(0.7f+0.3f*unit(hash(seed+5)))*(0.75f+0.25f*intensity)*depth_fade(l,z,forward);
+            float hy=cy-f*y/z,dy=cy-f*ty/tz-hy;
+            // The box repeats sideways; draw every copy that reaches the view.
+            // Head and tail screen x both grow with the copy's offset, so start
+            // at the first copy whose head or tail can reach the left edge.
+            float left=std::min((-2-cx)*z/f,(-2-cx)*tz/f-(tx-x));
+            for (float copy=x-box*std::ceil((x-left)/box);drawn<limit;copy+=box) {
+                float hx=cx+f*copy/z,dx=cx+f*(copy+tx-x)/tz-hx;
+                if (std::min(hx,hx+dx)>width+2) break;
+                if (std::max(hx,hx+dx)<-2 || std::max(hy,hy+dy)<-2 || std::min(hy,hy+dy)>height+2) continue;
+                // Very near drops at speed would streak across the view; cap the smear.
+                float length=std::sqrt(dx*dx+dy*dy),most=height*0.35f;
+                float scale=length>most ? most/length : 1;
+                streak(mesh,hx,hy,dx*scale,dy*scale,l.width*std::max(s,0.75f),0xD2DEEA,alpha);
+                ++drawn;
+            }
+        }
     }
     if (!droplets) return;
     const int drops=int(10+8*intensity);
@@ -275,7 +348,7 @@ void screen_rain(float width,float height,int player,float seconds,float intensi
         blob(mesh,x-rx*0.38f,y-ry*0.42f,rx*0.3f,ry*0.3f,8,screen_color(0xFFFFFF,210*fade),screen_color(0xFFFFFF,0),0);
     }
 }
-uint16_t cloud_pixel(int x,int y,bool modern) {
+float cloud_level(int x,int y,bool modern) {
     // Periodic panoramic noise: eight 64-pixel tiles, two 32-pixel rows.
     if (!modern) { x=(x/4)*4; y=(y/3)*3; }
     float noise=0, amplitude=1, total=0;
@@ -291,7 +364,14 @@ uint16_t cloud_pixel(int x,int y,bool modern) {
         total+=amplitude; amplitude*=0.5f;
     }
     float horizon=std::clamp(float(y)/63,0.0f,1.0f);
-    int grey=int(25+noise/total*48+horizon*20);
-    return uint16_t(((grey/8)<<11)|(((grey+4)/8)<<6)|(((grey+10)/8)<<1)|1);
+    return float(int(25+noise/total*48+horizon*20))/8;
+}
+uint16_t cloud_pixel(int x,int y,bool modern) {
+    // RGBA16 holds about nine steps of this grey range. Every channel takes the
+    // same step, so the clouds keep one blue-grey tint: rounding each channel at
+    // its own grey painted green and blue bands. Soft grey steps remain; in game
+    // a dither read as a hatch and showed each sky tile's clamped edge.
+    int level=std::clamp(int(cloud_level(x,y,modern)+0.5f),0,30);
+    return uint16_t((level<<11)|(level<<6)|((level+1)<<1)|1);
 }
 }

@@ -8,7 +8,9 @@ This is original rain artwork and geometry, not a reproduction of JP graphics.
 In the JP weather mod, choose Wet and select **Retro** or **Modern** under
 Rain style. Retro uses chunky pixel streaks, small square camera drops and flat
 puddle highlights. Modern draws thin, slanted streaks that fade from head to
-tail in three depth layers. Its lens drops are round, with a dark rim, a bright
+tail in three depth layers. They follow your car: as speed rises they stream
+out of the middle of the view and stretch, and steering sweeps them sideways.
+Modern lens drops are round, with a dark rim, a bright
 glint, and trails when they run. Its puddles have soft edges and animated
 ripples. Modern is drawn at the output resolution, not the N64's. Both styles
 replace the sky with storm clouds and hide the sun flare. Choose Off to keep
@@ -53,11 +55,17 @@ display-list root; track assets and the native cursor remain unchanged.
 | 0x8000CF2C | follows road pointer store at CF28; t2 is the segment record |
 | 0x8000D7C0 | follows road pointer store at D7BC; t8 is the segment record |
 | 0x80005114 / 0x800053F4 | viewport completion / one-player pre-HUD seam |
+| Vehicle pool 0x80910000, stride 0x10C | read only; +0 s16 flag 8 marks a populated car, +0x0E s16 channel, +0x90 s32 speed in km/h, +0xB2 s16 steering demand |
 
 The existing [sky producer](sky-panorama.md) supplies clouds through immutable
 per-style, per-circuit RGBA16 tiles. Their periodic noise wraps at the panorama
 boundary, and the circuit's mirror flags are accounted for. Original source
-texture hashes and assets are not changed.
+texture hashes and assets are not changed. RGBA16 holds about nine steps of
+the cloud grey range. Every channel takes the same step, rounded to the
+nearest, so the clouds keep one blue-grey tint. Truncating each channel at its
+own offset once painted green and blue bands across the sky. Soft grey steps
+remain. An ordered dither removed them in game but read as a hatch and showed
+each tile's clamped edge.
 
 Road decoding accepts bounded absolute/physical-address F3DEX lists with
 native 16-byte vertices and triangle commands. Matrix changes, segmented
@@ -158,7 +166,9 @@ publish log with `--verbose` or `--lambo-debug`, with the live and peak guest
 heap held by road buffers (`road_bytes`, `peak_road_bytes`), by all rain blocks
 (`heap_bytes`, `peak_heap_bytes`), and the live road buffers in each slot
 (`road_buffers=slot0/slot1`). Counts are requested bytes. The heap itself may
-round a block up. The first four publications and every 1800th one are logged.
+round a block up. `view1_motion` is the eased speed (m/s) and turn (rad/s)
+that view one's streaks follow ([Streaks follow the car](#streaks-follow-the-car)).
+The first four publications and every 1800th one are logged.
 
 ## Camera rain
 
@@ -195,12 +205,55 @@ so the art is laid out across the widened view without stretching.
 `lambo::rain::screen_rain` builds the shapes, and the runtime encodes them.
 Streak count follows intensity and view area up to 16:9. Wider outputs keep
 the 16:9 count, so the worst case fits the buffer and the rain is sparser.
+Each view draws a fixed subset of its drops to get that count, and at most
+15% more than expected, so variance cannot overflow the buffer.
 Lens drops follow the Camera droplets setting. No texture is sampled.
+
+### Streaks follow the car
+
+Modern streaks are drops in a volume in front of the camera, in metres: far,
+middle and near slabs at 10-16, 5.5-9 and 3.2-5.2. They are projected with a
+stylized vertical field of view of about 62 degrees, not the game's camera.
+Each slab is a box that repeats sideways, so any view width is covered. At
+rest, drops fall at 9 m/s with a light wind and reproduce the old flat layers:
+about 150, 250 and 400 native px/s, and streaks of 8-27 px at 240 lines.
+
+A streak runs from the drop to where it was 0.06 s earlier, relative to the
+moving camera. Driving forward brings drops closer, so they stream out of the
+view centre and stretch. Turning sweeps them against the turn. A drop that
+passes the near edge of its slab reappears at the far edge. Both edges fade
+while the car moves, which hides that jump. The smear is capped at 35% of the
+view height.
+
+Each view follows the populated car on controller channel view + 1 (table
+above). Speed is converted from km/h, and steering demand of about +-35 maps
+to a turn of up to 0.6 rad/s, scaled down below 15 m/s. The view eases toward
+that motion over about a quarter second, so a warp or crash does not snap the
+rain. Without a matching car the rain stays at rest. Pause stops the streaks,
+and leaving the race resets every view.
+
+Verified in game (RT64/D3D12, circuit 1, Normal intensity): at 104 mph the
+streaks fan out from the view centre, and holding left or right logged a
+negative or positive turn. The logged view-one speed matched the speedometer.
+A four-player championship race (warp mode 3) had cars on channels 1-4 and
+drew rain in every quadrant, moving with each quadrant's own car.
+
+### Clock precision
+
+Streak positions are offsets of each slab's box, not time times speed. Every
+offset wraps at its box size, which leaves the drawing unchanged, so the state
+stays small for a race of any length. The time-only animation (Modern ripples
+and lens drops, Retro drops) uses the race time wrapped at 10 s. Ripples
+complete seven cycles in that period and lens drops one. Retro streaks share
+no period with it and use the unwrapped race time in double precision. The
+old float clock reached about 0.1 native px of error after an hour, which
+sub-pixel streaks could show as jitter.
 
 ## Limits and validation
 
 Puddle highlights and lens highlights are stylized raster art. They do not
-reflect cars or refract the framebuffer. Roof coverage uses horizontal triangles
+reflect cars or refract the framebuffer. Rain does not splash on the road or
+the cars. Roof coverage uses horizontal triangles
 decoded from the same segment's wall/scenery lists. Camera rain is suppressed
 for the whole covered segment, so transitions at tunnel portals are conservative.
 This is not a complete scene-wide shelter or collision system. Unsupported
@@ -239,6 +292,20 @@ buffers match the mesh size exactly, that a full 12,000-vertex
 mesh fits with guard bytes intact, and that growth, failed allocation, the
 200-buffer cap and leaving the race keep the guest heap counters balanced.
 These are synthetic records, not a replay of game frames.
+
+The geometry test also checks the moving streaks: they slant with the wind at
+rest, point out of the view centre and at least double in length at speed,
+and tilt against a turn. An hour of frames moves the volume as far per frame
+as the first seconds do. It checks the streak count for 1P, 2P, 32:9 and
+intensity, and that every sky texel keeps one tint and rounds to the nearest
+step. The producer test checks that each view follows its own channel and
+skips free car slots, and that pause and leaving the race hold or reset it.
+
+For three- and four-player Wet captures, use warp mode 3 (championship).
+Single race (mode 2) forces those player counts Dry, as on the JP cartridge.
+Mode 0 is a time trial: it builds only player one's car, so the other
+quadrants have nothing to follow and show only sky. That was the cause of the
+sky-only quadrants seen while fixing #409; real races are unaffected.
 
 The opt-in `lambo_rain_benchmark` measures the isolated functions and the
 producers for 25 synthetic segments; [Testing](testing.md) has the commands and

@@ -69,8 +69,28 @@ struct ScreenMesh {
     std::vector<uint8_t> indices; // triangle corners, relative to the shape's first vertex
     std::vector<ScreenShape> shapes;
 };
-void screen_rain(float width, float height, int player, float seconds, float intensity,
-    bool droplets, ScreenMesh& mesh);
+// Time-only animation (Modern ripples, lens drops) repeats every cycle_seconds:
+// ripples complete seven cycles and lens drops one. The animation clock wraps
+// at this period, so a long race keeps full float precision.
+constexpr float cycle_seconds = 10;
+// The view's motion through the rain: metres a second forward, radians a
+// second of yaw (positive turns right).
+struct Motion { float forward = 0, yaw = 0; };
+// One view's Modern streaks: drops in three depth slabs in front of the
+// camera. They fall, drift with the wind and the turn, and come closer as the
+// car drives forward. Each slab's offsets wrap at its own size, so the state
+// stays small however long the race runs. docs/rain.md, "Streaks follow the car".
+struct Flow {
+    Motion motion; // smoothed toward the car's motion
+    struct Slab { float fall = 0, approach = 0, drift = 0; };
+    std::array<Slab, 3> slabs{};
+};
+void advance(Flow& flow, Motion target, float dt);
+// seconds: the wrapped animation clock (lens drops).
+void screen_rain(float width, float height, int player, float seconds, const Flow& flow,
+    float intensity, bool droplets, ScreenMesh& mesh);
+// Storm cloud brightness before quantization, in 5-bit RGBA16 channel steps.
+float cloud_level(int x, int y, bool modern);
 uint16_t cloud_pixel(int x, int y, bool modern);
 uint32_t hash(uint32_t value);
 
@@ -86,7 +106,8 @@ struct Counters {
     std::array<uint32_t, 2> road_buffers{};       // live road buffers per task slot
 };
 const Counters& counters();
-float animation_seconds();
+float animation_seconds(); // wrapped at cycle_seconds
+const Flow& view_flow(int player);
 }
 
 extern "C" void lambo_rain_frame(uint8_t* ram);
