@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <map>
 #include <new>
 #include <thread>
 #include <vector>
@@ -24,16 +25,50 @@ void operator delete(void* p,size_t) noexcept { std::free(p); }
 extern "C" float lambo_sky_target_aspect() { return 16.0f/9; }
 volatile int g_log_threshold=LAMBO_LEVEL_WARN;
 void lambo_log_write(LamboLogLevel,const char*,const char*,...) {}
-namespace recomp {
-void* alloc(uint8_t* ram,size_t size) {
-    static size_t cursor=0x1000000;
-    size=(size+15)&~size_t(15);
-    if (cursor+size>0x8000000) return nullptr;
-    void* result=ram+cursor; cursor+=size; return result;
-}
-}
 void require(bool good,const char* message) {
     if (!good) { std::cerr<<message<<'\n'; std::exit(1); }
+}
+// Guest heap stand-in. Blocks never move or get reused, so a stale pointer can
+// never look valid, and 64 canary bytes follow each request to catch overruns.
+namespace heap {
+struct Block { size_t size; bool live; };
+std::map<uint8_t*,Block> blocks;
+size_t cursor=0x1000000,frees=0;
+bool refuse=false; // simulate an exhausted heap
+constexpr size_t guard=64;
+size_t live_bytes() {
+    size_t total=0;
+    for (auto& [p,b]:blocks) if (b.live) total+=b.size;
+    return total;
+}
+size_t live_blocks() {
+    size_t count=0;
+    for (auto& [p,b]:blocks) count+=b.live;
+    return count;
+}
+void check_canaries() {
+    for (auto& [p,b]:blocks) {
+        if (!b.live) continue;
+        size_t end=((b.size+15)&~size_t(15))+guard;
+        for (size_t i=b.size;i<end;++i) require(p[i]==0xA5,"allocation overran its requested size");
+    }
+}
+}
+namespace recomp {
+void* alloc(uint8_t* ram,size_t size) {
+    size_t rounded=(size+15)&~size_t(15);
+    if (heap::refuse || heap::cursor+rounded+heap::guard>0x8000000) return nullptr;
+    uint8_t* result=ram+heap::cursor;
+    std::memset(result+size,0xA5,rounded-size+heap::guard);
+    heap::cursor+=rounded+heap::guard;
+    heap::blocks[result]={size,true};
+    return result;
+}
+void free(uint8_t*,void* mem) {
+    auto found=heap::blocks.find(static_cast<uint8_t*>(mem));
+    require(found!=heap::blocks.end() && found->second.live,"free of a block that is not live");
+    found->second.live=false; ++heap::frees;
+}
 }
 
 // Cached producers against the frozen e053389 producer (tests/rain_reference.h).
@@ -43,15 +78,7 @@ int32_t& w(uint32_t a) { return MEM_W(0,int32_t(a)); }
 int16_t& h(uint32_t a) { return MEM_H(0,int32_t(a)); }
 constexpr uint32_t settings_at=0x80000100, records=0x80300000;
 // A grid of flat road faces at a per-record offset, loaded in 30-vertex batches.
-void road_list(uint32_t list,uint32_t vertices,int offset,int height) {
-    std::vector<lambo::rain::Triangle> faces;
-    for (int i=0;i<4;++i) for (int j=0;j<4;++j) {
-        float x=float(offset+i*1500),z=float(offset/3+j*1500),y=float(height+(i*7+j*3)%11);
-        lambo::rain::Point a{x,y,z},b{x+1500,y,z},c{x,y+5,z+1500},d{x+1500,y+3,z+1500};
-        faces.push_back({{a,b,c}}); faces.push_back({{b,d,c}});
-    }
-    using lambo::rain::Point;
-    faces.push_back({{Point{0,0,0},Point{0,900,0},Point{900,0,0}}}); // wall
+void write_list(uint32_t list,uint32_t vertices,const std::vector<lambo::rain::Triangle>& faces) {
     uint32_t at=list;
     for (size_t first=0;first<faces.size();first+=10) {
         size_t n=std::min<size_t>(10,faces.size()-first);
@@ -67,6 +94,30 @@ void road_list(uint32_t list,uint32_t vertices,int offset,int height) {
         vertices+=uint32_t(n*3*16);
     }
     w(at)=int32_t(0xB8000000u);
+}
+void road_list(uint32_t list,uint32_t vertices,int offset,int height) {
+    std::vector<lambo::rain::Triangle> faces;
+    for (int i=0;i<4;++i) for (int j=0;j<4;++j) {
+        float x=float(offset+i*1500),z=float(offset/3+j*1500),y=float(height+(i*7+j*3)%11);
+        lambo::rain::Point a{x,y,z},b{x+1500,y,z},c{x,y+5,z+1500},d{x+1500,y+3,z+1500};
+        faces.push_back({{a,b,c}}); faces.push_back({{b,d,c}});
+    }
+    using lambo::rain::Point;
+    faces.push_back({{Point{0,0,0},Point{0,900,0},Point{900,0,0}}}); // wall
+    write_list(list,vertices,faces);
+}
+// The decoder's 2048-triangle limit, with faces large enough to hold puddles:
+// the biggest mesh a road list can produce.
+void dense_road_list(uint32_t list,uint32_t vertices) {
+    std::vector<lambo::rain::Triangle> faces;
+    for (int i=0;faces.size()<2048;++i) {
+        float x=float(i%32*500-8000),z=float(i/32*500-8000);
+        using lambo::rain::Point;
+        Point a{x,0,z},b{x+500,0,z},c{x,0,z+500},d{x+500,0,z+500};
+        faces.push_back({{a,b,c}});
+        faces.push_back({{b,d,c}});
+    }
+    write_list(list,vertices,faces);
 }
 uint32_t record(int i) { return records+uint32_t(i)*64; }
 void setup() {
@@ -99,6 +150,9 @@ Frame frame(int slot,const std::vector<int>& order,int players=1) {
     }
     lambo_rain_publish(rdram,root,64);
     Frame out{{},{},seconds,allocations-before};
+    // The counters must account for every guest heap block, and none may overrun.
+    heap::check_canaries();
+    require(lambo::rain::counters().heap_bytes==heap::live_bytes(),"heap counter matches live guest blocks");
     if (uint32_t(w(root+16))!=0x06000000) return out;
     uint32_t copy=w(root+20);
     for (uint32_t at=copy;uint32_t(w(at))!=0xB8000000;at+=8) {
@@ -112,13 +166,23 @@ Frame frame(int slot,const std::vector<int>& order,int players=1) {
     return out;
 }
 // The road sublist matches the uncached producer byte for byte.
-bool matches(uint32_t target,int i,unsigned settings,float seconds) {
-    uint32_t r=record(i),buffer=target-12000*16;
+std::vector<lambo::rain::Vertex> reference_mesh(int i,unsigned settings,float seconds) {
+    uint32_t r=record(i);
     std::vector<lambo::rain::Triangle> road;
-    if (!reference::road_mesh(rdram,uint32_t(w(r+4)),road)) return false;
-    auto vertices=reference::puddles(road,reference::roofs(rdram,uint32_t(w(r+8)),uint32_t(w(r+12))),
+    if (!reference::road_mesh(rdram,uint32_t(w(r+4)),road)) return {};
+    return reference::puddles(road,reference::roofs(rdram,uint32_t(w(r+8)),uint32_t(w(r+12))),
         (settings&3)==2,seconds,float((settings>>8)&127)/100);
+}
+// Bytes a sublist needs: the vertex block, then every command word pair.
+size_t payload(int i,unsigned settings,float seconds) {
+    auto vertices=reference_mesh(i,settings,seconds);
+    return vertices.empty() ? 0 : vertices.size()*16+reference::encode(vertices,0).commands.size()*4;
+}
+bool matches(uint32_t target,int i,unsigned settings,float seconds) {
+    auto vertices=reference_mesh(i,settings,seconds);
     if (vertices.empty()) return false;
+    // The commands follow the vertex block directly: nothing is reserved past the mesh.
+    uint32_t buffer=target-uint32_t(vertices.size())*16;
     auto e=reference::encode(vertices,buffer);
     for (size_t k=0;k<vertices.size();++k) {
         uint32_t v=buffer+uint32_t(k)*16;
@@ -152,6 +216,13 @@ void run(uint8_t* ram) {
         require(steady.builds-start.builds==4 && steady.decodes-start.decodes==12,
             "each record decodes its three lists once per epoch");
         require(steady.full_writes-start.full_writes==6,"each slot writes static geometry once");
+        // Each drawn record owns one exactly sized buffer per slot; the roofed record owns none.
+        size_t expected=0;
+        for (int k=0;k<3;++k) expected+=payload(k,s,frames.back().seconds);
+        require(steady.road_buffers[0]==3 && steady.road_buffers[1]==3,"one buffer per drawn record per slot");
+        require(steady.road_bytes==2*expected && expected>0,"road buffers are sized to the mesh and nothing more");
+        require(steady.peak_road_bytes>=steady.road_bytes && steady.peak_heap_bytes>=steady.heap_bytes,
+            "peaks bound the live totals");
         if (style==2) require(frames[2].seconds!=frames[4].seconds && steady.ripple_writes>start.ripple_writes,
             "modern ripples animate");
         else require(steady.ripple_writes==start.ripple_writes,"retro has no time-dependent writes");
@@ -161,11 +232,14 @@ void run(uint8_t* ram) {
         auto a=frame(0,order); pause_tick(); auto b=frame(0,order);
         require(a.seconds==b.seconds && matches(b.roads[1],1,s,b.seconds),"pause stops ripples");
         h(0x800CE808)=0;
-        // A changed emission order rebinds task buffers to other records.
+        // Buffers belong to records, so a changed emission order moves nothing.
+        auto writes=counters().full_writes;
         auto shuffled=frame(1,{2,0,3,1});
         require(matches(shuffled.roads[0],2,s,shuffled.seconds) && matches(shuffled.roads[1],0,s,shuffled.seconds) &&
-            matches(shuffled.roads[2],1,s,shuffled.seconds),
-            "rebound buffers are rewritten for their new record");
+            matches(shuffled.roads[2],1,s,shuffled.seconds),"reordered sublists match their records");
+        require(shuffled.roads[0]==frames[5].roads[2] && shuffled.roads[1]==frames[5].roads[0] &&
+            shuffled.roads[2]==frames[5].roads[1],"each record keeps its buffer when the order changes");
+        require(counters().full_writes==writes,"reordering rewrites no geometry");
         require(counters().builds==steady.builds,"reordering does not rebuild geometry");
         // Four viewports share one build per record and one sublist per task.
         auto quad=frame(0,order,4);
@@ -197,6 +271,10 @@ void run(uint8_t* ram) {
     h(0x800CE794)=0; check("returning to the circuit rebuilds");
     built=counters().builds;
     h(0x800CE6AC)=7; require(frame(0,{0,1,2}).roads.empty(),"loading emits nothing");
+    require(frame(1,{0,1,2}).roads.empty(),"loading emits nothing in either slot");
+    // Each slot frees its own buffers once its previous task has finished.
+    require(counters().road_bytes==0 && counters().road_buffers[0]==0 && counters().road_buffers[1]==0,
+        "leaving the race returns every road buffer to the heap");
     h(0x800CE6AC)=8; check("race after a load rebuilds");
     require(counters().builds==built+3,"leaving the race clears the cache");
     // Shelter is decided from the cached camera segment.
@@ -204,6 +282,65 @@ void run(uint8_t* ram) {
     h(0x800BF1CC)=3; require(frame(1,{3}).cameras.empty(),"covered camera segment has no screen rain");
     h(0x800BF1CC)=0; require(frame(1,{0}).cameras.size()==1,"open camera segment has screen rain");
     require(counters().decodes==decodes+3,"shelter reuses cached segments");
+
+    // A mesh at the 12,000-vertex limit fits its exact buffer (canaries guard the end).
+    dense_road_list(0x80380000,0x80390000);
+    w(record(4)+4)=int32_t(0x80380000); w(record(4)+8)=0; w(record(4)+12)=0;
+    {
+        auto f=frame(0,{0,1,2,4});
+        require(f.roads.size()==4,"the full-size mesh draws beside the others");
+        require(reference_mesh(4,s,f.seconds).size()==12000,"the dense road reaches the vertex limit");
+        require(matches(f.roads[3],4,s,f.seconds),"the full-size mesh is intact");
+        for (int k=0;k<3;++k) require(matches(f.roads[k],k,s,f.seconds),"neighbours of the full-size mesh are intact");
+    }
+    // A rebuilt record that needs more room moves to a new block and frees the old one.
+    auto freed=heap::frees;
+    auto roads=counters().road_buffers[0];
+    w(record(1)+4)=int32_t(0x80380000);
+    {
+        auto f=frame(0,{0,1,2});
+        require(f.roads.size()==3 && matches(f.roads[1],1,s,f.seconds) && matches(f.roads[0],0,s,f.seconds),
+            "a grown record draws its new mesh");
+        require(heap::frees==freed+1 && counters().road_buffers[0]==roads,"growth frees the outgrown block");
+        require(counters().road_bytes>=payload(1,s,f.seconds),"growth allocates the new mesh size");
+    }
+    // A smaller rebuild fits the block it already has.
+    freed=heap::frees; auto blocks=heap::live_blocks();
+    w(record(1)+4)=int32_t(0x80310000+1*0x4000);
+    {
+        auto f=frame(0,{0,1,2});
+        require(matches(f.roads[1],1,s,f.seconds),"a shrunken record draws its new mesh");
+        require(heap::frees==freed && heap::live_blocks()==blocks,"a smaller rebuild reuses its block");
+    }
+    // A refused allocation draws nothing for that record and leaves the rest intact.
+    lambo_rain_invalidate();
+    heap::refuse=true;
+    {
+        auto f=frame(1,{0,1,2});
+        require(f.roads.empty(),"no heap, no rain geometry");
+        require(uint32_t(w(0x800BF240+0x7A50+0x1C0+16))==0x06000000,"the root still publishes");
+    }
+    heap::refuse=false;
+    {
+        auto f=frame(1,{0,1,2});
+        require(f.roads.size()==3 && matches(f.roads[2],2,s,f.seconds),"rain recovers when the heap does");
+    }
+    // The slot never holds more than 200 road buffers, however many records the track cycles through.
+    constexpr int many=300;
+    for (int i=10;i<10+many;++i) {
+        w(record(i)+4)=int32_t(0x80310000); w(record(i)+8)=0; w(record(i)+12)=0;
+    }
+    for (int first=10;first<10+many;first+=100) {
+        std::vector<int> order;
+        for (int i=first;i<first+100;++i) order.push_back(i);
+        auto f=frame(0,order);
+        require(f.roads.size()<=100 && counters().road_buffers[0]<=200,"road buffers per slot stay capped");
+    }
+    require(counters().road_buffers[0]==200,"the cap is reached, not exceeded");
+    // The next race starts from nothing.
+    h(0x800CE6AC)=7; frame(0,{}); frame(1,{});
+    require(counters().road_bytes==0 && counters().road_buffers[0]==0 && counters().road_buffers[1]==0,
+        "an epoch change frees every road buffer");
 }
 }
 

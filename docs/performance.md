@@ -466,3 +466,26 @@ still builds it, at about the old per-frame cost for that segment. Modern
 frames keep rewriting ripple vertices; that work, plus scattered guest writes,
 is most of the remaining cost. These are synthetic CPU measurements, not a
 game FPS claim.
+## Rain road buffer memory (2026-11-09)
+
+Issue #398. Each road buffer was allocated at the 12,000-vertex worst case,
+320,256 bytes, however small the mesh. Buffers now match their mesh and belong
+to a record, not to a position in the frame; see
+[Rain rendering](rain.md#road-buffers).
+
+The benchmark prints the live guest heap held by road buffers after 25 synthetic
+segments, for both task slots (same build and machine as above; one run, the
+figure does not vary):
+
+| 25 segments | Old fixed size (computed) | Exact size (measured) |
+| --- | ---: | ---: |
+| 36 faces, Retro | 15,631 KiB | 277 KiB |
+| 36 faces, Modern | 15,631 KiB | 3,781 KiB |
+| 120 faces, Retro | 15,631 KiB | 853 KiB |
+| 120 faces, Modern | 15,631 KiB | 11,240 KiB |
+
+The old figure is 25 x 2 x 320,256 bytes, taken from the constants, not from a
+run of the old code. Retro meshes are small. Modern ripples multiply the vertex
+count, and a 120-face segment holds far more of them. These are synthetic
+segments, not an in-game working set. The counters report requested bytes.
+The heap may round blocks up; that was not measured.

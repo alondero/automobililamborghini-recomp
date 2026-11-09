@@ -38,6 +38,19 @@ struct Buffer {
     uint64_t generation=0; // Segment::generation of the static geometry it holds
     float seconds=NAN;     // ripple time it holds
 };
+// Every rain block goes through these so the counters see all of the guest heap.
+constexpr uint32_t guest_base=0x80000000u; // guest address of host offset 0
+uint32_t heap_alloc(uint8_t* ram,uint32_t size) {
+    auto* memory=static_cast<uint8_t*>(recomp::alloc(ram,size));
+    if (!memory) return 0;
+    stats.heap_bytes+=size;
+    stats.peak_heap_bytes=std::max(stats.peak_heap_bytes,stats.heap_bytes);
+    return guest_base+uint32_t(memory-ram);
+}
+void heap_free(uint8_t* ram,const Buffer& buffer) {
+    recomp::free(ram,ram+(buffer.address-guest_base));
+    stats.heap_bytes-=buffer.capacity;
+}
 struct List {
     std::vector<std::array<uint32_t,2>> words;
     void cmd(uint32_t a,uint32_t b=0) { words.push_back({a,b}); }
@@ -60,9 +73,11 @@ struct List {
     }
 };
 struct Task {
-    std::vector<Buffer> roads;
     uint64_t frame=1;   // Segment::frame stamps record emission into this task
-    unsigned records=0; // distinct records seen this frame; each owns roads[ordinal]
+    unsigned records=0; // distinct records seen this frame
+    // Road buffers of cleared cache entries. This slot's previous task may still
+    // be drawing them, so they are freed from lambo_rain_frame, behind the fence.
+    std::vector<Buffer> retired;
     std::array<Buffer,4> cameras;
     Buffer root;
     std::vector<std::pair<uint32_t,uint32_t>> insertions;
@@ -82,6 +97,7 @@ struct Segment {
     float animated=NAN;             // ripple time encoded in `vertices`
     std::array<uint64_t,2> frame{}; // Task::frame of the last emission per slot
     std::array<uint32_t,2> target{};
+    std::array<Buffer,2> buffers;   // per task slot, sized to `vertices`
 };
 std::unordered_map<uint32_t,Segment> segments;
 uint64_t generations=0;
@@ -89,9 +105,13 @@ uint64_t generations=0;
 constexpr size_t segment_limit=1024;
 constexpr unsigned geometry_settings=0x7F03; // style and intensity, not camera drops
 constexpr uint32_t max_vertices=12000;       // per-segment visual limit (puddle_mesh)
+constexpr uint32_t max_road_buffers=200;     // per task slot
 
 void invalidate() {
-    // Rebuilt entries get new generations, so task buffers rewrite themselves.
+    // Rebuilt entries get new generations, so a surviving buffer rewrites itself.
+    // Buffers are not reachable from a cleared entry: hand them to their slot.
+    for (auto& entry:segments) for (int i=0;i<2;++i)
+        if (entry.second.buffers[i].address) tasks[i].retired.push_back(entry.second.buffers[i]);
     segments.clear(); // keeps buckets
 }
 void encode(const Vertex& v,uint32_t* out) {
@@ -143,8 +163,6 @@ Segment& current(uint8_t* ram,uint32_t record,unsigned s,decltype(segments)::ite
     return segment;
 }
 
-// Road sublist layout: vertex block at the buffer, commands at `list_offset`.
-constexpr uint32_t list_offset=max_vertices*16;
 const List& header() {
     static const List list=[] {
         List l; l.save(true);
@@ -161,12 +179,19 @@ const List& footer() {
     static const List list=[] { List l; l.restore(true); l.cmd(0xB8000000); return l; }();
     return list;
 }
+// Road buffer layout, sized to the mesh: the vertex block, then the sublist
+// (header, four commands per face, footer) with no slack after it.
+uint32_t list_offset(const Segment& segment) { return uint32_t(segment.vertices.size())*4; }
+uint32_t buffer_bytes(const Segment& segment) {
+    uint32_t faces=uint32_t(segment.vertices.size()/12);
+    return list_offset(segment)+(header_commands()+faces*4+uint32_t(footer().words.size()))*8;
+}
 uint32_t face_color(const Segment& segment,size_t face) {
     const uint32_t* v=&segment.vertices[face*12];
     return 0xFFFFFF00u|((v[3]&255)+(v[7]&255)+(v[11]&255))/3;
 }
-uint32_t face_command(uint32_t buffer,size_t face) {
-    return buffer+list_offset+(header_commands()+uint32_t(face)*4)*8;
+uint32_t face_command(uint32_t buffer,const Segment& segment,size_t face) {
+    return buffer+list_offset(segment)+(header_commands()+uint32_t(face)*4)*8;
 }
 // Each face: pipe sync, face color, its three vertices, one triangle.
 void face_commands(uint8_t* ram,uint32_t buffer,const Segment& segment,size_t count) {
@@ -175,7 +200,7 @@ void face_commands(uint8_t* ram,uint32_t buffer,const Segment& segment,size_t co
         // F3DEX 0..31 bank, including vertices inherited by the next list.
         const uint32_t words[8]{0xE7000000,0,0xFA000000,face_color(segment,k),
             0x04400C2F,buffer+uint32_t(k)*48,0xBF000000,(32u<<17)|(33u<<9)|(34u<<1)};
-        store(ram,face_command(buffer,k),words,8);
+        store(ram,face_command(buffer,segment,k),words,8);
     }
 }
 void animate(Segment& segment) {
@@ -201,9 +226,9 @@ void emit(uint8_t* ram,Buffer& buffer,const Segment& segment) {
     if (buffer.generation!=segment.generation) {
         ++stats.full_writes;
         store(ram,address,segment.vertices.data(),segment.vertices.size());
-        header().write(ram,address+list_offset);
+        header().write(ram,address+list_offset(segment));
         face_commands(ram,address,segment,faces);
-        footer().write(ram,face_command(address,faces));
+        footer().write(ram,face_command(address,segment,faces));
     } else if (!segment.ripples.empty() && buffer.seconds!=segment.animated) {
         // Ripple vertices and the color word of their two faces; every other
         // command word is time independent.
@@ -212,21 +237,46 @@ void emit(uint8_t* ram,Buffer& buffer,const Segment& segment) {
             uint32_t first=ripple_vertex(p,side);
             store(ram,address+first*16,&segment.vertices[first*4],24);
             for (size_t face:{first/3,first/3+1})
-                word(ram,face_command(address,face)+12)=int32_t(face_color(segment,face));
+                word(ram,face_command(address,segment,face)+12)=int32_t(face_color(segment,face));
         }
     }
     buffer.generation=segment.generation;
     buffer.seconds=segment.animated;
 }
+// Fixed-size storage (root copy, camera lists, sky): allocated once, never grown.
 uint32_t allocate(uint8_t* ram,Buffer& buffer,uint32_t size) {
     if (buffer.capacity<size) {
-        // Mesh output has a fixed maximum, so a slot allocates at most once.
         if (buffer.address) return 0;
-        auto* memory=static_cast<uint8_t*>(recomp::alloc(ram,size));
-        if (!memory) return 0;
-        buffer.address=0x80000000u+uint32_t(memory-ram); buffer.capacity=size;
+        uint32_t address=heap_alloc(ram,size);
+        if (!address) return 0;
+        buffer.address=address; buffer.capacity=size;
     }
     return buffer.address;
+}
+// Gives a road buffer room for `size` bytes. A rebuilt record can need more than
+// its first block; the larger block replaces it. Freeing the old block here is
+// as safe as rewriting it: lambo_rain_frame for this slot has already run.
+bool fit(uint8_t* ram,int index,Buffer& buffer,uint32_t size) {
+    if (buffer.capacity>=size) return true;
+    if (!buffer.address && stats.road_buffers[index]>=max_road_buffers) return false;
+    uint32_t address=heap_alloc(ram,size);
+    if (!address) return false; // the old block, if any, still serves its old mesh
+    stats.road_bytes+=size;
+    stats.peak_road_bytes=std::max(stats.peak_road_bytes,stats.road_bytes);
+    if (buffer.address) {
+        heap_free(ram,buffer);
+        stats.road_bytes-=buffer.capacity;
+    } else ++stats.road_buffers[index];
+    buffer={address,size}; // holds nothing yet
+    return true;
+}
+// Frees what the cache dropped. Only after this slot's previous task finished.
+void release(uint8_t* ram,int index) {
+    for (const Buffer& buffer:tasks[index].retired) {
+        heap_free(ram,buffer);
+        stats.road_bytes-=buffer.capacity; --stats.road_buffers[index];
+    }
+    tasks[index].retired.clear();
 }
 bool append(uint8_t* ram,uint32_t list) {
     int index=slot(ram);
@@ -269,6 +319,8 @@ extern "C" void lambo_rain_frame(uint8_t* ram) {
     if (index<0) return;
     if (segments.bucket_count()<256) segments.reserve(256);
     epoch(ram);
+    // The game is rebuilding this slot's task, so its last one has finished.
+    release(ram,index);
     auto& task=tasks[index];
     ++task.frame; task.records=0;
     task.insertions.clear();
@@ -292,10 +344,14 @@ extern "C" void lambo_rain_publish(uint8_t* ram,uint32_t root,uint32_t bytes) {
     static unsigned sampled=0;
     if (half(ram,0x800CE6AC)==8 && (++sampled<=4 || sampled%1800==0))
         LAMBO_LOG("rain", "publish slot=%d settings=%x insertions=%zu records=%u bytes=%u "
-            "segments=%zu decodes=%llu builds=%llu full_writes=%llu ripple_writes=%llu\n",
+            "segments=%zu decodes=%llu builds=%llu full_writes=%llu ripple_writes=%llu "
+            "road_buffers=%u/%u road_bytes=%llu peak_road_bytes=%llu heap_bytes=%llu peak_heap_bytes=%llu\n",
             index,settings(ram),task.insertions.size(),task.records,bytes,segments.size(),
             (unsigned long long)stats.decodes,(unsigned long long)stats.builds,
-            (unsigned long long)stats.full_writes,(unsigned long long)stats.ripple_writes);
+            (unsigned long long)stats.full_writes,(unsigned long long)stats.ripple_writes,
+            stats.road_buffers[0],stats.road_buffers[1],
+            (unsigned long long)stats.road_bytes,(unsigned long long)stats.peak_road_bytes,
+            (unsigned long long)stats.heap_bytes,(unsigned long long)stats.peak_heap_bytes);
     root|=0x80000000u;
     uint32_t owner=word(ram,0x800A2BFC);
     if (task.insertions.empty() || root!=owner+0x1C0 || bytes<40 ||
@@ -346,17 +402,15 @@ extern "C" void lambo_rain_road(uint8_t* ram,uint32_t record) {
         return;
     }
     if (task.records>=200) return;
-    unsigned ordinal=task.records++;
+    ++task.records;
     Segment& segment=current(ram,record,s,found);
     segment.frame[index]=task.frame; segment.target[index]=0;
     if (segment.vertices.empty() || !std::isfinite(seconds)) return;
-    if (task.roads.size()<=ordinal) task.roads.resize(ordinal+1);
-    constexpr uint32_t size=max_vertices*16+max_vertices/3*32+256;
-    Buffer& buffer=task.roads[ordinal];
-    if (!allocate(ram,buffer,size)) return;
+    Buffer& buffer=segment.buffers[index];
+    if (!fit(ram,index,buffer,buffer_bytes(segment))) return;
     animate(segment);
     emit(ram,buffer,segment);
-    segment.target[index]=buffer.address+list_offset;
+    segment.target[index]=buffer.address+list_offset(segment);
     append(ram,segment.target[index]);
 }
 

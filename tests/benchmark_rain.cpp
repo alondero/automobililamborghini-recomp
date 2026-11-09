@@ -38,6 +38,7 @@ void* alloc(uint8_t* ram,size_t size) {
     if (cursor+size>0x10000000) return nullptr;
     void* result=ram+cursor; cursor+=size; return result;
 }
+void free(uint8_t*,void*) {} // the bump heap never reuses space
 }
 
 namespace {
@@ -91,7 +92,7 @@ void track(unsigned segments,unsigned per_segment) {
         w(records+i*64+4)=int32_t(road); w(records+i*64+8)=int32_t(wall); w(records+i*64+12)=0;
     }
 }
-struct Cost { double cold_us,steady_us; double cold_allocations,steady_allocations; };
+struct Cost { double cold_us,steady_us; double cold_allocations,steady_allocations,road_kib; };
 Cost producers(unsigned segments,unsigned per_segment,unsigned style,int players) {
     track(segments,per_segment);
     w(0x80000100)=int32_t(style|(80<<8)|0x10000);
@@ -120,6 +121,9 @@ Cost producers(unsigned segments,unsigned per_segment,unsigned style,int players
     before=allocations; start=Clock::now();
     for (int f=0;f<frames;++f) frame(f%2);
     cost.steady_us=since(start)/frames; cost.steady_allocations=double(allocations-before)/frames;
+#ifndef LAMBO_RAIN_BENCH_PRODUCERS_ONLY
+    cost.road_kib=double(lambo::rain::counters().road_bytes)/1024; // both task slots, live
+#endif
     return cost;
 }
 #ifndef LAMBO_RAIN_BENCH_PRODUCERS_ONLY
@@ -174,10 +178,10 @@ int main() {
 #ifndef LAMBO_RAIN_BENCH_PRODUCERS_ONLY
     isolated();
 #endif
-    std::printf("\nproducers per task (road+camera+publish)  cold_us  steady_us  cold_allocs  steady_allocs\n");
+    std::printf("\nproducers per task (road+camera+publish)  cold_us  steady_us  cold_allocs  steady_allocs  road_heap_KiB\n");
     for (unsigned per:{36u,120u}) for (unsigned style:{1u,2u}) for (int players:{1,4}) {
         auto c=producers(25,per,style,players);
-        std::printf("25 x %3u faces %-6s %dP              %9.1f  %9.1f  %11.1f  %13.1f\n",per,
-            style==2?"Modern":"Retro",players,c.cold_us,c.steady_us,c.cold_allocations,c.steady_allocations);
+        std::printf("25 x %3u faces %-6s %dP              %9.1f  %9.1f  %11.1f  %13.1f  %13.1f\n",per,
+            style==2?"Modern":"Retro",players,c.cold_us,c.steady_us,c.cold_allocations,c.steady_allocations,c.road_kib);
     }
 }
