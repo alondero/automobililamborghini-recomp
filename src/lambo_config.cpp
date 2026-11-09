@@ -148,14 +148,22 @@ void capture_environment_overrides() {
     };
 }
 
-// Main-thread-owned snapshot read by the settings overlay and the window-mode
+// Port-owned snapshot read by the settings overlay and the window-mode
 // reconciliation in the event pump. It avoids reading the runtime's
 // reference-returning getter while another thread may be applying a change.
+// It is read and written cross-thread: the settings Apply and the Debug tab
+// write it on the render thread (the frontend drains its input queue there)
+// while the pump reads it, and F11 writes it, on the main thread. Every access
+// goes through g_graphics_snapshot_mutex so a reader always sees one whole
+// config. The lock covers only the copy: never hold it across the renderer
+// update or the graphics.json writer, which take their own locks.
+std::mutex g_graphics_snapshot_mutex;
 ultramodern::renderer::GraphicsConfig g_current_graphics{};
 
 // The renderer's API is selected when it is constructed. Keep its last applied
 // API separately so a later live-safe setting cannot smuggle a persisted,
-// restart-only API choice into RT64's update queue.
+// restart-only API choice into RT64's update queue. Unlocked: written at startup
+// and afterwards only by apply_graphics(), which has a single calling thread.
 ultramodern::renderer::GraphicsConfig g_live_graphics{};
 
 // Read a key into `out`, keeping the existing (default) value when the key is
@@ -521,7 +529,10 @@ ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
     const ReadResult r = read_graphics_file(path, cfg);
 
     ultramodern::renderer::set_graphics_config(cfg);
-    g_current_graphics = cfg;
+    {
+        std::lock_guard<std::mutex> lock(g_graphics_snapshot_mutex);
+        g_current_graphics = cfg;
+    }
     g_live_graphics = cfg;
     // Write the merged config back so the on-disk file is always complete and
     // editable (new keys appear with their defaults after an upgrade) -- but NEVER
@@ -536,12 +547,17 @@ ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
 }
 
 ultramodern::renderer::GraphicsConfig current_graphics() {
+    std::lock_guard<std::mutex> lock(g_graphics_snapshot_mutex);
     return g_current_graphics;
 }
 
 void apply_graphics(const ultramodern::renderer::GraphicsConfig& cfg, bool apply_live) {
-    const auto before = g_current_graphics;
-    g_current_graphics = cfg;
+    ultramodern::renderer::GraphicsConfig before;
+    {
+        std::lock_guard<std::mutex> lock(g_graphics_snapshot_mutex);
+        before = g_current_graphics;
+        g_current_graphics = cfg;
+    }
     nlohmann::json updates = nlohmann::json::object();
     if (before.res_option != cfg.res_option) updates["res_option"] = cfg.res_option;
     if (before.wm_option != cfg.wm_option) updates["wm_option"] = cfg.wm_option;
@@ -565,28 +581,35 @@ void apply_graphics(const ultramodern::renderer::GraphicsConfig& cfg, bool apply
 }
 
 void update_saved_window_mode(ultramodern::renderer::WindowMode wm) {
-    // All runtime config values now have one main-thread snapshot. Do not re-run
+    // All runtime config values now have one locked snapshot. Do not re-run
     // from_json here: its enhancement fields are read by the game/render threads.
     // Mutating those arrays during an F11 press would introduce a data race.
-    g_current_graphics.wm_option = wm;
+    {
+        std::lock_guard<std::mutex> lock(g_graphics_snapshot_mutex);
+        g_current_graphics.wm_option = wm;
+    }
     lambo::settings::changed();
     save_graphics_updates({{"wm_option", wm}});
 }
 
 // The Debug tab owns this toggle (it is a diagnostic overlay, not a graphics
 // setting), but the value is a GraphicsConfig field, so update the same
-// main-thread snapshot an Apply would. Leaving it stale would make a later
+// locked snapshot an Apply would. Leaving it stale would make a later
 // Graphics Apply -- which starts from current_graphics() -- silently write the
 // pre-Debug value back to graphics.json and undo the user's choice.
 bool developer_mode() {
+    std::lock_guard<std::mutex> lock(g_graphics_snapshot_mutex);
     return g_current_graphics.developer_mode;
 }
 
 void set_developer_mode(bool enabled) {
-    // Restart-only, like the API option: persist the value and the main-thread
+    // Restart-only, like the API option: persist the value and the locked
     // snapshot, but do not push it into the renderer's live config queue. RT64
     // latches developer mode when the context is constructed.
-    g_current_graphics.developer_mode = enabled;
+    {
+        std::lock_guard<std::mutex> lock(g_graphics_snapshot_mutex);
+        g_current_graphics.developer_mode = enabled;
+    }
     lambo::settings::changed();
     save_graphics_updates({{"developer_mode", enabled}});
 }

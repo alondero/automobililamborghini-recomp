@@ -297,7 +297,7 @@ The CMake project registers tests whose names describe the contract. Useful
 groups include:
 
 ~~~text
-ctest --test-dir build -R "lambo_(portable_paths|logging_policy|config_live_updates)"
+ctest --test-dir build -R "lambo_(portable_paths|logging_policy|config_live_updates|config_graphics_snapshot_locking)"
 ctest --test-dir build -R "lambo_rom_path"
 ctest --test-dir build -R "lambo_(controls|input|analog)"
 ctest --test-dir build -R "lambo_(automatic_pit_stops|pit_stop_parity)"
@@ -338,6 +338,14 @@ audio pump, `SDL_PollEvent` and the driver advisory box in the unlocked phases
 resample or device close and proves the pump and the audio callbacks still get
 through. It also checks that a buffer converted for a replaced device is
 dropped. These are lock-scope checks; they do not measure stall time.
+
+The graphics settings snapshot is written by the settings screen on the render
+thread and read by the main-thread pump, so `src/lambo_config.cpp` copies it in
+and out under one lock. `lambo_config_live_updates` reads it while another
+thread applies two different configs and requires every read to be one whole
+config. A torn read depends on timing, so that test can pass without the lock.
+`lambo_config_graphics_snapshot_locking` reads the source and fails when the
+snapshot is used outside the lock. Neither check runs under a thread sanitizer.
 
 The complete list is the add_test list in CMakeLists.txt; keep this page
 updated when a test is added or renamed. Some tests are only registered when
