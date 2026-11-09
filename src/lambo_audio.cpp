@@ -5,20 +5,24 @@
 //
 // Design invariants:
 //  * Format: int16 stereo at 48 kHz initially. SDL is asked for AUDIO_S16LSB
-//    and 2 channels. The actual obtained spec may differ; queue_samples builds
-//    an SDL_AudioCVT when the obtained spec does not match the game's output
-//    (rate/format) and runs SDL_ConvertAudio on every submit.
+//    and 2 channels. The actual obtained spec may differ; queue_samples then
+//    converts through a persistent SDL_AudioStream (see g_stream).
 //  * Thread model: the game's audio thread calls queue_samples (via the
 //    ultramodern shim). SDL device lifecycle work is pumped from the main
 //    thread; submission performs conversion and queueing but never device lifecycle calls.
-//  * Locks, in acquisition order. g_state_mtx and g_stream_mtx are never held together.
+//  * Locks. The only nesting is g_lifecycle_mtx -> g_state_mtx and g_lifecycle_mtx ->
+//    g_stream_mtx; g_state_mtx and g_stream_mtx are never held together.
 //      g_lifecycle_mtx  serialises device open/close/recovery (pump, init, shutdown). It may
 //                       be held across SDL_OpenAudioDevice; the audio callbacks never take it.
 //      g_state_mtx      device fields below. Held for copies and for the short SDL calls that
 //                       use g_dev (queue, queued size, clear). Those must not overlap
 //                       SDL_CloseAudioDevice on the same id, so a device is detached under
-//                       this lock and closed after it is released.
-//      g_stream_mtx     the resampler stream, held across SDL_AudioStreamPut/Get.
+//                       this lock and closed after it is released. A mutex rather than an
+//                       atomic snapshot for that reason: a snapshot cannot keep an id open.
+//      g_stream_mtx     the resampler stream, held across SDL_AudioStreamPut/Get: the CPU
+//                       cost of resampling one AI buffer (typically ~21 ms of audio; the
+//                       oversize guard caps it at 256 KiB). Hold time is not measured. Only
+//                       the audio thread and shutdown take it.
 //    g_generation changes whenever the device is installed, detached, or (un)suspended. A
 //    buffer converted under an older generation is dropped rather than queued.
 //  * The first non-empty buffer is logged once for diagnosis. A headless run
@@ -47,8 +51,8 @@ std::mutex g_lifecycle_mtx;
 std::mutex g_state_mtx;
 std::mutex g_stream_mtx;
 
-// File-static device state. The public API in lambo_audio.h is the only entry point; state shared
-// by the main-thread pump and the audio callbacks is protected by g_state_mtx.
+// File-static device state. The public API in lambo_audio.h is the only entry point; device state
+// is protected by g_state_mtx and the g_stream* fields by g_stream_mtx.
 SDL_AudioDeviceID g_dev = 0;
 SDL_AudioSpec     g_obtained{};
 uint32_t         g_desired_rate = 0;
@@ -212,12 +216,12 @@ void open_device_if_due() {
     if (keep_device) {
         log_opened(obtained);
     } else {
-        SDL_CloseAudioDevice(opened);
+        close_detached(opened);
     }
 }
 
 // Called from the main-thread event/update loop. SDL device discovery and teardown stay off the
-// game's audio submission callback, which only queues data while holding the short state lock.
+// game's audio submission callback, which never takes g_lifecycle_mtx.
 void pump_device() {
     std::lock_guard<std::mutex> lifecycle(g_lifecycle_mtx);
     SDL_AudioDeviceID live = 0;
@@ -442,8 +446,8 @@ void set_frequency(uint32_t freq) {
     g_desired_rate = freq;
     // We do not reopen the device on every set_frequency. SDL honours the
     // requested rate via SDL_AUDIO_ALLOW_ANY_CHANGE at open time. If the
-    // obtained spec rate does not match what the game asks for, the CVT path
-    // in submit() handles the conversion. This keeps the audio path light --
+    // obtained spec rate does not match what the game asks for, the resampler
+    // stream in submit() handles the conversion. This keeps the audio path light --
     // a reopen is heavy and would stall the game thread for tens of ms.
 }
 

@@ -419,8 +419,8 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
     return ultramodern::renderer::WindowHandle{}; // headless: null handle
 }
 
-// One-shot startup handshake, run with the other frontend work. StartupController
-// is atomic, so the lock is not what orders it against a launcher Play press.
+// One-shot startup handshake. Its page requests go through the overlay request
+// gate that render() consumes, so it runs with the rest of the frontend phase.
 static void announce_runtime_ready() {
     static bool runtime_ready_announced = false;
     if (!runtime_ready_announced && g_startup_controller != nullptr) {
@@ -452,8 +452,6 @@ static void announce_runtime_ready() {
     }
 }
 
-// Main-thread SDL event dispatch. Runs under the frontend mutex: recompinput,
-// recompui and the driving-sensor state are shared with UI draws.
 static void dispatch_sdl_event(const SDL_Event& event) {
     lambo::ui::driving_sensor_event(event);
     // Quit/window-close is handled before any UI or guest dispatch. In particular,
@@ -507,8 +505,6 @@ static void dispatch_sdl_event(const SDL_Event& event) {
 // read of the window and applied mode-first: a size planned against the
 // window as it is now, rather than as it will be, would be consumed by a
 // window that had just gone fullscreen and never applied at all.
-// Runs under the frontend mutex: the settings page writes the graphics config
-// snapshot read here from inside a UI draw.
 static void reconcile_window() {
     if (g_sdl_window == nullptr) return;
     // Developer lifecycle test: one live resize at a replay frame.
