@@ -30,6 +30,7 @@ void lambo_graphics_task_prepare(uint8_t*, uint32_t);
 void lambo_savestate_request_save(void);
 void lambo_savestate_request_load(void);
 void lambo_savestate_flush(void);
+void lambo_savestate_shutdown(void);
 void lambo_savestate_tick(uint8_t*, recomp_context*);
 }
 namespace {
@@ -132,6 +133,28 @@ int main(int argc, char** argv) {
         lambo_savestate_request_load();
         lambo_savestate_tick(ram, nullptr);
         assert(read(ram, 0x902084) == 0x11223344u);
+
+        // Saving again must atomically replace the existing state file.
+        write(ram, 0x902084, 0x99aabbccu);
+        lambo_savestate_request_save();
+        lambo_savestate_tick(ram, nullptr);
+        lambo_savestate_flush();
+        assert(std::filesystem::exists(destination));
+        lambo_savestate_request_load();
+        lambo_savestate_tick(ram, nullptr);
+        assert(read(ram, 0x902084) == 0x99aabbccu);
+
+        // A shutdown/join followed by a new request must start a fresh writer
+        // rather than leaving a queued job with no worker.
+        lambo_savestate_shutdown();
+        write(ram, 0x902084, 0x0badf00du);
+        lambo_savestate_request_save();
+        lambo_savestate_tick(ram, nullptr);
+        lambo_savestate_flush();
+        assert(std::filesystem::exists(destination));
+        lambo_savestate_request_load();
+        lambo_savestate_tick(ram, nullptr);
+        assert(read(ram, 0x902084) == 0x0badf00du);
         return 0;
     }
     if (mode == "write" && argc > 3) write(ram, 0xce6a4, uint32_t(std::atoi(argv[3])) << 16);

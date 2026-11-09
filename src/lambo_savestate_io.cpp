@@ -4,14 +4,25 @@
 
 #include <chrono>
 #include <condition_variable>
-#include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <exception>
+#include <filesystem>
+#include <fstream>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <utility>
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
 namespace {
+
+namespace fs = std::filesystem;
 
 uint64_t monotonic_us() {
     using namespace std::chrono;
@@ -19,31 +30,34 @@ uint64_t monotonic_us() {
         duration_cast<microseconds>(steady_clock::now().time_since_epoch()).count());
 }
 
-struct Job {
-    std::string path;
-    uint8_t* data = nullptr;
-    size_t size = 0;
+fs::path path_from_utf8(const char* text) {
+#if defined(_WIN32)
+    const auto* begin = reinterpret_cast<const char8_t*>(text);
+    return fs::path(std::u8string(begin, begin + std::strlen(text)));
+#else
+    return fs::path(text);
+#endif
+}
 
-    Job() = default;
-    Job(const Job&) = delete;
-    Job& operator=(const Job&) = delete;
-    Job(Job&& other) noexcept
-        : path(std::move(other.path)), data(other.data), size(other.size) {
-        other.data = nullptr;
-        other.size = 0;
-    }
-    Job& operator=(Job&& other) noexcept {
-        if (this != &other) {
-            std::free(data);
-            path = std::move(other.path);
-            data = other.data;
-            size = other.size;
-            other.data = nullptr;
-            other.size = 0;
-        }
-        return *this;
-    }
-    ~Job() { std::free(data); }
+std::string path_to_utf8(const fs::path& path) {
+#if defined(_WIN32)
+    const std::u8string text = path.u8string();
+    return std::string(text.begin(), text.end());
+#else
+    return path.string();
+#endif
+}
+
+struct Job {
+    fs::path path;
+    std::unique_ptr<uint8_t, decltype(&std::free)> data{nullptr, &std::free};
+    size_t size = 0;
+};
+
+enum class WorkerState {
+    Idle,
+    Running,
+    Stopping,
 };
 
 struct State {
@@ -51,9 +65,10 @@ struct State {
     std::condition_variable changed;
     std::thread worker;
     Job pending;
+    WorkerState worker_state = WorkerState::Idle;
     bool has_pending = false;
     bool writing = false;
-    bool stopping = false;
+    bool shutdown_in_progress = false;
     bool exit_handler_registered = false;
 #if defined(LAMBO_SAVESTATE_IO_TESTING)
     LamboSavestateBeforeWriteHook before_write = nullptr;
@@ -67,37 +82,76 @@ State& state() {
     return *value;
 }
 
-bool write_job(const Job& job) {
-    const std::string tmp = job.path + ".tmp";
-    FILE* f = std::fopen(tmp.c_str(), "wb");
-    if (f == nullptr) {
-        LAMBO_LOG_ERROR("state", "save: cannot open %s for write\n", tmp.c_str());
-        return false;
-    }
-    bool ok = std::fwrite(job.data, 1, job.size, f) == job.size;
-    // Flush before rename so the rename publishes a fully-written file.
-    ok = (std::fflush(f) == 0) && ok;
-    if (std::fclose(f) != 0) ok = false;
-    if (!ok) {
-        LAMBO_LOG_ERROR("state", "save: write failed for %s\n", job.path.c_str());
-        std::remove(tmp.c_str());
-        return false;
-    }
-    // Publish atomically. POSIX rename() replaces the target in place; Windows
-    // rename() fails if the target exists, so only there do we remove-then-retry.
-    // Crucially we do NOT remove the existing good save until the first rename
-    // has failed, and on final failure we KEEP the .tmp (it holds the full
-    // snapshot) -- so a previously-working save is never lost with nothing to
-    // show for it.
-    if (std::rename(tmp.c_str(), job.path.c_str()) != 0) {
-        std::remove(job.path.c_str());
-        if (std::rename(tmp.c_str(), job.path.c_str()) != 0) {
-            LAMBO_LOG_ERROR("state", "save: could not publish %s; snapshot kept at %s\n",
-                            job.path.c_str(), tmp.c_str());
+bool replace_file(const fs::path& temporary, const fs::path& destination) {
+#if defined(_WIN32)
+    // CRT rename() cannot replace an existing target. MoveFileEx is the
+    // atomic replacement primitive (same call shape as lambo_pak_io.c).
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        if (MoveFileExW(temporary.c_str(), destination.c_str(),
+                        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            return true;
+        }
+        const DWORD code = GetLastError();
+        if (code != ERROR_ACCESS_DENIED && code != ERROR_SHARING_VIOLATION) {
+            LAMBO_LOG_ERROR("state", "save: cannot publish %s (Win32 error %lu); "
+                            "snapshot kept at %s\n",
+                            path_to_utf8(destination).c_str(),
+                            static_cast<unsigned long>(code),
+                            path_to_utf8(temporary).c_str());
             return false;
         }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10 * (attempt + 1)));
     }
-    LAMBO_LOG_DEBUG("state", "published %zu bytes to %s\n", job.size, job.path.c_str());
+    LAMBO_LOG_ERROR("state", "save: cannot publish %s; snapshot kept at %s\n",
+                    path_to_utf8(destination).c_str(),
+                    path_to_utf8(temporary).c_str());
+    return false;
+#else
+    std::error_code error;
+    fs::rename(temporary, destination, error);
+    if (error) {
+        LAMBO_LOG_ERROR("state", "save: cannot publish %s (%s); snapshot kept at %s\n",
+                        path_to_utf8(destination).c_str(),
+                        error.message().c_str(),
+                        path_to_utf8(temporary).c_str());
+        return false;
+    }
+    return true;
+#endif
+}
+
+bool write_job(const Job& job) {
+    fs::path temporary = job.path;
+    temporary += ".tmp";
+
+    std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        LAMBO_LOG_ERROR("state", "save: cannot open %s for write\n",
+                        path_to_utf8(temporary).c_str());
+        return false;
+    }
+    out.write(reinterpret_cast<const char*>(job.data.get()),
+              static_cast<std::streamsize>(job.size));
+    out.flush();
+    if (!out) {
+        LAMBO_LOG_ERROR("state", "save: write failed for %s\n",
+                        path_to_utf8(job.path).c_str());
+        out.close();
+        std::error_code ignored;
+        fs::remove(temporary, ignored);
+        return false;
+    }
+    out.close();
+    if (!out) {
+        LAMBO_LOG_ERROR("state", "save: could not close %s\n",
+                        path_to_utf8(temporary).c_str());
+        std::error_code ignored;
+        fs::remove(temporary, ignored);
+        return false;
+    }
+    if (!replace_file(temporary, job.path)) return false;
+    LAMBO_LOG_DEBUG("state", "published %zu bytes to %s\n",
+                    job.size, path_to_utf8(job.path).c_str());
     return true;
 }
 
@@ -105,9 +159,11 @@ void worker_main() {
     State& s = state();
     std::unique_lock lock(s.mutex);
     for (;;) {
-        s.changed.wait(lock, [&s] { return s.has_pending || s.stopping; });
+        s.changed.wait(lock, [&s] {
+            return s.has_pending || s.worker_state == WorkerState::Stopping;
+        });
         if (!s.has_pending) {
-            if (s.stopping) return;
+            if (s.worker_state == WorkerState::Stopping) return;
             continue;
         }
 
@@ -130,18 +186,20 @@ void worker_main() {
         lock.lock();
         s.writing = false;
         s.changed.notify_all();
-        if (s.stopping && !s.has_pending) return;
+        if (s.worker_state == WorkerState::Stopping && !s.has_pending) return;
     }
 }
 
-void start_worker(State& s) {
-    if (s.worker.joinable()) return;
-    s.stopping = false;
+bool start_worker(State& s) {
+    if (s.worker_state == WorkerState::Running) return true;
+    if (s.worker_state == WorkerState::Stopping || s.shutdown_in_progress) return false;
     s.worker = std::thread(worker_main);
+    s.worker_state = WorkerState::Running;
     if (!s.exit_handler_registered) {
         std::atexit(lambo_savestate_io_shutdown);
         s.exit_handler_registered = true;
     }
+    return true;
 }
 
 } // namespace
@@ -154,17 +212,30 @@ extern "C" int lambo_savestate_io_submit(const char* path, uint8_t* data, size_t
         return -1;
     }
 
+    // Own the buffer before any allocation that can throw, so every early
+    // return releases the caller's malloc'd image.
+    Job incoming;
+    incoming.data.reset(data);
+    incoming.size = size;
+    try {
+        incoming.path = path_from_utf8(path);
+    } catch (const std::exception& error) {
+        LAMBO_LOG_ERROR("state", "save: invalid path %s (%s)\n", path, error.what());
+        return -1;
+    }
+
     std::lock_guard lock(s.mutex);
-    start_worker(s);
+    if (!start_worker(s)) {
+        LAMBO_LOG_WARN("state", "save: writer is shutting down; dropping %s\n",
+                       path_to_utf8(incoming.path).c_str());
+        return -1;
+    }
     if (s.has_pending) {
         // Keep memory bounded under repeated F7 presses: the newest image wins,
         // and the worker will still publish the last image requested.
         LAMBO_LOG_DEBUG("state", "save: replacing a queued snapshot\n");
     }
-    s.pending = Job{};
-    s.pending.path = path;
-    s.pending.data = data;
-    s.pending.size = size;
+    s.pending = std::move(incoming);
     s.has_pending = true;
     s.changed.notify_one();
     return 0;
@@ -180,15 +251,30 @@ extern "C" void lambo_savestate_io_flush(void) {
 
 extern "C" void lambo_savestate_io_shutdown(void) {
     State& s = state();
-    lambo_savestate_io_flush();
-    {
-        std::lock_guard lock(s.mutex);
-        s.stopping = true;
-        s.changed.notify_all();
+    std::unique_lock lock(s.mutex);
+    if (s.shutdown_in_progress) {
+        s.changed.wait(lock, [&s] { return !s.shutdown_in_progress; });
+        return;
     }
+    s.shutdown_in_progress = true;
+    lock.unlock();
+
+    // Drain accepted work before preventing new submissions. A concurrent
+    // submit that set has_pending before we marked shutdown is still written
+    // by the worker because stopping only exits once the queue is empty.
+    lambo_savestate_io_flush();
+
+    lock.lock();
+    s.worker_state = WorkerState::Stopping;
+    s.changed.notify_all();
+    lock.unlock();
+
     if (s.worker.joinable()) s.worker.join();
-    std::lock_guard lock(s.mutex);
-    s.stopping = false;
+
+    lock.lock();
+    s.worker_state = WorkerState::Idle;
+    s.shutdown_in_progress = false;
+    s.changed.notify_all();
 }
 
 extern "C" uint64_t lambo_savestate_io_now_us(void) {

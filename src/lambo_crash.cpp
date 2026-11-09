@@ -49,6 +49,11 @@
     #include <execinfo.h>
     #endif
     #include <unistd.h>
+    #if defined(__linux__)
+    #include <sys/resource.h>
+    #include <sys/syscall.h>
+    #include <sys/types.h>
+    #endif
 #endif
 
 #if defined(__ANDROID__)
@@ -239,11 +244,15 @@ std::unique_ptr<SymbolTable> find_and_load_symbol_table() {
 }
 
 void symbol_loader_main() {
-    // Startup-only work: keep it below the game/render threads.
+    // Startup-only work: keep this thread below the game/render threads.
+    // POSIX nice(2) changes the whole process on some systems, so only use the
+    // Linux/Android per-thread form (setpriority on the kernel TID). Other
+    // POSIX targets keep the default priority rather than demoting gameplay.
 #if defined(_WIN32)
     (void)SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
-#else
-    (void)nice(10);
+#elif defined(__linux__) && defined(SYS_gettid)
+    const pid_t tid = static_cast<pid_t>(syscall(SYS_gettid));
+    (void)setpriority(PRIO_PROCESS, static_cast<id_t>(tid), 10);
 #endif
     std::unique_ptr<SymbolTable> symbols;
     try {
@@ -251,6 +260,8 @@ void symbol_loader_main() {
     } catch (const std::exception& error) {
         LAMBO_LOG_WARN("crash", "symbol load failed (%s); raw N64 PCs only\n",
                        error.what());
+    } catch (...) {
+        LAMBO_LOG_WARN("crash", "symbol load failed; raw N64 PCs only\n");
     }
     if (symbols != nullptr) {
         g_published.store(symbols.release(), std::memory_order_release);

@@ -7,7 +7,7 @@
 //
 // Lifecycle: the worker starts on the first submit and is joined by an atexit
 // handler. Paths that bypass atexit with _Exit() must call
-// lambo_savestate_flush() first, like the Controller Pak exit paths do.
+// lambo_savestate_io_shutdown() first, like the Controller Pak exit paths do.
 
 #ifndef LAMBO_SAVESTATE_IO_H
 #define LAMBO_SAVESTATE_IO_H

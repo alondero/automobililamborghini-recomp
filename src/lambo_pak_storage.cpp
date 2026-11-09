@@ -7,7 +7,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -26,6 +25,9 @@ struct StorageState {
     // instead of copying 32 KiB on every 32-byte Joybus block write.
     std::mutex image_mutex;
     const uint8_t* live_image = nullptr;
+    // Reused staging buffer: the worker is the only copier and does not start
+    // another copy until the current publish has completed.
+    std::array<uint8_t, LAMBO_PAK_SIZE> snapshot{};
     std::chrono::steady_clock::time_point deadline{};
     uint64_t generation = 0;
     uint64_t copy_count = 0;
@@ -34,6 +36,7 @@ struct StorageState {
     bool writing = false;
     bool flush_requested = false;
     bool stopping = false;
+    bool shutdown_in_progress = false;
     bool exit_handler_registered = false;
     LamboPakIoResult last_result{};
 #if defined(LAMBO_PAK_STORAGE_TESTING)
@@ -100,11 +103,10 @@ void storage_worker() {
 
         // Snapshot once at the quiet end of the burst. image_mutex also guards
         // game-thread block writes, so this copy cannot tear a 32-byte block.
-        auto image = std::make_unique<std::array<uint8_t, LAMBO_PAK_SIZE>>();
         const auto copy_started = std::chrono::steady_clock::now();
         {
             std::lock_guard image_lock(storage.image_mutex);
-            std::memcpy(image->data(), storage.live_image, LAMBO_PAK_SIZE);
+            std::memcpy(storage.snapshot.data(), storage.live_image, LAMBO_PAK_SIZE);
         }
         storage.last_copy_us = static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::microseconds>(
@@ -115,21 +117,23 @@ void storage_worker() {
         LAMBO_LOG_DEBUG("pak", "snapshot copy #%llu took %llu us\n",
                         (unsigned long long)storage.copy_count,
                         (unsigned long long)storage.last_copy_us);
-        publish_snapshot(storage, lock, *image, path);
+        publish_snapshot(storage, lock, storage.snapshot, path);
         if (!storage.dirty) storage.flush_requested = false;
         storage.changed.notify_all();
         if (storage.stopping && !storage.dirty) return;
     }
 }
 
-void start_worker(StorageState& storage) {
-    if (storage.worker.joinable()) return;
+bool start_worker(StorageState& storage) {
+    if (storage.shutdown_in_progress || storage.stopping) return false;
+    if (storage.worker.joinable()) return true;
     storage.stopping = false;
     storage.worker = std::thread(storage_worker);
     if (!storage.exit_handler_registered) {
         std::atexit(lambo_pak_storage_shutdown);
         storage.exit_handler_registered = true;
     }
+    return true;
 }
 
 } // namespace
@@ -156,7 +160,10 @@ extern "C" LamboPakIoResult lambo_pak_storage_load(uint8_t image[LAMBO_PAK_SIZE]
 extern "C" void lambo_pak_storage_schedule_save(const uint8_t image[LAMBO_PAK_SIZE]) {
     StorageState& storage = state();
     std::lock_guard lock(storage.mutex);
-    start_worker(storage);
+    if (!start_worker(storage)) {
+        LAMBO_LOG_WARN("pak", "save during shutdown dropped\n");
+        return;
+    }
     const bool first_dirty = !storage.dirty;
     storage.live_image = image;
     storage.dirty = true;
@@ -188,7 +195,6 @@ extern "C" LamboPakIoResult lambo_pak_storage_flush(void) {
     StorageState& storage = state();
     std::unique_lock lock(storage.mutex);
     if (storage.dirty || storage.writing) {
-        start_worker(storage);
         storage.flush_requested = true;
         storage.changed.notify_all();
         storage.changed.wait(lock, [&storage] {
@@ -201,18 +207,28 @@ extern "C" LamboPakIoResult lambo_pak_storage_flush(void) {
 
 extern "C" void lambo_pak_storage_shutdown(void) {
     StorageState& storage = state();
+    std::unique_lock lock(storage.mutex);
+    if (storage.shutdown_in_progress) {
+        storage.changed.wait(lock, [&storage] { return !storage.shutdown_in_progress; });
+        return;
+    }
+    storage.shutdown_in_progress = true;
+    lock.unlock();
+
     (void)lambo_pak_storage_flush();
-    {
-        std::lock_guard lock(storage.mutex);
-        storage.stopping = true;
-        storage.changed.notify_all();
-    }
+
+    lock.lock();
+    storage.stopping = true;
+    storage.changed.notify_all();
+    lock.unlock();
+
     if (storage.worker.joinable()) storage.worker.join();
-    {
-        std::lock_guard lock(storage.mutex);
-        storage.stopping = false;
-        storage.flush_requested = false;
-    }
+
+    lock.lock();
+    storage.stopping = false;
+    storage.shutdown_in_progress = false;
+    storage.flush_requested = false;
+    storage.changed.notify_all();
 }
 
 #if defined(LAMBO_PAK_STORAGE_TESTING)
