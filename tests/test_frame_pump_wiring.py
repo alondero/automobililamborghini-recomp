@@ -9,7 +9,10 @@ SDL_PollEvent or the audio pump back into update_frontend() fails here.
 import sys
 from pathlib import Path
 
-from test_quit_path import function_body, require
+try:  # unittest discovery imports this as tests.test_frame_pump_wiring
+    from tests.test_quit_path import function_body, require
+except ImportError:  # ctest runs it as a script from tests/
+    from test_quit_path import function_body, require
 
 
 def main() -> None:
