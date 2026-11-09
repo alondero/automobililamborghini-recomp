@@ -84,7 +84,111 @@ void equivalence() {
     require(road_mesh(ram.data(),0x100,reused) && reused.empty() && reused.capacity()==capacity,
         "decode reuses caller storage");
 }
+constexpr float frame_time=1.0f/60;
+// A streak shape: its head (two opaque vertices) and its clear tail, in native pixels.
+struct Streak { float hx,hy,tx,ty; float length() const { return std::hypot(tx-hx,ty-hy); } };
+std::vector<Streak> streaks(const ScreenMesh& mesh) {
+    std::vector<Streak> out;
+    for (const auto& s:mesh.shapes) {
+        if (s.count!=4) continue;
+        const auto* v=&mesh.vertices[s.first];
+        out.push_back({(v[2].x+v[3].x)/2,(v[2].y+v[3].y)/2,(v[0].x+v[1].x)/2,(v[0].y+v[1].y)/2});
+    }
+    return out;
+}
+std::vector<Streak> rain(const Flow& flow,float width=427,float height=240,float intensity=1) {
+    ScreenMesh mesh;
+    screen_rain(width,height,0,0,flow,intensity,false,mesh);
+    for (const auto& s:mesh.shapes)
+        require(s.count<=screen_shape_vertices && s.index_count%3==0,"rain shapes fit one vertex load");
+    return streaks(mesh);
+}
+Flow settled(Motion motion,int frames=120) {
+    Flow flow;
+    for (int i=0;i<frames;++i) advance(flow,motion,frame_time);
+    return flow;
+}
+// Streaks keep their per-frame motion however long the race runs (#410). The
+// old float clock lost ~0.1 px of precision in an hour; the drop volume's
+// offsets wrap at its own size instead, so one frame always moves it equally.
+void long_race() {
+    for (Motion motion:{Motion{},Motion{70,0.3f}}) {
+        // Twenty seconds in, the eased motion has fully reached the car's.
+        Flow start=settled(motion,20*60),hour=settled(motion,60*60*60);
+        for (int i=0;i<3;++i) {
+            auto step=[&](Flow flow) {
+                auto before=flow.slabs[i]; advance(flow,motion,frame_time); auto after=flow.slabs[i];
+                return std::array<float,3>{after.fall-before.fall,after.approach-before.approach,after.drift-before.drift};
+            };
+            auto a=step(start),b=step(hour);
+            for (int k=0;k<3;++k) {
+                // A slab offset that wrapped during the frame says nothing about precision.
+                if (std::abs(a[k])>1 || std::abs(b[k])>1) continue;
+                require(std::abs(a[k]-b[k])<2e-5f,"an hour later, one frame moves the rain as far as at the start");
+            }
+            const auto& slab=hour.slabs[i];
+            require(std::abs(slab.fall)<40 && std::abs(slab.approach)<10 && std::abs(slab.drift)<60,
+                "the drop volume's offsets stay small");
+        }
+    }
+}
+// Modern streaks follow the car (#410): at rest they fall and slant with the
+// wind; driving makes them stream out of the view centre and stretch;
+// steering sweeps them sideways.
+void speed() {
+    auto mean=[](const std::vector<Streak>& all,auto value) {
+        double sum=0; for (const auto& s:all) sum+=value(s); return sum/double(all.size());
+    };
+    auto rest=rain(settled({}));
+    require(rest.size()>280 && rest.size()<390,"16:9 rain draws about 333 streaks at full intensity");
+    for (const auto& s:rest) require(s.ty<s.hy && s.tx<=s.hx,"at rest, streaks fall to the right with tails up-left");
+
+    auto fast=rain(settled({60,0}));
+    require(fast.size()>250 && fast.size()<390,"driving keeps the streak count");
+    size_t outward=0,far=0;
+    for (const auto& s:fast) {
+        float head=std::hypot(s.hx-213.5f,s.hy-120),tail=std::hypot(s.tx-213.5f,s.ty-120);
+        if (head<40) continue;
+        ++far; outward+=tail<head;
+    }
+    require(far>100 && outward>=far*9/10,"at speed, streaks point out of the view centre");
+    auto length=[](const Streak& s) { return s.length(); };
+    require(mean(fast,length)>2*mean(rest,length),"streaks stretch as speed rises");
+    for (const auto& s:fast) require(s.length()<=240*0.35f+0.01f,"the nearest streaks are capped");
+
+    auto sideways=[](const Streak& s) { return s.tx-s.hx; };
+    auto right=rain(settled({0,0.6f})),left=rain(settled({0,-0.6f}));
+    require(mean(right,sideways)>0.5 && mean(rest,sideways)<0 && mean(left,sideways)<mean(rest,sideways)-0.5,
+        "steering sweeps the rain against the turn");
+
+    Flow flow; advance(flow,{60,0},frame_time);
+    require(flow.motion.forward>0 && flow.motion.forward<10,"the rain eases toward a sudden change of speed");
+    Flow bad=settled({}); auto before=bad.slabs[0];
+    advance(bad,{NAN,0},frame_time);
+    require(bad.slabs[0].fall==before.fall && bad.motion.forward==0,"non-finite motion is ignored");
+
+    // Count follows view area up to 16:9 (2P views are half height); wider outputs keep that count.
+    auto two=rain(settled({}),427,120);
+    require(two.size()>120 && two.size()<200,"a 2P view draws half the streaks");
+    auto wide=rain(settled({60,0.3f}),853,240);
+    require(wide.size()>280 && wide.size()<=383,"32:9 keeps the 16:9 count within the camera buffer bound");
+    require(rain(settled({}),427,240,0.3f).size()<rest.size()/2,"intensity scales the count");
+}
+// The storm sky showed wide green and blue-grey bands in game (#410): each
+// 5-bit channel was truncated from the grey at a different offset. Clouds
+// keep one tint, rounded to the nearest step.
+void sky_banding() {
+    for (bool modern:{false,true}) for (int y=0;y<64;++y) for (int x=0;x<512;++x) {
+        uint16_t p=cloud_pixel(x,y,modern);
+        int r=(p>>11)&31,g=(p>>6)&31,b=(p>>1)&31;
+        require(g==r && b==r+1 && (p&1),"storm clouds keep one blue-grey tint");
+        require(std::abs(float(r)-cloud_level(x,y,modern))<=0.5f,"the sky rounds to the nearest step");
+    }
+}
 int main(int argc,char** argv) {
+    sky_banding();
+    long_race();
+    speed();
     equivalence();
     Triangle road{{Point{-1000,0,-1000},Point{2000,0,-1000},Point{-1000,0,2000}}};
     Triangle wall{{Point{0,0,0},Point{0,2000,0},Point{2000,0,0}}};
