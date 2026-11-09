@@ -466,6 +466,23 @@ still builds it, at about the old per-frame cost for that segment. Modern
 frames keep rewriting ripple vertices; that work, plus scattered guest writes,
 is most of the remaining cost. These are synthetic CPU measurements, not a
 game FPS claim.
+## Modern camera rain triangles (2026-11-09)
+
+Modern camera rain changed from sub-pixel rectangles to triangles; see
+[Rain rendering](rain.md#camera-rain). One run of `lambo_rain_benchmark` on the
+same machine after the change, producers per task, steady frames:
+
+| Producers, 25 segments | Steady per task (µs) | Steady allocations |
+| --- | ---: | ---: |
+| 36 faces, Modern, 1P | 108 | 0 |
+| 36 faces, Modern, 4P | 121 | 0 |
+| 120 faces, Modern, 1P | 794 | 0 |
+| 120 faces, Modern, 4P | 623 | 0 |
+
+These figures are in the range of the cached figures above. That was one run
+with other work on the machine, so it shows no measurable regression and makes
+no speed-up claim. Retro output is unchanged.
+
 ## Rain road buffer memory (2026-11-09)
 
 Issue #398. Each road buffer was allocated at the 12,000-vertex worst case,

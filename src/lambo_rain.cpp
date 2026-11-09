@@ -181,6 +181,100 @@ std::vector<Vertex> puddles(const std::vector<Triangle>& road,
     puddle_mesh(road,planes,modern,seconds,intensity,mesh);
     return std::move(mesh.vertices);
 }
+namespace {
+float unit(uint32_t seed) { return float(seed%10007)/10007; }
+uint32_t screen_color(uint32_t rgb,float alpha) { return (rgb<<8)|uint32_t(std::clamp(alpha,0.0f,255.0f)); }
+// Appends one shape; its triangles index its own vertices.
+class Shape {
+public:
+    explicit Shape(ScreenMesh& mesh):mesh_(mesh) {
+        shape_.first=uint32_t(mesh.vertices.size());
+        shape_.first_index=uint32_t(mesh.indices.size());
+    }
+    ~Shape() {
+        shape_.count=uint32_t(mesh_.vertices.size())-shape_.first;
+        shape_.index_count=uint32_t(mesh_.indices.size())-shape_.first_index;
+        mesh_.shapes.push_back(shape_);
+    }
+    uint8_t vertex(float x,float y,uint32_t rgba) {
+        mesh_.vertices.push_back({x,y,rgba});
+        return uint8_t(mesh_.vertices.size()-1-shape_.first);
+    }
+    void triangle(uint8_t a,uint8_t b,uint8_t c) { mesh_.indices.insert(mesh_.indices.end(),{a,b,c}); }
+private:
+    ScreenMesh& mesh_;
+    ScreenShape shape_;
+};
+// Motion-blurred streak: an opaque head at (x,y) tapering to a clear tail at (x+dx,y+dy).
+void streak(ScreenMesh& mesh,float x,float y,float dx,float dy,float width,uint32_t rgb,float alpha) {
+    float length=std::sqrt(dx*dx+dy*dy);
+    if (!(length>0)) return;
+    float nx=-dy/length*width/2,ny=dx/length*width/2;
+    uint32_t head=screen_color(rgb,alpha),tail=screen_color(rgb,0);
+    Shape s(mesh);
+    uint8_t a=s.vertex(x+dx-nx*0.3f,y+dy-ny*0.3f,tail),b=s.vertex(x+dx+nx*0.3f,y+dy+ny*0.3f,tail);
+    uint8_t c=s.vertex(x+nx,y+ny,head),d=s.vertex(x-nx,y-ny,head);
+    s.triangle(a,b,c); s.triangle(a,c,d);
+}
+// Elliptical fan shaded from centre to rim. feather>1 adds a clear outer ring
+// at that scale, so the edge fades instead of ending in a hard line.
+void blob(ScreenMesh& mesh,float x,float y,float rx,float ry,int sides,uint32_t center,uint32_t rim,float feather) {
+    Shape s(mesh);
+    uint8_t c=s.vertex(x,y,center);
+    const int rings=feather>1 ? 2 : 1;
+    for (int ring=0;ring<rings;++ring) for (int i=0;i<sides;++i) {
+        float angle=float(i)*6.28318530718f/float(sides),scale=ring ? feather : 1;
+        s.vertex(x+std::cos(angle)*rx*scale,y+std::sin(angle)*ry*scale,ring ? rim&0xFFFFFF00u : rim);
+    }
+    for (int i=0;i<sides;++i) {
+        uint8_t a=uint8_t(1+i),b=uint8_t(1+(i+1)%sides);
+        s.triangle(c,a,b);
+        if (rings==2) { s.triangle(a,uint8_t(a+sides),uint8_t(b+sides)); s.triangle(a,uint8_t(b+sides),b); }
+    }
+}
+// Far, middle and near rain: nearer streaks are longer, faster, wider and brighter.
+struct Layer { float share,speed,length,width,alpha; };
+constexpr Layer layers[3]{{0.45f,150,8,0.30f,70},{0.35f,250,15,0.42f,95},{0.20f,400,27,0.62f,125}};
+}
+void screen_rain(float width,float height,int player,float seconds,float intensity,bool droplets,ScreenMesh& mesh) {
+    mesh.vertices.clear(); mesh.indices.clear(); mesh.shapes.clear();
+    if (!(width>0) || !(height>0) || !std::isfinite(seconds) || !(intensity>0)) return;
+    intensity=std::min(intensity,1.0f);
+    const float s=height/240; // split-screen views are half height
+    const float slant=0.17f;  // wind: streaks fall to the right, tails trail up-left
+    // Count follows view area up to 16:9; wider outputs keep that count, so the
+    // camera buffer bound holds and rain is sparser there.
+    constexpr float widest_area=(16.0f/9)/(4.0f/3);
+    const int count=int(250*intensity*std::min(width*height/(320.0f*240),widest_area));
+    for (int i=0;i<count;++i) {
+        uint32_t seed=hash(uint32_t(i)*0x9E3779B9u+uint32_t(player)*0x85EBCA6Bu+1);
+        float pick=unit(seed);
+        const Layer& layer=layers[pick<layers[0].share ? 0 : pick<layers[0].share+layers[1].share ? 1 : 2];
+        float length=layer.length*s*(0.75f+0.5f*unit(hash(seed+1)));
+        float speed=layer.speed*s*(0.9f+0.2f*unit(hash(seed+2)));
+        float span=height+length; // the head enters at the top edge, the tail leaves the bottom
+        float y=std::fmod(unit(hash(seed+3))*span+seconds*speed,span);
+        float x=std::fmod(unit(hash(seed+4))*width+slant*seconds*speed,width);
+        float alpha=layer.alpha*(0.7f+0.3f*unit(hash(seed+5)))*(0.75f+0.25f*intensity);
+        streak(mesh,x,y,-slant*length,-length,layer.width*std::max(s,0.75f),0xD2DEEA,alpha);
+    }
+    if (!droplets) return;
+    const int drops=int(10+8*intensity);
+    for (int i=0;i<drops;++i) {
+        uint32_t seed=hash(uint32_t(i)*0x27D4EB2Fu+uint32_t(player)*0x165667B1u+900);
+        float age=std::fmod(seconds+unit(seed)*10,10.0f);
+        float fade=std::min(age/0.6f,1.0f)*std::min((10-age)/1.5f,1.0f)*(0.55f+0.45f*intensity);
+        float rx=s*(2.0f+3.6f*unit(hash(seed+1))*unit(hash(seed+2))),ry=rx*1.08f;
+        // A quarter of the drops grow heavy and run down the lens, leaving a trail.
+        float slide=(seed&3)==0 ? std::pow(std::max(0.0f,age-4),2.0f)*1.6f*s : 0;
+        float x=unit(hash(seed+3))*width,y=unit(hash(seed+4))*height+slide;
+        if (slide>ry) streak(mesh,x,y-ry*0.6f,0,-(slide-ry*0.6f),rx*0.55f,0xA8C0D0,40*fade);
+        // Dark refracting rim, lighter centre, a caustic below and a specular glint above.
+        blob(mesh,x,y,rx,ry,12,screen_color(0xC6DCEA,26*fade),screen_color(0x1E2E3C,88*fade),1.2f);
+        blob(mesh,x+rx*0.12f,y+ry*0.5f,rx*0.5f,ry*0.25f,8,screen_color(0xE6F4FF,90*fade),screen_color(0xE6F4FF,0),0);
+        blob(mesh,x-rx*0.38f,y-ry*0.42f,rx*0.3f,ry*0.3f,8,screen_color(0xFFFFFF,210*fade),screen_color(0xFFFFFF,0),0);
+    }
+}
 uint16_t cloud_pixel(int x,int y,bool modern) {
     // Periodic panoramic noise: eight 64-pixel tiles, two 32-pixel rows.
     if (!modern) { x=(x/4)*4; y=(y/3)*3; }

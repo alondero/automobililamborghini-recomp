@@ -56,6 +56,21 @@ inline int16_t coordinate(float f) {
     float d = f - float(i);
     return int16_t(i + (d >= 0.5f) - (d <= -0.5f));
 }
+// Modern camera rain for one view, in native pixels from the top-left of the
+// view's widened area (width x height). RT64 snaps rectangle edges to whole
+// native pixels, so this art is triangles that it rasterizes at output
+// resolution; see docs/rain.md, "Camera rain".
+struct ScreenVertex { float x = 0, y = 0; uint32_t rgba = 0; };
+// A shape's triangles index its own vertices, so one vertex load can hold it.
+struct ScreenShape { uint32_t first = 0, count = 0, first_index = 0, index_count = 0; };
+constexpr uint32_t screen_shape_vertices = 32; // most vertices in one shape
+struct ScreenMesh {
+    std::vector<ScreenVertex> vertices;
+    std::vector<uint8_t> indices; // triangle corners, relative to the shape's first vertex
+    std::vector<ScreenShape> shapes;
+};
+void screen_rain(float width, float height, int player, float seconds, float intensity,
+    bool droplets, ScreenMesh& mesh);
 uint16_t cloud_pixel(int x, int y, bool modern);
 uint32_t hash(uint32_t value);
 

@@ -4,7 +4,10 @@
 #include "rt64_extended_gbi.h"
 #include "lambo_log.h"
 #include "rain_reference.h"
+#include <algorithm>
+#include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -22,7 +25,8 @@ void* operator new(size_t size) {
 void operator delete(void* p) noexcept { std::free(p); }
 void operator delete(void* p,size_t) noexcept { std::free(p); }
 
-extern "C" float lambo_sky_target_aspect() { return 16.0f/9; }
+static float target_aspect=16.0f/9;
+extern "C" float lambo_sky_target_aspect() { return target_aspect; }
 volatile int g_log_threshold=LAMBO_LEVEL_WARN;
 void lambo_log_write(LamboLogLevel,const char*,const char*,...) {}
 void require(bool good,const char* message) {
@@ -344,6 +348,204 @@ void run(uint8_t* ram) {
 }
 }
 
+// Camera rain replayed the way RT64 draws it. RT64 rounds every rectangle edge
+// up to a whole native pixel before scaling it to the output (FixedRect::left(true)
+// in convertViewportRect), so a rectangle cannot carry sub-pixel art at any
+// resolution. Modern rain is therefore triangles, which RT64 rasterizes at the
+// output resolution; Retro keeps its native-pixel rectangles.
+namespace camera {
+uint8_t* rdram;
+int32_t& w(uint32_t a) { return MEM_W(0,int32_t(a)); }
+int16_t& h(uint32_t a) { return MEM_H(0,int32_t(a)); }
+struct Point { float x=0,y=0; unsigned alpha=0; };
+using Triangle=std::array<Point,3>;
+struct Drawn {
+    std::vector<std::array<int,4>> rects; // 10.2 native coordinates
+    std::vector<Triangle> triangles;      // native screen pixels after RT64's widescreen scale
+    std::vector<unsigned> slots;          // every vertex cache slot written
+    unsigned origin=0,left=0,right=0;     // viewport origin, scissor edge origins
+    bool balanced=true,stale=false;
+};
+using Matrix=std::array<float,16>;
+Matrix matrix(uint32_t a) { // N64 s15.16: sixteen integer halves, then sixteen fractions
+    Matrix m{};
+    for (int k=0;k<16;++k)
+        m[k]=float(int32_t((uint32_t(uint16_t(h(a+k*2)))<<16)|uint16_t(h(a+32+k*2))))/65536;
+    return m;
+}
+Matrix multiply(const Matrix& a,const Matrix& b) { // row vectors: v*a*b
+    Matrix m{};
+    for (int r=0;r<4;++r) for (int c=0;c<4;++c) for (int k=0;k<4;++k) m[r*4+c]+=a[r*4+k]*b[k*4+c];
+    return m;
+}
+// ratio: RT64's horizontal projection scale for a wide viewport (adjustProjectionMatrix).
+Drawn replay(uint32_t list,float ratio) {
+    Drawn out;
+    std::map<unsigned,int> depth;
+    Matrix projection{},modelview{};
+    float scale[2]{},translate[2]{};
+    struct Slot { Point p; unsigned load; };
+    std::map<unsigned,Slot> cache;
+    unsigned loads=0;
+    auto stack=[&](unsigned id,int d) { if ((depth[id]+=d)<0) out.balanced=false; };
+    for (uint32_t at=list;;at+=8) {
+        require(at<list+0x20000,"camera list terminates");
+        uint32_t a=w(at),b=w(at+4);
+        if (a==0xB8000000) break;
+        switch (a>>24) {
+        case 0x01: {
+            unsigned params=(a>>16)&0xFF;
+            if (params&1) projection=matrix(b);
+            else { if (params&4) stack(100,1); modelview=matrix(b); }
+            break;
+        }
+        case 0xBD: stack(100,-1); break;
+        case 0x04: {
+            unsigned n=(a>>10)&63,first=(a>>17)&127;
+            Matrix mvp=multiply(modelview,projection);
+            ++loads;
+            for (unsigned i=0;i<n;++i) {
+                uint32_t v=b+i*16;
+                float in[4]{float(h(v)),float(h(v+2)),float(h(v+4)),1},clip[4]{};
+                for (int c=0;c<4;++c) for (int k=0;k<4;++k) clip[c]+=in[k]*mvp[k*4+c];
+                Point p{clip[0]/clip[3]/ratio*scale[0]+translate[0],-clip[1]/clip[3]*scale[1]+translate[1],
+                    unsigned(w(v+12)&255)};
+                cache[first+i]={p,loads}; out.slots.push_back(first+i);
+            }
+            break;
+        }
+        case 0xB1: case 0xBF: {
+            auto tri=[&](uint32_t word) {
+                unsigned v[3]{(word>>17)&127,(word>>9)&127,(word>>1)&127};
+                Triangle t{};
+                for (int k=0;k<3;++k) {
+                    auto found=cache.find(v[k]);
+                    if (found==cache.end() || found->second.load!=loads) out.stale=true;
+                    else t[k]=found->second.p;
+                }
+                out.triangles.push_back(t);
+            };
+            if ((a>>24)==0xB1) tri(a);
+            tri(b);
+            break;
+        }
+        case RT64_EXTENDED_OPCODE:
+            switch (a&0xFFFFFF) {
+            case G_EX_PUSHSCISSOR_V1:stack(1,1);break;case G_EX_POPSCISSOR_V1:stack(1,-1);break;
+            case G_EX_PUSHOTHERMODE_V1:stack(2,1);break;case G_EX_POPOTHERMODE_V1:stack(2,-1);break;
+            case G_EX_PUSHCOMBINE_V1:stack(3,1);break;case G_EX_POPCOMBINE_V1:stack(3,-1);break;
+            case G_EX_PUSHPRIMCOLOR_V1:stack(4,1);break;case G_EX_POPPRIMCOLOR_V1:stack(4,-1);break;
+            case G_EX_PUSHGEOMETRYMODE_V1:stack(5,1);break;case G_EX_POPGEOMETRYMODE_V1:stack(5,-1);break;
+            case G_EX_PUSHVIEWPORT_V1:stack(6,1);break;case G_EX_POPVIEWPORT_V1:stack(6,-1);break;
+            case G_EX_PUSHPROJMATRIX_V1:stack(7,1);break;case G_EX_POPPROJMATRIX_V1:stack(7,-1);break;
+            case G_EX_SETSCISSOR_V1: out.left=(b>>2)&0xFFF; out.right=(b>>14)&0xFFF; at+=8; break;
+            case G_EX_FILLRECT_V1: {
+                at+=8; uint32_t c=w(at),d=w(at+4);
+                out.rects.push_back({int(c>>16),int(c&0xFFFF),int(d>>16),int(d&0xFFFF)});
+                break;
+            }
+            case G_EX_SETVIEWPORT_V1: {
+                out.origin=b&0xFFF;
+                at+=8; uint32_t vp=w(at+4);
+                scale[0]=h(vp)/4.0f; scale[1]=h(vp+2)/4.0f;
+                translate[0]=h(vp+8)/4.0f; translate[1]=h(vp+10)/4.0f;
+                break;
+            }
+            }
+            break;
+        }
+    }
+    for (auto& entry:depth) if (entry.second) out.balanced=false;
+    return out;
+}
+float altitude(const Triangle& t) { // shortest height: how thin the triangle is
+    auto edge=[](Point a,Point b) { return std::hypot(b.x-a.x,b.y-a.y); };
+    float area=std::abs((t[1].x-t[0].x)*(t[2].y-t[0].y)-(t[2].x-t[0].x)*(t[1].y-t[0].y));
+    float longest=std::max({edge(t[0],t[1]),edge(t[1],t[2]),edge(t[2],t[0])});
+    return longest>0 ? area/longest : 0;
+}
+std::vector<uint32_t> cameras(unsigned settings,int players,int slot=0) {
+    w(cache::settings_at)=int32_t(settings);
+    return cache::frame(slot,{},players).cameras;
+}
+float ratio() { return target_aspect/(4.0f/3); }
+// Every vertex lies in its view (native px). Streaks enter above and leave
+// below, and running drops slide off the bottom; the scissor clips those.
+void require_inside(const Drawn& d,float x0,float y0,float width,float height,const char* message) {
+    float sx=0,sy=0; size_t n=0;
+    for (const auto& t:d.triangles) for (const auto& p:t) {
+        require(p.x>=x0-12 && p.x<=x0+width+12 && p.y>=y0-height*0.2f-8 && p.y<=y0+height*1.3f+8,message);
+        sx+=p.x; sy+=p.y; ++n;
+    }
+    require(n && std::abs(sx/n-(x0+width/2))<width*0.2f && std::abs(sy/n-(y0+height/2))<height*0.25f,message);
+}
+void run(uint8_t* ram) {
+    rdram=ram;
+    cache::setup();
+    const unsigned modern=2|(70<<8)|0x10000,retro=1|(70<<8)|0x10000;
+
+    auto one=cameras(modern,1);
+    require(one.size()==1,"Modern 1P draws one camera list");
+    Drawn d=replay(one[0],ratio());
+    require(d.rects.empty(),"Modern camera rain draws no rectangles: RT64 snaps their edges to whole native pixels");
+    require(d.triangles.size()>=200,"Modern camera rain is triangles that RT64 rasterizes at output resolution");
+    require(d.balanced,"Modern camera rain restores every state stack it pushes");
+    require(!d.stale,"every triangle uses vertices from its own vertex load");
+    for (unsigned s:d.slots) require(s>=32 && s<=94,"camera rain loads slots 32..94, preserving the native bank 0..31");
+    require(d.origin==G_EX_ORIGIN_NONE && d.left==G_EX_ORIGIN_LEFT && d.right==G_EX_ORIGIN_RIGHT,
+        "a full-width view keeps the native viewport origin and scissors the whole output");
+    size_t thin=0,graded=0;
+    for (const auto& t:d.triangles) {
+        thin+=altitude(t)<0.5f;
+        unsigned lo=std::min({t[0].alpha,t[1].alpha,t[2].alpha}),hi=std::max({t[0].alpha,t[1].alpha,t[2].alpha});
+        graded+=hi-lo>=40;
+    }
+    require(thin>=100,"Modern streaks are thinner than half a native pixel");
+    require(graded>=100,"Modern streaks and drops fade across each shape");
+    require_inside(d,0,0,320,240,"Modern 1P rain fills the whole widened view");
+
+    cache::pause_tick();
+    Drawn later=replay(cameras(modern,1,1)[0],ratio());
+    require(later.triangles.size()>=200 && (later.triangles[0][0].x!=d.triangles[0][0].x ||
+        later.triangles[0][0].y!=d.triangles[0][0].y),"Modern rain falls over time");
+
+    Drawn old=replay(cameras(retro,1)[0],ratio());
+    require(!old.rects.empty() && old.triangles.empty() && old.balanced,"Retro keeps native-pixel rectangles");
+
+    auto two=cameras(modern,2);
+    require(two.size()==2,"each 2P view draws camera rain");
+    for (int p=0;p<2;++p) {
+        Drawn view=replay(two[p],ratio());
+        require(view.balanced && !view.stale && view.rects.empty(),"2P camera rain is balanced triangles");
+        require_inside(view,0,float(p*120),320,120,"2P rain stays in its own half");
+    }
+    auto four=cameras(modern,4);
+    require(four.size()==4,"each 4P view draws camera rain");
+    for (int p=0;p<4;++p) {
+        Drawn view=replay(four[p],ratio());
+        require(view.balanced && !view.stale && view.rects.empty(),"4P camera rain is balanced triangles");
+        require_inside(view,float(p%2*160),float(p/2*120),160,120,"4P rain stays in its own quadrant");
+        require(view.origin==G_EX_ORIGIN_WIDE,"quadrant rain is widened like the game's quadrant scenes");
+        require(view.left==(p%2 ? G_EX_ORIGIN_CENTER : G_EX_ORIGIN_LEFT) &&
+            view.right==(p%2 ? G_EX_ORIGIN_RIGHT : G_EX_ORIGIN_CENTER),"quadrant rain is scissored to its half of the output");
+    }
+
+    // Every shape fits one vertex load, at every intensity and view size.
+    lambo::rain::ScreenMesh mesh;
+    for (float wide:{213.0f,427.0f,853.0f}) for (float tall:{120.0f,240.0f}) for (float when:{0.0f,5.5f,9.9f}) {
+        lambo::rain::screen_rain(wide,tall,1,when,1.0f,true,mesh);
+        for (const auto& shape:mesh.shapes)
+            require(shape.count<=lambo::rain::screen_shape_vertices && shape.index_count%3==0,"rain shapes fit one vertex load");
+    }
+    // The densest setting at the widest supported output still fits its buffer.
+    target_aspect=32.0f/9;
+    Drawn wide=replay(cameras(2|(100<<8)|0x10000,1)[0],ratio());
+    require(wide.triangles.size()>=200 && wide.balanced,"Heavy Modern rain fits at 32:9");
+    require_inside(wide,0,0,320,240,"32:9 rain fills the widened view");
+    target_aspect=16.0f/9;
+}
+}
+
 int main() {
     std::vector<uint8_t> memory(0x8000000);
     uint8_t* rdram=memory.data();
@@ -401,22 +603,23 @@ int main() {
         require(!geometry && !other && !combine && !prim && triangles>0 && fog,"puddles restore state and use native fog");
         require(uint32_t(w(copy+56))==0x06000000,"camera has its own insertion after the road");
         uint32_t camera=w(copy+60);
-        int scissor=0,rectangles=0;
+        int scissor=0,draws=0;
         for (unsigned i=0;i<5000;++i) {
             uint32_t a=w(camera+i*8);
             if (a==0xB8000000) break;
+            if ((a>>24)==0xB1 || (a>>24)==0xBF) ++draws;
             if ((a>>24)!=RT64_EXTENDED_OPCODE) continue;
             switch(a&0xFFFFFF) {
             case G_EX_PUSHSCISSOR_V1:++scissor;break;case G_EX_POPSCISSOR_V1:--scissor;break;
             case G_EX_PUSHOTHERMODE_V1:++other;break;case G_EX_POPOTHERMODE_V1:--other;break;
             case G_EX_PUSHCOMBINE_V1:++combine;break;case G_EX_POPCOMBINE_V1:--combine;break;
             case G_EX_PUSHPRIMCOLOR_V1:++prim;break;case G_EX_POPPRIMCOLOR_V1:--prim;break;
-            case G_EX_FILLRECT_V1:++rectangles;++i;break;
-            case G_EX_SETSCISSOR_V1:++i;break;
+            case G_EX_FILLRECT_V1:++draws;++i;break;
+            case G_EX_SETSCISSOR_V1:case G_EX_SETVIEWPORT_V1:++i;break;
             }
             require(scissor>=0 && other>=0 && combine>=0 && prim>=0,"camera cannot underflow state stacks");
         }
-        require(rectangles>0 && !scissor && !other && !combine && !prim,"camera restores every changed stack");
+        require(draws>0 && !scissor && !other && !combine && !prim,"camera restores every changed stack");
         auto published=std::vector<uint8_t>(memory.begin(),memory.begin()+0x800000);
         lambo_rain_publish(rdram,root,64);
         require(std::memcmp(published.data(),memory.data(),published.size())==0,"publication consumes insertions exactly once");
@@ -431,4 +634,5 @@ int main() {
     std::memcpy(before.data()+0x100,memory.data()+0x100,4);
     require(before==memory,"Off renders no effects or writes");
     cache::run(rdram);
+    camera::run(rdram);
 }
