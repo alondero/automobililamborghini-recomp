@@ -9,12 +9,18 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <filesystem>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 #include "lambo_f3dex.h"
 #include "lambo_log.h"
 #include "lambo_race_field.h"
+#include "lambo_savestate_io.h"
 #include "recomp.h"
 extern "C" void lambo_rain_publish(uint8_t*,uint32_t,uint32_t) {}
 extern "C" unsigned lambo_rain_wet(uint8_t*) { return 0; }
@@ -23,6 +29,8 @@ extern "C" {
 void lambo_graphics_task_prepare(uint8_t*, uint32_t);
 void lambo_savestate_request_save(void);
 void lambo_savestate_request_load(void);
+void lambo_savestate_flush(void);
+void lambo_savestate_shutdown(void);
 void lambo_savestate_tick(uint8_t*, recomp_context*);
 }
 namespace {
@@ -35,6 +43,19 @@ void environment(const char* key, const char* value) {
 #else
     setenv(key, value, 1);
 #endif
+}
+
+// The async mode blocks the writer thread before it touches the file, proving
+// the game-thread tick returned while the disk write was still pending.
+std::atomic<bool> write_blocked{false};
+std::atomic<bool> release_write{false};
+std::mutex gate_mutex;
+std::condition_variable gate_cv;
+
+void hold_before_write() {
+    write_blocked.store(true);
+    std::unique_lock lock(gate_mutex);
+    gate_cv.wait(lock, [] { return release_write.load(); });
 }
 }
 namespace lambo::config {
@@ -76,6 +97,66 @@ int main(int argc, char** argv) {
     environment("LAMBO_STATE_LOAD", "");
     environment("LAMBO_STATE_SAVE", "");
     const std::string mode = argv[1];
+    if (mode == "async") {
+        const std::filesystem::path destination = argv[2];
+        std::filesystem::remove(destination);
+        environment("LAMBO_STATE_FILE", destination.string().c_str());
+        lambo_savestate_io_set_before_write_hook(hold_before_write);
+        write(ram, 0x902084, 0x11223344u);
+        lambo_savestate_request_save();
+        lambo_savestate_tick(ram, nullptr);
+
+        // The snapshot copy is complete and handed to the writer, but the
+        // writer is parked before opening the file.
+        for (int attempt = 0; attempt < 1000 && !write_blocked.load(); ++attempt)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        assert(write_blocked.load());
+        assert(!std::filesystem::exists(destination));
+
+        // Keep "playing" while the write is in flight: the live image may change,
+        // but the queued snapshot must not.
+        write(ram, 0x902084, 0x55667788u);
+        assert(!std::filesystem::exists(destination));
+
+        {
+            std::lock_guard lock(gate_mutex);
+            release_write.store(true);
+        }
+        gate_cv.notify_all();
+        lambo_savestate_flush();
+        assert(std::filesystem::exists(destination));
+        assert(log_output.find("snapshot copy took") != std::string::npos);
+        assert(log_output.find("save write took") != std::string::npos);
+        assert(read(ram, 0x902084) == 0x55667788u);
+
+        // The completed file is loadable and restores the pre-mutation snapshot.
+        lambo_savestate_request_load();
+        lambo_savestate_tick(ram, nullptr);
+        assert(read(ram, 0x902084) == 0x11223344u);
+
+        // Saving again must atomically replace the existing state file.
+        write(ram, 0x902084, 0x99aabbccu);
+        lambo_savestate_request_save();
+        lambo_savestate_tick(ram, nullptr);
+        lambo_savestate_flush();
+        assert(std::filesystem::exists(destination));
+        lambo_savestate_request_load();
+        lambo_savestate_tick(ram, nullptr);
+        assert(read(ram, 0x902084) == 0x99aabbccu);
+
+        // A shutdown/join followed by a new request must start a fresh writer
+        // rather than leaving a queued job with no worker.
+        lambo_savestate_shutdown();
+        write(ram, 0x902084, 0x0badf00du);
+        lambo_savestate_request_save();
+        lambo_savestate_tick(ram, nullptr);
+        lambo_savestate_flush();
+        assert(std::filesystem::exists(destination));
+        lambo_savestate_request_load();
+        lambo_savestate_tick(ram, nullptr);
+        assert(read(ram, 0x902084) == 0x0badf00du);
+        return 0;
+    }
     if (mode == "write" && argc > 3) write(ram, 0xce6a4, uint32_t(std::atoi(argv[3])) << 16);
     if (mode == "default" || mode == "legacy-default") density = 1.0;
     const auto prepare = [&] { lambo_graphics_task_prepare(ram, task | 0x80000000); };

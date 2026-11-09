@@ -191,9 +191,10 @@ static void lambo_pak_ensure_loaded(void) {
     lambo_mod_pak_loaded();
 }
 
-// Copy the current image into the host storage module. Its worker coalesces a burst of 32-byte
-// Joybus writes and atomically publishes the final image after the burst, keeping filesystem I/O
-// off this emulation thread. Explicit application-exit paths flush any pending image.
+// Hand the current image to the host storage module. Its worker coalesces a burst of 32-byte
+// Joybus writes and copies the image once at the debounce boundary, then atomically publishes
+// it, keeping filesystem I/O off this emulation thread. Explicit application-exit paths flush
+// any pending image.
 static void lambo_pak_save(void) {
     lambo_pak_storage_schedule_save(g_lambo_pak_image);
     lambo_mod_pak_written();
@@ -314,8 +315,12 @@ static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
                         if (addr == RUMBLE_PAK_COMMAND_REG) { /* MOTOR control block -> SDL rumble */
                             lambo_pak_set_rumble(MEM_BU(0, data) != 0);
                         } else if (addr < CONTROLLER_PAK_BANK_SELECT_REG) { /* RAM: persist into the .mpk image */
+                            uint8_t block[CONTROLLER_PAK_BLOCK_SIZE];
                             int k;
-                            for (k = 0; k < CONTROLLER_PAK_BLOCK_SIZE; k++) g_lambo_pak_image[(addr + k) & CONTROLLER_PAK_IMAGE_ADDRESS_MASK] = (uint8_t)MEM_BU(k, data);
+                            for (k = 0; k < CONTROLLER_PAK_BLOCK_SIZE; k++)
+                                block[k] = (uint8_t)MEM_BU(k, data);
+                            lambo_pak_storage_write_block(g_lambo_pak_image, addr, block,
+                                                          CONTROLLER_PAK_BLOCK_SIZE);
                             lambo_pak_save();
                         }
                         /* else bank-select (0x8000): accept, no store */

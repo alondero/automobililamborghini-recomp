@@ -82,9 +82,13 @@ if(BUILD_TESTING)
         ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
     add_executable(lambo_hud_savestate_tests tests/test_hud_savestate.cpp
         src/lambo_graphics_task.cpp src/lambo_hud_texture_bounds.cpp
-        src/lambo_fog_widescreen.cpp src/lambo_savestate.c)
+        src/lambo_fog_widescreen.cpp src/lambo_savestate.c
+        src/lambo_savestate_io.cpp)
     target_include_directories(lambo_hud_savestate_tests PRIVATE src
         ${N64MR}/N64Recomp/include ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
+    target_compile_definitions(lambo_hud_savestate_tests PRIVATE
+        LAMBO_SAVESTATE_IO_TESTING=1)
+    target_link_libraries(lambo_hud_savestate_tests PRIVATE Threads::Threads)
 
 
     add_executable(lambo_mod_api_tests tests/test_mod_api.cpp src/lambo_mod_api.cpp)
@@ -410,6 +414,25 @@ if(BUILD_TESTING)
     )
     target_link_libraries(lambo_controller_pak_storage_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_controller_pak_batched_storage COMMAND lambo_controller_pak_storage_tests)
+
+    add_executable(lambo_crash_symbols_tests
+        tests/test_crash_symbols.cpp
+        src/lambo_crash.cpp
+        src/lambo_log.cpp
+    )
+    target_include_directories(lambo_crash_symbols_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/N64Recomp/include
+        ${N64MR}/librecomp/include
+        ${N64MR}/ultramodern/include
+    )
+    target_link_libraries(lambo_crash_symbols_tests PRIVATE Threads::Threads)
+    if(WIN32)
+        target_link_libraries(lambo_crash_symbols_tests PRIVATE dbghelp)
+    endif()
+    add_test(NAME lambo_crash_symbols
+        COMMAND lambo_crash_symbols_tests
+            ${CMAKE_CURRENT_SOURCE_DIR}/lamborghini.syms.toml)
 
     add_executable(lambo_startup_tests
         tests/test_startup.cpp
@@ -887,6 +910,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_gpu_advisory.cpp  # outdated-Intel-driver detection and user advisory
         src/lambo_warp.c       # developer warp menu (Ctrl+Shift+1-6 / LAMBO_WARP)
         src/lambo_savestate.c  # developer RDRAM snapshot; see docs/debugging.md
+        src/lambo_savestate_io.cpp  # off-thread atomic publish for save-states
         src/lambo_log.cpp      # file-first levelled logging + --console/--verbose CLI policy
         src/lambo_car_trace.c  # car-differences campaign: LAMBO_CAR_TRACE per-frame vehicle-record trace
     )

@@ -139,6 +139,16 @@ Developer save-states now use LMBOSTAT v2. They store the low 8 MiB followed by
 snapshots from a fresh race; regular game progress and Controller Pak saves are
 unaffected. Track Lab accepts both versions for its low-memory track inspection.
 
+F7 copies guest RAM at the frame boundary and returns before the file is
+written; a worker publishes the completed image with a temporary file and
+atomic rename. Exit paths that use `_Exit` flush queued snapshots first, so the
+file is complete when the process ends. Debug logs record the snapshot copy and
+on-disk write durations.
+
+Crash symbols are parsed and sorted on a low-priority background thread after
+the handlers are installed. The handler only reads the published table; a crash
+before the load finishes still produces a dump with raw N64 PCs.
+
 RT task captures use schema 3 and a contiguous 0x924000-byte RAM image, including
 the relocated object and camera tables. The inspector still accepts historical
 schema 2 captures. See [race fields](race-fields.md) for ownership and checks.

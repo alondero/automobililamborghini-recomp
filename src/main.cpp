@@ -136,6 +136,9 @@ static void claim_immediate_exit() {
 
 // Logs a ray-traced shadow lap's partial window; defined in lambo_rt_production.cpp.
 extern "C" void lambo_rt_flush_lap_summary_at_exit();
+// Flush queued developer save-states and join the writer before an _Exit() path
+// bypasses the atexit handler in lambo_savestate_io.cpp.
+extern "C" void lambo_savestate_shutdown(void);
 
 // Print the one-line boot summary the runtime guard (tests/pivot/test_boot_smoke.py) parses,
 // then terminate the process immediately. We _Exit instead of returning through
@@ -154,6 +157,7 @@ extern "C" void lambo_rt_flush_lap_summary_at_exit();
         "max_vis", metrics.first_vi ? 0 : 2);
     lambo::harness::write_result(outcome);
     (void)lambo_pak_storage_flush();
+    lambo_savestate_shutdown();
     lambo_log_shutdown();
     std::fflush(nullptr);
     std::_Exit(outcome.exit_code);
@@ -168,6 +172,7 @@ extern "C" void lambo_rt_flush_lap_summary_at_exit();
     lambo::harness::log_boot_summary();
     lambo::harness::write_result(outcome);
     (void)lambo_pak_storage_flush();
+    lambo_savestate_shutdown();
     lambo_log_shutdown();
     std::fflush(nullptr);
     std::_Exit(outcome.exit_code);
@@ -187,6 +192,7 @@ extern "C" void lambo_rt_flush_lap_summary_at_exit();
     const lambo::harness::Outcome outcome = lambo::harness::finalize_outcome("runtime_exit", 0);
     lambo::harness::write_result(outcome);
     (void)lambo_pak_storage_flush();
+    lambo_savestate_shutdown();
     lambo_log_shutdown();
     std::fflush(nullptr);
     if (outcome.exit_code == 0) std::_Exit(0);
@@ -1093,6 +1099,7 @@ static int application_main(int argc, char** argv) {
             reason.empty() ? "invalid_configuration" : reason.c_str(), 2);
         lambo::harness::write_result(outcome);
         (void)lambo_pak_storage_flush();
+        lambo_savestate_shutdown();
         lambo_log_shutdown();
         return 2;
     }

@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -48,6 +49,11 @@
     #include <execinfo.h>
     #endif
     #include <unistd.h>
+    #if defined(__linux__)
+    #include <sys/resource.h>
+    #include <sys/syscall.h>
+    #include <sys/types.h>
+    #endif
 #endif
 
 #if defined(__ANDROID__)
@@ -69,16 +75,28 @@ static int backtrace(void** frames, int capacity) {
 namespace lambo::crash {
 namespace {
 
-struct SymbolPool {
+// Immutable once published. The loader builds a private table, then release-
+// stores the pointer; lookup() only acquire-loads it. The crash handler must
+// never allocate, lock or parse, and a null pointer simply means the background
+// load has not finished yet -- raw N64 PCs are still reported.
+struct SymbolTable {
     std::vector<std::string> names;
     std::vector<SymbolInfo>  table;
-} g_pool;
+};
 
-const SymbolInfo* lookup_in_pool(uint32_t vram, uint32_t* out_offset_bytes) {
-    if (g_pool.table.empty()) return nullptr;
-    auto it = std::upper_bound(g_pool.table.begin(), g_pool.table.end(), vram,
+std::atomic<SymbolTable*> g_published{nullptr};
+// The handler reads this pointer directly, so it must not take a lock.
+static_assert(std::atomic<SymbolTable*>::is_always_lock_free,
+              "crash symbol publication must be signal-handler safe");
+std::atomic<bool> g_symbol_loader_started{false};
+std::thread g_symbol_loader;
+
+const SymbolInfo* lookup_in_table(const SymbolTable& symbols, uint32_t vram,
+                                  uint32_t* out_offset_bytes) {
+    if (symbols.table.empty()) return nullptr;
+    auto it = std::upper_bound(symbols.table.begin(), symbols.table.end(), vram,
         [](uint32_t v, const SymbolInfo& s) { return v < s.vram; });
-    if (it == g_pool.table.begin()) {
+    if (it == symbols.table.begin()) {
         if (out_offset_bytes) *out_offset_bytes = vram;
         return nullptr;
     }
@@ -90,12 +108,17 @@ const SymbolInfo* lookup_in_pool(uint32_t vram, uint32_t* out_offset_bytes) {
     return nullptr;  // gap or past-end -- don't lie about an out-of-range PC
 }
 
-bool load_symbol_table(const std::filesystem::path& syms_path) {
+const SymbolInfo* lookup_published(uint32_t vram, uint32_t* out_offset_bytes) {
+    const SymbolTable* symbols = g_published.load(std::memory_order_acquire);
+    return symbols != nullptr ? lookup_in_table(*symbols, vram, out_offset_bytes) : nullptr;
+}
+
+std::unique_ptr<SymbolTable> load_symbol_table(const std::filesystem::path& syms_path) {
     std::ifstream f(syms_path);
     if (!f.good()) {
         LAMBO_LOG_WARN("crash", "syms file %s not found; raw N64 PCs only\n",
                        syms_path.string().c_str());
-        return false;
+        return nullptr;
     }
 
     auto trim = [](std::string& s) {
@@ -125,10 +148,9 @@ bool load_symbol_table(const std::filesystem::path& syms_path) {
                 reserve_n++;
         }
     }
-    g_pool.names.clear();
-    g_pool.table.clear();
-    g_pool.names.reserve(reserve_n);
-    g_pool.table.reserve(reserve_n);
+    auto symbols = std::make_unique<SymbolTable>();
+    symbols->names.reserve(reserve_n);
+    symbols->table.reserve(reserve_n);
 
     std::string line;
     bool in_functions = false;
@@ -178,22 +200,23 @@ bool load_symbol_table(const std::filesystem::path& syms_path) {
             }
         }
         if (!name.empty() && got_all && vram != 0) {
-            g_pool.names.emplace_back(std::move(name));
-            const std::string& nb = g_pool.names.back();
-            g_pool.table.push_back({ nb.c_str(), vram, size });
+            symbols->names.emplace_back(std::move(name));
+            const std::string& nb = symbols->names.back();
+            symbols->table.push_back({ nb.c_str(), vram, size });
         }
     }
 
     // stable_sort: aliases at the same vram stay in source order so the
     // attributed name is identical run-to-run (matters for crash-digest CI).
-    std::stable_sort(g_pool.table.begin(), g_pool.table.end(),
+    std::stable_sort(symbols->table.begin(), symbols->table.end(),
         [](const SymbolInfo& a, const SymbolInfo& b) { return a.vram < b.vram; });
+    if (symbols->table.empty()) return nullptr;
     LAMBO_LOG_INFO("crash", "loaded %zu symbols from %s\n",
-                   g_pool.table.size(), syms_path.string().c_str());
-    return !g_pool.table.empty();
+                   symbols->table.size(), syms_path.string().c_str());
+    return symbols;
 }
 
-void find_and_load_symbol_table() {
+std::unique_ptr<SymbolTable> find_and_load_symbol_table() {
     const char* env = std::getenv("LAMBO_CRASH_SYMBOLS");
     std::vector<std::filesystem::path> candidates;
     if (env && env[0] != '\0') candidates.emplace_back(env);
@@ -214,14 +237,54 @@ void find_and_load_symbol_table() {
     }
 #endif
     for (const auto& p : candidates) {
-        if (load_symbol_table(p)) return;
+        auto symbols = load_symbol_table(p);
+        if (symbols != nullptr) return symbols;
     }
+    return nullptr;
+}
+
+void symbol_loader_main() {
+    // Startup-only work: keep this thread below the game/render threads.
+    // POSIX nice(2) changes the whole process on some systems, so only use the
+    // Linux/Android per-thread form (setpriority on the kernel TID). Other
+    // POSIX targets keep the default priority rather than demoting gameplay.
+#if defined(_WIN32)
+    (void)SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+#elif defined(__linux__) && defined(SYS_gettid)
+    const pid_t tid = static_cast<pid_t>(syscall(SYS_gettid));
+    (void)setpriority(PRIO_PROCESS, static_cast<id_t>(tid), 10);
+#endif
+    std::unique_ptr<SymbolTable> symbols;
+    try {
+        symbols = find_and_load_symbol_table();
+    } catch (const std::exception& error) {
+        LAMBO_LOG_WARN("crash", "symbol load failed (%s); raw N64 PCs only\n",
+                       error.what());
+    } catch (...) {
+        LAMBO_LOG_WARN("crash", "symbol load failed; raw N64 PCs only\n");
+    }
+    if (symbols != nullptr) {
+        g_published.store(symbols.release(), std::memory_order_release);
+    } else {
+        LAMBO_LOG_WARN("crash", "no symbol table loaded; raw N64 PCs only\n");
+    }
+}
+
+void join_symbol_loader() {
+    if (g_symbol_loader.joinable()) g_symbol_loader.join();
+}
+
+void start_symbol_loader() {
+    bool expected = false;
+    if (!g_symbol_loader_started.compare_exchange_strong(expected, true)) return;
+    g_symbol_loader = std::thread(symbol_loader_main);
+    std::atexit(join_symbol_loader);
 }
 
 } // namespace
 
 const SymbolInfo* lookup(uint32_t vram, uint32_t* out_offset_bytes) {
-    return lookup_in_pool(vram, out_offset_bytes);
+    return lookup_published(vram, out_offset_bytes);
 }
 
 // ----- Native-PC -> N64-vram map (populated by register_overlays) -----
@@ -283,7 +346,7 @@ void print_ring_impl(FILE* fp, const char* header) {
         const RingEntry& e = g_ring[idx];
         if (e.tsc_us == 0 && e.vram == 0 && e.ra_vram == 0) continue;
         uint32_t offb = 0;
-        const SymbolInfo* si = lookup_in_pool(e.vram, &offb);
+        const SymbolInfo* si = lookup_published(e.vram, &offb);
         char vname[160];
         if (si) std::snprintf(vname, sizeof(vname), "%s+0x%X", si->name, offb);
         else    std::snprintf(vname, sizeof(vname), "0x%08X", e.vram);
@@ -365,7 +428,7 @@ void print_native_backtrace(FILE* fp, const void* const* pcs, int n, const char*
         char vbuf[160] = "";
         if (vram != 0) {
             uint32_t offb = 0;
-            const SymbolInfo* si = lookup_in_pool(vram, &offb);
+            const SymbolInfo* si = lookup_published(vram, &offb);
             if (si) std::snprintf(vbuf, sizeof(vbuf), "  --> n64 %s+0x%X", si->name, offb);
             else    std::snprintf(vbuf, sizeof(vbuf), "  --> n64 0x%08X", vram);
         }
@@ -403,7 +466,7 @@ void dump_crash_state(FILE* fp, const char* reason, uint32_t vram_guess) {
         else
             std::fprintf(fp, "\n");
         uint32_t offb = 0;
-        if (const SymbolInfo* si = lookup_in_pool(vram_guess, &offb))
+        if (const SymbolInfo* si = lookup_published(vram_guess, &offb))
             std::fprintf(fp, "  function: %s+0x%X (size 0x%X)\n", si->name, offb, si->size);
     }
     print_ring_impl(fp, "Trace ring");
@@ -631,16 +694,19 @@ void install() {
         }
     }
 #if defined(LAMBO_CRASH_POSIX)
-    // Install handlers before the symbol-table IO, but only after the durable
-    // crash destination above is ready.
+    // Install handlers before starting the symbol-table IO, but only after the
+    // durable crash destination above is ready.
     install_posix();
 #endif
-    find_and_load_symbol_table();
 #if defined(LAMBO_CRASH_WIN32)
     void* veh = AddVectoredExceptionHandler(0, win32_vectored_handler);
     if (veh == nullptr)
         LAMBO_LOG_WARN("crash", "AddVectoredExceptionHandler returned NULL; dumps UNRELIABLE\n");
 #endif
+    // Parsing 68 KiB of symbols and building/sorting the lookup table is
+    // startup work only. Do it on a low-priority thread and publish the
+    // finished table; a crash before publication still dumps raw N64 PCs.
+    start_symbol_loader();
     LAMBO_LOG_INFO("crash", "native crash handler installed (%s)\n",
 #if defined(LAMBO_CRASH_WIN32)
                  "Win32 AddVectoredExceptionHandler"

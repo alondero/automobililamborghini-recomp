@@ -35,6 +35,10 @@ def main():
             legacy.write_bytes(legacy_blob)
             subprocess.run([str(helper), "reject", str(legacy)], check=True, timeout=20)
         subprocess.run([str(helper), "legacy-default", str(legacy)], check=True, timeout=20)
+        # F7-style save returns while the writer is still blocked, then the
+        # completed file loads the pre-mutation snapshot.
+        subprocess.run([str(helper), "async", str(root / "async.lstate")],
+                       check=True, timeout=20)
         old_version = root / "v1.lstate"
         old_blob = bytearray(blob[:32 + 0x800000])
         struct.pack_into("<I", old_blob, 8, 1)
