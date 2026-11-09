@@ -447,6 +447,17 @@ refresh triggers instead of running assertions. `lambo_fog_benchmark` is a
 separate opt-in target for correction-table lookup cost. These measurements
 do not replace a rendered menu or fog check; see [Performance](performance.md).
 
+`lambo_rain_benchmark` is the opt-in rain producer measurement. It times
+decode, coverage and puddles against the frozen `e053389` copy in
+`tests/rain_reference.h`, then whole producer frames with allocation counts:
+
+~~~text
+cmake --build build --target lambo_rain_benchmark
+build/lambo_rain_benchmark
+~~~
+
+It uses synthetic segments and does not measure rendering or game FPS.
+
 The opt-in synthesized visibility-row benchmark compares rebuilding a row with
 re-reading the inputs a safe cache check would need:
 

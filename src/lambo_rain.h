@@ -44,8 +44,8 @@ struct PuddleMesh {
 void puddle_mesh(const std::vector<Triangle>& road, const std::vector<RoofPlane>& roof,
     bool modern, float seconds, float intensity, PuddleMesh& mesh);
 uint32_t ripple_vertex(const Puddle& puddle, int side);
-// Writes the six vertices at ripple_vertex(puddle, side) for ripple_phase(puddle, seconds).
 float ripple_phase(const Puddle& puddle, float seconds);
+// Writes the six vertices at ripple_vertex(puddle, side) for a ripple_phase().
 void ripple(const Puddle& puddle, int side, float phase, Vertex* out);
 std::vector<Vertex> puddles(const std::vector<Triangle>& road,
     const std::vector<Triangle>& roof, bool modern, float seconds, float intensity);

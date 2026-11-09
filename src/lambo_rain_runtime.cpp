@@ -85,13 +85,14 @@ struct Segment {
 };
 std::unordered_map<uint32_t,Segment> segments;
 uint64_t generations=0;
-// Holds four full 200-record pools; beyond it, clear and rebuild.
+// Generous for 200-record pools; beyond it, clear and rebuild.
 constexpr size_t segment_limit=1024;
 constexpr unsigned geometry_settings=0x7F03; // style and intensity, not camera drops
+constexpr uint32_t max_vertices=12000;       // per-segment visual limit (puddle_mesh)
 
 void invalidate() {
+    // Rebuilt entries get new generations, so task buffers rewrite themselves.
     segments.clear(); // keeps buckets
-    for (auto& task:tasks) for (auto& buffer:task.roads) buffer.generation=0;
 }
 void encode(const Vertex& v,uint32_t* out) {
     auto h=[](float f) { return uint32_t(uint16_t(coordinate(f))); };
@@ -108,6 +109,8 @@ void build(uint8_t* ram,Segment& segment,const std::array<uint32_t,3>& lists,uns
     static std::vector<Triangle> road,part;
     static std::vector<RoofPlane> roof;
     static PuddleMesh mesh;
+    // A failed decode is cached too. Rain builds only in state 8, and the track
+    // loader hook clears the cache after the lists are complete.
     bool decoded=decode(ram,lists[0],road);
     roof.clear();
     for (int i:{1,2}) if (decode(ram,lists[i],part)) roof_planes(part,roof);
@@ -118,7 +121,7 @@ void build(uint8_t* ram,Segment& segment,const std::array<uint32_t,3>& lists,uns
     });
     if (!decoded) return;
     puddle_mesh(road,roof,(s&3)==2,seconds,float((s>>8)&127)/100,mesh);
-    if (mesh.vertices.size()>12000) return;
+    if (mesh.vertices.size()>max_vertices) return;
     segment.vertices.resize(mesh.vertices.size()*4);
     for (size_t i=0;i<mesh.vertices.size();++i) encode(mesh.vertices[i],&segment.vertices[i*4]);
     segment.ripples=mesh.ripples;
@@ -141,7 +144,7 @@ Segment& current(uint8_t* ram,uint32_t record,unsigned s,decltype(segments)::ite
 }
 
 // Road sublist layout: vertex block at the buffer, commands at `list_offset`.
-constexpr uint32_t list_offset=12000*16;
+constexpr uint32_t list_offset=max_vertices*16;
 const List& header() {
     static const List list=[] {
         List l; l.save(true);
@@ -166,7 +169,7 @@ uint32_t face_command(uint32_t buffer,size_t face) {
     return buffer+list_offset+(header_commands()+uint32_t(face)*4)*8;
 }
 // Each face: pipe sync, face color, its three vertices, one triangle.
-void triangles(uint8_t* ram,uint32_t buffer,const Segment& segment,size_t count) {
+void face_commands(uint8_t* ram,uint32_t buffer,const Segment& segment,size_t count) {
     for (size_t k=0;k<count;++k) {
         // RT64's expanded vertex cache slots 32..34 preserve the native
         // F3DEX 0..31 bank, including vertices inherited by the next list.
@@ -199,7 +202,7 @@ void emit(uint8_t* ram,Buffer& buffer,const Segment& segment) {
         ++stats.full_writes;
         store(ram,address,segment.vertices.data(),segment.vertices.size());
         header().write(ram,address+list_offset);
-        triangles(ram,address,segment,faces);
+        face_commands(ram,address,segment,faces);
         footer().write(ram,face_command(address,faces));
     } else if (!segment.ripples.empty() && buffer.seconds!=segment.animated) {
         // Ripple vertices and the color word of their two faces; every other
@@ -243,7 +246,7 @@ bool shelter(uint8_t* ram,unsigned s) {
     return current(ram,record,s,segments.find(record)).sheltered;
 }
 // Leaving the race or changing circuit starts a new epoch. Viewport count
-// does not change track geometry, so split screen shares one build.
+// does not change track geometry, so it is not part of the epoch.
 void epoch(uint8_t* ram) {
     static int16_t circuit=-1;
     int16_t now=half(ram,0x800CE794);
@@ -348,7 +351,7 @@ extern "C" void lambo_rain_road(uint8_t* ram,uint32_t record) {
     segment.frame[index]=task.frame; segment.target[index]=0;
     if (segment.vertices.empty() || !std::isfinite(seconds)) return;
     if (task.roads.size()<=ordinal) task.roads.resize(ordinal+1);
-    constexpr uint32_t size=12000*16+12000/3*32+256;
+    constexpr uint32_t size=max_vertices*16+max_vertices/3*32+256;
     Buffer& buffer=task.roads[ordinal];
     if (!allocate(ram,buffer,size)) return;
     animate(segment);

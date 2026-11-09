@@ -45,6 +45,8 @@ display-list root; track assets and the native cursor remain unchanged.
 | 0x800CE808 | s16 pause flag; stops the weather animation clock |
 | 0x800CE6A4 / 0x800CE6A6 | s16 player count / one-based viewport index |
 | 0x800BF1D0 / 0x800BF1CC | u32 segment-record base / s16 camera segment |
+| Segment record +4/+8/+12 | u32 road / wall / scenery display-list pointers; cache key, never followed after a build |
+| 0x800CE794 | s16 circuit index; a change starts a new cache epoch, read once per task |
 | 0x8000CF2C | follows road pointer store at CF28; t2 is the segment record |
 | 0x8000D7C0 | follows road pointer store at D7BC; t8 is the segment record |
 | 0x80005114 / 0x800053F4 | viewport completion / one-player pre-HUD seam |
@@ -69,7 +71,9 @@ task-reuse fence protects them until RT64 consumes them, as for the panorama.
 A road record is emitted at most once into each task's heap, then referenced
 by subsequent views. At most 200 road buffers per slot are allocated, with a
 fixed per-buffer limit. Buffers are indexed by the order in which records
-first appear in a frame; #398 tracks sizing them to the cached geometry.
+first appear in a frame. A changed order rewrites the affected buffers in full.
+[#398](https://github.com/alondero/automobililamborghini-recomp/issues/398)
+tracks keying and sizing them by record.
 Hooks record insertion points without advancing the
 native cursor. After the complete native root has passed HUD/fog correction,
 publication copies it into a bounded heap list and splices in the effects.
@@ -86,8 +90,8 @@ A cache entry belongs to one segment record address. Its key is the record's
 road, wall and scenery list pointers (+4, +8, +12) and the style and intensity
 settings. Camera droplets do not shape geometry. The entry keeps host data
 only: the encoded guest vertex block, Modern ripple frames and the segment's
-shelter result. Decoded triangles and precomputed roof planes are discarded
-after the build. The key pointers are compared, never followed, so a stale
+shelter result. Decoded triangles and roof planes live in build scratch storage,
+not in the entry. The key pointers are compared, never followed, so a stale
 entry cannot read reloaded track memory.
 
 Invalidation rule:
@@ -99,15 +103,18 @@ Invalidation rule:
   and after a developer save-state load.
 - More than 1024 entries clears the cache and rebuilds from the current frame.
 
+A failed decode is cached like a success. Rain builds only in a race, and the
+track loader hook runs after the stock loader has filled the lists.
+
 A list rewritten in place under the same pointers is detected only by those
-events. No port feature does that during a race: Track Lab changes visibility
-rows only, and mods cannot replace geometry.
+events. Inferred: no supported feature does that during a race. Track Lab
+changes visibility rows only, and modding does not support replacing geometry.
 
 Each road buffer records the build it holds. Static vertices and commands are
 copied into it once per build. Later frames reuse them and only add the
 insertion. A Modern frame rewrites the ripple vertices and the color word of
 their faces when the animation clock has moved. Pause stops that clock, so a
-paused frame writes nothing. A rebuild, an invalidation, or a buffer index
+paused frame writes no road geometry. A rebuild, an invalidation, or a buffer index
 that now belongs to another record rewrites the whole buffer. All writes still
 follow the task-reuse fence of the slot that owns the buffer. Root copies and
 camera lists reuse their command storage, so steady race frames do not allocate.
@@ -149,12 +156,6 @@ viewports, both task slots, pause, reordered emission and shelter. It also
 covers each invalidation rule and the decode, build and allocation counts.
 These are synthetic records, not a replay of game frames.
 
-The opt-in benchmark measures the isolated functions and the producers for 25
-synthetic segments. Building it with `-DLAMBO_RAIN_BENCH_PRODUCERS_ONLY`
-against older `src/lambo_rain*` files measures that revision with the same
-workload:
-
-```text
-cmake --build build --target lambo_rain_benchmark
-build/lambo_rain_benchmark
-```
+The opt-in `lambo_rain_benchmark` measures the isolated functions and the
+producers for 25 synthetic segments; [Testing](testing.md) has the commands and
+[Performance](performance.md) the recorded results.

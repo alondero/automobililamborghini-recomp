@@ -908,7 +908,7 @@ text = "{ extern void lambo_sky_extend_panorama(uint8_t*); lambo_sky_extend_pano
 # 0x80006094 here. The preceding runtime instruction at 0x80006090 stores the newly
 # loaded 0x80251800 context in D_80098238. Applying here keeps the stock downstream
 # initialization authoritative and never replaces geometry, navigation, or collision.
-# Rain drops geometry cached from the previous track; docs/rain.md.
+# Then discard rain geometry cached from the previous track; docs/rain.md.
 [[patches.hook]]
 func = "boot_pad_apply_calibration"
 before_vram = 0x80006094
