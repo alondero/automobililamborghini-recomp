@@ -69,12 +69,8 @@ and restored. Camera rectangles also save and restore scissor state.
 Heap sublists are owned by one of the two native graphics-task slots. The
 task-reuse fence protects them until RT64 consumes them, as for the panorama.
 A road record is emitted at most once into each task's heap, then referenced
-by subsequent views. At most 200 road buffers per slot are allocated, with a
-fixed per-buffer limit. Buffers are indexed by the order in which records
-first appear in a frame. A changed order rewrites the affected buffers in full.
-[#398](https://github.com/alondero/automobililamborghini-recomp/issues/398)
-tracks keying and sizing them by record.
-Hooks record insertion points without advancing the
+by subsequent views. Each record owns one road buffer per slot, sized to its
+mesh ([Road buffers](#road-buffers)). Hooks record insertion points without advancing the
 native cursor. After the complete native root has passed HUD/fog correction,
 publication copies it into a bounded heap list and splices in the effects.
 Only the first 40 bytes of the original root become a call/end wrapper. Its
@@ -88,11 +84,12 @@ segment's rain geometry once. Only Modern ripples change from frame to frame.
 
 A cache entry belongs to one segment record address. Its key is the record's
 road, wall and scenery list pointers (+4, +8, +12) and the style and intensity
-settings. Camera droplets do not shape geometry. The entry keeps host data
-only: the encoded guest vertex block, Modern ripple frames and the segment's
-shelter result. Decoded triangles and roof planes live in build scratch storage,
-not in the entry. The key pointers are compared, never followed, so a stale
-entry cannot read reloaded track memory.
+settings. Camera droplets do not shape geometry. The entry keeps a host copy of
+the encoded vertex block, the Modern ripple frames and the segment's shelter
+result. It also records where the segment's guest road buffer is in each task
+slot ([Road buffers](#road-buffers)). Decoded triangles and roof planes live in
+build scratch storage, not in the entry. The key pointers are compared, never
+followed, so a stale entry cannot read reloaded track memory.
 
 Invalidation rule:
 
@@ -114,14 +111,49 @@ Each road buffer records the build it holds. Static vertices and commands are
 copied into it once per build. Later frames reuse them and only add the
 insertion. A Modern frame rewrites the ripple vertices and the color word of
 their faces when the animation clock has moved. Pause stops that clock, so a
-paused frame writes no road geometry. A rebuild, an invalidation, or a buffer index
-that now belongs to another record rewrites the whole buffer. All writes still
-follow the task-reuse fence of the slot that owns the buffer. Root copies and
-camera lists reuse their command storage, so steady race frames do not allocate.
+paused frame writes no road geometry. A rebuild or an invalidation rewrites
+the whole buffer. All writes still follow the task-reuse fence of the slot
+that owns the buffer. Root copies and camera lists reuse their command storage,
+so steady race frames do not allocate.
+
+### Road buffers
+
+A buffer belongs to a segment record and a task slot. It lives in the record's
+cache entry, so the order in which records appear in a frame does not matter.
+A changed order moves and rewrites nothing.
+
+The size is exact. The vertex block comes first (16 bytes a vertex). The
+sublist follows it directly: the render-state header, four commands for each
+face, and the footer (8 bytes a command). Nothing is reserved after the footer.
+A mesh at the 12,000-vertex limit needs 320,128 bytes. A typical mesh needs a
+small fraction of that. The limit itself is unchanged, and so is the output.
+
+Lifecycle:
+
+- The first emission into a slot allocates the buffer. A slot holds at most
+  200 road buffers. A record that would exceed that draws no rain in that slot.
+- A rebuild that produces a larger mesh allocates a new block and then frees
+  the old one. A smaller mesh reuses the block it has. Both happen after
+  `lambo_rain_frame` for that slot, so the slot's last task has finished.
+- A failed allocation leaves that record without rain geometry for the frame.
+  The native drawing, the other records and the camera rain are untouched.
+- Clearing the cache (see the invalidation rule) hands each buffer to its slot.
+  The slot frees them at its next `lambo_rain_frame`. RT64 may still be drawing
+  the slot's previous task until then, so freeing earlier would be unsafe.
+  Leaving the race therefore returns all road buffers to the heap.
+- A record that scrolls out of view keeps its buffer until the next clear, so
+  a lap does not reallocate. The 200-buffer cap bounds this. Inferred: a track
+  has at most 200 records, because the camera segment check rejects indexes of
+  200 or more.
+
+The camera lists, root copy and sky tiles are fixed-size and allocated once.
 
 Decode, build, full-buffer and ripple-write counters appear in the `rain`
-publish log with `--verbose` or `--lambo-debug`. The first four publications
-and every 1800th one are logged.
+publish log with `--verbose` or `--lambo-debug`, with the live and peak guest
+heap held by road buffers (`road_bytes`, `peak_road_bytes`), by all rain blocks
+(`heap_bytes`, `peak_heap_bytes`), and the live road buffers in each slot
+(`road_buffers=slot0/slot1`). Counts are requested bytes. The heap itself may
+round a block up. The first four publications and every 1800th one are logged.
 
 ## Limits and validation
 
@@ -154,6 +186,9 @@ rounding with it. The producer test compares every emitted road sublist with
 it, command words and vertex payload. It covers Retro and Modern, one and four
 viewports, both task slots, pause, reordered emission and shelter. It also
 covers each invalidation rule and the decode, build and allocation counts.
+It checks that road buffers match the mesh size exactly, that a full 12,000-vertex
+mesh fits with guard bytes intact, and that growth, failed allocation, the
+200-buffer cap and leaving the race keep the guest heap counters balanced.
 These are synthetic records, not a replay of game frames.
 
 The opt-in `lambo_rain_benchmark` measures the isolated functions and the

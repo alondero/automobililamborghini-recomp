@@ -65,6 +65,10 @@ struct Counters {
     uint64_t builds = 0;        // segment geometry generations
     uint64_t full_writes = 0;   // static geometry copied into a task buffer
     uint64_t ripple_writes = 0; // Modern ripple-only buffer updates
+    // Guest heap held by the rain producers, in requested bytes (the heap may round up).
+    uint64_t heap_bytes = 0, peak_heap_bytes = 0; // every rain block
+    uint64_t road_bytes = 0, peak_road_bytes = 0; // road buffers only
+    std::array<uint32_t, 2> road_buffers{};       // live road buffers per task slot
 };
 const Counters& counters();
 float animation_seconds();
