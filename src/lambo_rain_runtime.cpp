@@ -432,18 +432,132 @@ extern "C" uint32_t lambo_rain_sky(uint8_t* ram,int tile,int row,uint32_t origin
     return sky.address+(row*8+tile)*4096;
 }
 
+namespace {
+// One fixed-size camera buffer per view and task slot serves either style, so
+// changing style between races never meets a smaller block.
+constexpr uint32_t camera_capacity=0xC000;
+// Width of the output in native pixels at 240 lines; RT64 widens views to it.
+float output_width() { return std::clamp(lambo_sky_target_aspect()*240,240.0f,1920.0f); }
+// Native s15.16 matrix: sixteen integer halves, then sixteen fractions (row vectors).
+void store_matrix(uint8_t* ram,uint32_t at,const std::array<float,16>& m) {
+    for (int k=0;k<16;++k) {
+        int32_t fixed=int32_t(m[k]*65536);
+        half(ram,at+uint32_t(k)*2)=int16_t(fixed>>16);
+        half(ram,at+32+uint32_t(k)*2)=int16_t(fixed&0xFFFF);
+    }
+}
+// Modern camera rain: screen-space triangles in the view's own viewport and
+// orthographic projection. RT64 draws rectangles on the native pixel grid
+// (convertViewportRect rounds each edge to a whole pixel) but rasterizes
+// triangles at output resolution, so only triangles keep sub-pixel streaks
+// and soft drop edges. docs/rain.md, "Camera rain".
+void modern_camera(uint8_t* ram,int index,int players,int player,unsigned s) {
+    // The view in native 320x240 pixels; 3P/4P quadrants are widened like the game's.
+    float vx=0,vy=0,vw=320,vh=240;
+    if (players==2) { vh=120; vy=float(player)*vh; }
+    if (players>=3) { vw=160; vh=120; vx=float(player%2)*vw; vy=float(player/2)*vh; }
+    const uint16_t origin=players>=3 ? G_EX_ORIGIN_WIDE : G_EX_ORIGIN_NONE;
+    // RT64 keeps an orthographic view's aspect and widens it to the output.
+    const float wide=vw*output_width()/320;
+    static ScreenMesh mesh;
+    screen_rain(wide,vh,player,seconds,float((s>>8)&127)/100,(s&0x10000)!=0,mesh);
+    if (mesh.vertices.empty()) return;
+
+    // Guest buffer, written in native word order through half()/store(): an
+    // s15.16 projection and modelview (64 bytes each), a Vp (eight s16), the
+    // vertices (16 bytes each), then the list. Too much geometry draws no rain.
+    constexpr uint32_t projection=0,modelview=64,viewport=128,vertices=144,capacity=camera_capacity;
+    const uint32_t list_at=vertices+uint32_t(mesh.vertices.size())*16;
+    if (list_at>capacity) return;
+    uint32_t buffer=allocate(ram,tasks[index].cameras[player],capacity);
+    if (!buffer) return;
+
+    List& list=tasks[index].camera;
+    list.words.clear();
+    list.save(false);
+    list.extension(G_EX_PUSHSCISSOR_V1); list.extension(G_EX_PUSHGEOMETRYMODE_V1);
+    list.extension(G_EX_PUSHVIEWPORT_V1); list.extension(G_EX_PUSHPROJMATRIX_V1);
+    GfxCommand c[2]{};
+    // Scissor to the view's part of the widened output.
+    const uint16_t left=players>=3 && player%2 ? G_EX_ORIGIN_CENTER : G_EX_ORIGIN_LEFT;
+    const uint16_t right=players>=3 && player%2==0 ? G_EX_ORIGIN_CENTER : G_EX_ORIGIN_RIGHT;
+    gEXSetScissor(c,0,left,right,0,vy,0,vy+vh);
+    list.ex(c[0]); list.ex(c[1]);
+    gEXViewport(c,origin,buffer+viewport);
+    list.ex(c[0]); list.ex(c[1]);
+    list.cmd(0x01030040,buffer+projection); // G_MTX projection, load
+    list.cmd(0x01060040,buffer+modelview);  // G_MTX modelview, load, push
+    list.cmd(0xBA000020,0x000000F0);        // One cycle, no RGB or alpha dither.
+    list.cmd(0xB9000020,0x00504240);        // Alpha blend, no depth.
+    list.cmd(0xFCFFFFFF,0xFFFE793C);        // SHADE RGB and alpha.
+    list.cmd(0xB6000000,0xFFFFFFFF); list.cmd(0xB7000000,0x00000204); // Smooth shade only.
+    // Each vertex load fills slots 32..94, preserving the native F3DEX bank 0..31.
+    constexpr uint32_t first_slot=32,batch_limit=63;
+    uint32_t batch_first=0,batch_count=0;
+    static std::vector<uint32_t> triangles;
+    triangles.clear();
+    auto flush=[&] {
+        if (!batch_count) return;
+        list.cmd(0x04000000u|(first_slot<<17)|(batch_count<<10)|(batch_count*16-1),
+            buffer+vertices+batch_first*16);
+        for (size_t t=0;t+1<triangles.size();t+=2) list.cmd(0xB1000000u|triangles[t],triangles[t+1]);
+        if (triangles.size()&1) list.cmd(0xBF000000u,triangles.back());
+        batch_first+=batch_count; batch_count=0; triangles.clear();
+    };
+    static_assert(screen_shape_vertices<=batch_limit,"a shape must fit one vertex load");
+    for (const auto& shape:mesh.shapes) {
+        if (shape.count>screen_shape_vertices) continue;
+        if (batch_count+shape.count>batch_limit) flush();
+        uint32_t base=first_slot+batch_count;
+        for (uint32_t k=0;k+2<shape.index_count;k+=3) {
+            const uint8_t* v=&mesh.indices[shape.first_index+k];
+            triangles.push_back(((base+v[0])<<17)|((base+v[1])<<9)|((base+v[2])<<1));
+        }
+        batch_count+=shape.count;
+    }
+    flush();
+    list.cmd(0xBD000000,0); // pop modelview
+    list.extension(G_EX_POPPROJMATRIX_V1); list.extension(G_EX_POPVIEWPORT_V1);
+    list.extension(G_EX_POPGEOMETRYMODE_V1); list.extension(G_EX_POPSCISSOR_V1);
+    list.restore(false); list.cmd(0xB8000000);
+    if (list_at+list.words.size()*8>capacity) {
+        LAMBO_LOG("rain", "camera list exceeds its buffer (%zu vertices); no camera rain\n",mesh.vertices.size());
+        return;
+    }
+
+    // Vertex units: 2048 per half view, so the projection is an exact 1/2048.
+    const float ux=4096/vw,uy=4096/vh; // vertex units per native pixel
+    std::array<float,16> m{};
+    m[0]=m[5]=m[10]=1.0f/2048; m[15]=1;
+    store_matrix(ram,buffer+projection,m);
+    m[0]=m[5]=m[10]=1;
+    store_matrix(ram,buffer+modelview,m);
+    const int16_t vp[8]{int16_t(vw*2),int16_t(vh*2),0x1FF,0,int16_t((vx+vw/2)*4),int16_t((vy+vh/2)*4),0x1FF,0};
+    for (int k=0;k<8;++k) half(ram,buffer+viewport+uint32_t(k)*2)=vp[k];
+    for (size_t k=0;k<mesh.vertices.size();++k) {
+        const ScreenVertex& v=mesh.vertices[k];
+        auto position=[](float f) { return uint32_t(uint16_t(coordinate(std::clamp(f,-32767.0f,32767.0f)))); };
+        const uint32_t words[4]{(position((v.x-wide/2)*ux)<<16)|position((vh/2-v.y)*uy),0,0,v.rgba};
+        store(ram,buffer+vertices+uint32_t(k)*16,words,4);
+    }
+    list.write(ram,buffer+list_at);
+    append(ram,buffer+list_at);
+}
+}
+
 extern "C" void lambo_rain_camera(uint8_t* ram) {
     unsigned s=settings(ram); int index=slot(ram);
     int players=half(ram,0x800CE6A4),player=half(ram,0x800CE6A6)-1;
     if (!s || index<0 || players<1 || players>4 || player<0 || player>=players || shelter(ram,s)) return;
-    const bool modern=(s&3)==2;
-    float full_width=std::clamp(lambo_sky_target_aspect()*240,240.0f,1920.0f);
+    if ((s&3)==2) { modern_camera(ram,index,players,player,s); return; }
+    // Retro: native-pixel rectangles. RT64 draws them on the 320x240 grid,
+    // which is the chunky look this style asks for.
+    float full_width=output_width();
     float x0=160-full_width/2,y0=0,w=full_width,h=240;
     if (players==2) { h=120; y0=player*h; }
     if (players>=3) { w=full_width/2; h=120; x0+=(player%2)*w; y0=(player/2)*h; }
-    constexpr uint32_t capacity=40000;
     List& list=tasks[index].camera;
-    list.words.clear(); list.words.reserve(capacity/8+1);
+    list.words.clear(); list.words.reserve(camera_capacity/8+1);
     list.save(false); list.extension(G_EX_PUSHSCISSOR_V1);
     GfxCommand c[2]{};
     gEXSetScissor(c,0,G_EX_ORIGIN_LEFT,G_EX_ORIGIN_RIGHT,0,y0,0,y0+h);
@@ -460,37 +574,25 @@ extern "C" void lambo_rain_camera(uint8_t* ram) {
         list.cmd(pack(l,t),pack(r,b));
     };
     float intensity=float((s>>8)&127)/100;
-    int count=int((modern?100:48)*intensity);
+    int count=int(48*intensity);
     for (int i=0;i<count;++i) {
         uint32_t seed=hash(uint32_t(i+player*619));
-        float speed=modern?110+float(seed%90):140;
-        float y=std::fmod(float(seed%1000)/1000*h+seconds*speed,h+20)-20;
-        float x=std::fmod(float((seed>>10)%1000)/1000*w+seconds*9,w);
-        if (!modern) { x=std::floor(x); y=std::floor(y); }
-        int steps=modern?4:2;
-        for (int j=0;j<steps;++j) rect(x0+x+j*(modern?0.4f:1),y0+y+j*2,
-            modern?0.6f:1,modern?3:4,0xB6CBDD00u|uint32_t(modern?24+j*9:76));
+        float y=std::floor(std::fmod(float(seed%1000)/1000*h+seconds*140,h+20)-20);
+        float x=std::floor(std::fmod(float((seed>>10)%1000)/1000*w+seconds*9,w));
+        for (int j=0;j<2;++j) rect(x0+x+float(j),y0+y+float(j)*2,1,4,0xB6CBDD4Cu);
     }
-    if (s&0x10000) for (int i=0;i<(modern?18:7);++i) {
+    if (s&0x10000) for (int i=0;i<7;++i) {
         uint32_t seed=hash(uint32_t(i+player*239+900));
         float age=std::fmod(seconds+float(seed%1000)/100,10.0f);
         float x=x0+float((seed>>12)%1000)/1000*w;
-        float y=y0+float((seed>>2)%1000)/1000*h+age*age*(modern?0.6f:0.2f);
-        float radius=modern?1.5f+float(seed%3):1;
+        float y=y0+float((seed>>2)%1000)/1000*h+age*age*0.2f;
         float fade=std::min(age,1.0f)*std::min(10-age,1.0f)*intensity;
-        if (modern) {
-            for (int row=-4;row<=4;++row) {
-                float ry=float(row)/4,rx=radius*std::sqrt(std::max(0.0f,1-ry*ry));
-                rect(x-rx,y+ry*radius,rx*2,0.5f,0x253C5000u|uint32_t(32*fade));
-            }
-            rect(x-radius*0.6f,y-radius*0.6f,1.3f,0.6f,0xD8EAF400u|uint32_t(110*fade));
-            rect(x+radius*0.5f,y,0.5f,radius,0xA3C1D200u|uint32_t(65*fade));
-        } else rect(std::floor(x),std::floor(y),2,3,0xA6BBCD00u|uint32_t(70*fade));
+        rect(std::floor(x),std::floor(y),2,3,0xA6BBCD00u|uint32_t(70*fade));
     }
     gEXSetRectAspect(c,G_EX_ASPECT_AUTO); list.ex(c[0]);
     list.extension(G_EX_POPSCISSOR_V1); list.restore(false); list.cmd(0xB8000000);
-    if (list.words.size()*8>capacity) return;
-    uint32_t buffer=allocate(ram,tasks[index].cameras[player],capacity);
+    if (list.words.size()*8>camera_capacity) return;
+    uint32_t buffer=allocate(ram,tasks[index].cameras[player],camera_capacity);
     if (!buffer) return;
     list.write(ram,buffer); append(ram,buffer);
 }

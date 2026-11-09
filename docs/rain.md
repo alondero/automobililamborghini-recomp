@@ -6,10 +6,13 @@ This is original rain artwork and geometry, not a reproduction of JP graphics.
 ## Player settings
 
 In the JP weather mod, choose Wet and select **Retro** or **Modern** under
-Rain style. Retro uses chunky streaks, small camera drops and flat puddle
-highlights. Modern adds finer streaks, rounded lens drops, soft puddle edges
-and animated ripples. Both replace the sky with storm clouds and hide the
-sun flare. Choose Off to keep the weather mod's fog and AI without rain art.
+Rain style. Retro uses chunky pixel streaks, small square camera drops and flat
+puddle highlights. Modern draws thin, slanted streaks that fade from head to
+tail in three depth layers. Its lens drops are round, with a dark rim, a bright
+glint, and trails when they run. Its puddles have soft edges and animated
+ripples. Modern is drawn at the output resolution, not the N64's. Both styles
+replace the sky with storm clouds and hide the sun flare. Choose Off to keep
+the weather mod's fog and AI without rain art.
 Rain intensity and Camera droplets are independent settings. All three apply
 when the next race loads. Texture packs do not select the rain style.
 
@@ -147,6 +150,8 @@ Lifecycle:
   200 or more.
 
 The camera lists, root copy and sky tiles are fixed-size and allocated once.
+One camera buffer per view and task slot (48 KiB) serves either style, so a
+style change between races never meets a smaller block.
 
 Decode, build, full-buffer and ripple-write counters appear in the `rain`
 publish log with `--verbose` or `--lambo-debug`, with the live and peak guest
@@ -154,6 +159,43 @@ heap held by road buffers (`road_bytes`, `peak_road_bytes`), by all rain blocks
 (`heap_bytes`, `peak_heap_bytes`), and the live road buffers in each slot
 (`road_buffers=slot0/slot1`). Counts are requested bytes. The heap itself may
 round a block up. The first four publications and every 1800th one are logged.
+
+## Camera rain
+
+Camera rain is drawn over each view after its scene, from the camera
+insertion seam in the table above. A covered camera segment hides it.
+
+RT64 draws rectangles on the native 320x240 grid. `convertViewportRect` rounds
+each rectangle edge up to a whole native pixel before it scales the rectangle
+to the output. A rectangle narrower than a native pixel either disappears or
+becomes a full native pixel, so it looks the same blocky size at every output
+resolution. Modern camera rain was once rectangles 0.6 native pixels wide, so
+in game it looked like Retro. Retro still uses rectangles: the native grid is
+its intended look.
+
+Modern camera rain is triangles, which RT64 rasterizes at output resolution.
+Each view's list does the following:
+
+- Saves the other-mode, combiner, primitive-colour, scissor, geometry-mode,
+  viewport and projection stacks, and pushes the modelview matrix. It restores
+  all of them before it ends.
+- Sets its own viewport for the view: full screen, a 2P half, or a 3P/4P
+  quadrant tagged `G_EX_ORIGIN_WIDE` like the game's quadrant scenes.
+- Sets an orthographic projection of exactly 1/2048 (vertex units are 2048
+  per half view), an identity modelview, and no depth, fog or lighting. The
+  combiner is shade colour and shade alpha, with translucent blending.
+- Loads vertices in batches of up to 63 into RT64's expanded slots 32..94.
+  This preserves the native F3DEX bank 0..31. A shape has at most 32
+  vertices, so it never spans two loads.
+- Leaves the projection aspect mode alone. RT64 widens an orthographic view
+  only in the default automatic mode, which the game uses.
+
+RT64 widens an orthographic full-width or quadrant view to the output aspect,
+so the art is laid out across the widened view without stretching.
+`lambo::rain::screen_rain` builds the shapes, and the runtime encodes them.
+Streak count follows intensity and view area up to 16:9. Wider outputs keep
+the 16:9 count, so the worst case fits the buffer and the rain is sparser.
+Lens drops follow the Camera droplets setting. No texture is sampled.
 
 ## Limits and validation
 
@@ -186,7 +228,14 @@ rounding with it. The producer test compares every emitted road sublist with
 it, command words and vertex payload. It covers Retro and Modern, one and four
 viewports, both task slots, pause, reordered emission and shelter. It also
 covers each invalidation rule and the decode, build and allocation counts.
-It checks that road buffers match the mesh size exactly, that a full 12,000-vertex
+It replays each camera list the way RT64 draws it: Modern must draw no
+rectangles. Its triangles must include sub-pixel streaks with alpha gradients.
+They must use only vertices from their own load in slots 32..94, keep every
+stack balanced, and stay in their view for 1P, 2P, 4P and Heavy rain at 32:9.
+Quadrant views must use the wide origin and a scissor on their half of the
+output. Every generated shape must fit one vertex load.
+Retro must still draw rectangles. The producer test also checks that road
+buffers match the mesh size exactly, that a full 12,000-vertex
 mesh fits with guard bytes intact, and that growth, failed allocation, the
 200-buffer cap and leaving the race keep the guest heap counters balanced.
 These are synthetic records, not a replay of game frames.
