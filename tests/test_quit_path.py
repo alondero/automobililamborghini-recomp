@@ -36,10 +36,13 @@ def main() -> None:
     require("lambo::ui::shutdown" not in exit_body,
             "the window-close path must not destroy UI state while RT64 may render it")
 
-    event_loop = function_body(source, "static void update_gfx_stub(void*")
-    require("event.type == SDL_QUIT" in event_loop and
-            "SDL_WINDOWEVENT_CLOSE" in event_loop and
-            "application_exit_success();" in event_loop,
+    pump = function_body(source, "void update_frontend()")
+    require("dispatch_sdl_event(event)" in pump,
+            "the frame pump must dispatch every collected SDL event")
+    event_dispatch = function_body(source, "static void dispatch_sdl_event(")
+    require("event.type == SDL_QUIT" in event_dispatch and
+            "SDL_WINDOWEVENT_CLOSE" in event_dispatch and
+            "application_exit_success();" in event_dispatch,
             "SDL quit and window-close events must use the immediate safe exit path")
 
     # Port-owned header/launcher callbacks must preserve patch 0017's shutdown

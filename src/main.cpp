@@ -52,6 +52,7 @@
 #endif
 #include "lambo_rt64.h"
 #include "lambo_audio.h"
+#include "lambo_frame_pump.h"
 #include "lambo_config.h"
 #include "lambo_mods.h"
 #include "lambo_mod_gameplay.h"
@@ -268,8 +269,9 @@ static lambo::StartupController* g_startup_controller = nullptr;
 
 #if defined(__ANDROID__)
 static int SDLCALL android_lifecycle_event(void*, SDL_Event* event) {
-    // An event watch runs before SDL blocks the main event pump in the background.
-    // Do not take the frontend mutex here: the blocked pump may already own it.
+    // An event watch runs before SDL blocks the main event pump in the background,
+    // on whichever thread posted the event. Audio and runtime suspension have their
+    // own locks; do not take the frontend mutex here.
     if (event->type == SDL_APP_WILLENTERBACKGROUND) {
         ultramodern::set_app_suspended(true);
         lambo::audio::set_suspended(true);
@@ -417,10 +419,9 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
     return ultramodern::renderer::WindowHandle{}; // headless: null handle
 }
 
-static void update_gfx_stub(void* /*gfx_data*/) {
-    std::lock_guard frontend_lock(lambo::ui::frontend_mutex());
-    lambo::audio::pump();
-
+// One-shot startup handshake. Its page requests go through the overlay request
+// gate that render() consumes, so it runs with the rest of the frontend phase.
+static void announce_runtime_ready() {
     static bool runtime_ready_announced = false;
     if (!runtime_ready_announced && g_startup_controller != nullptr) {
         const bool render_ready = lambo::ui::is_initialized();
@@ -449,120 +450,133 @@ static void update_gfx_stub(void* /*gfx_data*/) {
             }
         }
     }
+}
+
+static void dispatch_sdl_event(const SDL_Event& event) {
+    lambo::ui::driving_sensor_event(event);
+    // Quit/window-close is handled before any UI or guest dispatch. In particular,
+    // a launcher close before the first VI is a successful application exit, not a
+    // failed boot probe.
+    if (event.type == SDL_QUIT ||
+        (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE)) {
+        if (g_startup_controller != nullptr) g_startup_controller->request_exit();
+        application_exit_success();
+    }
+
+    // The menu button (F1 or the pad's Back/Guide) toggles the options overlay:
+    // it opens Settings from gameplay and closes it again from anywhere inside.
+    // This runs before lambo::ui::handle_event so the press still toggles once the
+    // overlay owns input; Esc keeps its page-stack "back" meaning below.
+    const bool menu_button =
+        (event.type == SDL_KEYDOWN && !event.key.repeat && event.key.keysym.sym == SDLK_F1) ||
+        (event.type == SDL_CONTROLLERBUTTONDOWN && event.cbutton.button == SDL_CONTROLLER_BUTTON_BACK);
+    if (menu_button &&
+        g_startup_controller != nullptr &&
+        g_startup_controller->state() == lambo::StartupState::Started) {
+        lambo::ui::toggle_settings();
+        return;
+    }
+
+    if (event.type == SDL_KEYDOWN && !event.key.repeat &&
+        (event.key.keysym.sym == SDLK_F11 ||
+         (event.key.keysym.sym == SDLK_RETURN && (event.key.keysym.mod & KMOD_ALT)))) {
+        toggle_fullscreen();
+        return;
+    }
+    if (lambo::ui::handle_event(event)) return;
+
+    // Once the launcher/overlay captures input, guest and developer shortcuts are
+    // suppressed. F11 and Alt+Enter were handled above as application shortcuts.
+    const bool settings_shortcut =
+        event.type == SDL_KEYDOWN && !event.key.repeat &&
+        event.key.keysym.sym == SDLK_ESCAPE;
+    if (settings_shortcut &&
+        g_startup_controller != nullptr &&
+        g_startup_controller->state() == lambo::StartupState::Started &&
+        !lambo::ui::overlay_visible_intent()) {
+        lambo::ui::open_settings();
+        return;
+    }
+}
+
+// The shared settings schema owns the requested mode and size, but SDL
+// (not RT64) must apply both on this thread. F11 / Alt+Enter already match.
+// One Apply can change both, so they are planned together from a single
+// read of the window and applied mode-first: a size planned against the
+// window as it is now, rather than as it will be, would be consumed by a
+// window that had just gone fullscreen and never applied at all.
+static void reconcile_window() {
+    if (g_sdl_window == nullptr) return;
+    // Developer lifecycle test: one live resize at a replay frame.
+    static const auto scheduled_resize =
+        lambo::window_resize::parse_scheduled_resize(std::getenv("LAMBO_TEST_RESIZE"));
+    static bool scheduled_resize_requested = false;
+    if (scheduled_resize && !scheduled_resize_requested &&
+        lambo::replay_runtime::status().frames_consumed >= scheduled_resize->frame) {
+        scheduled_resize_requested = true;
+        LAMBO_LOG("config", "scheduled resize to %dx%d at replay frame %llu\n",
+                  scheduled_resize->width, scheduled_resize->height,
+                  lambo::replay_runtime::status().frames_consumed);
+        lambo::config::set_window_size({scheduled_resize->width, scheduled_resize->height});
+    }
+    const uint32_t window_flags = SDL_GetWindowFlags(g_sdl_window);
+    const lambo::window_resize::WindowState window_state{
+        /*fullscreen=*/(window_flags & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0,
+        /*minimized=*/(window_flags & SDL_WINDOW_MINIMIZED) != 0,
+        /*maximized=*/(window_flags & SDL_WINDOW_MAXIMIZED) != 0,
+    };
+    const lambo::config::WindowSize wanted = lambo::config::window_size();
+    const bool want_fullscreen = lambo::config::current_graphics().wm_option ==
+        ultramodern::renderer::WindowMode::Fullscreen;
+    const lambo::window_resize::Plan plan = lambo::window_resize::reconciler().plan(
+        want_fullscreen, wanted.width, wanted.height, window_state);
+
+    if (plan.mode != lambo::window_resize::ModeAction::None) toggle_fullscreen();
+
+    // A new size picked in the Graphics tab resizes the window straight
+    // away, no restart: the request lives in graphics.json (the port owns
+    // it) and the pump pushes it onto SDL here. Everything downstream
+    // already follows a resize -- RT64 takes the new swapchain size, and
+    // the window-scaled internal resolution, aspect and widescreen HUD
+    // geometry read it per frame.
+    if (plan.resize) {
+        // SDL2's SDL_SetWindowSize returns void, so a refusal shows up as
+        // the error string it set rather than a return code.
+        SDL_ClearError();
+        SDL_SetWindowSize(g_sdl_window, wanted.width, wanted.height);
+        const char* error = SDL_GetError();
+        if (error != nullptr && error[0] != '\0') {
+            // Already consumed, so this is reported once per pick rather
+            // than every frame. The size is saved either way.
+            LAMBO_LOG_WARN("config", "SDL_SetWindowSize(%d, %d) failed: %s -- "
+                                     "keeping the current window size\n",
+                           wanted.width, wanted.height, error);
+        } else {
+            LAMBO_LOG_INFO("config", "window size %dx%d applied\n", wanted.width, wanted.height);
+        }
+    }
+}
+
+// Phases of one main-thread pump. lambo_frame_pump.h decides which of them run
+// under the frontend mutex.
+struct MainThreadPump {
+    std::vector<SDL_Event> events;
+
+    void pump_audio() { lambo::audio::pump(); }
 
     // Pump SDL events on the main thread so the RT64 window stays responsive under WSLg.
-    if (lambo_rt64::enabled()) {
+    void collect_events() {
+        events.clear();
+        if (!lambo_rt64::enabled()) return;
         SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-            lambo::ui::driving_sensor_event(event);
-            // Quit/window-close is handled before any UI or guest dispatch. In particular,
-            // a launcher close before the first VI is a successful application exit, not a
-            // failed boot probe.
-            if (event.type == SDL_QUIT ||
-                (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE)) {
-                if (g_startup_controller != nullptr) g_startup_controller->request_exit();
-                application_exit_success();
-            }
+        while (SDL_PollEvent(&event)) events.push_back(event);
+    }
 
-            // The menu button (F1 or the pad's Back/Guide) toggles the options overlay:
-            // it opens Settings from gameplay and closes it again from anywhere inside.
-            // This runs before lambo::ui::handle_event so the press still toggles once the
-            // overlay owns input; Esc keeps its page-stack "back" meaning below.
-            const bool menu_button =
-                (event.type == SDL_KEYDOWN && !event.key.repeat && event.key.keysym.sym == SDLK_F1) ||
-                (event.type == SDL_CONTROLLERBUTTONDOWN && event.cbutton.button == SDL_CONTROLLER_BUTTON_BACK);
-            if (menu_button &&
-                g_startup_controller != nullptr &&
-                g_startup_controller->state() == lambo::StartupState::Started) {
-                lambo::ui::toggle_settings();
-                continue;
-            }
-
-            if (event.type == SDL_KEYDOWN && !event.key.repeat &&
-                (event.key.keysym.sym == SDLK_F11 ||
-                 (event.key.keysym.sym == SDLK_RETURN && (event.key.keysym.mod & KMOD_ALT)))) {
-                toggle_fullscreen();
-                continue;
-            }
-            if (lambo::ui::handle_event(event)) continue;
-
-            // Once the launcher/overlay captures input, guest and developer shortcuts are
-            // suppressed. F11 and Alt+Enter were handled above as application shortcuts.
-            const bool settings_shortcut =
-                event.type == SDL_KEYDOWN && !event.key.repeat &&
-                event.key.keysym.sym == SDLK_ESCAPE;
-            if (settings_shortcut &&
-                g_startup_controller != nullptr &&
-                g_startup_controller->state() == lambo::StartupState::Started &&
-                !lambo::ui::overlay_visible_intent()) {
-                lambo::ui::open_settings();
-                continue;
-            }
-        }
-        // The shared settings schema owns the requested mode and size, but SDL
-        // (not RT64) must apply both on this thread. F11 / Alt+Enter already match.
-        // One Apply can change both, so they are planned together from a single
-        // read of the window and applied mode-first: a size planned against the
-        // window as it is now, rather than as it will be, would be consumed by a
-        // window that had just gone fullscreen and never applied at all.
-        if (g_sdl_window != nullptr) {
-            // Developer lifecycle test: one live resize at a replay frame.
-            static const auto scheduled_resize =
-                lambo::window_resize::parse_scheduled_resize(std::getenv("LAMBO_TEST_RESIZE"));
-            static bool scheduled_resize_requested = false;
-            if (scheduled_resize && !scheduled_resize_requested &&
-                lambo::replay_runtime::status().frames_consumed >= scheduled_resize->frame) {
-                scheduled_resize_requested = true;
-                LAMBO_LOG("config", "scheduled resize to %dx%d at replay frame %llu\n",
-                          scheduled_resize->width, scheduled_resize->height,
-                          lambo::replay_runtime::status().frames_consumed);
-                lambo::config::set_window_size({scheduled_resize->width, scheduled_resize->height});
-            }
-            const uint32_t window_flags = SDL_GetWindowFlags(g_sdl_window);
-            const lambo::window_resize::WindowState window_state{
-                /*fullscreen=*/(window_flags & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0,
-                /*minimized=*/(window_flags & SDL_WINDOW_MINIMIZED) != 0,
-                /*maximized=*/(window_flags & SDL_WINDOW_MAXIMIZED) != 0,
-            };
-            const lambo::config::WindowSize wanted = lambo::config::window_size();
-            const bool want_fullscreen = lambo::config::current_graphics().wm_option ==
-                ultramodern::renderer::WindowMode::Fullscreen;
-            const lambo::window_resize::Plan plan = lambo::window_resize::reconciler().plan(
-                want_fullscreen, wanted.width, wanted.height, window_state);
-
-            if (plan.mode != lambo::window_resize::ModeAction::None) toggle_fullscreen();
-
-            // A new size picked in the Graphics tab resizes the window straight
-            // away, no restart: the request lives in graphics.json (the port owns
-            // it) and the pump pushes it onto SDL here. Everything downstream
-            // already follows a resize -- RT64 takes the new swapchain size, and
-            // the window-scaled internal resolution, aspect and widescreen HUD
-            // geometry read it per frame.
-            if (plan.resize) {
-                // SDL2's SDL_SetWindowSize returns void, so a refusal shows up as
-                // the error string it set rather than a return code.
-                SDL_ClearError();
-                SDL_SetWindowSize(g_sdl_window, wanted.width, wanted.height);
-                const char* error = SDL_GetError();
-                if (error != nullptr && error[0] != '\0') {
-                    // Already consumed, so this is reported once per pick rather
-                    // than every frame. The size is saved either way.
-                    LAMBO_LOG_WARN("config", "SDL_SetWindowSize(%d, %d) failed: %s -- "
-                                             "keeping the current window size\n",
-                                   wanted.width, wanted.height, error);
-                } else {
-                    LAMBO_LOG_INFO("config", "window size %dx%d applied\n", wanted.width, wanted.height);
-                }
-            }
-        }
-        // Severe GPU-driver advisory posted by renderer setup: the affected
-        // user sees only a black window, so show it as a modal box. Main thread owns all
-        // UI; blocking the pump here is fine -- game threads keep running behind it.
-        if (const char* advisory = lambo_gpu_advisory_take_pending()) {
-            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING,
-                                     "Lamborghini Recomp - outdated graphics driver",
-                                     advisory, g_sdl_window);
-        }
+    void update_frontend() {
+        announce_runtime_ready();
+        if (!lambo_rt64::enabled()) return;
+        for (const SDL_Event& event : events) dispatch_sdl_event(event);
+        reconcile_window();
         // Update the cross-thread capture gate before sampling physical state. The guest reads a
         // neutral snapshot while the UI owns input, plus one neutral frame after release.
         recompinput::finish_events();
@@ -572,6 +586,23 @@ static void update_gfx_stub(void* /*gfx_data*/) {
         // Apply the game thread's latest rumble-pak motor state to the physical pad.
         rumble_apply();
     }
+
+    void show_advisory() {
+        if (!lambo_rt64::enabled()) return;
+        // Severe GPU-driver advisory posted by renderer setup: the affected
+        // user sees only a black window, so show it as a modal box. It blocks this
+        // thread until dismissed; game threads and UI drawing keep running behind it.
+        if (const char* advisory = lambo_gpu_advisory_take_pending()) {
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING,
+                                     "Lamborghini Recomp - outdated graphics driver",
+                                     advisory, g_sdl_window);
+        }
+    }
+};
+
+static void update_gfx_stub(void* /*gfx_data*/) {
+    static MainThreadPump pump;
+    lambo::frame_pump::run(lambo::ui::frontend_mutex(), pump);
 }
 
 // --- input -------------------------------------------------------------------------------

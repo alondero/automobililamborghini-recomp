@@ -607,6 +607,11 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_quit_path.py
             ${CMAKE_CURRENT_SOURCE_DIR}
     )
+    add_test(NAME lambo_frontend_frame_pump_wiring
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_frame_pump_wiring.py
+            ${CMAKE_CURRENT_SOURCE_DIR}
+    )
     add_test(NAME lambo_game_scenario_runner
         COMMAND ${LAMBO_PYTHON_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_game_scenario.py
@@ -774,27 +779,38 @@ if(NOT WIN32)
 endif()
 
 if(BUILD_TESTING)
-    add_executable(lambo_audio_recovery_tests
-        tests/test_audio_recovery.cpp
-        src/lambo_audio.cpp
-        src/lambo_log.cpp
-    )
-    target_include_directories(lambo_audio_recovery_tests PRIVATE
+    # Each audio test links the real sink against its own SDL fakes.
+    function(lambo_add_audio_test stem test_name)
+        set(target lambo_audio_${stem}_tests)
+        add_executable(${target}
+            tests/test_audio_${stem}.cpp
+            src/lambo_audio.cpp
+            src/lambo_log.cpp
+        )
+        target_include_directories(${target} PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${N64MR}/ultramodern/include
+            ${N64MR}/librecomp/include
+            ${N64MR}/N64Recomp/include
+            ${N64MR}/thirdparty
+            ${N64MR}/thirdparty/concurrentqueue
+            ${SDL2_INCLUDE_DIRS}
+        )
+        target_compile_definitions(${target} PRIVATE
+            SDL_MAIN_HANDLED
+            LAMBO_AUDIO_RETRY_INTERVAL_MS=0
+        )
+        target_link_libraries(${target} PRIVATE Threads::Threads)
+        add_test(NAME ${test_name} COMMAND ${target})
+    endfunction()
+    lambo_add_audio_test(recovery lambo_audio_recovers_from_device_failures)
+    lambo_add_audio_test(locking lambo_audio_lock_scopes)
+
+    add_executable(lambo_frame_pump_tests tests/test_frame_pump.cpp)
+    target_include_directories(lambo_frame_pump_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${N64MR}/ultramodern/include
-        ${N64MR}/librecomp/include
-        ${N64MR}/N64Recomp/include
-        ${N64MR}/thirdparty
-        ${N64MR}/thirdparty/concurrentqueue
-        ${SDL2_INCLUDE_DIRS}
     )
-    target_compile_definitions(lambo_audio_recovery_tests PRIVATE
-        SDL_MAIN_HANDLED
-        LAMBO_AUDIO_RETRY_INTERVAL_MS=0
-    )
-    target_link_libraries(lambo_audio_recovery_tests PRIVATE Threads::Threads)
-    add_test(NAME lambo_audio_recovers_from_device_failures
-        COMMAND lambo_audio_recovery_tests)
+    add_test(NAME lambo_frontend_frame_pump_lock_scopes COMMAND lambo_frame_pump_tests)
 
 endif()
 

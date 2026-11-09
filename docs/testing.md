@@ -299,6 +299,7 @@ ctest --test-dir build -R "lambo_steering_response"
 ctest --test-dir build -R "lambo_(controller_pak|startup_state_machine)"
 ctest --test-dir build -R "lambo_(no_lod|track_patch|interpolation)"
 ctest --test-dir build -R "lambo_rt64|lambo_audio"
+ctest --test-dir build -R "lambo_frontend_frame_pump|lambo_audio_lock_scopes"
 ctest --test-dir build -R "lambo_rt_sun_tasks"
 ctest --test-dir build -R "lambo_hud_(texture_walk|hash_padding|rt64_contract|savestate)"
 ctest --test-dir build -R "lambo_mods_rtz_container"
@@ -316,6 +317,14 @@ file I/O, covering four restart cycles for each of 1P/2P, same-process policy
 changes, authored fog payloads and legacy/truncated rejection. Build
 `lambo_hud_savestate_tests` before running it; the other HUD tests use
 `lambo_hud_texture_walk_tests` and `lambo_hud_hash_padding_tests`.
+
+The frame-pump group checks which main-thread pump phases hold the frontend
+mutex (`lambo_frontend_frame_pump_lock_scopes`) and that `main.cpp` keeps the
+audio pump, `SDL_PollEvent` and the driver advisory box in the unlocked phases
+(`lambo_frontend_frame_pump_wiring`). `lambo_audio_lock_scopes` parks a fake SDL
+resample or device close and proves the pump and the audio callbacks still get
+through. It also checks that a buffer converted for a replaced device is
+dropped. These are lock-scope checks; they do not measure stall time.
 
 The complete list is the add_test list in CMakeLists.txt; keep this page
 updated when a test is added or renamed. Some tests are only registered when
