@@ -152,8 +152,17 @@ publication and diagnostic counters stay on the host.
   players two through four need assignment.
 - The graphics thread consumes display-list work through the runtime and RT64.
   LAMBO_HEADLESS=1 selects the headless path used by scripted scenarios.
+- The main-thread pump and the presentation thread's UI draw share the frontend
+  mutex. The pump holds it only to dispatch events, reconcile the window, and
+  sample input and rumble, because settings callbacks change that state during a
+  draw. Audio device work, `SDL_PollEvent` and the driver advisory box run
+  without it. [src/lambo_frame_pump.h](../src/lambo_frame_pump.h) owns these
+  scopes.
 - Audio tasks are translated and sent to a host sink. Audio device recovery is
-  tested, but device and driver behavior remains platform-specific.
+  tested, but device and driver behavior remains platform-specific. The audio
+  callbacks never wait for a device open or close, and resampling does not block
+  the pump or the queue-depth query. The lock order is documented in
+  [src/lambo_audio.cpp](../src/lambo_audio.cpp).
 - The host save path owns files. A write must not block the game thread. A save
   failure must be logged and leave the in-memory state explicit.
 - A crash or missing dependency is a build/runtime failure to diagnose, not a

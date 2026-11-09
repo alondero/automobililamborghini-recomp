@@ -796,6 +796,33 @@ if(BUILD_TESTING)
     add_test(NAME lambo_audio_recovers_from_device_failures
         COMMAND lambo_audio_recovery_tests)
 
+    add_executable(lambo_audio_locking_tests
+        tests/test_audio_locking.cpp
+        src/lambo_audio.cpp
+        src/lambo_log.cpp
+    )
+    target_include_directories(lambo_audio_locking_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${N64MR}/ultramodern/include
+        ${N64MR}/librecomp/include
+        ${N64MR}/N64Recomp/include
+        ${N64MR}/thirdparty
+        ${N64MR}/thirdparty/concurrentqueue
+        ${SDL2_INCLUDE_DIRS}
+    )
+    target_compile_definitions(lambo_audio_locking_tests PRIVATE
+        SDL_MAIN_HANDLED
+        LAMBO_AUDIO_RETRY_INTERVAL_MS=0
+    )
+    target_link_libraries(lambo_audio_locking_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_audio_lock_scopes COMMAND lambo_audio_locking_tests)
+
+    add_executable(lambo_frame_pump_tests tests/test_frame_pump.cpp)
+    target_include_directories(lambo_frame_pump_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    add_test(NAME lambo_frontend_frame_pump_lock_scopes COMMAND lambo_frame_pump_tests)
+
 endif()
 
 # ultramodern + librecomp, which cascades N64Recomp / LiveRecomp / miniz.
