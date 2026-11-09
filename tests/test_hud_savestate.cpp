@@ -35,7 +35,7 @@ void lambo_savestate_tick(uint8_t*, recomp_context*);
 }
 namespace {
 double density = 0.5;
-unsigned relinks = 0;
+unsigned relinks = 0, rain_invalidations = 0;
 std::string log_output;
 void environment(const char* key, const char* value) {
 #ifdef _WIN32
@@ -76,6 +76,7 @@ extern "C" void lambo_replay_state_loaded(void) {}
 extern "C" void lambo_mod_state_restored(void) {}
 extern "C" void lambo_track_patch_on_savestate_loaded(uint8_t*) {}
 extern "C" void lambo_rt_probe_invalidate(void) {}
+extern "C" void lambo_rain_invalidate(void) { ++rain_invalidations; }
 
 int main(int argc, char** argv) {
     assert(argc >= 3);
@@ -170,7 +171,7 @@ int main(int argc, char** argv) {
         write(ram, root + 4, 0x4000c000);
         const auto before = memory;
         load();
-        assert(memory == before && relinks == 0);
+        assert(memory == before && relinks == 0 && rain_invalidations == 0);
         const size_t payload_size = size_t(0x800000) + LAMBO_FIELD_SIZE;
         if (std::filesystem::file_size(argv[2]) == size_t(32) + payload_size - 1) {
             assert(log_output.find("truncated (8536063/8536064 bytes)") != std::string::npos);
@@ -181,7 +182,7 @@ int main(int argc, char** argv) {
     if (mode != "write") {
         load();
         assert(log_output.find("loaded 8536064 bytes") != std::string::npos);
-        assert(relinks == 1);
+        assert(relinks == 1 && rain_invalidations == 1);
         assert(read(ram, 0x902084) == 0x12345678u);
     }
     prepare();
@@ -197,7 +198,7 @@ int main(int argc, char** argv) {
         prepare(); assert(read(ram, root + 4) == 0x1900e740);
         load();
         assert(log_output.find("loaded 8536064 bytes") != std::string::npos);
-        assert(relinks == 2);
+        assert(relinks == 2 && rain_invalidations == 2);
         density = 0.5;
         prepare(); assert(read(ram, root + 4) == 0x3200ce80);
     }

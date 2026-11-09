@@ -908,10 +908,11 @@ text = "{ extern void lambo_sky_extend_panorama(uint8_t*); lambo_sky_extend_pano
 # 0x80006094 here. The preceding runtime instruction at 0x80006090 stores the newly
 # loaded 0x80251800 context in D_80098238. Applying here keeps the stock downstream
 # initialization authoritative and never replaces geometry, navigation, or collision.
+# Then discard rain geometry cached from the previous track; docs/rain.md.
 [[patches.hook]]
 func = "boot_pad_apply_calibration"
 before_vram = 0x80006094
-text = "{ extern void lambo_track_patch_on_track_loaded(uint8_t*); lambo_track_patch_on_track_loaded(rdram); }"
+text = "{ extern void lambo_track_patch_on_track_loaded(uint8_t*); lambo_track_patch_on_track_loaded(rdram); extern void lambo_rain_invalidate(void); lambo_rain_invalidate(); }"
 
 # Issues #87/#91 -- no_lod: emit the per-segment scenery layer in 2P-4P like 1P. The scene
 # builder func_8000A6C0 draws each track segment as up to three sub-DLs from the 64-byte

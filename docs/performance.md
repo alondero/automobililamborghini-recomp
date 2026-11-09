@@ -436,3 +436,33 @@ that cost, but it would rewrite RT64's tile matching loop. That is not done.
 ```sh
 python -m unittest tests.test_rt64_frame_matching -v
 ```
+
+## Rain geometry cache (2026-11-09)
+
+Issue #397. Wet races rebuilt rain geometry for every visible segment record
+on every frame. The producers now cache it per record and epoch; the lifecycle
+and invalidation rule are in [Rain rendering](rain.md#cache-lifecycle). Output
+is unchanged: tests compare it byte for byte with the frozen `e053389` copy.
+
+`lambo_rain_benchmark` ([Testing](testing.md)) drives 25 synthetic segments
+through the producer hooks: road, camera and publication for one task. To
+measure an older revision with the same workload, compile the benchmark with
+`-DLAMBO_RAIN_BENCH_PRODUCERS_ONLY` against that revision's `src/lambo_rain.h`,
+`src/lambo_rain.cpp` and `src/lambo_rain_runtime.cpp`, with those files first
+on the include path. Medians of three interleaved runs, MinGW GCC 15.2.0
+`-O2 -DNDEBUG`, Ryzen 9 3900X, other work running:
+
+| Producers, 25 segments | e053389 per task (µs) | Cached per task (µs) | e053389 allocations | Cached allocations |
+| --- | ---: | ---: | ---: | ---: |
+| 36 faces, Retro, 1P | 447 | 1.2 | 957 | 0 |
+| 36 faces, Modern, 1P | 3649 | 182 | 1139 | 0 |
+| 36 faces, Modern, 4P | 2857 | 158 | 1192 | 0 |
+| 120 faces, Retro, 4P | 1765 | 2.8 | 1171 | 0 |
+| 120 faces, Modern, 1P | 9899 | 1251 | 1298 | 0 |
+| 120 faces, Modern, 4P | 10210 | 1345 | 1360 | 0 |
+
+The cached figures are steady frames. The frame that first sees a segment
+still builds it, at about the old per-frame cost for that segment. Modern
+frames keep rewriting ripple vertices; that work, plus scattered guest writes,
+is most of the remaining cost. These are synthetic CPU measurements, not a
+game FPS claim.

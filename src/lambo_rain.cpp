@@ -22,11 +22,11 @@ bool address(uint32_t a, uint32_t bytes, uint32_t& offset) {
 }
 struct Decoder {
     const uint8_t* ram;
-    explicit Decoder(const uint8_t* memory):ram(memory) {}
+    std::vector<Triangle>& triangles;
+    Decoder(const uint8_t* memory,std::vector<Triangle>& out):ram(memory),triangles(out) {}
     std::array<Point,32> vertices{};
     uint32_t valid = 0;
     unsigned budget = 8192;
-    std::vector<Triangle> triangles;
     bool tri(uint32_t w) {
         unsigned a=(w>>17)&127, b=(w>>9)&127, c=(w>>1)&127;
         if (a>=32 || b>=32 || c>=32 || !(valid&(1u<<a)) || !(valid&(1u<<b)) || !(valid&(1u<<c))) return false;
@@ -73,32 +73,59 @@ struct Decoder {
 bool road_mesh(const uint8_t* ram, uint32_t list, std::vector<Triangle>& triangles) {
     triangles.clear();
     if (!ram || list==0) return false;
-    Decoder decoder{ram};
-    if (!decoder.run(list)) return false;
-    triangles=std::move(decoder.triangles);
-    return true;
+    Decoder decoder{ram,triangles};
+    if (decoder.run(list)) return true;
+    triangles.clear();
+    return false;
 }
 bool floor(const Triangle& t) {
     Point n=cross(t.p[1]-t.p[0],t.p[2]-t.p[0]);
     return length(n)>1 && std::abs(n.y)>length(n)*0.8f;
 }
-bool covered(Point p, const std::vector<Triangle>& roof) {
-    for (const auto& t:roof) {
+void roof_planes(const std::vector<Triangle>& triangles, std::vector<RoofPlane>& planes) {
+    for (const auto& t:triangles) {
         if (!floor(t)) continue;
-        Point a=t.p[1]-t.p[0], b=t.p[2]-t.p[0], c=p-t.p[0];
+        Point a=t.p[1]-t.p[0], b=t.p[2]-t.p[0];
         float det=a.x*b.z-a.z*b.x;
-        if (std::abs(det)<1) continue;
-        float u=(c.x*b.z-c.z*b.x)/det, v=(a.x*c.z-a.z*c.x)/det;
-        if (u>=0 && v>=0 && u+v<=1 && t.p[0].y+a.y*u+b.y*v>p.y+80) return true;
+        if (std::abs(det)>=1) planes.push_back({t.p[0],a,b,det});
+    }
+}
+bool covered(Point p, const std::vector<RoofPlane>& roof) {
+    for (const auto& t:roof) {
+        Point a=t.a, b=t.b, c=p-t.origin;
+        float u=(c.x*b.z-c.z*b.x)/t.det, v=(a.x*c.z-a.z*c.x)/t.det;
+        if (u>=0 && v>=0 && u+v<=1 && t.origin.y+a.y*u+b.y*v>p.y+80) return true;
     }
     return false;
 }
-std::vector<Vertex> puddles(const std::vector<Triangle>& road,
-        const std::vector<Triangle>& roof, bool modern, float seconds, float intensity) {
-    std::vector<Vertex> out;
-    if (!std::isfinite(seconds) || !std::isfinite(intensity) || intensity<=0) return out;
+namespace {
+constexpr int modern_rings=5;
+constexpr uint32_t ring_vertices=3+(modern_rings-1)*6;
+uint32_t color(uint32_t rgb,int a,float intensity) { return (rgb<<8)|uint32_t(a*intensity); }
+}
+Point Puddle::point(int j,float r) const {
+    j%=sides;
+    return center+direction[j]*(radius*r*shape[j]);
+}
+uint32_t ripple_vertex(const Puddle& p,int side) {
+    return p.first+uint32_t(side)*(ring_vertices+6)+ring_vertices;
+}
+float ripple_phase(const Puddle& p,float seconds) {
+    return std::fmod(seconds*0.7f+(p.seed%101)*0.01f,1.0f);
+}
+void ripple(const Puddle& p,int i,float phase,Vertex* out) {
+    Point a0=p.point(i,phase*0.8f), b0=p.point(i+1,phase*0.8f);
+    Point a1=p.point(i,phase*0.8f+0.025f), b1=p.point(i+1,phase*0.8f+0.025f);
+    uint32_t c=color(0xB5CAD4,int((1-phase)*40),p.intensity);
+    const Vertex quad[6]{{a0,c},{b0,c},{b1,c},{a0,c},{b1,c},{a1,c}};
+    std::copy(quad,quad+6,out);
+}
+void puddle_mesh(const std::vector<Triangle>& road, const std::vector<RoofPlane>& roof,
+        bool modern, float seconds, float intensity, PuddleMesh& mesh) {
+    auto& out=mesh.vertices;
+    out.clear(); mesh.ripples.clear();
+    if (!std::isfinite(seconds) || !std::isfinite(intensity) || intensity<=0) return;
     intensity=std::min(intensity,1.0f);
-    auto color=[&](uint32_t rgb,int a) { return (rgb<<8)|uint32_t(a*intensity); };
     for (const auto& t:road) {
         if (out.size()+3>12000) break;
         if (!floor(t)) continue;
@@ -106,7 +133,7 @@ std::vector<Vertex> puddles(const std::vector<Triangle>& road,
         if (covered(center,roof)) continue;
         // Stable face-space placement, independent of camera and frame ordering.
         uint32_t seed=hash(uint32_t(int(center.x)) ^ hash(uint32_t(int(center.z))));
-        for (Point p:t.p) out.push_back({p,color(0x152531,modern?20:24)});
+        for (Point p:t.p) out.push_back({p,color(0x152531,modern?20:24,intensity)});
         if ((seed&3)!=0 || out.size()+400>12000) continue;
         Point u=t.p[1]-t.p[0], n=cross(u,t.p[2]-t.p[0]);
         u=u*(1/length(u)); n=n*(1/length(n));
@@ -117,36 +144,42 @@ std::vector<Vertex> puddles(const std::vector<Triangle>& road,
             radius=std::min(radius,length(cross(center-a,b-a))/length(b-a)*0.72f);
         }
         if (radius<20) continue;
-        const int sides=modern?12:6;
-        for (int i=0;i<sides;++i) {
-            auto point=[&](int j,float r) {
-                j%=sides;
-                float angle=j*6.28318530718f/sides;
-                float shape=0.93f+0.04f*std::sin(j*3.0f+float(seed%17));
-                return center+(u*std::cos(angle)+v*(std::sin(angle)*0.65f))*(radius*r*shape);
-            };
+        Puddle puddle;
+        puddle.center=center; puddle.radius=radius; puddle.intensity=intensity;
+        puddle.seed=seed; puddle.first=uint32_t(out.size()); puddle.sides=modern?ripple_sides:6;
+        for (int j=0;j<puddle.sides;++j) {
+            float angle=j*6.28318530718f/puddle.sides;
+            puddle.direction[j]=u*std::cos(angle)+v*(std::sin(angle)*0.65f);
+            puddle.shape[j]=0.93f+0.04f*std::sin(j*3.0f+float(seed%17));
+        }
+        for (int i=0;i<puddle.sides;++i) {
             // Constant alpha per ring leaves SHADE alpha available to the
             // native fog blender. Rings provide soft edges without replacing
             // that fog with a screen-space dark overlay.
-            const int rings=modern?5:1;
+            const int rings=modern?modern_rings:1;
             for (int ring=0;ring<rings;++ring) {
                 float inner=float(ring)/rings, outer=float(ring+1)/rings;
-                Point a0=point(i,inner),b0=point(i+1,inner);
-                Point a1=point(i,outer),b1=point(i+1,outer);
-                uint32_t c=color(0x8297A4,modern?int(52*(1-outer*0.9f)):55);
+                Point a0=puddle.point(i,inner),b0=puddle.point(i+1,inner);
+                Point a1=puddle.point(i,outer),b1=puddle.point(i+1,outer);
+                uint32_t c=color(0x8297A4,modern?int(52*(1-outer*0.9f)):55,intensity);
                 out.insert(out.end(),{{a0,c},{a1,c},{b1,c}});
                 if (ring) out.insert(out.end(),{{a0,c},{b1,c},{b0,c}});
             }
             if (modern) {
-                float phase=std::fmod(seconds*0.7f+(seed%101)*0.01f,1.0f);
-                Point a0=point(i,phase*0.8f), b0=point(i+1,phase*0.8f);
-                Point a1=point(i,phase*0.8f+0.025f), b1=point(i+1,phase*0.8f+0.025f);
-                uint32_t c=color(0xB5CAD4,int((1-phase)*40));
-                out.insert(out.end(),{{a0,c},{b0,c},{b1,c},{a0,c},{b1,c},{a1,c}});
+                out.resize(out.size()+6);
+                ripple(puddle,i,ripple_phase(puddle,seconds),&out[out.size()-6]);
             }
         }
+        if (modern) mesh.ripples.push_back(puddle);
     }
-    return out;
+}
+std::vector<Vertex> puddles(const std::vector<Triangle>& road,
+        const std::vector<Triangle>& roof, bool modern, float seconds, float intensity) {
+    std::vector<RoofPlane> planes;
+    roof_planes(roof,planes);
+    PuddleMesh mesh;
+    puddle_mesh(road,planes,modern,seconds,intensity,mesh);
+    return std::move(mesh.vertices);
 }
 uint16_t cloud_pixel(int x,int y,bool modern) {
     // Periodic panoramic noise: eight 64-pixel tiles, two 32-pixel rows.

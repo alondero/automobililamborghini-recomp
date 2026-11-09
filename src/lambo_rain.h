@@ -14,21 +14,68 @@ struct Triangle { std::array<Point, 3> p; };
 // Decode only bounded native F3DEX geometry with absolute/physical addresses.
 // Matrices, segmented targets and dynamic vertex modifications fail closed.
 // Input is word-swapped native 8 MiB RAM; no memory or asset pointer is retained.
+// Output storage is reused; it is empty after a failure.
 bool road_mesh(const uint8_t* ram, uint32_t list, std::vector<Triangle>& triangles);
 bool floor(const Triangle& triangle);
-bool covered(Point p, const std::vector<Triangle>& roof);
+// Coverage terms of one floor triangle, computed once per decoded roof.
+struct RoofPlane { Point origin, a, b; float det = 0; };
+// Appends planes for floor triangles; walls and vertical slivers cannot roof.
+void roof_planes(const std::vector<Triangle>& triangles, std::vector<RoofPlane>& planes);
+bool covered(Point p, const std::vector<RoofPlane>& roof);
 struct Vertex { Point p; uint32_t rgba; };
-// Non-indexed triangles. Geometry stays strictly inside each source road face.
+
+constexpr int ripple_sides = 12;
+// One puddle's ring frame. Static rings and animated ripples are both placed
+// by point(), so rewriting a ripple reproduces a full regeneration exactly.
+struct Puddle {
+    Point center;
+    float radius = 0, intensity = 0;
+    uint32_t seed = 0, first = 0; // first: index of the puddle's first ring vertex
+    int sides = 0;
+    std::array<Point, ripple_sides> direction{};
+    std::array<float, ripple_sides> shape{};
+    Point point(int j, float r) const;
+};
+struct PuddleMesh {
+    std::vector<Vertex> vertices; // non-indexed triangles, strictly inside each road face
+    std::vector<Puddle> ripples;  // Modern only; Retro output has no time dependence
+};
+// Ripple vertices are placed for `seconds`; ripple() moves them to another time.
+void puddle_mesh(const std::vector<Triangle>& road, const std::vector<RoofPlane>& roof,
+    bool modern, float seconds, float intensity, PuddleMesh& mesh);
+uint32_t ripple_vertex(const Puddle& puddle, int side);
+float ripple_phase(const Puddle& puddle, float seconds);
+// Writes the six vertices at ripple_vertex(puddle, side) for a ripple_phase().
+void ripple(const Puddle& puddle, int side, float phase, Vertex* out);
 std::vector<Vertex> puddles(const std::vector<Triangle>& road,
     const std::vector<Triangle>& roof, bool modern, float seconds, float intensity);
+// Guest s16 vertex coordinate: int16_t(std::lround(f)) without a libm call.
+// Exact for |f| < 2^31, which bounds every puddle coordinate.
+inline int16_t coordinate(float f) {
+    int32_t i = int32_t(f);
+    float d = f - float(i);
+    return int16_t(i + (d >= 0.5f) - (d <= -0.5f));
+}
 uint16_t cloud_pixel(int x, int y, bool modern);
 uint32_t hash(uint32_t value);
+
+// Producer instrumentation (game thread). docs/rain.md, "Cache lifecycle".
+struct Counters {
+    uint64_t decodes = 0;       // road_mesh calls
+    uint64_t builds = 0;        // segment geometry generations
+    uint64_t full_writes = 0;   // static geometry copied into a task buffer
+    uint64_t ripple_writes = 0; // Modern ripple-only buffer updates
+};
+const Counters& counters();
+float animation_seconds();
 }
 
 extern "C" void lambo_rain_frame(uint8_t* ram);
 extern "C" void lambo_rain_publish(uint8_t* ram, uint32_t root, uint32_t bytes);
 extern "C" void lambo_rain_road(uint8_t* ram, uint32_t record);
 extern "C" void lambo_rain_camera(uint8_t* ram);
+// Track load and save-state load: drop cached geometry before the next frame.
+extern "C" void lambo_rain_invalidate(void);
 extern "C" unsigned lambo_rain_active(uint8_t* ram);
 // Weather selection is independent of style Off and diagnostic rendering.
 extern "C" unsigned lambo_rain_wet(uint8_t* ram);

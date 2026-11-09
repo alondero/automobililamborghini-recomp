@@ -59,14 +59,20 @@ endif()
 
 if(BUILD_TESTING)
     add_executable(lambo_rain_tests tests/test_rain.cpp src/lambo_rain.cpp)
-    target_include_directories(lambo_rain_tests PRIVATE src)
+    target_include_directories(lambo_rain_tests PRIVATE src tests lib/rt64/include)
     add_test(NAME lambo_rain_geometry COMMAND lambo_rain_tests)
     add_executable(lambo_rain_runtime_tests tests/test_rain_runtime.cpp
         src/lambo_rain.cpp src/lambo_rain_runtime.cpp src/lambo_mod_gameplay.cpp)
-    target_include_directories(lambo_rain_runtime_tests PRIVATE src lib/rt64/include
+    target_include_directories(lambo_rain_runtime_tests PRIVATE src tests lib/rt64/include
         ${N64MR}/N64Recomp/include ${N64MR}/librecomp/include
         ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
     add_test(NAME lambo_rain_producers COMMAND lambo_rain_runtime_tests)
+    add_executable(lambo_rain_benchmark EXCLUDE_FROM_ALL tests/benchmark_rain.cpp
+        src/lambo_rain.cpp src/lambo_rain_runtime.cpp src/lambo_mod_gameplay.cpp)
+    target_include_directories(lambo_rain_benchmark PRIVATE src tests lib/rt64/include
+        ${N64MR}/N64Recomp/include ${N64MR}/librecomp/include
+        ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
+    target_compile_options(lambo_rain_benchmark PRIVATE -O2)
     add_executable(lambo_hud_hash_padding_tests tests/test_hud_hash_padding.cpp)
     target_include_directories(lambo_hud_hash_padding_tests PRIVATE
         lib/rt64/src lib/rt64/src/contrib)
