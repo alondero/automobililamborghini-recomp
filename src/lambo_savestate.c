@@ -83,6 +83,8 @@ extern void lambo_mod_state_restored(void);
 // save-state header independent of optional runtime packages.
 extern void lambo_track_patch_on_savestate_loaded(uint8_t* rdram);
 extern void lambo_rt_probe_invalidate(void);
+// Rain caches decoded track geometry keyed by guest pointers a load may reuse.
+extern void lambo_rain_invalidate(void);
 
 #define STATE_VAR   0x800CE6ACu       // game-state halfword (see lambo_warp.c cluster map)
 #define RDRAM_SNAP_SIZE 0x800000u     // low 8 MiB = guest-addressable N64 RAM (osMemSize)
@@ -244,6 +246,7 @@ static int do_load(uint8_t* rdram, const char* path) {
     lambo_replay_state_loaded();
     lambo_mod_state_restored();
     lambo_rt_probe_invalidate();
+    lambo_rain_invalidate();
     // An active package is reapplied idempotently after the wholesale copy;
     // the patch hook decides whether the restored table is a known base or is
     // already corrected, without making the general save-state format package-aware.

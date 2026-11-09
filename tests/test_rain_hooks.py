@@ -33,5 +33,15 @@ class RainHookTests(unittest.TestCase):
                 self.assertIn("lambo_rain_road", hook["text"])
 
 
+class RainCacheHookTests(unittest.TestCase):
+    def test_track_load_invalidates_cached_geometry(self):
+        hooks = tomllib.loads((ROOT / "lamborghini.us.toml").read_text())["patches"]["hook"]
+        hook = next(h for h in hooks if h.get("before_vram") == 0x80006094)
+        text = hook["text"]
+        self.assertIn("lambo_rain_invalidate();", text)
+        self.assertLess(text.index("lambo_track_patch_on_track_loaded(rdram)"),
+                        text.index("lambo_rain_invalidate();"))
+
+
 if __name__ == "__main__":
     unittest.main()

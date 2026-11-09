@@ -68,12 +68,53 @@ Heap sublists are owned by one of the two native graphics-task slots. The
 task-reuse fence protects them until RT64 consumes them, as for the panorama.
 A road record is emitted at most once into each task's heap, then referenced
 by subsequent views. At most 200 road buffers per slot are allocated, with a
-fixed per-buffer limit. Hooks record insertion points without advancing the
+fixed per-buffer limit. Buffers are indexed by the order in which records
+first appear in a frame; #398 tracks sizing them to the cached geometry.
+Hooks record insertion points without advancing the
 native cursor. After the complete native root has passed HUD/fog correction,
 publication copies it into a bounded heap list and splices in the effects.
 Only the first 40 bytes of the original root become a call/end wrapper. Its
 size and the native builder cursor remain unchanged. Failed allocation,
 invalid insertion order or oversized geometry leaves the original drawing intact.
+
+## Cache lifecycle
+
+Track geometry does not change during a race, so the game thread builds each
+segment's rain geometry once. Only Modern ripples change from frame to frame.
+
+A cache entry belongs to one segment record address. Its key is the record's
+road, wall and scenery list pointers (+4, +8, +12) and the style and intensity
+settings. Camera droplets do not shape geometry. The entry keeps host data
+only: the encoded guest vertex block, Modern ripple frames and the segment's
+shelter result. Decoded triangles and precomputed roof planes are discarded
+after the build. The key pointers are compared, never followed, so a stale
+entry cannot read reloaded track memory.
+
+Invalidation rule:
+
+- A changed key field rebuilds that entry on its next use. A reused record
+  address with new list pointers therefore never serves the old puddles.
+- The whole cache is cleared on any frame outside a race (state other than 8),
+  on a circuit change (0x800CE794), after the track loader (hook 0x80006094)
+  and after a developer save-state load.
+- More than 1024 entries clears the cache and rebuilds from the current frame.
+
+A list rewritten in place under the same pointers is detected only by those
+events. No port feature does that during a race: Track Lab changes visibility
+rows only, and mods cannot replace geometry.
+
+Each road buffer records the build it holds. Static vertices and commands are
+copied into it once per build. Later frames reuse them and only add the
+insertion. A Modern frame rewrites the ripple vertices and the color word of
+their faces when the animation clock has moved. Pause stops that clock, so a
+paused frame writes nothing. A rebuild, an invalidation, or a buffer index
+that now belongs to another record rewrites the whole buffer. All writes still
+follow the task-reuse fence of the slot that owns the buffer. Root copies and
+camera lists reuse their command storage, so steady race frames do not allocate.
+
+Decode, build, full-buffer and ripple-write counters appear in the `rain`
+publish log with `--verbose` or `--lambo-debug`. The first four publications
+and every 1800th one are logged.
 
 ## Limits and validation
 
@@ -99,3 +140,21 @@ the decoder, not visual correctness or all-circuit coverage. The producer test
 checks unchanged native RAM during construction, invalid record alignment,
 bounded publication, independent task storage, fog-enabled decals, balanced
 render-state stacks and disabled effects.
+
+`tests/rain_reference.h` freezes the uncached producer from `e053389`. The
+geometry test compares puddle bytes, roof coverage, ripple rewrites and vertex
+rounding with it. The producer test compares every emitted road sublist with
+it, command words and vertex payload. It covers Retro and Modern, one and four
+viewports, both task slots, pause, reordered emission and shelter. It also
+covers each invalidation rule and the decode, build and allocation counts.
+These are synthetic records, not a replay of game frames.
+
+The opt-in benchmark measures the isolated functions and the producers for 25
+synthetic segments. Building it with `-DLAMBO_RAIN_BENCH_PRODUCERS_ONLY`
+against older `src/lambo_rain*` files measures that revision with the same
+workload:
+
+```text
+cmake --build build --target lambo_rain_benchmark
+build/lambo_rain_benchmark
+```

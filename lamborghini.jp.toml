@@ -3,7 +3,7 @@
 # stubs and ignored carry the USA lists across by matched name, except USA-only
 # guest-source replacements: JP retains its original bodies and layouts.
 # Gameplay and platform hooks are not carried yet. Evidence: docs/japanese-rom.md.
-# Derived from USA inputs with SHA-1 606e291a48566ebb2ab14006d4f84470b466c5fe.
+# Derived from USA inputs with SHA-1 61ab26f14fcd728172e6908effe226249606621f.
 #
 # Run from the repository root:
 #   ./build/lib/N64ModernRuntime/librecomp/N64Recomp/N64Recomp lamborghini.jp.toml

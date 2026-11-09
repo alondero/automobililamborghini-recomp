@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "input_sha256": "4d9e06be62af7bf750fdfc847a56b9fc02d10280aab3dddd6c66eb4503d72bb7",
+  "input_sha256": "dd94a00bc2d4e23b8156d497963abd18e2e5906fb9fc1d29e7a0a81d3b8acaa6",
   "rom_sha1": {
     "usa": "78b36b48040426478011caef5e11884af2e80375",
     "japan": "98009e4948faf885864e52e1268700a0144c1b2e"
@@ -1272,7 +1272,7 @@
         "src/lambo_camera.cpp": 2,
         "src/lambo_driving_assists_runtime.cpp": 1,
         "src/lambo_harness_report.cpp": 1,
-        "src/lambo_rain_runtime.cpp": 4,
+        "src/lambo_rain_runtime.cpp": 5,
         "src/lambo_replay_runtime.cpp": 1,
         "src/lambo_rt_shadows.cpp": 1,
         "src/lambo_savestate.c": 1,
@@ -1515,7 +1515,7 @@
       "uses": {
         "src/lambo_harness_report.cpp": 1,
         "src/lambo_no_lod.cpp": 1,
-        "src/lambo_rain_runtime.cpp": 1,
+        "src/lambo_rain_runtime.cpp": 2,
         "src/lambo_rt_shadows.cpp": 1,
         "src/lambo_sky_widescreen.cpp": 1,
         "src/lambo_track_patch.cpp": 1
