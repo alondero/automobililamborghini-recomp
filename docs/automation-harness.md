@@ -295,3 +295,18 @@ the right fixture for measuring the finish-line fields; only then should a lap
 assertion be added. Headless software rendering exercises display-list output,
 but RT64-specific shaders, presentation, and native UI still need an optional
 windowed visual run.
+
+## Diagnostic snapshot threading
+
+The VI callback is the sole writer of probe history. VI counts, thread counts
+and report fields use independent relaxed atomics. A concurrent snapshot can
+contain values from adjacent VIs; it is diagnostic and must not synchronize
+input or gameplay. The result schema and field units are unchanged.
+
+Replay configuration, failure and completion flags are atomic, so the per-VI
+exit query takes no replay mutex. Unconfigured replay hooks, ownership queries
+and physical analog publication also bypass that mutex. Initialization runs
+before the frame loop and captures any analog channels already published.
+Configured recording/playback keeps frame staging, input ownership, every-frame
+verification and coherent `Status` copies under the replay mutex. Completion
+continues to neutralize owned input when exit-on-end is disabled.

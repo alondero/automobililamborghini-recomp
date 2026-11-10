@@ -591,7 +591,16 @@ if(BUILD_TESTING)
         ${N64MR}/thirdparty
     )
     target_link_libraries(lambo_replay_runtime_tests PRIVATE Threads::Threads)
+    add_executable(lambo_harness_report_tests tests/test_harness_report.cpp
+        src/lambo_harness_report.cpp src/lambo_file.cpp src/lambo_log.cpp)
+    target_include_directories(lambo_harness_report_tests PRIVATE src ${N64MR}/thirdparty)
+    target_link_libraries(lambo_harness_report_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_harness_report COMMAND lambo_harness_report_tests)
+
     add_test(NAME lambo_replay_runtime_capture COMMAND lambo_replay_runtime_tests)
+    foreach(case complete stay invalid load overwrite)
+        add_test(NAME lambo_replay_runtime_${case} COMMAND lambo_replay_runtime_tests ${case})
+    endforeach()
 
 
 

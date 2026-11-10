@@ -38,6 +38,16 @@ registration, updates and reads; renderer workers never follow this pointer.
 Runtime initialization clears it. Developer savestates omit the mod heap;
 cross-weather restores remain unsupported, as with the existing AI bridge.
 
+Rain checks the registered visual style and intensity before querying RT64.
+Dry, Off and zero-intensity hooks make no renderer configuration query.
+`lambo_rain_frame`, called at both USA graphics-builder entry points, resets
+one guest-thread aspect snapshot. The first sky, rain or HUD query fills both
+sky and HUD aspects under one RT64 configuration lock; later queries reuse it
+until the next task build. Camera rain reuses its settings query's aspect.
+Swap-chain size, aspect mode/target and HUD ratio changes are observed on the
+next build, including builds while paused. The headless fallback remains a
+zero sky aspect and a 4:3 HUD aspect.
+
 All native addresses below are USA, read with word-swapped `MEM_W`/`MEM_H`.
 The hooks write task-owned heap geometry and a small wrapper in the completed
 display-list root; track assets and the native cursor remain unchanged.

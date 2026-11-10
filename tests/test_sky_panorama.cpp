@@ -6,6 +6,7 @@
 
 #include "recomp.h"
 #include "lambo_sky_panorama.h"
+#include "lambo_render_aspect.h"
 
 extern "C" void lambo_sky_backdrop_begin(uint8_t*);
 extern "C" void lambo_sky_backdrop_end(uint8_t*);
@@ -33,6 +34,22 @@ static void require(bool condition, const char* message) {
 }
 
 int main() {
+    lambo::render::FrameAspects cache;
+    unsigned reads = 0;
+    lambo::render::Aspects live{16.0f / 9.0f, 4.0f / 3.0f};
+    auto read = [&] { ++reads; return live; };
+    require(cache.get(read).sky == live.sky, "first sky query reads the presenter");
+    live = {32.0f / 9.0f, 16.0f / 9.0f};
+    require(cache.get(read).hud == 4.0f / 3.0f && reads == 1,
+            "sky and HUD share a stable snapshot throughout a graphics task");
+    cache.begin_frame();
+    require(reads == 1, "beginning a task does not query the presenter");
+    require(cache.get(read).hud == live.hud && cache.get(read).sky == live.sky && reads == 2,
+            "next task observes new output size and aspect/HUD settings");
+    live = {};
+    cache.begin_frame();
+    require(cache.get(read).sky == 0 && cache.get(read).hud == 4.0f / 3.0f && reads == 3,
+            "headless fallback is cached and refreshed too");
     std::vector<uint8_t> memory(32 * 1024 * 1024);
     auto* rdram = memory.data();
     const auto word = [&](uint32_t address) -> int32_t& {
