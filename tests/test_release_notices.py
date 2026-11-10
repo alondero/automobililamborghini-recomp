@@ -11,6 +11,18 @@ SPEC.loader.exec_module(notices)
 
 
 class ReleaseNoticeTests(unittest.TestCase):
+    def test_android_does_not_probe_host_compiler(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "lib").mkdir()
+            (root / "assets/licenses").mkdir(parents=True)
+            (root / "LICENSE").write_text("project GPL")
+            (root / "CMakeLists.txt").write_text("project(lamborghini_modern VERSION 0.11.0)")
+            with patch.object(notices, "ROOT", root), patch.object(notices.shutil, "which", side_effect=AssertionError), patch.object(notices.subprocess, "check_output", side_effect=AssertionError):
+                notices.stage(root / "apk-assets", "android")
+            self.assertTrue((root / "apk-assets/LICENSE").is_file())
+            self.assertTrue((root / "apk-assets/NOTICE.txt").is_file())
+
     def test_copies_legal_text_and_requires_runtime_notice(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # Run as a script, this file's directory is on sys.path, not the repository.
 sys.path.insert(0, str(ROOT))
 from tools.apply_patches import apply_platform  # noqa: E402
+from scripts.stage_release_notices import stage as stage_release_notices  # noqa: E402
 
 WORK = ROOT / "build-android"
 NDK_VERSION = "28.2.13676358"
@@ -96,6 +97,9 @@ def package(ndk, sdk, variant):
         "AdrenoTools.txt": WORK / "deps/adrenotools/LICENSE",
         "linkernsbypass.txt": WORK / "deps/adrenotools/lib/linkernsbypass/LICENSE",
     })
+    stage_release_notices(staging / "assets", "android")
+    for name in ["NOTICE", "NOTICE.toolchain"]:
+        shutil.copy2(ndk / name, staging / "assets/licenses" / ("Android-NDK-" + name))
     os.environ["ANDROID_HOME"] = str(sdk)
     wrapper = ROOT / "android" / ("gradlew.bat" if os.name == "nt" else "gradlew")
     command = [wrapper] if os.name == "nt" else ["sh", wrapper]
@@ -109,6 +113,9 @@ def package(ndk, sdk, variant):
                     "lib/arm64-v8a/libmain_hook.so", "lib/arm64-v8a/libhook_impl.so"]
         required += ["assets/assets/" + name for name in REQUIRED_RUNTIME_ASSETS]
         required += ["assets/lamborghini.syms.toml"]
+        required += ["assets/LICENSE", "assets/NOTICE.txt", "assets/licenses/lib/rt64/LICENSE",
+                     "assets/licenses/lib/N64ModernRuntime/COPYING",
+                     "assets/licenses/Android-NDK-NOTICE", "assets/licenses/Android-NDK-NOTICE.toolchain"]
         for name in required:
             if name not in archive.namelist():
                 raise RuntimeError(f"Missing APK payload: {name}")

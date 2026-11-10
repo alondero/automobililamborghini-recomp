@@ -1,4 +1,4 @@
-"""Stage desktop license notices without copying dependency code or game data."""
+"""Stage release license notices without copying dependency code or game data."""
 import argparse
 from pathlib import Path
 import re
@@ -46,7 +46,7 @@ def stage(destination, platform):
             target = notices / "toolchain" / source.relative_to(toolchain)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
-    else:
+    elif platform == "linux":
         major = subprocess.check_output(["gcc", "-dumpversion"], text=True).strip().split(".")[0]
         for package in [f"gcc-{major}-base", "libsdl2-2.0-0", "libfreetype6"]:
             source = Path("/usr/share/doc") / package / "copyright"
@@ -73,6 +73,6 @@ def stage(destination, platform):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("destination", type=Path)
-    parser.add_argument("--platform", choices=["windows", "linux"], required=True)
+    parser.add_argument("--platform", choices=["windows", "linux", "android"], required=True)
     args = parser.parse_args()
     stage(args.destination, args.platform)
