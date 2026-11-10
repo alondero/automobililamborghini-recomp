@@ -19,8 +19,16 @@ template<class T> void write(std::vector<uint8_t>& ram, uint32_t address, T valu
 }
 }
 
-int main() {
+int main(int argc, char**) {
     try {
+        // Exercise both immutable launch-time modes in separate CTest processes.
+        const bool capture_enabled = argc == 1;
+#if defined(_WIN32)
+        _putenv_s("LAMBO_RT_CAPTURE_DIR", capture_enabled ? "rt-sun-test-capture" : "");
+#else
+        if (capture_enabled) setenv("LAMBO_RT_CAPTURE_DIR", "rt-sun-test-capture", 1);
+        else unsetenv("LAMBO_RT_CAPTURE_DIR");
+#endif
         std::vector<lambo::rt::TaskSunProbe::ObjectIdentity> car_objects{{9, 0x80001000u, -1},
             {0x26, 0x80002000u, 0}, {0x26, 0x80003000u, 1}, {0x26, 0x80004000u, 9}};
         require(lambo::rt::physical_car_object(car_objects, 0), "physical car root not identified");
@@ -176,11 +184,6 @@ int main() {
         const auto overflow = probes.take(0x800BF400);
         require(overflow && !overflow->emitters_complete && overflow->emitters.size() == 64,
             "span overflow retained an unbounded/complete capture");
-#if defined(_WIN32)
-        _putenv_s("LAMBO_RT_CAPTURE_DIR", "rt-sun-test-capture");
-#else
-        setenv("LAMBO_RT_CAPTURE_DIR", "rt-sun-test-capture", 1);
-#endif
         lambo::rt::TaskSunProbes snapshots;
         require(!snapshots.snapshot(nullptr, ram.size()) && !snapshots.snapshot(ram.data(), 16),
             "snapshot admitted absent/short RAM");
@@ -197,11 +200,11 @@ int main() {
         write(ram, 0x800A2BFCu, 0x800C6C90u);
         require(snapshots.begin(ram.data(), ram.size()), "next producer task rejected");
         const auto owned = snapshots.take(0x800BF400);
-        require(owned && owned->sequence == 60 && owned->native_ram &&
-            owned->native_ram->size() == ram.size() && (*owned->native_ram)[0xB69A8] == 0x11,
+        require(owned && owned->sequence == 60 && bool(owned->native_ram) == capture_enabled &&
+            (!capture_enabled || (owned->native_ram->size() == ram.size() && (*owned->native_ram)[0xB69A8] == 0x11)),
             "consumer read next task's mutable globals");
         snapshots.invalidate();
-        require((*owned->native_ram)[0xB69A8] == 0x11 && !snapshots.take(0x800BF400),
+        require((!capture_enabled || (*owned->native_ram)[0xB69A8] == 0x11) && !snapshots.take(0x800BF400),
             "immutable consumer snapshot or one-time ownership lost");
 #if defined(_WIN32)
         _putenv_s("LAMBO_RT_CAPTURE_DIR", "");
@@ -222,7 +225,7 @@ int main() {
         write(ram, 0x80910000u, uint16_t(0));
         write(ram, 0x8091000Eu, int16_t(-1));
         const auto compact = compactSnapshots.take(0x800BF400u);
-        require(compact && compact->objects_complete && !compact->native_ram &&
+        require(compact && compact->objects_complete && bool(compact->native_ram) == capture_enabled &&
             compact->objects[0].flags == 0x42 && compact->objects[0].list == 0x8013D3C8u &&
             compact->objects[0].parent == 7 && compact->objects[0].kind == 13,
             "object identity was not copied into the task value");

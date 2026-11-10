@@ -160,6 +160,19 @@ controllers it attaches. It keeps physical controllers out of its own process
 by setting SDL hints before SDL starts, so it passes with a gamepad connected
 and needs no environment setup. Game runs are unaffected.
 
+The same fixture covers settings revision invalidation, forced opens, pending
+edits and Discard after an external change. Run its executable with an isolated
+data-directory argument followed by `--benchmark` to compare forced schema
+checks with unchanged visible-menu refreshes; it prints both timings and scan
+counts. `lambo_config_live_updates` checks every public config setter and file reload for
+frontend invalidation.
+
+`lambo_rt_sun_tasks` and `lambo_rt_sun_tasks_no_capture` exercise the immutable
+capture-directory setting in separate processes. `lambo_rt_production_logging`
+counts allocations in disabled renderer-result diagnostics and checks debug
+log formats, cadence, full summaries and the final partial summary. These need
+no ROM or GPU; admission and rendered shadows have separate coverage.
+
 After the submodules are initialized and the ROM is present, the supported
 desktop build sequence is:
 

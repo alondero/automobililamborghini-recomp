@@ -1,5 +1,5 @@
-#include "lambo_settings_revision.h"
 #include "lambo_player_name.h"
+#include "lambo_settings_revision.h"
 
 #include <cctype>
 #include <cstdlib>
@@ -103,6 +103,7 @@ std::string load_saved_name() {
     if (!g_name_loaded) {
         g_cached_name = read_saved_name_file();
         g_name_loaded = true;
+        lambo::settings::changed();
     }
     return g_cached_name;
 }

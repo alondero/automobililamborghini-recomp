@@ -138,6 +138,14 @@ if(BUILD_TESTING)
     target_include_directories(lambo_rt_sun_tests PRIVATE src lib/rt64/src)
     target_link_libraries(lambo_rt_sun_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_rt_sun_tasks COMMAND lambo_rt_sun_tests)
+    add_test(NAME lambo_rt_sun_tasks_no_capture COMMAND lambo_rt_sun_tests --no-capture)
+    add_executable(lambo_rt_production_logging_tests tests/test_rt_production_logging.cpp
+        src/lambo_rt_production.cpp)
+    target_include_directories(lambo_rt_production_logging_tests PRIVATE src lib/rt64/include
+        lib/rt64/src lib/rt64/src/contrib lib/rt64/src/contrib/hlslpp/include
+        lib/rt64/src/contrib/plume lib/rt64/src/contrib/imgui)
+    target_link_libraries(lambo_rt_production_logging_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_rt_production_logging COMMAND lambo_rt_production_logging_tests)
     add_executable(lambo_rt_material_tests tests/test_rt_material.cpp)
     target_include_directories(lambo_rt_material_tests PRIVATE src)
     add_test(NAME lambo_rt_material_policy COMMAND lambo_rt_material_tests)

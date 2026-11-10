@@ -183,17 +183,17 @@ void SunShadowProduction::log_lap(const std::optional<LapSummary>& summary) {
 }
 
 void SunShadowProduction::sunShadowResult(const RT64::SunShadowFrameResult& result) noexcept {
+    if (!lambo_log_would_emit(LAMBO_LEVEL_DEBUG)) return;
     // The renderer thread calls this while queue threads admit tasks, so every
     // member below is shared under mutex_.
     std::lock_guard lock(mutex_);
     // Interpolated presentations re-render a Workload; count each task once.
     try {
-        if (lambo_log_would_emit(LAMBO_LEVEL_DEBUG))
-            log_lap(lap_.record(result.workloadId, result.ready, reason_key(result.reason)));
+        log_lap(lap_.record(result.workloadId, result.ready, reason_key(result.reason)));
     } catch (const std::exception& error) {
         LAMBO_LOG_WARN("rt-shadow", "task count failed: %s\n", error.what());
     }
-    if (result.ready && lambo_log_would_emit(LAMBO_LEVEL_DEBUG)) {
+    if (result.ready) {
         build_us_.push_back(result.buildMicroseconds);
         receiver_us_.push_back(result.receiverMicroseconds);
         cache_us_.push_back(result.cacheMicroseconds);
@@ -212,7 +212,6 @@ void SunShadowProduction::sunShadowResult(const RT64::SunShadowFrameResult& resu
             cache_us_.clear();
         }
     }
-    if (!lambo_log_would_emit(LAMBO_LEVEL_DEBUG)) return;
     const std::string reason = result.reason ? result.reason : "";
     if (result.ready == last_ready_ && reason == last_reason_ && (result.taskSequence % 60) != 0) return;
     last_ready_ = result.ready;

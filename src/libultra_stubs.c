@@ -203,11 +203,11 @@ static void lambo_pak_save(void) {
 // LAMBO_PAK_TRACE=1: per-frame joybus log for save-path diagnosis -- shows exactly what the save
 // flow asks the pak for and how the bridge answered, since call-level tracers proved the game
 // loops on reads without ever reaching a write.
-// Launch-only diagnostics; the SI bridge must not search the environment per pad.
+// Launch-only diagnostic flag, owned by the SI/game thread like pak tracing.
 static int lambo_input_probe(void) {
-    static int cached = -1;
-    if (cached < 0) cached = getenv("LAMBO_INPUT_PROBE") != NULL;
-    return cached;
+    static int enabled = -1;
+    if (enabled < 0) enabled = getenv("LAMBO_INPUT_PROBE") != NULL;
+    return enabled;
 }
 
 static int lambo_pak_trace(void) {

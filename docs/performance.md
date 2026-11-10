@@ -11,6 +11,41 @@ guest layouts. It does not claim measured game-wide speedups. A CPU saving
 cannot improve a GPU-bound frame, and a graphics preset trades visual quality
 for less work.
 
+## Residual diagnostics and settings work (2026-11-10)
+
+The SI input probe, 1P minimap outline offset and RT capture directory now
+sample their environment settings once on first use. Changing the process
+environment afterwards does not change these diagnostics. RT production skips
+lap keys, reason strings, light formatting and GPU-cost bookkeeping when debug
+logging is disabled. Debug and trace output retain their existing formats and
+summary windows, including the final partial lap.
+
+Visible settings pages check a shared port settings revision before scanning
+the schema. Config setters, graphics Apply/window-mode changes, config loads,
+cheat changes and player-name saves/clears/reloads invalidate it. A new writer
+must call `lambo::settings::changed()` after updating frontend-visible values.
+This counter only invalidates the menu; existing locks and thread ownership
+still protect the data. It does not provide a coherent `GraphicsConfig` snapshot.
+
+Opening settings or requesting a page forces a refresh. General/Graphics staged
+edits keep refreshing, and the first refresh after Apply or Discard also checks
+values that were held back while editing. Clean, unchanged pages return before
+schema comparisons or player-name reads. `lambo_frontend_settings_tests` with
+`--benchmark` compares forced schema checks with this no-op presentation path
+and prints the number of checks performed. This measures settings work only;
+it establishes no frame-time improvement.
+
+One Windows x64 run with MinGW GCC 15.2.0, Release (`-O3 -DNDEBUG`), measured
+10,000 forced checks at 66.2033 ms (10,000 schema scans) and 10,000 unchanged
+visible-menu calls at 0.2056 ms (zero scans). The fixture used the existing
+locally built dependency archives. The forced case runs the current full
+refresh; it is not a measurement of the previous game executable.
+
+The pump's `window_size()` lock and `current_graphics()` copy remain deferred
+to [issue 265](https://github.com/alondero/automobililamborghini-recomp/issues/265),
+which owns the cross-thread graphics publication contract. No additional
+unlocked config reader was introduced.
+
 ## Ten opportunities
 
 | Rank | Opportunity | Evidence and benefit | Result / follow-up |

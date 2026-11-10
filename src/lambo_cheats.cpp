@@ -1,5 +1,5 @@
-#include "lambo_settings_revision.h"
 #include "lambo_cheats.h"
+#include "lambo_settings_revision.h"
 #include <atomic>
 
 namespace lambo::cheats {
