@@ -7,6 +7,7 @@
 
 #include "json/json.hpp"
 #include "lambo_config.h"
+#include "lambo_settings_revision.h"
 #include "lambo_player_name.h"
 #include "recomp.h"
 
@@ -372,6 +373,52 @@ int main() {
            lambo::config::draw_distance(4) == 2.0 &&
            lambo::config::camera_distance_scale() == 3.0,
            "config reload recaptures cleared overrides and restores stored settings");
+
+    // Every public mutation path must invalidate the frontend when it changes
+    // a value. Run at the end so these writes cannot affect the checks above.
+    const auto check_revision = [](auto write) {
+        const auto before = lambo::settings::revision();
+        write();
+        expect(lambo::settings::revision() != before, "settings writer did not invalidate frontend");
+    };
+    namespace port = lambo::config;
+#define CHECK_SET(name, value) check_revision([] { port::set_##name(value); })
+#define CHECK_BOOL(name) CHECK_SET(name, !port::name())
+    CHECK_BOOL(developer_mode); CHECK_BOOL(show_launcher);
+    CHECK_BOOL(widescreen_fog_match); CHECK_BOOL(widescreen_sky_match);
+    CHECK_BOOL(automatic_pit_stops); CHECK_BOOL(remove_blue_hud_bar);
+    CHECK_BOOL(car_select_info); CHECK_BOOL(no_lod); CHECK_BOOL(rt_shadows);
+    CHECK_SET(race_cars, port::race_cars() == 6 ? 8 : 6);
+    CHECK_SET(global_fog_scale, port::global_fog_scale() == 1 ? 2 : 1);
+    CHECK_SET(global_draw_distance, port::global_draw_distance() == 1 ? 2 : 1);
+    CHECK_SET(rt_shadow_rays, port::rt_shadow_rays() == 4 ? 8 : 4);
+    CHECK_SET(rt_shadow_softness, port::rt_shadow_softness() == 0 ? 1 : 0);
+    CHECK_SET(camera_distance_scale, port::camera_distance_scale() == 1 ? 2 : 1);
+    CHECK_SET(camera_height_scale, port::camera_height_scale() == 1 ? 2 : 1);
+    CHECK_SET(camera_fov_add, port::camera_fov_add() == 0 ? 10 : 0);
+    CHECK_SET(menu_stick_sensitivity, port::menu_stick_sensitivity() == 1 ? 2 : 1);
+    CHECK_SET(texture_pack_path, port::texture_pack_path() + "-changed");
+    CHECK_SET(texture_dump_dir, port::texture_dump_dir() + "-changed");
+#undef CHECK_BOOL
+#undef CHECK_SET
+    check_revision([] { port::set_window_size({port::window_size().width == 1920 ? 1280 : 1920, 1080}); });
+    for (int circuit = 0; circuit < 6; ++circuit)
+        check_revision([circuit] { port::set_no_lod_circuit(circuit, !port::no_lod_circuit(circuit)); });
+    const auto other_mode = [] {
+        return port::current_graphics().wm_option == ultramodern::renderer::WindowMode::Windowed ?
+            ultramodern::renderer::WindowMode::Fullscreen : ultramodern::renderer::WindowMode::Windowed;
+    };
+    check_revision([&] { auto cfg = port::current_graphics(); cfg.wm_option = other_mode(); port::apply_graphics(cfg); });
+    check_revision([&] { port::update_saved_window_mode(other_mode()); });
+    port::flush_pending_graphics_updates();
+    { auto edited = read_json(path); edited["show_launcher"] = !port::show_launcher();
+      std::ofstream file(path); file << edited; }
+    check_revision([] { port::load_and_apply_graphics(); });
+    check_revision([] { lambo::player::set_saved_name("RACER"); });
+    { std::ofstream file(player_path); file << R"({"name":"RELOADED"})"; }
+    check_revision([] { lambo::player::reload_saved_name(); });
+    check_revision([] { lambo::player::clear_saved_name(); });
+    port::flush_pending_graphics_updates();
 
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);

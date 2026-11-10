@@ -1,10 +1,10 @@
-#include "lambo_settings_revision.h"
 // Persistent graphics configuration (see lambo_config.h).
 //
 // The schema follows the shared runtime GraphicsConfig vocabulary. The port
 // owns persistence, per-key fallback, and the portable-directory escape hatch.
 // The in-game settings overlay is the only player-facing settings surface.
 #include "lambo_config.h"
+#include "lambo_settings_revision.h"
 
 #include <array>
 #include <atomic>
@@ -471,7 +471,6 @@ GraphicsUpdateWriter& graphics_update_writer() {
 }
 
 void save_graphics_updates(const nlohmann::json& updates) {
-    if (!updates.empty()) lambo::settings::changed();
     graphics_update_writer().enqueue(updates);
 }
 
@@ -524,7 +523,6 @@ ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
     ultramodern::renderer::set_graphics_config(cfg);
     g_current_graphics = cfg;
     g_live_graphics = cfg;
-    lambo::settings::changed();
     // Write the merged config back so the on-disk file is always complete and
     // editable (new keys appear with their defaults after an upgrade) -- but NEVER
     // overwrite a file that failed to parse: a hand-edit typo must stay recoverable,
@@ -532,6 +530,7 @@ ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
     if (r != ReadResult::Unparseable) {
         save_graphics(cfg);
     }
+    lambo::settings::changed();
     LAMBO_LOG_INFO("config", "graphics config: %s\n", path.string().c_str());
     return cfg;
 }
@@ -561,6 +560,7 @@ void apply_graphics(const ultramodern::renderer::GraphicsConfig& cfg, bool apply
         ultramodern::renderer::set_graphics_config(live_cfg);
         g_live_graphics = live_cfg;
     }
+    lambo::settings::changed();
     save_graphics_updates(updates);
 }
 
@@ -569,6 +569,7 @@ void update_saved_window_mode(ultramodern::renderer::WindowMode wm) {
     // from_json here: its enhancement fields are read by the game/render threads.
     // Mutating those arrays during an F11 press would introduce a data race.
     g_current_graphics.wm_option = wm;
+    lambo::settings::changed();
     save_graphics_updates({{"wm_option", wm}});
 }
 
@@ -586,6 +587,7 @@ void set_developer_mode(bool enabled) {
     // snapshot, but do not push it into the renderer's live config queue. RT64
     // latches developer mode when the context is constructed.
     g_current_graphics.developer_mode = enabled;
+    lambo::settings::changed();
     save_graphics_updates({{"developer_mode", enabled}});
 }
 
@@ -629,6 +631,7 @@ bool widescreen_fog_match() {
 
 void set_widescreen_fog_match(bool enabled) {
     g_widescreen_fog_match.store(enabled);
+    lambo::settings::changed();
     save_graphics_updates({{"widescreen_fog_match", enabled}});
 }
 
@@ -640,6 +643,7 @@ bool widescreen_sky_match() {
 
 void set_widescreen_sky_match(bool enabled) {
     g_widescreen_sky_match.store(enabled);
+    lambo::settings::changed();
     save_graphics_updates({{"widescreen_sky_match", enabled}});
 }
 
@@ -648,6 +652,7 @@ int race_cars() { return g_race_cars.load(); }
 void set_race_cars(int count) {
     count = std::clamp(count, 2, 16);
     g_race_cars.store(count);
+    lambo::settings::changed();
     save_graphics_updates({{"race_cars", count}});
 }
 
@@ -657,6 +662,7 @@ bool automatic_pit_stops() {
 
 void set_automatic_pit_stops(bool enabled) {
     g_automatic_pit_stops.store(enabled);
+    lambo::settings::changed();
     save_graphics_updates({{"automatic_pit_stops", enabled}});
 }
 
@@ -666,6 +672,7 @@ bool remove_blue_hud_bar() {
 
 void set_remove_blue_hud_bar(bool enabled) {
     g_remove_blue_hud_bar.store(enabled);
+    lambo::settings::changed();
     save_graphics_updates({{"remove_blue_hud_bar", enabled}});
 }
 
@@ -675,6 +682,7 @@ bool car_select_info() {
 
 void set_car_select_info(bool enabled) {
     g_car_select_info.store(enabled);
+    lambo::settings::changed();
     save_graphics_updates({{"car_select_info", enabled}});
 }
 
@@ -686,6 +694,7 @@ bool no_lod() {
 
 void set_no_lod(bool enabled) {
     g_no_lod.store(enabled);
+    lambo::settings::changed();
     save_graphics_updates({{"no_lod", enabled}});
 }
 
@@ -702,6 +711,7 @@ bool no_lod_circuit(int circuit) {
 void set_no_lod_circuit(int circuit, bool enabled) {
     if (circuit < 0 || circuit >= (int)g_no_lod_circuit.size()) return;
     g_no_lod_circuit[(size_t)circuit].store(enabled);
+    lambo::settings::changed();
     save_graphics_updates({{"no_lod_circuit", nlohmann::json::array({
         g_no_lod_circuit[0].load(), g_no_lod_circuit[1].load(),
         g_no_lod_circuit[2].load(), g_no_lod_circuit[3].load(),
@@ -732,6 +742,7 @@ void set_global_fog_scale(double scale) {
     if (scale < 0.0) scale = 0.0;
     if (scale > 8.0) scale = 8.0;
     g_fog_scale.store(scale);
+    lambo::settings::changed();
     save_graphics_updates({{"fog_scale", scale}});
 }
 
@@ -761,6 +772,7 @@ bool rt_shadows() {
 
 void set_rt_shadows(bool enabled) {
     g_rt_shadows.store(enabled);
+    lambo::settings::changed();
     save_graphics_updates({{"rt_shadows", enabled}});
 }
 
@@ -770,6 +782,7 @@ int rt_shadow_rays() {
 
 void set_rt_shadow_rays(int rays) {
     g_rt_shadow_rays.store(snap_shadow_rays(rays));
+    lambo::settings::changed();
     save_graphics_updates({{"rt_shadow_rays", g_rt_shadow_rays.load()}});
 }
 
@@ -779,6 +792,7 @@ double rt_shadow_softness() {
 
 void set_rt_shadow_softness(double degrees) {
     g_rt_shadow_softness.store(clamp_shadow_softness(degrees));
+    lambo::settings::changed();
     save_graphics_updates({{"rt_shadow_softness", g_rt_shadow_softness.load()}});
 }
 
@@ -790,6 +804,7 @@ void set_global_draw_distance(double scale) {
     if (scale > 0.0 && scale < 0.1) scale = 0.1;
     if (scale > 100.0) scale = 100.0;
     g_draw_distance.store(scale <= 0.0 ? 0.0 : scale);
+    lambo::settings::changed();
     save_graphics_updates({{"draw_distance", g_draw_distance.load()}});
 }
 
@@ -811,6 +826,7 @@ void set_camera_distance_scale(double v) {
     if (v < 0.2) v = 0.2;
     if (v > 3.0) v = 3.0;
     g_camera_distance_scale.store(v);
+    lambo::settings::changed();
     save_graphics_updates({{"camera_distance_scale", v}});
 }
 
@@ -832,6 +848,7 @@ void set_camera_height_scale(double v) {
     if (v < 0.2) v = 0.2;
     if (v > 3.0) v = 3.0;
     g_camera_height_scale.store(v);
+    lambo::settings::changed();
     save_graphics_updates({{"camera_height_scale", v}});
 }
 
@@ -854,6 +871,7 @@ void set_camera_fov_add(double v) {
     if (v < -20.0) v = -20.0;
     if (v > 60.0) v = 60.0;
     g_camera_fov_add.store(v);
+    lambo::settings::changed();
     save_graphics_updates({{"camera_fov_add", v}});
 }
 
@@ -877,6 +895,7 @@ void set_menu_stick_sensitivity(double v) {
     if (!(v > 1.0)) v = 1.0;
     if (v > 2.5) v = 2.5;
     g_menu_stick_sensitivity.store(v);
+    lambo::settings::changed();
     save_graphics_updates({{"menu_stick_sensitivity", v}});
 }
 
@@ -886,16 +905,19 @@ bool show_launcher() {
 
 void set_show_launcher(bool enabled) {
     g_show_launcher.store(enabled);
+    lambo::settings::changed();
     save_graphics_updates({{"show_launcher", enabled}});
 }
 
 void set_texture_pack_path(const std::string& path) {
     { std::lock_guard lock(g_texture_mutex); g_texture_pack = path; }
+    lambo::settings::changed();
     save_graphics_updates({{"texture_pack", path}});
 }
 
 void set_texture_dump_dir(const std::string& path) {
     { std::lock_guard lock(g_texture_mutex); g_texture_dump = path; }
+    lambo::settings::changed();
     save_graphics_updates({{"texture_dump", path}});
 }
 
@@ -907,6 +929,7 @@ void set_window_size(WindowSize size) {
     }
     // Persist outside the lock: the writer thread takes g_texture_mutex (and this
     // lock again) while serialising, so holding it here would risk a deadlock.
+    lambo::settings::changed();
     save_graphics_updates({{"window_width", size.width}, {"window_height", size.height}});
 }
 

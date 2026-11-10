@@ -9,6 +9,7 @@
 #include "lambo_paths.h"
 #include "ui/lambo_ui.h"
 #include "ui/lambo_frontend_input.h"
+#include "ui/lambo_frontend_settings.h"
 #include "ui/lambo_frontend_overlay.h"
 #include "librecomp/config.hpp"
 #include "librecomp/game.hpp"
@@ -18,7 +19,6 @@
 
 SDL_Window* window = nullptr;
 std::vector<recomp::GameEntry> supported_games;
-namespace lambo::ui { void create_frontend_settings(); void refresh_frontend_settings(); void refresh_frontend_settings(bool force); }
 static void require(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
 
 // The registered picker entries, so the test reads the port's preset table
@@ -57,11 +57,18 @@ int cont_button_to_key(SDL_ControllerButtonEvent& button);
 // Optional measurement of the old/new hidden-settings trigger. This excludes
 // rendering and event polling, so it measures schema work, not frame times.
 static void benchmark_hidden_settings() {
+    constexpr int presentations = 10000;
     for (bool force : {true, false}) {
+        int checks = 0;
+        lambo::ui::refresh_frontend_settings(true);
         const auto start = std::chrono::steady_clock::now();
-        for (int i=0;i<10000;++i) lambo::ui::refresh_frontend_settings(force);
-        std::cout << (force ? "forced" : "unchanged") << " visible settings: 10000 refreshes; elapsed_ms="
-                  << std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count() << '\n';
+        for (int i = 0; i < presentations; ++i)
+            checks += lambo::ui::refresh_frontend_settings(force);
+        const double ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - start).count();
+        std::cout << (force ? "forced schema checks" : "unchanged visible menu") << ": "
+                  << presentations << " presentations; checks=" << checks << " elapsed_ms=" << ms << '\n';
+        require(checks == (force ? presentations : 0), "unchanged menu performed schema work");
     }
     SDL_Event event{};
     event.type = SDL_KEYDOWN;
@@ -139,6 +146,26 @@ int main(int argc, char** argv) {
         // whether to initialise the RmlUi debugger.
         require(recompui::config::general::get_debug_mode_enabled(),
                 "general.json did not enable the frontend debugger");
+        require(lambo::ui::refresh_frontend_settings(true), "opening settings skipped refresh");
+        require(!lambo::ui::refresh_frontend_settings(), "clean settings did not short-circuit");
+        require(lambo::ui::refresh_frontend_settings(true), "queued page change skipped refresh");
+        require(!lambo::ui::refresh_frontend_settings(), "forced refresh did not settle");
+        lambo::config::set_window_size({1920, 1080});
+        require(lambo::ui::refresh_frontend_settings(), "external window resize missed revision");
+        auto& window_graphics = recompui::config::get_graphics_config();
+        require(std::get<uint32_t>(window_graphics.get_option_value("window_size")) ==
+                    window_size_choice(window_graphics, "1920x1080"), "window-only change stayed stale");
+        window_graphics.set_option_value("rr_manual_value", 99.0);
+        require(lambo::ui::refresh_frontend_settings(), "pending number edit skipped refresh");
+        lambo::config::set_window_size({1280, 720});
+        require(lambo::ui::refresh_frontend_settings(), "dirty page skipped external change");
+        window_graphics.revert_temp_config();
+        require(lambo::ui::refresh_frontend_settings(), "discard missed deferred external change");
+        require(std::get<uint32_t>(window_graphics.get_option_value("window_size")) ==
+                    window_size_choice(window_graphics, "1280x720"), "discard left stale window size");
+        require(!lambo::ui::refresh_frontend_settings(), "discard did not settle");
+        lambo::config::set_window_size({1920, 1080});
+        lambo::ui::refresh_frontend_settings();
         auto& cheats = recompui::config::get_config("cheats");
         require(!cheats.requires_confirmation && cheats.external_storage, "cheats must be live and session-only");
         for (const auto& entry : lambo::cheats::catalog) {
@@ -266,25 +293,11 @@ int main(int argc, char** argv) {
         catch (const std::exception& e) { missing_pedals = e.what(); }
         require(missing_pedals.find("pedals") != std::string::npos,
                 "the standalone Pedals page still exists");
-        lambo::ui::refresh_frontend_settings();
-        { std::ofstream file(lambo::config::app_config_dir() / "player.json"); file << R"({"name":"RELOADED"})"; }
-        lambo::player::reload_saved_name();
-        lambo::ui::refresh_frontend_settings();
-        require(std::get<std::string>(general.get_option_value("name")) == "RELOADED",
-                "clean menu missed explicit saved-name reload");
-        lambo::player::set_saved_name("RACER");
-        lambo::ui::refresh_frontend_settings();
         general.set_option_value("name", std::string{});
         lambo::ui::refresh_frontend_settings();
         require(std::get<std::string>(general.get_temp_option_value("name")).empty(),
                 "General refresh clobbered an active name edit");
-        lambo::player::set_saved_name("OTHER");
-        lambo::ui::refresh_frontend_settings();
         general.revert_temp_config();
-        lambo::ui::refresh_frontend_settings();
-        require(std::get<std::string>(general.get_option_value("name")) == "OTHER",
-                "discard missed the external update deferred during an edit");
-        lambo::player::set_saved_name("RACER");
         lambo::ui::refresh_frontend_settings();
         require(std::get<std::string>(general.get_option_value("name")) == "RACER",
                 "General refresh missed an external name save");

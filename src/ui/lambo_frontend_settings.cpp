@@ -1,10 +1,11 @@
-#include "lambo_settings_revision.h"
 #include <cstddef>
 #include <iterator>
 #include <stdexcept>
 #include <vector>
 
 #include "lambo_config.h"
+#include "lambo_settings_revision.h"
+#include "lambo_frontend_settings.h"
 #include "lambo_cheats.h"
 #include "lambo_player_name.h"
 #include "lambo_frontend_input.h"
@@ -152,22 +153,20 @@ bool option_pending_edit(const Config& page, const std::string& id) {
 }
 }
 
-void refresh_frontend_settings(bool force) {
-    const uint64_t revision = lambo::settings::revision();
-    static uint64_t refreshed = 0;
-    auto& graphics_page = recompui::config::get_graphics_config();
-    auto& general_page = recompui::config::get_general_config();
-    // Pending confirmation edits must keep their existing per-option refresh
-    // rules. Opens force a sync even when no publisher changed a value.
-    static bool had_pending_edit = false;
-    const bool pending_edit = graphics_page.is_dirty() || general_page.is_dirty();
-    const bool needs_refresh = force || refreshed != revision || pending_edit || had_pending_edit;
-    had_pending_edit = pending_edit;
-    if (!needs_refresh) return;
-    refreshed = revision;
+bool refresh_frontend_settings(bool force) {
     namespace port = lambo::config;
+    static uint64_t refreshed_revision = 0;
+    static bool had_pending_edit = false;
+    const uint64_t revision = lambo::settings::revision();
     auto& graphics = recompui::config::get_graphics_config();
-    if (!graphics.is_dirty() && seeded_graphics != port::current_graphics()) seed_graphics();
+    auto& general = recompui::config::get_general_config();
+    const bool pending_edit = graphics.is_dirty() || general.is_dirty();
+    if (!force && revision == refreshed_revision && !pending_edit && !had_pending_edit) return false;
+    // Check again after an edit ends even when no setter ran (Discard), since
+    // an external update may have been held back while the page was dirty.
+    had_pending_edit = pending_edit;
+    refreshed_revision = revision;
+    if (!graphics.is_dirty()) seed_graphics();
     auto& enhancements = recompui::config::get_config("enhancements");
     auto& cheats = recompui::config::get_config("cheats");
     auto& debug = recompui::config::get_config("debug");
@@ -191,14 +190,12 @@ void refresh_frontend_settings(bool force) {
     sync_value(enhancements, "camera_distance", port::camera_distance_scale());
     sync_value(enhancements, "camera_height", port::camera_height_scale());
     sync_value(enhancements, "camera_fov", port::camera_fov_add());
-    auto& general = recompui::config::get_general_config();
     // Refreshed only while the option is clean, so a Championship save can
     // appear in the page without replacing a text edit still being typed.
     if (!option_pending_edit(general, "name")) sync_value(general, "name", lambo::player::saved_name());
     sync_value(general, "show_launcher", port::show_launcher());
+    return true;
 }
-
-void refresh_frontend_settings() { refresh_frontend_settings(false); }
 
 void create_frontend_settings() {
     namespace settings = recompui::config;
