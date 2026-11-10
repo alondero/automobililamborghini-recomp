@@ -195,5 +195,19 @@
       "median_p99_frame_ms": 49.87317199505924,
       "median_one_percent_low_fps": 15.514280001211713
     }
-  ]
+  ],
+  "rom_sha256": "cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c",
+  "replay_sha256": "86103630224e57c5ff6048630afd958e99721f985ce989e00ec743aebbc858f8",
+  "replay_path": "recordings/circuit-1-time-trial-car-0.jsonl",
+  "compiler": "Current Windows: MinGW GCC 15.2.0, Release -O3 -DNDEBUG. Current Android: NDK 28.2.13676358 / Clang 19, Release. Baselines: published release binaries; exact CI compiler versions not retained.",
+  "generated_files": "Current USA RecompiledFuncs/ and RSP src/aspMain.cpp freshly generated with the supported build.ps1 -PreserveSubmodules and scripts/build_android.py sequences. Baselines use public release packages.",
+  "commands_used": [
+    "python artifacts/performance-2026-11-10/batch_pc.py",
+    "python artifacts/performance-2026-11-10/batch_android.py",
+    "python artifacts/performance-2026-11-10/android_bench.py run v0.10.0 enhanced 4 --timeout 360",
+    "python artifacts/performance-2026-11-10/android_bench.py run v0.10.0 enhanced 5 --timeout 360",
+    "python artifacts/performance-2026-11-10/summarize.py",
+    "python artifacts/performance-2026-11-10/audit.py"
+  ],
+  "reproduction_limit": "The named benchmark driver scripts and raw captures were retained as local investigation artifacts, not public repository tools. This aggregate records measurements and settings; it is not a standalone replay runner or a CI performance guarantee."
 }

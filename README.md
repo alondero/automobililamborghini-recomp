@@ -120,11 +120,15 @@ See [Texture packs](docs/TEXTURES.md).
 v0.11.0 adds the experimental **JP weather** package, available as
 `lambo_jp_weather.nrm` alongside the release downloads. On desktop:
 
-1. Open Settings > Mods and choose **Install Mods**, then select the `.nrm` file.
-2. Enable **JP weather (experimental)** and restart the game.
-3. Open its settings, choose **Weather: Wet**, then **Rain style: Retro** or
+1. If the launcher is hidden, enable **Settings > General > Show launcher at
+   startup**, Apply, then restart the game.
+2. In the launcher, open **Mods**, choose **Install Mods**, and select the `.nrm`
+   file. Install code mods before choosing Play.
+3. Enable **JP weather (experimental)**. Open its settings, choose **Weather:
+   Wet**, then **Rain style: Retro** or
    **Modern**. Set rain intensity and camera droplets as desired.
-4. Start a new race. Championship uses its individual round weather settings.
+4. Close Mods, choose Play, and start a new race. Championship uses its
+   individual round weather settings. Later code-mod changes require a restart.
 
 Retro draws chunky pixel rain. Modern adds thin, speed-aware streaks, rounded
 lens droplets and rippling puddles. Both use storm clouds and wet-road effects.
