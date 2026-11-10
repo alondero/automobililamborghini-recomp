@@ -1,3 +1,4 @@
+#include "lambo_settings_revision.h"
 #include "lambo_player_name.h"
 
 #include <cctype>
@@ -141,6 +142,7 @@ bool save_name(const std::string& name) {
     }
     g_cached_name = name;
     g_name_loaded = true;
+    lambo::settings::changed();
     return true;
 }
 
@@ -155,6 +157,7 @@ void clear_saved_name_file() {
     std::filesystem::remove(path, ec);
     g_cached_name.clear();
     g_name_loaded = true;
+    lambo::settings::changed();
 }
 
 } // namespace
@@ -180,6 +183,7 @@ void reload_saved_name() {
     std::lock_guard<std::mutex> lock(g_player_file_mutex);
     g_cached_name = read_saved_name_file();
     g_name_loaded = true;
+    lambo::settings::changed();
 }
 
 } // namespace player

@@ -27,7 +27,7 @@ void deinit_hook();
 namespace lambo::ui {
 std::recursive_mutex& frontend_mutex() { static std::recursive_mutex mutex; return mutex; }
 void create_frontend_settings();
-void refresh_frontend_settings();
+void refresh_frontend_settings(bool force);
 namespace {
 std::atomic<bool> ready{false};
 std::atomic<bool> settings_refresh_requested{false};
@@ -122,10 +122,10 @@ void render(plume::RenderCommandList* commands, plume::RenderFramebuffer* frameb
     const OverlayRequest action = overlay.take_request();
     const bool input_refresh = settings_refresh_requested.exchange(false, std::memory_order_acq_rel);
     // The Graphics load callback runs only in config::finalize(), not on open.
-    // Shown frontend contexts currently capture input, so refresh before queued
-    // opens and while visible; this is the page's only freshness mechanism.
+    // Shown contexts capture input. Opens force a sync; visible frames normally
+    // take the settings-revision fast path, retaining pending-edit refreshes.
     if (input_refresh || action.kind == OverlayRequestKind::Page || recompui::is_context_capturing_input())
-        refresh_frontend_settings();
+        refresh_frontend_settings(input_refresh || action.kind == OverlayRequestKind::Page);
     if (action.kind == OverlayRequestKind::Close) {
         // The render callback does not own a ContextId opened through the
         // thread-local ContextId API, so try_close_current_context() cannot

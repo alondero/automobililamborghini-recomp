@@ -1,3 +1,4 @@
+#include "lambo_render_aspect.h"
 // RT64 renderer context. The presenter boundary, local patches, and headless
 // fallback are documented in patches/README.md.
 //
@@ -571,67 +572,52 @@ private:
 
 } // anonymous namespace
 
-extern "C" float lambo_sky_target_aspect() {
-    auto* active_app = g_lambo_active_app.load(std::memory_order_acquire);
-    if (active_app == nullptr || !active_app->sharedQueueResources) {
-        return 0.0f; // No RT64 presenter; leave the diagnostic renderer's sky alone.
-    }
-    auto& shared = *active_app->sharedQueueResources;
-    std::scoped_lock<std::mutex> lock(shared.configurationMutex);
+namespace {
+struct AspectSnapshot { float sky=0, hud=4.0f/3.0f; };
+const AspectSnapshot& producer_aspect() {
+    thread_local uint64_t epoch=0;
+    thread_local bool sampled=false;
+    thread_local AspectSnapshot value;
+    if (sampled && epoch==lambo::render::aspect_epoch) return value;
+    epoch=lambo::render::aspect_epoch; sampled=true; value={};
+    auto* app=g_lambo_active_app.load(std::memory_order_acquire);
+    if (!app || !app->sharedQueueResources) return value;
+    auto& shared=*app->sharedQueueResources;
+    std::scoped_lock lock(shared.configurationMutex);
+    constexpr float source=4.0f/3.0f;
+    const float display=shared.swapChainHeight>0
+        ? float(shared.swapChainWidth)/float(shared.swapChainHeight) : source;
     switch (shared.userConfig.aspectRatio) {
-        case RT64::UserConfiguration::AspectRatio::Expand:
-            return shared.swapChainHeight > 0
-                ? std::max(4.0f / 3.0f, float(shared.swapChainWidth) / float(shared.swapChainHeight))
-                : 4.0f / 3.0f;
-        case RT64::UserConfiguration::AspectRatio::Manual:
-            return float(shared.userConfig.aspectTarget);
-        default:
-            return 4.0f / 3.0f;
+    case RT64::UserConfiguration::AspectRatio::Expand:
+        value.sky=std::max(source,display); break;
+    case RT64::UserConfiguration::AspectRatio::Manual:
+        value.sky=float(shared.userConfig.aspectTarget); break;
+    default: value.sky=source; break;
     }
+    // Keep HUD travel aligned with the rect pins: Full, Clamp16x9 or Original.
+    if (shared.userConfig.aspectRatio==RT64::UserConfiguration::AspectRatio::Expand &&
+        shared.swapChainWidth>0 && shared.swapChainHeight>0 && display>source) {
+        float extension=0;
+        switch (shared.userConfig.extAspectRatio) {
+        case RT64::UserConfiguration::AspectRatio::Expand: extension=1; break;
+        case RT64::UserConfiguration::AspectRatio::Manual:
+            extension=lambo_ws_hud_clamp_ext_percentage(display,source,float(shared.userConfig.extAspectTarget)); break;
+        default: break;
+        }
+        value.hud=lambo_ws_hud_effective_rect_aspect(display,source,extension);
+    }
+    return value;
+}
 }
 
-// Effective aspect the extended-GBI HUD rect pins travel to, as raw float
-// bits. The gEXSetRectAlign HUD pins honour hr_option -- Full reaches the real edges, Clamp16x9
-// stops at 16:9, Original doesn't move -- so the game-space HUD geometry shifts
-// (src/lambo_hud_widescreen.c) key off THIS. Keying them off the raw output aspect would
-// over-translate the geometry past the rects at any non-Full ultrawide output (e.g. the
-// shipped Clamp16x9 default on a 21:9 monitor). Mirrors set_application_user_config()'s
-// hr_option map plus the extAspectPercentage math in rt64_workload_queue.cpp:159-183.
-// Same thread-safety contract and 4/3 floor as the skybox helper above.
+extern "C" float lambo_sky_target_aspect() { return producer_aspect().sky; }
+
+// Raw float bits consumed by guest HUD geometry. See docs/rain.md for the
+// shared per-task sample lifetime; rect pins keep their existing ratio policy.
 extern "C" uint32_t lambo_ws_get_hud_rect_aspect_bits(void) {
-    const float source = 4.0f / 3.0f;
-    float aspect = source;
-    const auto& cfg = ultramodern::renderer::get_graphics_config();
-    RT64::Application* active_app = g_lambo_active_app.load(std::memory_order_acquire);
-    if (cfg.ar_option == ultramodern::renderer::AspectRatio::Expand &&
-        active_app != nullptr && active_app->sharedQueueResources) {
-        auto& shared = *active_app->sharedQueueResources;
-        std::scoped_lock<std::mutex> configuration_lock(shared.configurationMutex);
-        uint32_t w = shared.swapChainWidth;
-        uint32_t h = shared.swapChainHeight;
-        if (w > 0 && h > 0) {
-            float display = float(w) / float(h);
-            if (display > source) {
-                float ext_percentage;
-                switch (cfg.hr_option) {
-                    case ultramodern::renderer::HUDRatioMode::Full:
-                        ext_percentage = 1.0f;
-                        break;
-                    case ultramodern::renderer::HUDRatioMode::Clamp16x9:
-                        ext_percentage = lambo_ws_hud_clamp_ext_percentage(
-                            display, source, 16.0f / 9.0f);
-                        break;
-                    case ultramodern::renderer::HUDRatioMode::Original:
-                    default:
-                        ext_percentage = 0.0f;
-                        break;
-                }
-                aspect = lambo_ws_hud_effective_rect_aspect(display, source, ext_percentage);
-            }
-        }
-    }
+    const float aspect=producer_aspect().hud;
     uint32_t bits;
-    std::memcpy(&bits, &aspect, sizeof(bits));
+    std::memcpy(&bits,&aspect,sizeof(bits));
     return bits;
 }
 

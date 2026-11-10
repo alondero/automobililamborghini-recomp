@@ -27,7 +27,8 @@ void operator delete(void* p) noexcept { std::free(p); }
 void operator delete(void* p,size_t) noexcept { std::free(p); }
 
 static float target_aspect=16.0f/9;
-extern "C" float lambo_sky_target_aspect() { return target_aspect; }
+static unsigned aspect_reads=0;
+extern "C" float lambo_sky_target_aspect() { ++aspect_reads; return target_aspect; }
 volatile int g_log_threshold=LAMBO_LEVEL_WARN;
 void lambo_log_write(LamboLogLevel,const char*,const char*,...) {}
 void require(bool good,const char* message) {
@@ -666,6 +667,46 @@ int main() {
     lambo_rain_publish(rdram,0x800C6E50,64);
     std::memcpy(before.data()+0x100,memory.data()+0x100,4);
     require(before==memory,"Off renders no effects or writes");
+    // A dry task must not query RT64 through any rain producer.
+    aspect_reads=0;
+    lambo_rain_frame(rdram);
+    lambo_rain_active(rdram);
+    lambo_rain_sky(rdram,0,0,123);
+    require(aspect_reads==0,"dry rain hooks query no renderer aspect");
+    w(0x80000100)=1|(70<<8);
+    aspect_reads=0;
+    lambo_rain_frame(rdram);
+    heap::refuse=true;
+    require(lambo_rain_sky(rdram,0,0,123)==123,"sky allocation failure keeps the native tile");
+    heap::refuse=false;
+    const auto blocks_before=heap::live_blocks();
+    h(0x800CE794)=6;
+    require(lambo_rain_sky(rdram,0,0,123)==123,"invalid circuit keeps native sky");
+    h(0x800CE794)=0;
+    require(lambo_rain_sky(rdram,8,0,123)==123 && lambo_rain_sky(rdram,0,2,123)==123 &&
+        heap::live_blocks()==blocks_before,"invalid tile allocates nothing");
+    // All style/circuit/tile combinations, including mirror and vertical order.
+    for (unsigned style=1;style<=2;++style) for (int track=0;track<6;++track) {
+        w(0x80000100)=int32_t(style|(70<<8)); h(0x800CE794)=int16_t(track);
+        for (int row=0;row<2;++row) h(0x80089054+track*4+row*2)=int16_t(0xA5^track);
+        uint32_t first=lambo_rain_sky(rdram,3,1,123),base=first-11*4096;
+        require(first!=123,"sky tile allocated");
+        require(h(base)==0,"unrequested sky tile stays ungenerated");
+        for (int row=0;row<2;++row) for (int tile=0;tile<8;++tile) {
+            uint32_t at=lambo_rain_sky(rdram,tile,row,123);
+            require(at==base+uint32_t(row*8+tile)*4096,"lazy sky preserves tile addresses");
+            bool mirror=(uint16_t(h(0x80089054+track*4+row*2))&(1u<<tile))!=0;
+            for (int y=0;y<32;++y) for (int x=0;x<64;++x)
+                require(uint16_t(h(at+uint32_t(y*64+x)*2))==lambo::rain::cloud_pixel(
+                    tile*64+(mirror?63-x:x),row*32+31-y,style==2),"lazy sky pixel matches full generation");
+        }
+        // Repeated requests must not rewrite a published tile.
+        auto saved=h(first); h(first)=1234;
+        require(lambo_rain_sky(rdram,3,1,123)==first && h(first)==1234,"published sky tile stays immutable");
+        h(first)=saved;
+    }
+    require(aspect_reads<=1,"wet rain hooks sample aspect at most once per task");
+    h(0x800CE794)=0;
     cache::run(rdram);
     camera::run(rdram);
 }

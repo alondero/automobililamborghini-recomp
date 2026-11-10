@@ -1,3 +1,4 @@
+#include "lambo_settings_revision.h"
 #include <cstddef>
 #include <iterator>
 #include <stdexcept>
@@ -82,7 +83,8 @@ void seed_graphics() {
     sync_value(page, "performance_preset", kKeepGraphicsChoices);
     // Picker state for the (possibly hand-edited) live size. The picker applies
     // with this page's Apply button; seeding only updates the displayed value.
-    const uint32_t live_preset = window_preset_from_size(port::window_size().width, port::window_size().height);
+    const auto size = port::window_size();
+    const uint32_t live_preset = window_preset_from_size(size.width, size.height);
     sync_value(page, "window_size", live_preset);
     // Custom means "keep the current size", so grey it out unless Custom is
     // already the live size. Selecting it over a preset would be a no-op.
@@ -150,7 +152,19 @@ bool option_pending_edit(const Config& page, const std::string& id) {
 }
 }
 
-void refresh_frontend_settings() {
+void refresh_frontend_settings(bool force) {
+    const uint64_t revision = lambo::settings::revision();
+    static uint64_t refreshed = 0;
+    auto& graphics_page = recompui::config::get_graphics_config();
+    auto& general_page = recompui::config::get_general_config();
+    // Pending confirmation edits must keep their existing per-option refresh
+    // rules. Opens force a sync even when no publisher changed a value.
+    static bool had_pending_edit = false;
+    const bool pending_edit = graphics_page.is_dirty() || general_page.is_dirty();
+    const bool needs_refresh = force || refreshed != revision || pending_edit || had_pending_edit;
+    had_pending_edit = pending_edit;
+    if (!needs_refresh) return;
+    refreshed = revision;
     namespace port = lambo::config;
     auto& graphics = recompui::config::get_graphics_config();
     if (!graphics.is_dirty() && seeded_graphics != port::current_graphics()) seed_graphics();
@@ -183,6 +197,8 @@ void refresh_frontend_settings() {
     if (!option_pending_edit(general, "name")) sync_value(general, "name", lambo::player::saved_name());
     sync_value(general, "show_launcher", port::show_launcher());
 }
+
+void refresh_frontend_settings() { refresh_frontend_settings(false); }
 
 void create_frontend_settings() {
     namespace settings = recompui::config;

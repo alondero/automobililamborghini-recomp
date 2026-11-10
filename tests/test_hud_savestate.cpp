@@ -128,6 +128,7 @@ int main(int argc, char** argv) {
         assert(std::filesystem::exists(destination));
         assert(log_output.find("snapshot copy took") != std::string::npos);
         assert(log_output.find("save write took") != std::string::npos);
+        std::fputs(log_output.c_str(), stdout);
         assert(read(ram, 0x902084) == 0x55667788u);
 
         // The completed file is loadable and restores the pre-mutation snapshot.

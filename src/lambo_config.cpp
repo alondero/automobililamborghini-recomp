@@ -1,3 +1,4 @@
+#include "lambo_settings_revision.h"
 // Persistent graphics configuration (see lambo_config.h).
 //
 // The schema follows the shared runtime GraphicsConfig vocabulary. The port
@@ -470,6 +471,7 @@ GraphicsUpdateWriter& graphics_update_writer() {
 }
 
 void save_graphics_updates(const nlohmann::json& updates) {
+    if (!updates.empty()) lambo::settings::changed();
     graphics_update_writer().enqueue(updates);
 }
 
@@ -522,6 +524,7 @@ ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
     ultramodern::renderer::set_graphics_config(cfg);
     g_current_graphics = cfg;
     g_live_graphics = cfg;
+    lambo::settings::changed();
     // Write the merged config back so the on-disk file is always complete and
     // editable (new keys appear with their defaults after an upgrade) -- but NEVER
     // overwrite a file that failed to parse: a hand-edit typo must stay recoverable,

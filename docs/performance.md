@@ -519,3 +519,88 @@ run of the old code. Retro meshes are small. Modern ripples multiply the vertex
 count, and a 120-face segment holds far more of them. These are synthetic
 segments, not an in-game working set. The counters report requested bytes.
 The heap may round blocks up; that was not measured.
+
+## Performance batch follow-up (2026-11-10)
+
+This completes the remaining native work from [issue 404](https://github.com/alondero/automobililamborghini-recomp/issues/404).
+The geometry cache and exact road buffers (#397/#398), narrower UI/audio locks
+(#401), asynchronous savestates/background symbols and batched Pak storage
+(#402) were already present at `49b1d18`. The geometry and memory measurements
+above remain their evidence; this follow-up does not reattribute those savings.
+
+Sky generation now fills one requested 4 KiB tile instead of all 16. The
+producer still owns a stable 64 KiB allocation per style/circuit. See
+[Rain rendering](rain.md#sky-tiles-and-aspect-sampling) for the lifecycle and
+pixel comparisons. Dry rain hooks perform zero aspect queries; Wet rain makes
+one query per native task, shared by all rain producers. The real renderer
+shares that snapshot with the sky and HUD helpers under one configuration lock.
+
+Replay's per-VI exit query and unconfigured input path no longer take the
+state mutex. Configured recording/playback still stages and verifies every
+frame under that mutex; `Status` retains a coherent locked copy. Harness
+probes publish relaxed diagnostic fields from the VI thread. Those snapshots
+may mix adjacent samples and must not drive gameplay.
+
+Input-probe and minimap-outline overrides are sampled once; RT capture mode is
+sampled when its producer is constructed, and the capture destination on first
+use. Debug-disabled RT shadow paths skip diagnostic strings and cost vectors.
+Visible settings skip the schema walk until a config/cheat/name revision changes,
+a page opens, or a confirmation edit needs refresh. Apply/Discard retains a
+final refresh for changes deferred during editing.
+
+The per-pump `window_size()`/`current_graphics()` coalescing from #403 is
+explicitly deferred to [issue 265](https://github.com/alondero/automobililamborghini-recomp/issues/265).
+The graphics snapshot still relies on the frontend lock. A revision is only
+a change notification and cannot make an unlocked copy safe; this batch does
+not change that ownership model.
+
+Measurements on Windows, MinGW GCC 15.2.0, Ryzen 9 3900X, with other work
+running. The extended `lambo_rain_benchmark` times the first requested sky tile
+and the remaining 15 separately. The baseline is `49b1d18`'s rain header and
+sources built with `-O2 -DNDEBUG -DLAMBO_RAIN_BENCH_PRODUCERS_ONLY` against the
+same benchmark; the new CMake benchmark also uses `-O2`. Values are medians of
+18 samples per style (all six circuits, three interleaved before/after runs).
+
+| Sky style | Before: first request (us) | After: first request (us) | After: remaining 15 (us) |
+| --- | ---: | ---: | ---: |
+| Retro | 3367 | 155 | 2456 |
+| Modern | 2523 | 170 | 2758 |
+
+The old first request generated all 16 tiles; its remaining requests cost
+under one microsecond in total. Lazy generation distributes that work rather
+than eliminating it. Noise between runs means the combined figures do not
+establish a reduction in total sky-generation time.
+
+`lambo_frontend_settings_tests build/settings-benchmark --benchmark` compared
+10,000 forced schema refreshes with 10,000 unchanged visible refreshes in one
+run: 16.08 ms versus 0.189 ms. This measures schema work, not menu rendering.
+The producer test's stub counts zero aspect queries from Dry rain hooks and
+at most one for a Wet task; the renderer's shared snapshot bounds its lock to
+one per task. No lock-wait time or worst audio-pump duration was measured here.
+
+The existing asynchronous savestate test, using synthetic RAM, reported
+1,056 us to copy 8,536,064 bytes and a separate 5,038 us worker write in one
+run. It parks the writer before opening the file, mutates live RAM while the
+save is queued, and then loads the original image successfully. The timing
+excludes that test gate. No pre-async disk-time comparison was run. The Pak
+burst test confirms one full-image copy for 1,024 block writes: 32 KiB copied,
+versus the source-derived pre-#402 bound of 32 MiB. Formats and atomic replace
+remain covered by the existing tests.
+
+Verification: the Windows Release game build and 25 focused CTests passed
+(rain, replay, audio, sky, frontend, input, config, RT, saves and crash symbols).
+Python discovery passed 423 tests with 24 skips. The headless
+`harness-smoke` and D3D12 `frontend-rt64-smoke` both verified 600/600 input frames,
+601 dispatcher ticks and the `replay_complete` terminal reason. The headless
+baseline executable from `49b1d18` had the same replay counts and terminal
+reason. VI counts vary with scheduling and are not a replay clock. ROM-backed
+smokes used the USA ROM, SHA-256
+`cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c`.
+
+Validation limitations: no in-game FPS, low-end hardware, Android or four-player
+frame-time measurement. The frozen producer tests compare road display-list
+words and vertices for Retro/Modern, 1P/4P, both task slots and invalidations;
+the sky tests compare every tile pixel. These are synthetic host inputs, not a
+fixed Wet game replay. A recorded Wet replay display-list comparison remains
+deferred until a reproducible weather-mod replay fixture is available. Smoke
+scenarios use the supported USA ROM; they do not establish rain visual parity.

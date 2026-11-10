@@ -18,7 +18,7 @@
 
 SDL_Window* window = nullptr;
 std::vector<recomp::GameEntry> supported_games;
-namespace lambo::ui { void create_frontend_settings(); void refresh_frontend_settings(); }
+namespace lambo::ui { void create_frontend_settings(); void refresh_frontend_settings(); void refresh_frontend_settings(bool force); }
 static void require(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
 
 // The registered picker entries, so the test reads the port's preset table
@@ -57,6 +57,12 @@ int cont_button_to_key(SDL_ControllerButtonEvent& button);
 // Optional measurement of the old/new hidden-settings trigger. This excludes
 // rendering and event polling, so it measures schema work, not frame times.
 static void benchmark_hidden_settings() {
+    for (bool force : {true, false}) {
+        const auto start = std::chrono::steady_clock::now();
+        for (int i=0;i<10000;++i) lambo::ui::refresh_frontend_settings(force);
+        std::cout << (force ? "forced" : "unchanged") << " visible settings: 10000 refreshes; elapsed_ms="
+                  << std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count() << '\n';
+    }
     SDL_Event event{};
     event.type = SDL_KEYDOWN;
     event.key.keysym.scancode = SDL_SCANCODE_X;
@@ -260,11 +266,25 @@ int main(int argc, char** argv) {
         catch (const std::exception& e) { missing_pedals = e.what(); }
         require(missing_pedals.find("pedals") != std::string::npos,
                 "the standalone Pedals page still exists");
+        lambo::ui::refresh_frontend_settings();
+        { std::ofstream file(lambo::config::app_config_dir() / "player.json"); file << R"({"name":"RELOADED"})"; }
+        lambo::player::reload_saved_name();
+        lambo::ui::refresh_frontend_settings();
+        require(std::get<std::string>(general.get_option_value("name")) == "RELOADED",
+                "clean menu missed explicit saved-name reload");
+        lambo::player::set_saved_name("RACER");
+        lambo::ui::refresh_frontend_settings();
         general.set_option_value("name", std::string{});
         lambo::ui::refresh_frontend_settings();
         require(std::get<std::string>(general.get_temp_option_value("name")).empty(),
                 "General refresh clobbered an active name edit");
+        lambo::player::set_saved_name("OTHER");
+        lambo::ui::refresh_frontend_settings();
         general.revert_temp_config();
+        lambo::ui::refresh_frontend_settings();
+        require(std::get<std::string>(general.get_option_value("name")) == "OTHER",
+                "discard missed the external update deferred during an edit");
+        lambo::player::set_saved_name("RACER");
         lambo::ui::refresh_frontend_settings();
         require(std::get<std::string>(general.get_option_value("name")) == "RACER",
                 "General refresh missed an external name save");

@@ -9,7 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
-#include <mutex>
+#include <atomic>
 #include <string>
 #include <utility>
 
@@ -36,8 +36,20 @@ namespace {
 using json = nlohmann::json;
 
 struct Metrics {
-    std::mutex mutex;
+    // Only the VI thread owns the probe history and mutable snapshot.
+    // Readers get independent relaxed fields: diagnostic, never gameplay state.
     Snapshot snapshot;
+    std::atomic<int> threads{0};
+    std::atomic<int> vis{0};
+    std::atomic<int> max_state{0};
+    std::atomic<int> current_state{0};
+    std::atomic<int> current_menu_screen{-1};
+    std::atomic<int> loaded_circuit{0};
+    std::atomic<int> swaps{0};
+    std::atomic<int> player_vehicle{-1};
+    std::atomic<int> player_speed{0};
+    std::atomic<int> max_abs_player_speed{0};
+
     std::uint32_t last_vi_buffer{};
     int last_state{-1};
     int last_menu_screen{-9999};
@@ -61,7 +73,7 @@ std::uint32_t guest_halfword(const std::uint8_t* rdram, std::uint32_t address) {
     return (address & 2u) ? (word & 0xFFFFu) : (word >> 16);
 }
 
-void state_probe_locked(int vi) {
+void state_probe(int vi) {
     const std::uint8_t* rdram = g_lambo_rdram;
     if (rdram == nullptr) return;
     const int state = static_cast<int>(guest_halfword(rdram, 0x800CE6ACu));
@@ -96,7 +108,7 @@ void state_probe_locked(int vi) {
     }
 }
 
-void menu_probe_locked(int vi) {
+void menu_probe(int vi) {
     const std::uint8_t* rdram = g_lambo_rdram;
     if (rdram == nullptr) return;
     const int screen = static_cast<int16_t>(guest_halfword(rdram, 0x80098562u));
@@ -110,7 +122,7 @@ void menu_probe_locked(int vi) {
     }
 }
 
-void pace_probe_locked(int vi) {
+void pace_probe(int vi) {
     const std::uint8_t* rdram = g_lambo_rdram;
     if (rdram == nullptr) return;
     const std::uint32_t next = guest_word(rdram, 0x8008D1A4u);
@@ -131,35 +143,49 @@ void pace_probe_locked(int vi) {
 } // namespace
 
 void note_thread_created() {
-    int count = 0;
-    {
-        std::lock_guard lock(g_metrics.mutex);
-        count = ++g_metrics.snapshot.threads;
-    }
+    const int count = g_metrics.threads.fetch_add(1, std::memory_order_relaxed) + 1;
     if (count <= 12) LAMBO_LOG("probe", "game thread #%d started (osCreateThread)\n", count);
 }
 
 int vis_count() {
-    std::lock_guard lock(g_metrics.mutex);
-    return g_metrics.snapshot.vis;
+    return g_metrics.vis.load(std::memory_order_relaxed);
 }
 
 int sample_vi() {
-    std::lock_guard lock(g_metrics.mutex);
     const int vi = ++g_metrics.snapshot.vis;
-    state_probe_locked(vi);
-    menu_probe_locked(vi);
-    pace_probe_locked(vi);
+    state_probe(vi);
+    menu_probe(vi);
+    pace_probe(vi);
     if (!g_metrics.snapshot.first_vi) {
         g_metrics.snapshot.first_vi = true;
         LAMBO_LOG("probe", "FIRST VI retrace\n");
     }
+    g_metrics.vis.store(g_metrics.snapshot.vis, std::memory_order_relaxed);
+    g_metrics.max_state.store(g_metrics.snapshot.max_state, std::memory_order_relaxed);
+    g_metrics.current_state.store(g_metrics.snapshot.current_state, std::memory_order_relaxed);
+    g_metrics.current_menu_screen.store(g_metrics.snapshot.current_menu_screen, std::memory_order_relaxed);
+    g_metrics.loaded_circuit.store(g_metrics.snapshot.loaded_circuit, std::memory_order_relaxed);
+    g_metrics.swaps.store(g_metrics.snapshot.swaps, std::memory_order_relaxed);
+    g_metrics.player_vehicle.store(g_metrics.snapshot.player_vehicle, std::memory_order_relaxed);
+    g_metrics.player_speed.store(g_metrics.snapshot.player_speed, std::memory_order_relaxed);
+    g_metrics.max_abs_player_speed.store(g_metrics.snapshot.max_abs_player_speed, std::memory_order_relaxed);
     return vi;
 }
 
 Snapshot snapshot() {
-    std::lock_guard lock(g_metrics.mutex);
-    return g_metrics.snapshot;
+    Snapshot result;
+    result.threads = g_metrics.threads.load(std::memory_order_relaxed);
+    result.vis = g_metrics.vis.load(std::memory_order_relaxed);
+    result.max_state = g_metrics.max_state.load(std::memory_order_relaxed);
+    result.current_state = g_metrics.current_state.load(std::memory_order_relaxed);
+    result.current_menu_screen = g_metrics.current_menu_screen.load(std::memory_order_relaxed);
+    result.loaded_circuit = g_metrics.loaded_circuit.load(std::memory_order_relaxed);
+    result.swaps = g_metrics.swaps.load(std::memory_order_relaxed);
+    result.player_vehicle = g_metrics.player_vehicle.load(std::memory_order_relaxed);
+    result.player_speed = g_metrics.player_speed.load(std::memory_order_relaxed);
+    result.max_abs_player_speed = g_metrics.max_abs_player_speed.load(std::memory_order_relaxed);
+    result.first_vi = result.vis > 0;
+    return result;
 }
 
 void log_boot_summary() {

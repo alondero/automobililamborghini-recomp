@@ -249,6 +249,29 @@ no period with it and use the unwrapped race time in double precision. The
 old float clock reached about 0.1 native px of error after an hour, which
 sub-pixel streaks could show as jitter.
 
+## Sky tiles and aspect sampling
+
+Each style/circuit keeps its existing 64 KiB guest allocation. A 16-bit mask
+tracks the two rows of eight tiles. The producer fills only the requested
+4 KiB tile, with the same mirroring, vertical order, noise and quantization as
+full generation. It sets the bit after the tile is complete. Published tiles
+are immutable for the process lifetime, including across track changes and
+savestate loads; texture DMA can outlive a CPU frame. Allocation failure keeps
+the native tile. No worker touches guest RAM.
+
+Dry and visual-Off rain hooks return before querying the renderer. The native
+task-start hook resets the producer's aspect sample. Sky, rain and HUD helpers
+then share one coherent snapshot on the game thread, taking RT64's configuration
+mutex at most once per task. The sample reads the current swap-chain dimensions,
+aspect mode/target and HUD ratio policy. Resizes and changes to those settings
+appear on the next task; a task never mixes old and new aspect values. There
+is no separate list of configuration setters that can miss an invalidation.
+
+The producer test compares every generated pixel with full generation for both
+styles, all six circuits and all tiles. It checks untouched tiles, repeated
+requests and the Dry/Wet aspect query bounds. This is host-side output evidence,
+not a recorded Wet game replay or visual verification.
+
 ## Limits and validation
 
 Puddle highlights and lens highlights are stylized raster art. They do not

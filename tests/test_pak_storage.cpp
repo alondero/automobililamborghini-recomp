@@ -92,6 +92,8 @@ int main() {
     expect(std::filesystem::exists(second), "the debounced worker publishes a completed save burst");
     expect(lambo_pak_storage_copy_count() == 1,
            "a 1,024-block write burst copies the 32 KiB image once at the debounce boundary");
+    std::printf("Pak burst: 1024 blocks, image_copies=%llu\n",
+                static_cast<unsigned long long>(lambo_pak_storage_copy_count()));
 
     const uint8_t byte = image[0x600] ^ 0xffu;
     lambo_pak_storage_write_block(image.data(), 0x600, &byte, 1);

@@ -176,14 +176,14 @@ int main() {
         const auto overflow = probes.take(0x800BF400);
         require(overflow && !overflow->emitters_complete && overflow->emitters.size() == 64,
             "span overflow retained an unbounded/complete capture");
-        lambo::rt::TaskSunProbes snapshots;
-        require(!snapshots.snapshot(nullptr, ram.size()) && !snapshots.snapshot(ram.data(), 16),
-            "snapshot admitted absent/short RAM");
 #if defined(_WIN32)
         _putenv_s("LAMBO_RT_CAPTURE_DIR", "rt-sun-test-capture");
 #else
         setenv("LAMBO_RT_CAPTURE_DIR", "rt-sun-test-capture", 1);
 #endif
+        lambo::rt::TaskSunProbes snapshots;
+        require(!snapshots.snapshot(nullptr, ram.size()) && !snapshots.snapshot(ram.data(), 16),
+            "snapshot admitted absent/short RAM");
         write(ram, 0x800A2BFCu, 0x800BF240u);
         for (unsigned i = 1; i < 60; ++i) {
             require(snapshots.begin(ram.data(), ram.size()), "snapshot sequence begin failed");
