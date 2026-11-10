@@ -140,7 +140,8 @@ std::shared_ptr<const RT64::SunShadowWorkload> SunShadowProduction::sunShadow(co
             }
             log_car_light(pending.task.sequence, stats);
             if (!pending.result) {
-                log_lap(lap_.count(false, "gate_" + std::to_string(uint32_t(stats.gate))));
+                if (lambo_log_would_emit(LAMBO_LEVEL_DEBUG))
+                    log_lap(lap_.count(false, "gate_" + std::to_string(uint32_t(stats.gate))));
                 LAMBO_LOG("rt-shadow", "task=%llu native: admission gate %u circuit=%d phase=%d players=%d mode=%d\n",
                     static_cast<unsigned long long>(pending.task.sequence), uint32_t(stats.gate),
                     pending.task.circuit, pending.task.phase, pending.task.players, pending.task.race_mode);
@@ -161,6 +162,7 @@ std::shared_ptr<const RT64::SunShadowWorkload> SunShadowProduction::sunShadow(co
 // How the game lights the player's car changes in tunnels and in-car views;
 // one line per change ties those places to the lap's task numbers.
 void SunShadowProduction::log_car_light(uint64_t sequence, const AdmissionStats& stats) {
+    if (!lambo_log_would_emit(LAMBO_LEVEL_DEBUG)) return;
     std::string light = "none";
     if (stats.car_light_seen) {
         const PresentedLight& l = stats.car_light;
@@ -174,7 +176,7 @@ void SunShadowProduction::log_car_light(uint64_t sequence, const AdmissionStats&
 }
 
 void SunShadowProduction::log_lap(const std::optional<LapSummary>& summary) {
-    if (!summary) return;
+    if (!summary || !lambo_log_would_emit(LAMBO_LEVEL_DEBUG)) return;
     std::string reasons;
     for (const auto& [key, count] : summary->reasons) reasons += " " + key + "=" + std::to_string(count);
     LAMBO_LOG("rt-shadow", "lap_summary tasks=%zu ready=%zu%s\n", summary->tasks, summary->ready, reasons.c_str());
@@ -186,11 +188,12 @@ void SunShadowProduction::sunShadowResult(const RT64::SunShadowFrameResult& resu
     std::lock_guard lock(mutex_);
     // Interpolated presentations re-render a Workload; count each task once.
     try {
-        log_lap(lap_.record(result.workloadId, result.ready, reason_key(result.reason)));
+        if (lambo_log_would_emit(LAMBO_LEVEL_DEBUG))
+            log_lap(lap_.record(result.workloadId, result.ready, reason_key(result.reason)));
     } catch (const std::exception& error) {
         LAMBO_LOG_WARN("rt-shadow", "task count failed: %s\n", error.what());
     }
-    if (result.ready) {
+    if (result.ready && lambo_log_would_emit(LAMBO_LEVEL_DEBUG)) {
         build_us_.push_back(result.buildMicroseconds);
         receiver_us_.push_back(result.receiverMicroseconds);
         cache_us_.push_back(result.cacheMicroseconds);
@@ -209,6 +212,7 @@ void SunShadowProduction::sunShadowResult(const RT64::SunShadowFrameResult& resu
             cache_us_.clear();
         }
     }
+    if (!lambo_log_would_emit(LAMBO_LEVEL_DEBUG)) return;
     const std::string reason = result.reason ? result.reason : "";
     if (result.ready == last_ready_ && reason == last_reason_ && (result.taskSequence % 60) != 0) return;
     last_ready_ = result.ready;

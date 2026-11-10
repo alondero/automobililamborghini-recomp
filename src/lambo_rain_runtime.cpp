@@ -2,6 +2,7 @@
 // Two task slots reuse heap lists only after the native DP completion fence.
 // Addresses, instruction witnesses, cache lifecycle and renderer limits: docs/rain.md.
 #include "lambo_rain.h"
+#include "lambo_render_aspect.h"
 #include "lambo_mod_gameplay.h"
 #include "lambo_sky_panorama.h"
 #include "lambo_log.h"
@@ -23,10 +24,17 @@ void store(uint8_t* ram,uint32_t target,const uint32_t* words,size_t count) {
     std::memcpy(&word(ram,target),words,count*4);
 }
 bool native(uint32_t a,uint32_t bytes) { return (a&3)==0 && a>=0x80000000u && a<=0x80800000u-bytes; }
+// Game producer owns this sample. Reset at each task boundary; laziness keeps
+// every Dry/Off path independent of RT64's configuration mutex.
+float frame_aspect=NAN;
+float aspect() {
+    if (std::isnan(frame_aspect)) frame_aspect=lambo_sky_target_aspect();
+    return frame_aspect;
+}
 unsigned settings(uint8_t* ram) {
-    if (!ram || half(ram,0x800CE6AC)!=8 || half(ram,0x800CE6B4)==4 || lambo_sky_target_aspect()<=0) return 0;
+    if (!ram || half(ram,0x800CE6AC)!=8 || half(ram,0x800CE6B4)==4) return 0;
     unsigned s=lambo_rain_settings(ram);
-    return (s&3) && ((s>>8)&127) ? s : 0;
+    return (s&3) && ((s>>8)&127) && aspect()>0 ? s : 0;
 }
 int slot(uint8_t* ram) {
     uint32_t task=word(ram,0x800A2BFC);
@@ -337,6 +345,8 @@ const Flow& view_flow(int player) { return flows[size_t(std::clamp(player,0,3))]
 extern "C" void lambo_rain_invalidate(void) { invalidate(); }
 
 extern "C" void lambo_rain_frame(uint8_t* ram) {
+    lambo::render::begin_aspect_frame();
+    frame_aspect=NAN;
     int index=slot(ram);
     if (index<0) return;
     if (segments.bucket_count()<256) segments.reserve(256);
@@ -448,17 +458,19 @@ extern "C" uint32_t lambo_rain_sky(uint8_t* ram,int tile,int row,uint32_t origin
     int track=half(ram,0x800CE794);
     if (!s || track<0 || track>=6 || tile<0 || tile>=8 || row<0 || row>1) return original;
     // Immutable once published: texture DMA may outlive several CPU frames.
-    static std::array<std::array<Buffer,6>,2> skies;
+    struct Sky { Buffer buffer; uint16_t generated=0; };
+    static std::array<std::array<Sky,6>,2> skies;
     auto& sky=skies[(s&3)-1][track];
-    if (!sky.address) {
-        if (!allocate(ram,sky,16*4096)) return original;
-        for (int r=0;r<2;++r) for (int t=0;t<8;++t) {
-            bool mirror=(uint16_t(half(ram,0x80089054+track*4+r*2))&(1u<<t))!=0;
-            for (int y=0;y<32;++y) for (int x=0;x<64;++x)
-                half(ram,sky.address+(r*8+t)*4096+(y*64+x)*2)=int16_t(cloud_pixel(t*64+(mirror?63-x:x),r*32+31-y,(s&3)==2));
-        }
+    if (!allocate(ram,sky.buffer,16*4096)) return original;
+    const uint16_t bit=uint16_t(1u<<(row*8+tile));
+    if (!(sky.generated&bit)) {
+        bool mirror=(uint16_t(half(ram,0x80089054+track*4+row*2))&(1u<<tile))!=0;
+        for (int y=0;y<32;++y) for (int x=0;x<64;++x)
+            half(ram,sky.buffer.address+(row*8+tile)*4096+(y*64+x)*2)=int16_t(cloud_pixel(
+                tile*64+(mirror?63-x:x),row*32+31-y,(s&3)==2));
+        sky.generated|=bit; // publish only a fully written tile
     }
-    return sky.address+(row*8+tile)*4096;
+    return sky.buffer.address+(row*8+tile)*4096;
 }
 
 namespace {
@@ -466,7 +478,7 @@ namespace {
 // changing style between races never meets a smaller block.
 constexpr uint32_t camera_capacity=0xC000;
 // Width of the output in native pixels at 240 lines; RT64 widens views to it.
-float output_width() { return std::clamp(lambo_sky_target_aspect()*240,240.0f,1920.0f); }
+float output_width() { return std::clamp(aspect()*240,240.0f,1920.0f); }
 // Native s15.16 matrix: sixteen integer halves, then sixteen fractions (row vectors).
 void store_matrix(uint8_t* ram,uint32_t at,const std::array<float,16>& m) {
     for (int k=0;k<16;++k) {

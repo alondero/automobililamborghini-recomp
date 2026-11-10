@@ -175,6 +175,19 @@ int main() {
     rdram=memory.data();
     recomp_context ctx{}; ctx.r4=int32_t(0x80000100);
     lambo_register_rain_v1(rdram,&ctx);
+    h(0x800CE6AC)=8; h(0x800CE6B4)=2;
+    std::printf("sky first tile and remaining 15 tiles (microseconds)\n");
+    for (unsigned style:{1u,2u}) for (int circuit=0;circuit<6;++circuit) {
+        w(0x80000100)=int32_t(style|(80<<8)); h(0x800CE794)=int16_t(circuit);
+        lambo_rain_frame(rdram);
+        auto start=Clock::now();
+        volatile auto first=lambo_rain_sky(rdram,0,0,0);
+        const double first_us=since(start);
+        start=Clock::now();
+        for (int tile=1;tile<16;++tile) first=lambo_rain_sky(rdram,tile%8,tile/8,0);
+        std::printf("sky %-6s circuit=%d first_us=%.1f rest_us=%.1f\n",
+            style==2?"Modern":"Retro",circuit+1,first_us,since(start));
+    }
 #ifndef LAMBO_RAIN_BENCH_PRODUCERS_ONLY
     isolated();
 #endif

@@ -203,6 +203,13 @@ static void lambo_pak_save(void) {
 // LAMBO_PAK_TRACE=1: per-frame joybus log for save-path diagnosis -- shows exactly what the save
 // flow asks the pak for and how the bridge answered, since call-level tracers proved the game
 // loops on reads without ever reaching a write.
+// Launch-only diagnostics; the SI bridge must not search the environment per pad.
+static int lambo_input_probe(void) {
+    static int cached = -1;
+    if (cached < 0) cached = getenv("LAMBO_INPUT_PROBE") != NULL;
+    return cached;
+}
+
 static int lambo_pak_trace(void) {
     static int cached = -1;
     if (cached < 0) { const char* e = getenv("LAMBO_PAK_TRACE"); cached = (e && e[0] == '1') ? 1 : 0; }
@@ -361,7 +368,7 @@ static void lambo_joybus_answer(uint8_t* rdram, gpr buf, const LamboPad* pads) {
 static void lambo_pak_channel_probe(uint8_t* rdram, gpr buf) {
     static int pak_probe_logged = 0;
     int pos = 0;
-    if (pak_probe_logged || !getenv("LAMBO_INPUT_PROBE")) return;
+    if (pak_probe_logged || !lambo_input_probe()) return;
     while (pos < 0x40) {
         unsigned t = MEM_BU(pos, buf);
         if (t == 0xFE) return;
@@ -467,7 +474,7 @@ void func_8007F780(uint8_t* rdram, recomp_context* ctx) {
      *   2. the bytes AS WRITTEN to the destination buffer (byte4/byte5) -> guards the byte-order
      *      fix (a revert would flip them, which the reach-only check could not catch). */
     if (!std_read) lambo_pak_channel_probe(rdram, buf);
-    if (getenv("LAMBO_INPUT_PROBE") &&
+    if (lambo_input_probe() &&
         (pads[0].button != 0 || pads[0].stick_x != 0 || pads[0].stick_y != 0)) {
         static int input_probe_logged = 0;
         if (!input_probe_logged) {

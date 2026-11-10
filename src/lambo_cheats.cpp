@@ -1,3 +1,4 @@
+#include "lambo_settings_revision.h"
 #include "lambo_cheats.h"
 #include <atomic>
 
@@ -11,6 +12,7 @@ bool enabled(Cheat cheat) {
 }
 void set_enabled(Cheat cheat, bool value) {
     const auto index = static_cast<std::size_t>(cheat);
-    if (index < flags.size()) flags[index].store(value, std::memory_order_relaxed);
+    if (index < flags.size() && flags[index].exchange(value, std::memory_order_relaxed) != value)
+        lambo::settings::changed();
 }
 }

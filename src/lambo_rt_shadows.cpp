@@ -41,6 +41,15 @@ bool procedural_world_object(const TaskSunProbe::ObjectIdentity& object) {
 }
 
 namespace {
+// Startup-only capture destination. Copy it once so later task hooks do not
+// search the environment or retain a pointer owned by the C runtime.
+const std::string& capture_directory() {
+    static const std::string directory = [] {
+        const char* value = std::getenv("LAMBO_RT_CAPTURE_DIR");
+        return std::string(value ? value : "");
+    }();
+    return directory;
+}
 constexpr uint32_t first_task = 0x800BF240u;
 constexpr uint32_t task_stride = 0x7A50u;
 constexpr size_t guest_ram_size = 0x924000u;
@@ -113,6 +122,11 @@ bool task_capture_enabled() {
     return probe_enabled() || production_task_values.load(std::memory_order_relaxed);
 }
 }
+
+TaskSunProbes::TaskSunProbes() : capture_enabled_([] {
+    const char* directory = std::getenv("LAMBO_RT_CAPTURE_DIR");
+    return directory && *directory;
+}()) {}
 
 bool TaskSunProbes::begin(const uint8_t* rdram, size_t size) {
     if (!rdram || size < guest_ram_size) return false;
@@ -240,8 +254,7 @@ bool TaskSunProbes::snapshot(const uint8_t* rdram, size_t size) {
         record.objects_complete = true;
         copied = true;
     }
-    const char* directory = std::getenv("LAMBO_RT_CAPTURE_DIR");
-    if (!directory || !*directory || record.native_ram || !capture_sequence(record.sequence)) return copied;
+    if (!capture_enabled_ || record.native_ram || !capture_sequence(record.sequence)) return copied;
     // Game-owned records/light banks may change while an older task is queued.
     // Copy on the game producer at 0x80005728, before osSendMesg publishes the
     // completed task. A task-arena reuse fence alone cannot protect globals.
@@ -283,9 +296,10 @@ void TaskSunProbes::invalidate() {
 // assets and must remain ignored. The Workload bridge is diagnostic only and
 // cannot select a receiver or suppress native output.
 void capture_task(const TaskSunProbe& task) {
-    const char* directory = std::getenv("LAMBO_RT_CAPTURE_DIR");
-    if (!directory || !*directory || !task.native_ram) return;
+    if (!task.native_ram) return;
     try {
+        const auto& directory = capture_directory();
+        if (directory.empty()) return;
         const auto base = std::filesystem::path(directory) / ("task-" + std::to_string(task.sequence));
         std::filesystem::create_directories(base.parent_path());
         nlohmann::json metadata = {{"schema", 3}, {"snapshot_point", "producer-before-submit"},

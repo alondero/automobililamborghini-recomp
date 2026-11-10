@@ -220,12 +220,14 @@ uint32_t lambo_ws_minimap_outline_x(uint32_t x_bits) {
         return x_bits; /* 4:3 / non-Expand output: leave the outline where the game drew it */
     }
     lambo_ws_minimap_1p_frames--;
-    float dx = LAMBO_WS_MINIMAP_OUTLINE_DX;
-    const char* env = getenv("LAMBO_WS_MINIMAP_OUTLINE_DX");
-    if (env != NULL) {
-        dx = (float)atof(env);
+    static int initialized = 0;
+    static float outline_dx = LAMBO_WS_MINIMAP_OUTLINE_DX;
+    if (!initialized) {
+        const char* env = getenv("LAMBO_WS_MINIMAP_OUTLINE_DX");
+        if (env != NULL) outline_dx = (float)atof(env);
+        initialized = 1;
     }
-    dx *= scale;
+    float dx = outline_dx * scale;
     union { uint32_t u; float f; } x;
     x.u = x_bits;
     x.f += dx;

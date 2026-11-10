@@ -66,6 +66,7 @@ struct TaskSunProbe {
 // for shadow admission.
 class TaskSunProbes {
 public:
+    TaskSunProbes(); // capture environment is fixed for this producer lifetime
     bool begin(const uint8_t* rdram, size_t size);
     bool capture(const uint8_t* rdram, size_t size);
     bool emitter_begin(const uint8_t* rdram, size_t size, uint32_t emitter);
@@ -90,6 +91,7 @@ private:
     int16_t race_mode_ = -1;
     std::array<int16_t, 4> model_cursors_{};
     std::atomic_bool copy_all_objects_{false};
+    const bool capture_enabled_;
 };
 
 bool physical_car_object(const std::vector<TaskSunProbe::ObjectIdentity>& objects, uint32_t object_id);

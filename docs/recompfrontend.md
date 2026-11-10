@@ -356,3 +356,24 @@ is a startup policy; hotplug reassignment remains available through Controls > A
 
 The original standalone exploration remains under `experiments/recompfrontend`; it is not
 the game's build or runtime path.
+
+## Settings refresh lifetime
+
+The presentation thread refreshes settings on queued page opens and menu-opening
+input. While a context captures input, an unchanged settings revision skips the
+schema walk. Config setters and `load_and_apply_graphics`, cheat changes, and
+successful saved-name updates/explicit reloads publish a revision after changing their values.
+The revision is a notification; each value retains its existing owning lock or
+atomic. A publisher added to these sources must also notify the revision.
+
+General and Graphics confirmation edits keep refreshing under their existing
+per-option rules. The first refresh after Apply or Discard also runs, even if
+no publisher changed a value: an external update may have been deferred while
+the option held an edit. Page opens always force a refresh. There is no
+external file watcher; graphics reloads use `load_and_apply_graphics`.
+
+Replay's unconfigured input path and per-VI exit query use atomic notifications.
+Configured playback/recording still take the replay state mutex to stage and
+verify each frame. Harness probes are owned by the VI thread and publish
+independent relaxed atomic fields. A diagnostic reader can see adjacent VIs in
+one snapshot; the fields are never used to drive gameplay or replay ordering.
