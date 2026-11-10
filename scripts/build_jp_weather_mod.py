@@ -46,6 +46,9 @@ def authoring_manifest(template, elf, symbols):
             lambda match: f"{key} = {json.dumps(value.as_posix())}", template)
         if count != 1:
             raise ValueError(f"Expected exactly one manifest {key}")
+    template = re.sub(r"(?m)^additional_files\s*=.*$",
+                      lambda match: "additional_files = " + json.dumps([(symbols.parent / "LICENSE").as_posix()]),
+                      template)
     return template
 
 

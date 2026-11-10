@@ -11,6 +11,35 @@ guest layouts. It does not claim measured game-wide speedups. A CPU saving
 cannot improve a GPU-bound frame, and a graphics preset trades visual quality
 for less work.
 
+## v0.11.0 race comparison (2026-11-10)
+
+The [retained aggregate results](evidence/v0.11.0-performance.json) compare
+v0.10.0, v0.10.3 and gameplay commit `8d208f2` in 45 accepted Circuit 1 race
+runs. Presentation FPS includes interpolation; gameplay still targets 30 Hz.
+
+| Configuration | v0.10.0 | v0.10.3 | Current |
+| --- | --- | --- | --- |
+| Windows, basic six-car race | 60.0 | 60.0 | 59.9 |
+| Windows, 16 cars, HD pack and RT shadows | 52.2 | 54.6 | 59.9 |
+| SM-T720, basic six-car race, fixed 2x | 17.8 | 39.5 | 38.7 |
+| SM-T720, 16 cars and HD pack, fixed 2x | 16.4 | 32.2 | 32.8 |
+| SM-T720, 16 cars and HD pack, Auto | 5.1 | 24.5 | 24.5 |
+
+These are medians, not a minimum hardware specification. Most of the tablet
+gain was already present in v0.10.3. Android Auto also changes from 6x to 3x;
+the fixed-2x rows hold the pixel scale. The Windows machine was deliberately
+left busy with other work, and its overlapping ranges do not isolate code
+effects. The Android native versions ran in a common benchmark Java shell.
+The device does not support RT sunlight shadows and fell back from requested
+4x MSAA to one sample. The evidence file records the hardware, methods,
+presets, ranges and frame intervals.
+
+Current Heavy Modern rain measured 47.6 presentation FPS on Windows D3D12
+(run averages 33.0 to 57.8). The baseline releases do not provide the weather
+feature. All three Android weather attempts crashed with startup SIGSEGV;
+no wet-race FPS is claimed there. Desktop Retro and Modern rain use the
+optional package described in [rain rendering](rain.md).
+
 ## Residual diagnostics and settings work (2026-11-10)
 
 The SI input probe, 1P minimap outline offset and RT capture directory now

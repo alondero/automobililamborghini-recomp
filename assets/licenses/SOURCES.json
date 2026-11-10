@@ -1,0 +1,22 @@
+[
+  {
+    "file": "FTL.TXT",
+    "source": "https://github.com/freetype/freetype/blob/VER-2-14-1/docs/FTL.TXT",
+    "git_blob": "b9e8cbd66ffff526113350953f4a2f4252a92f49"
+  },
+  {
+    "file": "DXC-LICENSE.TXT",
+    "source": "https://github.com/microsoft/DirectXShaderCompiler/blob/69e54e29086b7035acffb304cec57a350225f8b0/LICENSE.TXT",
+    "git_blob": "4abc62082b43d55b06006a1230dd55155249beaf"
+  },
+  {
+    "file": "DXC-ThirdPartyNotices.txt",
+    "source": "https://github.com/microsoft/DirectXShaderCompiler/blob/69e54e29086b7035acffb304cec57a350225f8b0/ThirdPartyNotices.txt",
+    "git_blob": "be895839bd6bb831214024a957120813e0b4c4d2"
+  },
+  {
+    "file": "RecompFrontend-COPYING",
+    "source": "https://github.com/N64Recomp/RecompFrontend/blob/main/COPYING",
+    "git_blob": "f288702d2fa16d3cdf0035b15a9fcbc552cd88e7"
+  }
+]

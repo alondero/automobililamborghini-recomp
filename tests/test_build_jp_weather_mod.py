@@ -38,6 +38,11 @@ class WeatherBuildTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build.authoring_manifest('[inputs]\n', Path('/a'), Path('/b'))
 
+    def test_custom_output_keeps_license_path_absolute(self):
+        template = '[inputs]\nelf_path="old"\nfunc_reference_syms_file="old"\nadditional_files=["../../LICENSE"]\n'
+        result = tomllib.loads(build.authoring_manifest(template, Path('/out/weather.elf'), Path('/repo/lamborghini.syms.toml')))
+        self.assertEqual(result['inputs']['additional_files'], ['/repo/LICENSE'])
+
 
 if __name__ == '__main__':
     unittest.main()
