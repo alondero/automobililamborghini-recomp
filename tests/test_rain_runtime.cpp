@@ -1,4 +1,5 @@
 #include "lambo_rain.h"
+#include "lambo_render_aspect.h"
 #include "lambo_mod_gameplay.h"
 #include "recomp.h"
 #include "rt64_extended_gbi.h"
@@ -27,8 +28,14 @@ void operator delete(void* p) noexcept { std::free(p); }
 void operator delete(void* p,size_t) noexcept { std::free(p); }
 
 static float target_aspect=16.0f/9;
-static unsigned aspect_reads=0;
-extern "C" float lambo_sky_target_aspect() { ++aspect_reads; return target_aspect; }
+static unsigned aspect_reads=0,aspect_calls=0;
+extern "C" float lambo_sky_target_aspect() {
+    ++aspect_calls;
+    return lambo::render::frame_aspects.get([] {
+        ++aspect_reads;
+        return lambo::render::Aspects{target_aspect,4.0f/3};
+    }).sky;
+}
 volatile int g_log_threshold=LAMBO_LEVEL_WARN;
 void lambo_log_write(LamboLogLevel,const char*,const char*,...) {}
 void require(bool good,const char* message) {
@@ -147,6 +154,7 @@ Frame frame(int slot,const std::vector<int>& order,int players=1) {
     w(root+56)=int32_t(0xB8000000);
     h(0x800CE6A4)=int16_t(players);
     size_t before=allocations;
+    unsigned reads_before=aspect_reads;
     lambo_rain_frame(rdram);
     float seconds=lambo::rain::animation_seconds();
     for (int p=0;p<players;++p) {
@@ -155,6 +163,8 @@ Frame frame(int slot,const std::vector<int>& order,int players=1) {
         lambo_rain_camera(rdram);
     }
     lambo_rain_publish(rdram,root,64);
+    require(aspect_reads==reads_before+(h(0x800CE6AC)==8 ? 1u : 0u),
+        "all Wet rain hooks share one aspect read per task build");
     Frame out{{},{},seconds,allocations-before};
     // The counters must account for every guest heap block, and none may overrun.
     heap::check_canaries();
@@ -203,6 +213,20 @@ void run(uint8_t* ram) {
     rdram=ram;
     using lambo::rain::counters;
     setup();
+    // Disabled visuals and zero intensity never reach the renderer, including
+    // when there is no presenter. Exercise road, camera and every sky slice.
+    for (unsigned disabled:{0u,80u<<8,2u}) {
+        w(settings_at)=int32_t(disabled);
+        unsigned before=aspect_reads,calls_before=aspect_calls;
+        lambo_rain_frame(rdram);
+        for (int i=0;i<32;++i) {
+            lambo_rain_road(rdram,record(i%4));
+            lambo_rain_camera(rdram);
+            require(lambo_rain_sky(rdram,i%8,i%2,123)==123,"disabled rain preserves sky texture");
+        }
+        require(aspect_reads==before && aspect_calls==calls_before,
+            "dry and visual Off rain do not query renderer aspect");
+    }
     const std::vector<int> order{0,1,2,3};
     for (unsigned style:{2u,1u}) {
         unsigned s=style|(80<<8)|0x10000;
@@ -248,7 +272,11 @@ void run(uint8_t* ram) {
         require(counters().full_writes==writes,"reordering rewrites no geometry");
         require(counters().builds==steady.builds,"reordering does not rebuild geometry");
         // Four viewports share one build per record and one sublist per task.
+        unsigned quad_reads=aspect_reads,quad_calls=aspect_calls;
         auto quad=frame(0,order,4);
+        require(aspect_calls==quad_calls+21,"each camera reuses its settings aspect query");
+        std::cout<<"rain aspect queries: style="<<style<<" dry=0 four_view_wet="
+                 <<aspect_reads-quad_reads<<" snapshot / "<<aspect_calls-quad_calls<<" helpers\n";
         require(quad.roads.size()==12 && quad.cameras.size()==4,"each viewport inserts rain");
         for (int v=1;v<4;++v) for (int k=0;k<3;++k) require(quad.roads[v*3+k]==quad.roads[k],"views share sublists");
         for (int k=0;k<3;++k) require(matches(quad.roads[k],k,s,quad.seconds),"four-player sublists match");

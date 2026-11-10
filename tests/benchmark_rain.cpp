@@ -7,6 +7,7 @@
 // -DLAMBO_RAIN_BENCH_PRODUCERS_ONLY against an older lambo_rain*.cpp measures
 // that revision with the same workload.
 #include "lambo_rain.h"
+#include "lambo_render_aspect.h"
 #include "lambo_mod_gameplay.h"
 #include "lambo_log.h"
 #include "recomp.h"
@@ -28,7 +29,11 @@ void* operator new(size_t size) {
 void operator delete(void* p) noexcept { std::free(p); }
 void operator delete(void* p,size_t) noexcept { std::free(p); }
 
-extern "C" float lambo_sky_target_aspect() { return 16.0f/9; }
+extern "C" float lambo_sky_target_aspect() {
+    return lambo::render::frame_aspects.get([] {
+        return lambo::render::Aspects{16.0f/9,4.0f/3};
+    }).sky;
+}
 volatile int g_log_threshold=LAMBO_LEVEL_WARN;
 void lambo_log_write(LamboLogLevel,const char*,const char*,...) {}
 namespace recomp {

@@ -24,17 +24,13 @@ void store(uint8_t* ram,uint32_t target,const uint32_t* words,size_t count) {
     std::memcpy(&word(ram,target),words,count*4);
 }
 bool native(uint32_t a,uint32_t bytes) { return (a&3)==0 && a>=0x80000000u && a<=0x80800000u-bytes; }
-// Game producer owns this sample. Reset at each task boundary; laziness keeps
-// every Dry/Off path independent of RT64's configuration mutex.
-float frame_aspect=NAN;
-float aspect() {
-    if (std::isnan(frame_aspect)) frame_aspect=lambo_sky_target_aspect();
-    return frame_aspect;
-}
-unsigned settings(uint8_t* ram) {
+unsigned settings(uint8_t* ram,float* aspect=nullptr) {
     if (!ram || half(ram,0x800CE6AC)!=8 || half(ram,0x800CE6B4)==4) return 0;
     unsigned s=lambo_rain_settings(ram);
-    return (s&3) && ((s>>8)&127) && aspect()>0 ? s : 0;
+    if (!(s&3) || !((s>>8)&127)) return 0;
+    const float target=lambo_sky_target_aspect();
+    if (aspect) *aspect=target;
+    return target>0 ? s : 0;
 }
 int slot(uint8_t* ram) {
     uint32_t task=word(ram,0x800A2BFC);
@@ -345,8 +341,7 @@ const Flow& view_flow(int player) { return flows[size_t(std::clamp(player,0,3))]
 extern "C" void lambo_rain_invalidate(void) { invalidate(); }
 
 extern "C" void lambo_rain_frame(uint8_t* ram) {
-    lambo::render::begin_aspect_frame();
-    frame_aspect=NAN;
+    lambo::render::frame_aspects.begin_frame();
     int index=slot(ram);
     if (index<0) return;
     if (segments.bucket_count()<256) segments.reserve(256);
@@ -478,7 +473,7 @@ namespace {
 // changing style between races never meets a smaller block.
 constexpr uint32_t camera_capacity=0xC000;
 // Width of the output in native pixels at 240 lines; RT64 widens views to it.
-float output_width() { return std::clamp(aspect()*240,240.0f,1920.0f); }
+float output_width(float aspect) { return std::clamp(aspect*240,240.0f,1920.0f); }
 // Native s15.16 matrix: sixteen integer halves, then sixteen fractions (row vectors).
 void store_matrix(uint8_t* ram,uint32_t at,const std::array<float,16>& m) {
     for (int k=0;k<16;++k) {
@@ -492,14 +487,14 @@ void store_matrix(uint8_t* ram,uint32_t at,const std::array<float,16>& m) {
 // (convertViewportRect rounds each edge to a whole pixel) but rasterizes
 // triangles at output resolution, so only triangles keep sub-pixel streaks
 // and soft drop edges. docs/rain.md, "Camera rain".
-void modern_camera(uint8_t* ram,int index,int players,int player,unsigned s) {
+void modern_camera(uint8_t* ram,int index,int players,int player,unsigned s,float aspect) {
     // The view in native 320x240 pixels; 3P/4P quadrants are widened like the game's.
     float vx=0,vy=0,vw=320,vh=240;
     if (players==2) { vh=120; vy=float(player)*vh; }
     if (players>=3) { vw=160; vh=120; vx=float(player%2)*vw; vy=float(player/2)*vh; }
     const uint16_t origin=players>=3 ? G_EX_ORIGIN_WIDE : G_EX_ORIGIN_NONE;
     // RT64 keeps an orthographic view's aspect and widens it to the output.
-    const float wide=vw*output_width()/320;
+    const float wide=vw*output_width(aspect)/320;
     static ScreenMesh mesh;
     screen_rain(wide,vh,player,seconds,flows[size_t(player)],float((s>>8)&127)/100,(s&0x10000)!=0,mesh);
     if (mesh.vertices.empty()) return;
@@ -587,13 +582,14 @@ void modern_camera(uint8_t* ram,int index,int players,int player,unsigned s) {
 }
 
 extern "C" void lambo_rain_camera(uint8_t* ram) {
-    unsigned s=settings(ram); int index=slot(ram);
+    float aspect=0;
+    unsigned s=settings(ram,&aspect); int index=slot(ram);
     int players=half(ram,0x800CE6A4),player=half(ram,0x800CE6A6)-1;
     if (!s || index<0 || players<1 || players>4 || player<0 || player>=players || shelter(ram,s)) return;
-    if ((s&3)==2) { modern_camera(ram,index,players,player,s); return; }
+    if ((s&3)==2) { modern_camera(ram,index,players,player,s,aspect); return; }
     // Retro: native-pixel rectangles. RT64 draws them on the 320x240 grid,
     // which is the chunky look this style asks for.
-    float full_width=output_width();
+    float full_width=output_width(aspect);
     float x0=160-full_width/2,y0=0,w=full_width,h=240;
     if (players==2) { h=120; y0=player*h; }
     if (players>=3) { w=full_width/2; h=120; x0+=(player%2)*w; y0=(player/2)*h; }

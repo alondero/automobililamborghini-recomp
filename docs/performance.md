@@ -604,3 +604,41 @@ the sky tests compare every tile pixel. These are synthetic host inputs, not a
 fixed Wet game replay. A recorded Wet replay display-list comparison remains
 deferred until a reproducible weather-mod replay fixture is available. Smoke
 scenarios use the supported USA ROM; they do not establish rain visual parity.
+
+## Per-frame mutex avoidance (2026-11-10)
+
+Issue #399. Rain now rejects disabled visuals before querying the renderer.
+Rain, sky and HUD share a lazy aspect snapshot for each guest graphics-task
+build. It is reset at both USA builder-entry hooks through `lambo_rain_frame`,
+so swap-chain dimensions, aspect mode/target and HUD ratio changes are read at
+the next build. No renderer publication/update paths need extra invalidation.
+The RT64 configuration mutex remains the authority for the first read.
+
+The native rain fixture counts presenter reads with a stand-in reader using
+the production cache. Counts below cover the frame hook, four views of four
+segment records and four camera hooks, with logging disabled and no sky slices:
+
+| Configuration queries per task | Before (source count) | After (host fixture) |
+| --- | ---: | ---: |
+| Dry or visual Off | 21 | 0 |
+| Wet, Retro or Modern | 25 | 1 |
+
+The Wet fixture makes 21 cached helper calls; cameras reuse the aspect from
+their settings check. Additional sky slices and HUD queries reuse the same
+snapshot. These are query counts, not measured lock waits or a frame-time claim.
+
+Replay's `should_exit` changes from one mutex acquisition per VI to zero,
+including failure before configuration and completion with exit-on-end off.
+Unconfigured physical throttle/brake updates and playback queries avoid the
+replay mutex. Configured frame verification and `Status` remain serialized.
+Harness VI sampling, counter reads and snapshots use relaxed atomic fields;
+concurrent diagnostic snapshots may span VIs. The result schema is unchanged.
+
+Validation on Windows, MinGW GCC 15.2.0, Release: the focused native rain,
+replay, sky and harness tests pass. Headless `harness-smoke` before and after
+consumed and verified 600/600 frames, reported `replay_complete`, produced a
+capture and observed 601 swaps. VI counts were 1249 and 1247 respectively;
+these are wall-clock samples and are not a replay frame clock. The changed
+production objects were rebuilt and linked with unchanged objects from the
+matching `49b1d18` build; ROM-derived output was reused without edits.
+Interactive resize/backend checks and contention timing were not run.

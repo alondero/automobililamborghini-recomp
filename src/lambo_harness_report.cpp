@@ -2,6 +2,7 @@
 
 #include "json/json.hpp"
 
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -9,7 +10,6 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
-#include <atomic>
 #include <string>
 #include <utility>
 
@@ -35,21 +35,25 @@ namespace {
 
 using json = nlohmann::json;
 
-struct Metrics {
-    // Only the VI thread owns the probe history and mutable snapshot.
-    // Readers get independent relaxed fields: diagnostic, never gameplay state.
-    Snapshot snapshot;
-    std::atomic<int> threads{0};
-    std::atomic<int> vis{0};
-    std::atomic<int> max_state{0};
-    std::atomic<int> current_state{0};
+// sample_vi and the probe history below have one writer: the VI callback.
+// Other threads read independent relaxed atomic fields for diagnostics only;
+// a concurrent snapshot may span adjacent VIs and is not a gameplay barrier.
+struct AtomicSnapshot {
+    std::atomic<int> threads{};
+    std::atomic<int> vis{};
+    std::atomic<bool> first_vi{};
+    std::atomic<int> max_state{};
+    std::atomic<int> current_state{};
     std::atomic<int> current_menu_screen{-1};
-    std::atomic<int> loaded_circuit{0};
-    std::atomic<int> swaps{0};
+    std::atomic<int> loaded_circuit{};
+    std::atomic<int> swaps{};
     std::atomic<int> player_vehicle{-1};
-    std::atomic<int> player_speed{0};
-    std::atomic<int> max_abs_player_speed{0};
+    std::atomic<int> player_speed{};
+    std::atomic<int> max_abs_player_speed{};
+};
 
+struct Metrics {
+    AtomicSnapshot snapshot;
     std::uint32_t last_vi_buffer{};
     int last_state{-1};
     int last_menu_screen{-9999};
@@ -79,11 +83,13 @@ void state_probe(int vi) {
     const int state = static_cast<int>(guest_halfword(rdram, 0x800CE6ACu));
     if (state < 0 || state > 16) return;
 
-    g_metrics.snapshot.current_state = state;
-    if (state > g_metrics.snapshot.max_state) g_metrics.snapshot.max_state = state;
+    g_metrics.snapshot.current_state.store(state, std::memory_order_relaxed);
+    if (state > g_metrics.snapshot.max_state.load(std::memory_order_relaxed)) {
+        g_metrics.snapshot.max_state.store(state, std::memory_order_relaxed);
+    }
     if (state == 8) {
         const int circuit = static_cast<int16_t>(guest_halfword(rdram, 0x800CE794u));
-        if (circuit >= 0 && circuit < 6) g_metrics.snapshot.loaded_circuit = circuit + 1;
+        if (circuit >= 0 && circuit < 6) g_metrics.snapshot.loaded_circuit.store(circuit + 1, std::memory_order_relaxed);
 
         constexpr std::uint32_t kVehicleBase = LAMBO_VEHICLE_BASE;
         constexpr std::uint32_t kVehicleStride = 0x10Cu;
@@ -92,12 +98,12 @@ void state_probe(int vi) {
                 static_cast<std::uint32_t>(vehicle) * kVehicleStride;
             if (static_cast<int16_t>(guest_halfword(rdram, base + 0x0Eu)) != 1) continue;
             const int speed = static_cast<int32_t>(guest_word(rdram, base + 0x90u));
-            g_metrics.snapshot.player_vehicle = vehicle;
-            g_metrics.snapshot.player_speed = speed;
+            g_metrics.snapshot.player_vehicle.store(vehicle, std::memory_order_relaxed);
+            g_metrics.snapshot.player_speed.store(speed, std::memory_order_relaxed);
             const int magnitude = speed == std::numeric_limits<int>::min()
                 ? std::numeric_limits<int>::max() : std::abs(speed);
-            if (magnitude > g_metrics.snapshot.max_abs_player_speed) {
-                g_metrics.snapshot.max_abs_player_speed = magnitude;
+            if (magnitude > g_metrics.snapshot.max_abs_player_speed.load(std::memory_order_relaxed)) {
+                g_metrics.snapshot.max_abs_player_speed.store(magnitude, std::memory_order_relaxed);
             }
             break;
         }
@@ -113,7 +119,7 @@ void menu_probe(int vi) {
     if (rdram == nullptr) return;
     const int screen = static_cast<int16_t>(guest_halfword(rdram, 0x80098562u));
     const int sub = static_cast<int16_t>(guest_halfword(rdram, 0x80098560u));
-    g_metrics.snapshot.current_menu_screen = screen;
+    g_metrics.snapshot.current_menu_screen.store(screen, std::memory_order_relaxed);
     if (screen != g_metrics.last_menu_screen || sub != g_metrics.last_menu_sub) {
         LAMBO_LOG("menu", "vi=%d  screen=%d sub=%d (was %d/%d)\n",
                   vi, screen, sub, g_metrics.last_menu_screen, g_metrics.last_menu_sub);
@@ -130,62 +136,52 @@ void pace_probe(int vi) {
     const std::uint32_t buffer = guest_word(rdram, next + 0x4u);
     if (buffer != g_metrics.last_vi_buffer) {
         g_metrics.last_vi_buffer = buffer;
-        ++g_metrics.snapshot.swaps;
+        g_metrics.snapshot.swaps.fetch_add(1, std::memory_order_relaxed);
     }
     if ((vi % 600) == 0) {
         LAMBO_LOG("pace", "vi=%d swaps_last_600vi=%d (~%.1f fps)\n",
-                  vi, g_metrics.snapshot.swaps - g_metrics.swaps_at_last_log,
-                  (g_metrics.snapshot.swaps - g_metrics.swaps_at_last_log) / 10.0);
-        g_metrics.swaps_at_last_log = g_metrics.snapshot.swaps;
+                  vi, g_metrics.snapshot.swaps.load(std::memory_order_relaxed) - g_metrics.swaps_at_last_log,
+                  (g_metrics.snapshot.swaps.load(std::memory_order_relaxed) - g_metrics.swaps_at_last_log) / 10.0);
+        g_metrics.swaps_at_last_log = g_metrics.snapshot.swaps.load(std::memory_order_relaxed);
     }
 }
 
 } // namespace
 
 void note_thread_created() {
-    const int count = g_metrics.threads.fetch_add(1, std::memory_order_relaxed) + 1;
+    const int count = g_metrics.snapshot.threads.fetch_add(1, std::memory_order_relaxed) + 1;
     if (count <= 12) LAMBO_LOG("probe", "game thread #%d started (osCreateThread)\n", count);
 }
 
 int vis_count() {
-    return g_metrics.vis.load(std::memory_order_relaxed);
+    return g_metrics.snapshot.vis.load(std::memory_order_relaxed);
 }
 
 int sample_vi() {
-    const int vi = ++g_metrics.snapshot.vis;
+    const int vi = g_metrics.snapshot.vis.fetch_add(1, std::memory_order_relaxed) + 1;
     state_probe(vi);
     menu_probe(vi);
     pace_probe(vi);
-    if (!g_metrics.snapshot.first_vi) {
-        g_metrics.snapshot.first_vi = true;
+    if (!g_metrics.snapshot.first_vi.exchange(true, std::memory_order_relaxed)) {
         LAMBO_LOG("probe", "FIRST VI retrace\n");
     }
-    g_metrics.vis.store(g_metrics.snapshot.vis, std::memory_order_relaxed);
-    g_metrics.max_state.store(g_metrics.snapshot.max_state, std::memory_order_relaxed);
-    g_metrics.current_state.store(g_metrics.snapshot.current_state, std::memory_order_relaxed);
-    g_metrics.current_menu_screen.store(g_metrics.snapshot.current_menu_screen, std::memory_order_relaxed);
-    g_metrics.loaded_circuit.store(g_metrics.snapshot.loaded_circuit, std::memory_order_relaxed);
-    g_metrics.swaps.store(g_metrics.snapshot.swaps, std::memory_order_relaxed);
-    g_metrics.player_vehicle.store(g_metrics.snapshot.player_vehicle, std::memory_order_relaxed);
-    g_metrics.player_speed.store(g_metrics.snapshot.player_speed, std::memory_order_relaxed);
-    g_metrics.max_abs_player_speed.store(g_metrics.snapshot.max_abs_player_speed, std::memory_order_relaxed);
     return vi;
 }
 
 Snapshot snapshot() {
-    Snapshot result;
-    result.threads = g_metrics.threads.load(std::memory_order_relaxed);
-    result.vis = g_metrics.vis.load(std::memory_order_relaxed);
-    result.max_state = g_metrics.max_state.load(std::memory_order_relaxed);
-    result.current_state = g_metrics.current_state.load(std::memory_order_relaxed);
-    result.current_menu_screen = g_metrics.current_menu_screen.load(std::memory_order_relaxed);
-    result.loaded_circuit = g_metrics.loaded_circuit.load(std::memory_order_relaxed);
-    result.swaps = g_metrics.swaps.load(std::memory_order_relaxed);
-    result.player_vehicle = g_metrics.player_vehicle.load(std::memory_order_relaxed);
-    result.player_speed = g_metrics.player_speed.load(std::memory_order_relaxed);
-    result.max_abs_player_speed = g_metrics.max_abs_player_speed.load(std::memory_order_relaxed);
-    result.first_vi = result.vis > 0;
-    return result;
+    Snapshot value;
+    value.threads = g_metrics.snapshot.threads.load(std::memory_order_relaxed);
+    value.vis = g_metrics.snapshot.vis.load(std::memory_order_relaxed);
+    value.first_vi = g_metrics.snapshot.first_vi.load(std::memory_order_relaxed);
+    value.max_state = g_metrics.snapshot.max_state.load(std::memory_order_relaxed);
+    value.current_state = g_metrics.snapshot.current_state.load(std::memory_order_relaxed);
+    value.current_menu_screen = g_metrics.snapshot.current_menu_screen.load(std::memory_order_relaxed);
+    value.loaded_circuit = g_metrics.snapshot.loaded_circuit.load(std::memory_order_relaxed);
+    value.swaps = g_metrics.snapshot.swaps.load(std::memory_order_relaxed);
+    value.player_vehicle = g_metrics.snapshot.player_vehicle.load(std::memory_order_relaxed);
+    value.player_speed = g_metrics.snapshot.player_speed.load(std::memory_order_relaxed);
+    value.max_abs_player_speed = g_metrics.snapshot.max_abs_player_speed.load(std::memory_order_relaxed);
+    return value;
 }
 
 void log_boot_summary() {

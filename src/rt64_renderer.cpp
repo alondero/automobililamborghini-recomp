@@ -1,4 +1,3 @@
-#include "lambo_render_aspect.h"
 // RT64 renderer context. The presenter boundary, local patches, and headless
 // fallback are documented in patches/README.md.
 //
@@ -33,6 +32,7 @@
 #include "lambo_gpu_advisory.h"
 #include "lambo_hud_widescreen.h"
 #include "lambo_sky_panorama.h"
+#include "lambo_render_aspect.h"
 #include "lambo_rt_shadows.h"
 #include "lambo_rt_evidence.h"
 #include "lambo_rt_production.h"
@@ -70,17 +70,8 @@ uint32_t DPC_TMEM_REG = 0;
 
 void dummy_check_interrupts() {}
 
-// Live swapchain handle for the widescreen HUD rect-aspect helper: the
-// game-space 2D HUD geometry shifts key off the effective rect-pin aspect, which depends
-// on the live output size and hr_option -- see lambo_ws_get_hud_rect_aspect_bits() below.
-// Sky coverage also reads the output aspect to extend its panorama tile strip.
-//
-// Written on the gfx thread (RT64Context ctor/dtor), read every frame on the CPU/
-// game-logic thread inside lambo_ws_get_hud_rect_aspect_bits() below -- unlike
-// get_resolution_scale() elsewhere in this file, which is only ever called from the
-// gfx thread itself. atomic (not a plain pointer) so the CPU thread can't observe a
-// torn or stale value; the dtor nulls it before `app` is torn down so a load racing
-// shutdown sees either the fully-live pointer or nullptr, never a dangling one.
+// Published by the gfx thread for guest-thread aspect snapshots. The runtime
+// stops guest producers before destroying the renderer context.
 std::atomic<RT64::Application*> g_lambo_active_app{nullptr};
 
 RT64::UserConfiguration::AspectRatio to_rt64(ultramodern::renderer::AspectRatio option) {
@@ -573,51 +564,63 @@ private:
 } // anonymous namespace
 
 namespace {
-struct AspectSnapshot { float sky=0, hud=4.0f/3.0f; };
-const AspectSnapshot& producer_aspect() {
-    thread_local uint64_t epoch=0;
-    thread_local bool sampled=false;
-    thread_local AspectSnapshot value;
-    if (sampled && epoch==lambo::render::aspect_epoch) return value;
-    epoch=lambo::render::aspect_epoch; sampled=true; value={};
-    auto* app=g_lambo_active_app.load(std::memory_order_acquire);
-    if (!app || !app->sharedQueueResources) return value;
-    auto& shared=*app->sharedQueueResources;
-    std::scoped_lock lock(shared.configurationMutex);
-    constexpr float source=4.0f/3.0f;
-    const float display=shared.swapChainHeight>0
-        ? float(shared.swapChainWidth)/float(shared.swapChainHeight) : source;
+lambo::render::Aspects read_frame_aspects() {
+    lambo::render::Aspects aspects;
+    auto* active_app = g_lambo_active_app.load(std::memory_order_acquire);
+    if (active_app == nullptr || !active_app->sharedQueueResources) return aspects;
+
+    auto& shared = *active_app->sharedQueueResources;
+    std::scoped_lock<std::mutex> lock(shared.configurationMutex);
+    const float source = 4.0f / 3.0f;
+    const auto w = shared.swapChainWidth;
+    const auto h = shared.swapChainHeight;
     switch (shared.userConfig.aspectRatio) {
-    case RT64::UserConfiguration::AspectRatio::Expand:
-        value.sky=std::max(source,display); break;
-    case RT64::UserConfiguration::AspectRatio::Manual:
-        value.sky=float(shared.userConfig.aspectTarget); break;
-    default: value.sky=source; break;
-    }
-    // Keep HUD travel aligned with the rect pins: Full, Clamp16x9 or Original.
-    if (shared.userConfig.aspectRatio==RT64::UserConfiguration::AspectRatio::Expand &&
-        shared.swapChainWidth>0 && shared.swapChainHeight>0 && display>source) {
-        float extension=0;
-        switch (shared.userConfig.extAspectRatio) {
-        case RT64::UserConfiguration::AspectRatio::Expand: extension=1; break;
+        case RT64::UserConfiguration::AspectRatio::Expand:
+            aspects.sky = h > 0 ? std::max(source, float(w) / float(h)) : source;
+            break;
         case RT64::UserConfiguration::AspectRatio::Manual:
-            extension=lambo_ws_hud_clamp_ext_percentage(display,source,float(shared.userConfig.extAspectTarget)); break;
-        default: break;
-        }
-        value.hud=lambo_ws_hud_effective_rect_aspect(display,source,extension);
+            aspects.sky = float(shared.userConfig.aspectTarget);
+            break;
+        default:
+            aspects.sky = source;
+            break;
     }
-    return value;
+    // Read the applied HUD policy mapped by set_application_user_config:
+    // Full=Expand, Clamp16x9=Manual, Original=Original. The dimensions and
+    // both policies share this lock, without a second frontend config read.
+    if (shared.userConfig.aspectRatio == RT64::UserConfiguration::AspectRatio::Expand && w > 0 && h > 0) {
+        const float display = float(w) / float(h);
+        if (display > source) {
+            float ext_percentage;
+            switch (shared.userConfig.extAspectRatio) {
+                case RT64::UserConfiguration::AspectRatio::Expand:
+                    ext_percentage = 1.0f;
+                    break;
+                case RT64::UserConfiguration::AspectRatio::Manual:
+                    ext_percentage = lambo_ws_hud_clamp_ext_percentage(
+                        display, source, float(shared.userConfig.extAspectTarget));
+                    break;
+                default:
+                    ext_percentage = 0.0f;
+                    break;
+            }
+            aspects.hud = lambo_ws_hud_effective_rect_aspect(display, source, ext_percentage);
+        }
+    }
+    return aspects;
 }
+} // namespace
+
+extern "C" float lambo_sky_target_aspect() {
+    return lambo::render::frame_aspects.get(read_frame_aspects).sky;
 }
 
-extern "C" float lambo_sky_target_aspect() { return producer_aspect().sky; }
-
-// Raw float bits consumed by guest HUD geometry. See docs/rain.md for the
-// shared per-task sample lifetime; rect pins keep their existing ratio policy.
+// Effective aspect reached by extended-GBI HUD rect pins, as raw float bits.
+// Guest geometry and sky/rain use one lazy snapshot per graphics-task build.
 extern "C" uint32_t lambo_ws_get_hud_rect_aspect_bits(void) {
-    const float aspect=producer_aspect().hud;
+    const float aspect = lambo::render::frame_aspects.get(read_frame_aspects).hud;
     uint32_t bits;
-    std::memcpy(&bits,&aspect,sizeof(bits));
+    std::memcpy(&bits, &aspect, sizeof(bits));
     return bits;
 }
 

@@ -33,7 +33,87 @@ void clear_environment(const char* name) {
 }
 }
 
-int main() {
+int playback_test(const std::string& mode) {
+    using namespace lambo::replay_runtime;
+    auto expect = [](bool value, const char* message) {
+        if (!value) std::cerr << message << '\n';
+        return value;
+    };
+    // Unconfigured hooks must be harmless, even without guest RAM.
+    lambo_replay_dispatch_begin(nullptr);
+    lambo_replay_dispatch_end(nullptr);
+    lambo_replay_input_tick(nullptr);
+    lambo_replay_state_loaded();
+    lambo::replay::InputFrame output{};
+    if (!expect(!should_exit() && !playback_owns_input() && !playback_frame(output),
+                "unconfigured replay must leave input and exit alone")) return 1;
+    if (mode == "invalid") {
+        set_environment("LAMBO_INPUT_REPLAY", "unused");
+        set_environment("LAMBO_INPUT_RECORD", "unused");
+        return expect(!initialize_from_environment() && should_exit() && status().failed &&
+                      terminal_reason() == "invalid_configuration",
+                      "initialization failure must publish exit before configuration") ? 0 : 1;
+    }
+    const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto path = std::filesystem::temp_directory_path() /
+        ("lambo-replay-fast-paths-" + std::to_string(nonce) + ".jsonl");
+    struct Cleanup {
+        std::filesystem::path path;
+        ~Cleanup() { std::error_code error; std::filesystem::remove(path, error); }
+    } cleanup{path};
+    const std::vector<lambo::replay::InputFrame> frames{
+        {0x8000, 12, -15, true, 30000, false, 0},
+        {0x4000, -25, 30, false, 0, true, 20000},
+        {0, 0, 0, false, 0, false, 0}};
+    {
+        lambo::replay::Recorder recorder(path);
+        for (const auto& frame : frames) if (!recorder.observe(frame)) return 1;
+        if (!recorder.finalize()) return 1;
+    }
+    set_environment("LAMBO_INPUT_RECORD", "");
+    set_environment("LAMBO_INPUT_REPLAY", path.string());
+    set_environment("LAMBO_INPUT_START_STATE", "8");
+    set_environment("LAMBO_INPUT_START_DELAY", "0");
+    set_environment("LAMBO_INPUT_EXIT_ON_END", mode == "stay" ? "0" : "1");
+    if (!initialize_from_environment()) return 1;
+    std::vector<std::uint8_t> ram(0x924000);
+    const std::int16_t race = 8;
+    std::memcpy(ram.data() + ((0x800CE6ACu ^ 2u) & 0xffffffu), &race, 2);
+    lambo_replay_dispatch_end(ram.data()); // start eligibility
+    for (std::size_t i = 0; i < frames.size(); ++i) {
+        lambo_replay_input_tick(ram.data());
+        if (!expect(playback_frame(output) && output == frames[i],
+                    "every staged frame must retain its digital and analog input")) return 1;
+        publish_physical_throttle(true, 0.9f);
+        publish_physical_brake(true, 0.9f);
+        if (mode == "load" && i == 1) lambo_replay_state_loaded();
+        if (mode == "overwrite" && i == 1) ram[(0x800A39E2u ^ 3u) & 0xffffffu] = 42;
+        lambo_replay_dispatch_begin(ram.data());
+        lambo_replay_dispatch_end(ram.data());
+        const auto state = status();
+        if (i == 1 && (mode == "load" || mode == "overwrite")) {
+            const auto reason = mode == "load" ? "state_loaded_during_replay" : "replay_input_overwritten";
+            return expect(should_exit() && state.failed && !state.complete &&
+                          state.frames_consumed == 1 && state.guest_frames_verified == 1 &&
+                          terminal_reason() == reason,
+                          "failure must preserve reason and stop before verifying another frame") ? 0 : 1;
+        }
+        if (!expect(!state.failed && state.frames_consumed == i + 1 &&
+                    state.guest_frames_verified == i + 1,
+                    "playback must verify and consume every frame in order")) return 1;
+    }
+    if (!expect(status().complete && should_exit() == (mode != "stay") &&
+                terminal_reason() == "replay_complete", "completion must respect exit_on_end")) return 1;
+    lambo_replay_input_tick(ram.data());
+    lambo_replay_dispatch_begin(ram.data());
+    lambo_replay_dispatch_end(ram.data());
+    return expect(playback_frame(output) && output == lambo::replay::InputFrame{} &&
+                  status().guest_frames_verified == frames.size(),
+                  "completed playback must retain neutral ownership without consuming more frames") ? 0 : 1;
+}
+
+int main(int argc, char** argv) {
+    if (argc > 1) return playback_test(argv[1]);
     lambo::replay_runtime::publish_physical_throttle(true, 0.5f);
     lambo::replay_runtime::publish_physical_brake(true, 0.25f);
     float throttle = 0.0f;
