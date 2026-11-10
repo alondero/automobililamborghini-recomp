@@ -5,7 +5,7 @@ display_name = "JP weather (experimental)"
 description = "Japanese race-slot weather on the USA cartridge. Development build."
 authors = ["Lamborghini Recompiled contributors"]
 game_id = "lamborghini"
-minimum_recomp_version = "0.10.3"
+minimum_recomp_version = "0.11.0"
 
 [[manifest.config_options]]
 id = "weather.mode"
@@ -140,3 +140,4 @@ elf_path = "../../build/jp-weather/weather.elf"
 mod_filename = "lambo_jp_weather"
 func_reference_syms_file = "../../lamborghini.syms.toml"
 data_reference_syms_files = []
+additional_files = ["../../LICENSE"]

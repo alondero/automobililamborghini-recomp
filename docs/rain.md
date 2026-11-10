@@ -18,10 +18,16 @@ the weather mod's fog and AI without rain art.
 Rain intensity and Camera droplets are independent settings. All three apply
 when the next race loads. Texture packs do not select the rain style.
 
-Package 0.3.0 requires the `lambo_register_rain_v1` base export. An older port
+Package 0.3.0 requires v0.11.0 or newer and the `lambo_register_rain_v1` base export. An older port
 rejects the package rather than partially loading its effects. No ray-tracing
 hardware is required. The diagnostic software renderer retains its original
 output; these effects require RT64.
+
+The November 2026 release checks visually verified Retro and Modern on Windows
+D3D12. The SM-T720 Android benchmark shell crashed with SIGSEGV at startup in
+all three weather-package attempts; dry races and texture packs completed.
+Android code-mod support remains experimental. Linux rain has not received a
+visual acceptance run.
 
 Dry, Night, US default and races that the weather resolver forces Dry emit no
 rain. The existing championship round selections and multiplayer restrictions

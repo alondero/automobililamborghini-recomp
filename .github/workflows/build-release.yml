@@ -38,7 +38,24 @@ env:
   JP_ROM_FILENAME: "Super Speed Race 64 (Japan).z64"
 
 jobs:
+  validate-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check requested tag matches the source version
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          python - <<'PY'
+          import os, re
+          from pathlib import Path
+          version = re.search(r'project\(lamborghini_modern VERSION ([\d.]+)', Path('CMakeLists.txt').read_text()).group(1)
+          if os.environ['RELEASE_TAG'] != 'v' + version:
+              raise SystemExit('Release tag must match CMake project version: v' + version)
+          PY
+
   build-linux:
+    needs: validate-release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -103,6 +120,20 @@ jobs:
           python scripts/gen_jp_syms_toml.py --check
           python tools/run_host_tests.py --require tests.test_jp_recompile --require tests.test_jp_addresses
 
+      - name: Build optional weather package
+        run: |
+          cmake --build build --target RecompModTool --parallel 2
+          python scripts/build_jp_weather_mod.py --clang clang --linker ld.lld --mod-tool build/lib/N64ModernRuntime/librecomp/N64Recomp/RecompModTool
+          python tools/check_jp_weather_mod.py --exe build/lamborghini_modern --package build/jp-weather/lambo_jp_weather.nrm --rom "$ROM_FILENAME"
+
+      - name: Upload optional weather package
+        uses: actions/upload-artifact@v4
+        with:
+          name: lamborghini-jp-weather
+          path: build/jp-weather/lambo_jp_weather.nrm
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Remove ROM before packaging
         if: always()
         run: rm -f "$ROM_FILENAME" "$JP_ROM_FILENAME"
@@ -117,6 +148,7 @@ jobs:
           # Crash-handler symbol table: probed next to the exe at runtime so
           # field crash dumps show function names, not raw N64 PCs (issue #80).
           cp lamborghini.syms.toml dist/
+          python scripts/stage_release_notices.py dist --platform linux
           cd dist && zip -r ../lamborghini-recomp-linux-x64.zip .
 
       - name: Upload artifact
@@ -127,6 +159,7 @@ jobs:
           retention-days: 14
 
   build-windows:
+    needs: validate-release
     runs-on: windows-latest
     steps:
       - name: Enable long paths
@@ -235,6 +268,8 @@ jobs:
           $missing = $payload | Where-Object { -not (Test-Path $_) }
           if ($missing) { throw "Packaging aborted -- required files missing: $($missing -join ', ')" }
           Copy-Item -Recurse $payload dist\
+          python scripts/stage_release_notices.py dist --platform windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Compress-Archive -Path dist\* -DestinationPath lamborghini-recomp-windows-x64.zip
 
       - name: Upload artifact
@@ -245,6 +280,7 @@ jobs:
           retention-days: 14
 
   build-android:
+    needs: validate-release
     # Android signing is required for a release. All four signing secrets
     # and both ROM asset secrets are validated up front in Step 1 so the
     # job fails fast (before toolchain install, before the keystore is
@@ -356,7 +392,9 @@ jobs:
             artifacts/lamborghini-recomp-linux-x64/lamborghini-recomp-linux-x64.zip \
             artifacts/lamborghini-recomp-windows-x64/lamborghini-recomp-windows-x64.zip \
             artifacts/lamborghini-recomp-android-arm64/lamborghini-recomp-android-arm64.apk \
+            artifacts/lamborghini-jp-weather/lambo_jp_weather.nrm \
             --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
             --title "${{ inputs.tag }}" \
             $( [ "${{ inputs.prerelease }}" = "true" ] && echo --prerelease ) \
             $( [ "${{ inputs.draft }}" = "true" ] && echo --draft ) \

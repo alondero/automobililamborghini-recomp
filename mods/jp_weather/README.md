@@ -64,7 +64,7 @@ The builder can use Clang in WSL while keeping the linker and packager native:
 python scripts/build_jp_weather_mod.py --wsl-distro Ubuntu --clang /usr/bin/clang --linker PATH_TO_LD_LLD_EXE --mod-tool PATH_TO_RECOMP_MOD_TOOL_EXE
 ~~~
 
-Package version 0.3.0 requires a port built with both
+Package version 0.3.0 requires port v0.11.0 or newer, built with both
 `lambo_register_ai_maneuver_cap_v1` and `lambo_register_rain_v1` exports.
 Older builds lack these exports and reject the package before gameplay.
 Install `build/jp-weather/lambo_jp_weather.nrm` through the Mods tab and restart.

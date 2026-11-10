@@ -1,0 +1,199 @@
+{
+  "date": "2026-11-10",
+  "commit": "8d208f23e466c6dac846162ebd8efa6a1ef35049",
+  "scope": "45 accepted Circuit 1 single-player race runs; same 1526-update input replay, car 0 and three laps. This verifies input consumption and movement, not lap completion.",
+  "measurement": "Median presentation FPS; first ten seconds after first presentation excluded. Three runs per case, two for fixed-2x enhanced Android controls.",
+  "pc": "Ryzen 9 3900X, RTX 3080, Windows, D3D12, 2560x1440, 60 Hz target. Other compilation/browser work remained active by request; overlapping ranges do not isolate code effects. PresentMon 2.6.0 records DXGI Present calls, not physical scanout.",
+  "android": "Galaxy Tab S5e SM-T720, Snapdragon 670/Adreno 615, Android 11, Turnip v25.3.0-R11, 2560x1438 surface, 60 Hz target. Original native libraries and assets run in a common isolated Java benchmark shell. SurfaceFlinger actual presentation timestamps, deduplicated with ring-overwrite checks.",
+  "presets": {
+    "basic": "Six cars, fixed 2x resolution, no MSAA, stock distance, no packs, weather or RT.",
+    "enhanced": "16 cars, HD texture pack, expanded geometry, 1.5x draw distance, Auto resolution, requested 4x MSAA and eight-ray RT sunlight shadows.",
+    "enhanced-fixed": "Same enhanced Android settings at fixed 2x resolution.",
+    "wet": "Enhanced plus JP weather 0.3.0, Wet, Heavy Modern rain and camera droplets."
+  },
+  "limitations": [
+    "Android RT sunlight shadows are unsupported; its driver falls back from requested 4x MSAA to one sample.",
+    "Android Auto changes from the old 6x policy to 3x; fixed-2x rows hold the pixel scale.",
+    "One slower repeat is retained for both newer Android builds; thermal status remained zero.",
+    "Weather is unavailable in v0.10.0/v0.10.3. Current Android weather crashes with startup SIGSEGV in all three attempts. No Android wet FPS is claimed.",
+    "Presentation includes interpolation; gameplay still targets 30 updates per second."
+  ],
+  "rows": [
+    {
+      "platform": "pc",
+      "profile": "basic",
+      "version": "v0.10.0",
+      "repetitions": 3,
+      "median_fps": 59.970310752660595,
+      "fps_min": 59.904751301082484,
+      "fps_max": 59.9827241570589,
+      "median_p99_frame_ms": 16.69284899999706,
+      "median_one_percent_low_fps": 57.91066654250628
+    },
+    {
+      "platform": "pc",
+      "profile": "basic",
+      "version": "v0.10.3",
+      "repetitions": 3,
+      "median_fps": 59.9538423204764,
+      "fps_min": 59.66429487128867,
+      "fps_max": 59.98555334294221,
+      "median_p99_frame_ms": 16.69811399998622,
+      "median_one_percent_low_fps": 56.9164532489364
+    },
+    {
+      "platform": "pc",
+      "profile": "basic",
+      "version": "current",
+      "repetitions": 3,
+      "median_fps": 59.89647573060887,
+      "fps_min": 59.881548287696866,
+      "fps_max": 59.97765059309552,
+      "median_p99_frame_ms": 16.831869999998972,
+      "median_one_percent_low_fps": 51.926644683004135
+    },
+    {
+      "platform": "pc",
+      "profile": "enhanced",
+      "version": "v0.10.0",
+      "repetitions": 3,
+      "median_fps": 52.16747082626707,
+      "fps_min": 34.51911718690617,
+      "fps_max": 59.859126623792264,
+      "median_p99_frame_ms": 35.52378000000617,
+      "median_one_percent_low_fps": 26.27379853800659
+    },
+    {
+      "platform": "pc",
+      "profile": "enhanced",
+      "version": "v0.10.3",
+      "repetitions": 3,
+      "median_fps": 54.62029956953128,
+      "fps_min": 49.69836897279278,
+      "fps_max": 59.98669775157965,
+      "median_p99_frame_ms": 34.90989999999883,
+      "median_one_percent_low_fps": 27.38449959733347
+    },
+    {
+      "platform": "pc",
+      "profile": "enhanced",
+      "version": "current",
+      "repetitions": 3,
+      "median_fps": 59.93320154379002,
+      "fps_min": 48.19243195840613,
+      "fps_max": 59.962610717681486,
+      "median_p99_frame_ms": 16.836970000000576,
+      "median_one_percent_low_fps": 54.792695125552385
+    },
+    {
+      "platform": "pc",
+      "profile": "wet",
+      "version": "current",
+      "repetitions": 3,
+      "median_fps": 47.584174508060066,
+      "fps_min": 32.9734376953486,
+      "fps_max": 57.80224999166258,
+      "median_p99_frame_ms": 36.20535100000169,
+      "median_one_percent_low_fps": 25.17187672073318
+    },
+    {
+      "platform": "android",
+      "profile": "basic",
+      "version": "v0.10.0",
+      "repetitions": 3,
+      "median_fps": 17.79745892050253,
+      "fps_min": 16.532239151125474,
+      "fps_max": 20.957655929284698,
+      "median_p99_frame_ms": 116.24494407689781,
+      "median_one_percent_low_fps": 8.327328603489436
+    },
+    {
+      "platform": "android",
+      "profile": "basic",
+      "version": "v0.10.3",
+      "repetitions": 3,
+      "median_fps": 39.52154292556506,
+      "fps_min": 23.356337852643954,
+      "fps_max": 39.63861133764711,
+      "median_p99_frame_ms": 49.81291700460133,
+      "median_one_percent_low_fps": 20.0709221145705
+    },
+    {
+      "platform": "android",
+      "profile": "basic",
+      "version": "current",
+      "repetitions": 3,
+      "median_fps": 38.729814308688375,
+      "fps_min": 23.19669719043615,
+      "fps_max": 39.33958564968474,
+      "median_p99_frame_ms": 49.8180142333149,
+      "median_one_percent_low_fps": 20.06861691529312
+    },
+    {
+      "platform": "android",
+      "profile": "enhanced",
+      "version": "v0.10.0",
+      "repetitions": 3,
+      "median_fps": 5.116972472666404,
+      "fps_min": 4.000483887942912,
+      "fps_max": 5.79593072501026,
+      "median_p99_frame_ms": 365.29538539471105,
+      "median_one_percent_low_fps": 2.3733723213892906
+    },
+    {
+      "platform": "android",
+      "profile": "enhanced",
+      "version": "v0.10.3",
+      "repetitions": 3,
+      "median_fps": 24.450132523626632,
+      "fps_min": 13.642576137391613,
+      "fps_max": 24.547001754520736,
+      "median_p99_frame_ms": 99.61351916514104,
+      "median_one_percent_low_fps": 10.036910584460768
+    },
+    {
+      "platform": "android",
+      "profile": "enhanced",
+      "version": "current",
+      "repetitions": 3,
+      "median_fps": 24.530807406862934,
+      "fps_min": 13.784279788956692,
+      "fps_max": 25.72945238375761,
+      "median_p99_frame_ms": 83.03086152052856,
+      "median_one_percent_low_fps": 10.28187092561057
+    },
+    {
+      "platform": "android",
+      "profile": "enhanced-fixed",
+      "version": "v0.10.0",
+      "repetitions": 2,
+      "median_fps": 16.35679350931857,
+      "fps_min": 16.11486534194647,
+      "fps_max": 16.59872167669067,
+      "median_p99_frame_ms": 132.84504245384596,
+      "median_one_percent_low_fps": 6.960138758050983
+    },
+    {
+      "platform": "android",
+      "profile": "enhanced-fixed",
+      "version": "v0.10.3",
+      "repetitions": 2,
+      "median_fps": 32.19373623849776,
+      "fps_min": 31.946071545636826,
+      "fps_max": 32.4414009313587,
+      "median_p99_frame_ms": 64.019155708302,
+      "median_one_percent_low_fps": 14.94573229888498
+    },
+    {
+      "platform": "android",
+      "profile": "enhanced-fixed",
+      "version": "current",
+      "repetitions": 2,
+      "median_fps": 32.81867336550253,
+      "fps_min": 32.49953459985749,
+      "fps_max": 33.13781213114756,
+      "median_p99_frame_ms": 49.87317199505924,
+      "median_one_percent_low_fps": 15.514280001211713
+    }
+  ]
+}

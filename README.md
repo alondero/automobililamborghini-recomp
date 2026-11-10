@@ -27,9 +27,9 @@ When both default filenames exist, the .z64 file takes priority. You can also
 pass a different ROM filename as the first command-line argument. Byte order
 is detected from the file contents; the original file is not changed.
 
-An Android ARM64 build path exists. It has a file picker for importing the
-ROM, but this checkout did not verify an APK or a device run. Treat Android
-as experimental. See the [Android guide](docs/ANDROID.md).
+Android ARM64 APKs are also published as experimental builds, with a file
+picker for importing the ROM. Device and driver compatibility varies. See
+the [Android guide](docs/ANDROID.md).
 
 ## Controls
 
@@ -115,6 +115,27 @@ minimum-version gate; keep filenames stable and check artwork compatibility.
 The port does not ship replacement artwork.
 See [Texture packs](docs/TEXTURES.md).
 
+### Optional weather and rain
+
+v0.11.0 adds the experimental **JP weather** package, available as
+`lambo_jp_weather.nrm` alongside the release downloads. On desktop:
+
+1. Open Settings > Mods and choose **Install Mods**, then select the `.nrm` file.
+2. Enable **JP weather (experimental)** and restart the game.
+3. Open its settings, choose **Weather: Wet**, then **Rain style: Retro** or
+   **Modern**. Set rain intensity and camera droplets as desired.
+4. Start a new race. Championship uses its individual round weather settings.
+
+Retro draws chunky pixel rain. Modern adds thin, speed-aware streaks, rounded
+lens droplets and rippling puddles. Both use storm clouds and wet-road effects.
+Rain does not require ray-tracing hardware or a texture pack.
+
+The package requires v0.11.0 or newer. Windows rain was tested with D3D12;
+Linux visual rain remains unverified. **Do not enable this code mod on Android:**
+the tested SM-T720 build crashes during startup with it enabled. Texture packs
+and dry races were tested separately. See [rain rendering](docs/rain.md) and
+[mod installation](docs/modding.md).
+
 Track Lab can apply experimental visibility corrections to stock tracks. It
 does not support general custom tracks, collision, navigation, or AI. See [Modding](docs/modding.md) and [Track Lab](docs/TRACK_LAB.md).
 
@@ -122,8 +143,8 @@ does not support general custom tracks, collision, navigation, or AI. See [Moddi
 
 - Only the North American USA release is supported.
 - Windows x64 and Linux x64 are the documented desktop release targets.
-- Android is an experimental build target. No current APK or Android device
-  verification is part of the support claim.
+- Android is experimental with device-specific driver limits. The optional
+  JP weather code mod crashes at startup on the tested SM-T720.
 - No current macOS release or end-to-end support claim is documented.
 - Mod support is experimental; port-patched functions have hook restrictions.
 - The port is in progress. A problem may depend on the graphics driver,
