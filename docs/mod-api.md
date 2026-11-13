@@ -4,6 +4,10 @@ Status: **Experimental**. The USA game interface complements the runtime's
 package loader, per-mod configuration and frontend UI exports. See
 [Modding](modding.md) for installation and fixture commands.
 
+The [gameplay extension design](gameplay-extension-seams.md) builds on this
+interface with proposed capability discovery and regional availability rules.
+Its new exports are not implemented; the declarations below remain current.
+
 [The guest header](../include/lambo/mod_api.h) and
 [import stubs](../include/lambo/mod_imports.c) define the MIPS interface. Compile
 the stubs once into a mod. `lambo_mod_api_version()` returns 1. Import functions

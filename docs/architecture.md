@@ -132,9 +132,12 @@ The desired path is better decompilation and source-level patches, followed by
 stable symbols and explicit hook contracts. A future code-mod API should expose
 versioned functions and data owned by the game or a documented mod layer. It
 should not require arbitrary mods to write raw addresses. No such complete API
-exists today. The [experimental package loader](modding.md) now provides
-stock-function hooks, package configuration, and a versioned logging export;
-it does not establish a general gameplay data API.
+exists today. The [experimental package loader](modding.md) provides
+stock-function hooks, package configuration, and a versioned logging export.
+The [experimental v1 game interface](mod-api.md) adds named data queries,
+lifecycle events and racer extensions, with USA-specific layout limits.
+The [gameplay extension design](gameplay-extension-seams.md) proposes capability
+discovery and regional availability rules without replacing those interfaces.
 
 The [guest-source candidate audit](guest-source-candidates.md) records the
 pre-migration ranking and bridge inventory that led to these replacements.
