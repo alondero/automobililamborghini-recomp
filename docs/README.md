@@ -110,6 +110,10 @@ status line before relying on a historical measurement.
 - [Peer-project comparison](peer-projects.md) records durable documentation
   patterns from official reference projects and marks hands-on claims that have
   not been checked.
+- [Targeted decompilation prompts](targeted-decomp-prompts.md) assesses selective
+  source recovery and supplies repeatable discovery and implementation prompts.
+- [Targeted decompilation peer research](targeted-decomp-peer-research.md)
+  compares source-level extension patterns in Shipwright, Banjo and related ports.
 - [Patch inventory](../patches/README.md) records local dependency and renderer
   boundaries. A generic dependency change is compared with upstream and recorded
   there, not as an issue on the upstream project.
