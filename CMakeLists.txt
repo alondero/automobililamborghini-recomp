@@ -629,6 +629,11 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_frame_pump_wiring.py
             ${CMAKE_CURRENT_SOURCE_DIR}
     )
+    add_test(NAME lambo_config_graphics_snapshot_locking
+        COMMAND ${LAMBO_PYTHON_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_graphics_snapshot_locking.py
+            ${CMAKE_CURRENT_SOURCE_DIR}
+    )
     add_test(NAME lambo_game_scenario_runner
         COMMAND ${LAMBO_PYTHON_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_game_scenario.py
