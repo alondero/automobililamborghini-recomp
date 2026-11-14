@@ -219,7 +219,9 @@ public final class LauncherActivity extends Activity {
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
                     setBusy(false);
-                    status.setText("ROM ready. Choose Play to start. Saves are kept in this app’s storage.");
+                    status.setText(uri == null && resumed
+                        ? "Starting game... Saves are kept in this app’s storage."
+                        : "ROM ready. Choose Play to start. Saves are kept in this app’s storage.");
                     // Import is a setup step; only the explicit Play action starts the game.
                     if (uri == null && resumed) startActivity(new Intent(this, GameActivity.class));
                 });
@@ -344,6 +346,7 @@ public final class LauncherActivity extends Activity {
     }
 
     private void cleanupTemporaryFiles() {
+        GraphicsRecovery.cleanupTemporaryFiles(this);
         File[] files = getFilesDir().listFiles();
         if (files == null) return;
         for (File file : files) {

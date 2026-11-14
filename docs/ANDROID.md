@@ -17,16 +17,26 @@ If graphics changes prevent startup, choose **Use low graphics settings** before
 Play. The confirmation lists the changes. It selects 2x original resolution and
 the original frame rate, and turns off anti-aliasing, supersampling, high-precision
 colour, ray-traced shadows and the developer overlay. Other readable settings
-are kept. The previous file is copied to `graphics-before-recovery.json` in app
-storage; malformed graphics JSON is backed up before being replaced. Each recovery
+are kept. The game reads `LamborghiniRecomp/graphics.json` inside app storage;
+recovery creates that directory if needed and copies the previous file to
+`LamborghiniRecomp/graphics-before-recovery.json`. Malformed graphics JSON is
+backed up before being replaced. Each recovery
 replaces this backup. Close the running game before saving. This cannot repair an
 incompatible driver or code mod.
 
+Recovery uses atomic replacement when available and falls back to ordinary
+replacement when the filesystem explicitly rejects atomic moves. Startup and
+recovery clean up interrupted recovery temporary files under the same game lock.
+
 Recovery is covered by `GraphicsRecoveryChecks` in the Android instrumentation
-suite. The same checks passed through `app_process` on an SM-T720 running Android
-11 using isolated temporary files: first use, preserved unknown settings,
-exact backup, malformed JSON, a held game lock and a failed backup write. This
-does not establish renderer startup or a full APK interaction result.
+suite. The original device check used the wrong configuration directory and did
+not prove recovery of the game's settings. The corrected checks target the native
+reader's directory and passed on a host JVM with Android boundary stubs and
+org.json: directory creation/failure, preserved unknown settings, exact backup,
+malformed JSON, held game lock, temporary cleanup, atomic-move fallback and failed
+writes. The corrected path check fails against the original implementation.
+The updated app and instrumentation sources compile, but corrected device
+execution, renderer startup and full APK interaction remain unverified.
 
 Touch controls provide a steering stick, A and B, a small C pad for the camera, Start, and Menu (the port settings, top right). Z is not shown. It is a second accelerator button in the game, so A covers it. SDL gamepads and
 keyboards use the desktop control mappings. Importing a ROM does not replace
