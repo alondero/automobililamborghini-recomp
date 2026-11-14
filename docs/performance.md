@@ -374,8 +374,10 @@ RT64 CPU time in `send_dl` on the tablet, from `simpleperf`:
 
 A word-at-a-time TMEM (texture memory) copy for aligned, non-RGBA32, non-TLUT
 loads matched the byte loop on 4,194,304 cases. It ran 2.4 times faster on the
-tablet's Cortex-A75 in an isolated benchmark. It is not applied. Texture hashes
-define texture-pack identity, so a hashing change must keep every value.
+tablet's Cortex-A75 in an isolated benchmark. It was not applied during this
+audit; [patch 0063](#rt64-display-list-cpu-cost-2026-11-14) now applies it with
+broader equivalence checks. Texture hashes define texture-pack identity, so a
+hashing change must keep every value.
 
 Verification on this checkout:
 
@@ -403,6 +405,104 @@ Android devices, Linux and a measured energy saving. The Japanese
 configuration's USA-input digest was updated with the generator's digest
 function, because the Japanese ROM was not available. Hooks are not carried to
 the Japanese configuration, so no other generated line changes.
+
+## RT64 display-list CPU cost (2026-11-14)
+
+[Issue 425](https://github.com/alondero/automobililamborghini-recomp/issues/425)
+applies the aligned TMEM copy as patch 0063. It requires four-byte-aligned
+RDRAM and eight-byte-aligned TMEM addresses. Other loads use the pinned byte
+loop. The copy reverses each RDRAM four-byte group and retains TMEM's odd-row
+swap. Load stepping, DXT, wrapping, RGBA32 and palette handling are unchanged.
+
+The ROM-free fixture compares 50,331,648 word cases, 24,592 successive load
+sequences and 368,880 texture hashes across all published versions (1-5).
+It passed on Windows x64 with MinGW GCC 15.2.0 and on the SM-T720 with NDK
+28.2 Clang 19, ARM64, `-O3`. The tablet's isolated 100,000-load benchmark,
+pinned to CPU 7, measured median byte/aligned times of 244.859/109.038 ms
+across three interleaved pairs, a 2.25x copy speedup. This is not a game FPS
+measurement. The fixture and cross-compile instructions are in
+[Testing](testing.md#test-layers).
+
+The [retained device results](evidence/rt64-send-dl-sm-t720.json) record the
+settings, commands, local log/capture paths, run order, sampling intervals
+and individual run medians. Android
+11 used Mesa Turnip v25.3.0-R11 and a 2560x1438 surface. Fixed 2x vertical
+resolution produced an 855x480 expanded-aspect target; requested MSAA2X fell
+back to one sample. There were no packs, weather or RT shadows. Each build
+ran in the same private benchmark Java shell, leaving player saves untouched.
+Both native libraries came from the same freshly generated USA build, NDK
+28.2 Clang 19.0.1 Release, differing only in the aligned copy.
+
+Each case runs three times per build. Time trial uses
+byte/aligned/aligned/byte/byte/aligned order; attract uses
+byte/aligned/byte/byte/aligned/aligned after repeating an attempt interrupted
+by Android's APK-submission prompt before any display list. Time trial uses
+`recordings/circuit-1-time-trial-car-0.jsonl`, warp
+`1:3:0:1`, mode 0. The compared interval is replay updates 240-1440 inclusive;
+timing excludes the beginning and end of the 1526-update recording. Attract sampling uses
+display lists 800-1400 in the first race, after title/menu warm-up. CPU time
+uses `CLOCK_THREAD_CPUTIME_ID`; wall time includes GPU waits and scheduling.
+Temporary phase probes are identical in both builds and removed from the
+production APK. Hash-detail collection and `simpleperf` run separately.
+
+Medians of the three run medians, milliseconds except FPS:
+
+| Metric | Trial byte | Trial aligned | Attract byte | Attract aligned |
+| --- | ---: | ---: | ---: | ---: |
+| `send_dl` thread CPU | 14.35 | 12.67 | 14.06 | 12.42 |
+| `send_dl` wall | 23.72 | 22.56 | 23.69 | 22.05 |
+| Block-copy wall | 3.28 | 1.48 | 3.50 | 1.50 |
+| `fullSync` thread CPU, inclusive | 10.79 | 9.03 | 10.01 | 8.24 |
+| TMEM-hash wall | 1.96 | 1.92 | 1.88 | 1.76 |
+| Graphics-fence wait wall | 7.98 | 8.92 | 7.52 | 8.37 |
+| `workload_ms` | 26.1 | 27.6 | 24.3 | 25.7 |
+| Presented FPS | 40.4 | 41.5 | 41.5 | 43.1 |
+| Game FPS | 28.8 | 29.6 | 28.1 | 28.6 |
+
+The CPU reduction is 11.7% in each case. Trial CPU run medians range from
+14.29-14.37 ms before and 12.49-12.71 ms after; attract from 13.89-14.12 ms
+before and 12.32-12.44 ms after. Phase timers overlap and cannot be added.
+`workload_ms` and FPS use complete five-second render-cost windows inside
+the selected interval. These are successful RT64 swapchain presentations,
+including interpolation, rather than physical scanout measurements. FPS
+ranges overlap: trial 40.4-40.5 before versus 40.4-41.6 after; attract
+40.7-42.0 before versus 40.6-43.6 after. The workload timer and fence wait
+did not improve; this establishes a display-list CPU saving, not a general
+FPS speedup. All 6,005 compared trial-update hash counts/digests across the
+six measured runs matched the first byte-loop run.
+
+Profiling findings:
+
+- `fullSync` is an inclusive function, containing load replay, hashing, native
+  framebuffer rendering and guest-RAM readback. A 12-second `simpleperf`
+  capture recorded 12,684 samples with none lost. On the graphics thread,
+  `send_dl` accounted for 88.17%, `fullSync` 65.93%, block loads 27.10% and
+  `TMEMHasher::hash` 10.62%; these shares overlap. The diagnostic saw one
+  `fullSync` and one graphics-worker fence wait per sampled display list.
+  The default `renderToRAM=true` path waits before `copyNativeToRAM`; removing
+  that wait would change guest-memory visibility. No redundant barrier was
+  identified, and synchronization is unchanged.
+- The two diagnostic launches compared 716,066 normal texture hashes over
+  1,326 common replay updates. Every update had the same hash count and
+  rolling output digest. Of those hashes, 562,676 repeated an output value
+  within the update, but no identical request repeated without an intervening
+  TMEM load. A cache based only on a texture address or tile descriptor would
+  need additional validation of the bytes and palette. Hashing already uses
+  xxHash's inline implementation. The algorithm, version and uploads remain
+  unchanged.
+
+The fixture proves byte equality against the pinned loader; the game digest
+check covers the observed hash stream. Neither establishes every game's
+behavior or a safe general hash cache. Other devices, texture packs, weather,
+multiplayer, energy use and desktop game rendering were not measured here.
+
+Final verification used the production native library without timing probes
+in the private Java shell. It completed all 1,526 replay updates with exit
+code 0, 1,526 guest frames verified, 1,527 swaps, 3,451 VIs and final state 8.
+The captured race frame was visually inspected on the tablet. The supported
+Android script built and packaged the production APK. The host Python suite
+ran 427 tests successfully, with 10 skips. The patch-series, documentation,
+branch-whitespace checks and independent standards/spec reviews passed.
 
 ## Android render cost (2026-10-29)
 
@@ -516,7 +616,7 @@ measure an older revision with the same workload, compile the benchmark with
 on the include path. Medians of three interleaved runs, MinGW GCC 15.2.0
 `-O2 -DNDEBUG`, Ryzen 9 3900X, other work running:
 
-| Producers, 25 segments | e053389 per task (µs) | Cached per task (µs) | e053389 allocations | Cached allocations |
+| Producers, 25 segments | e053389 per task (Âµs) | Cached per task (Âµs) | e053389 allocations | Cached allocations |
 | --- | ---: | ---: | ---: | ---: |
 | 36 faces, Retro, 1P | 447 | 1.2 | 957 | 0 |
 | 36 faces, Modern, 1P | 3649 | 182 | 1139 | 0 |
@@ -536,7 +636,7 @@ Modern camera rain changed from sub-pixel rectangles to triangles; see
 [Rain rendering](rain.md#camera-rain). One run of `lambo_rain_benchmark` on the
 same machine after the change, producers per task, steady frames:
 
-| Producers, 25 segments | Steady per task (µs) | Steady allocations |
+| Producers, 25 segments | Steady per task (Âµs) | Steady allocations |
 | --- | ---: | ---: |
 | 36 faces, Modern, 1P | 108 | 0 |
 | 36 faces, Modern, 4P | 121 | 0 |
@@ -551,7 +651,7 @@ Issue #410 made the streaks a drop volume that follows each view's car (see
 [Rain rendering](rain.md#streaks-follow-the-car)). One later run on the same
 machine, with the benchmark's views at rest:
 
-| Producers, 25 segments | Steady per task (µs) | Steady allocations |
+| Producers, 25 segments | Steady per task (Âµs) | Steady allocations |
 | --- | ---: | ---: |
 | 36 faces, Modern, 1P | 105 | 0 |
 | 36 faces, Modern, 4P | 112 | 0 |
