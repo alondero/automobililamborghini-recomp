@@ -706,3 +706,80 @@ these are wall-clock samples and are not a replay frame clock. The changed
 production objects were rebuilt and linked with unchanged objects from the
 matching `49b1d18` build; ROM-derived output was reused without edits.
 Interactive resize/backend checks and contention timing were not run.
+
+## Game thread and producer hooks (2026-11-14)
+
+Status: bounded Windows measurements for
+[issue 426](https://github.com/alondero/automobililamborghini-recomp/issues/426).
+The [retained evidence](evidence/game-thread-profile-426.json) records binary
+identity, settings, CPU counters, sampled task timings and renderer reports.
+This is a profiling experiment, not an optimization or an A/B speedup claim.
+
+The workloads use `recordings/circuit-1-time-trial-car-0.jsonl`: the time-trial
+scenario's `1:1:0:1` warp, mode 0, and a `1:3:0:4` warp, mode 2. Only player one
+consumes the recording in four-player mode. Both runs consumed and verified
+all 1,526 updates, reached state 8 and produced 1,527 swaps. This verifies
+movement and input consumption, not a completed lap or four human inputs.
+Both use fixed 2x, no MSAA, display-rate interpolation, expanded geometry,
+1.5x draw distance, default fog/HUD policies, and no packs, mods, weather or RT.
+
+Windows used a Ryzen 9 3900X, RTX 3080, D3D12, a 1280x720 window on a 120 Hz
+display, and MinGW GCC 15.2.0 Release (`-O3 -DNDEBUG`). Aspect expansion made
+the internal image 853x480. The reused November 10 executable has a 0.10.3
+CMake cache; its source reference is `8d208f2`. Current `37d6df6` changes that
+reference's CMake version and documentation/packaging, with no gameplay or
+hook source changes. The executable does not embed an exact source revision.
+Android cross-compilation ran concurrently on the Windows host. These are
+not isolated workstation measurements or a low-end hardware specification.
+
+WPR's `CPU.Verbose.File` profile failed with `0xc5585011`: this session could
+not enable the system profiling policy. The fallback read `GetThreadTimes`
+over 15 seconds, starting ten seconds after the first prepared task. A
+temporary sampler also suspended each named guest thread, read its RIP with
+`GetThreadContext`, resumed it immediately and waited 2 ms with a 1 ms timer
+resolution. Toolhelp module bases relocated the executable's symbols. This
+is an intrusive wall-clock sampler, not ETW or an on-CPU sample distribution.
+Most samples were waiting outside the executable; no fine hook ranking is
+inferred from their small counts.
+
+| Windows workload | Busiest guest CPU / 15 s | All seven guest threads / 15 s | Prepare median / maximum (µs/task) | Game FPS |
+| --- | --- | --- | --- | --- |
+| 1P time trial | 0.422 s | 1.203 s | 45.8 / 65.0 | 30.0 |
+| 4P split screen | 0.828 s | 1.734 s | 172.7 / 197.7 | 29.9–30.0 |
+
+The prepare columns contain seven diagnostic samples per run wholly inside
+the capture interval, with 2,370–4,540 commands in 1P and 14,348–15,800 in 4P.
+The existing probe times the HUD/fog walk and rain publication after task
+validation, before log formatting. It samples the first twelve tasks, then
+every sixtieth task. The table excludes startup; its maximum is a sampled
+maximum, not a worst-case bound on every task. Warm renderer reports averaged
+1.0–1.3 ms per rendered frame in 1P and 2.1–2.2 ms in 4P, with GPU averages of
+0.1 and 0.2 ms respectively. Matching averaged 0.6–0.7 and 6.2–7.2 ms per game
+workload. Those wall times include renderer waits and are not guest CPU time.
+The separate SP Task thread used 0.188 s and 0.203 s of CPU over the same 15 s
+windows; these are thread totals, not exclusive `aspMain` timings. The Gfx
+thread used 1.766 s and 5.281 s respectively. Its work is distinct from the
+guest producer hooks and from RT64's matching/render threads.
+
+These Windows samples satisfy the issue's sub-500 µs/task check and show guest
+CPU headroom at the game's 30 Hz target. They do not justify a guest-source
+replacement, skipping the F3DEX walk, or caching draw-distance writes across
+configuration and save-state changes.
+
+For reproduction, enable `RT64_RENDER_COST_REPORT=1`, run the executable with
+`--verbose` or `--log-level=debug`, and set `LAMBO_WARP`, `LAMBO_WARP_MODE`,
+`LAMBO_INPUT_REPLAY`, `LAMBO_INPUT_START_STATE=8`, `LAMBO_INPUT_START_DELAY=0`
+and `LAMBO_INPUT_EXIT_ON_END=1`. Isolate graphics, controller Pak and user
+configuration as the scenario runner does. Use a window: the checked-in
+time-trial scenario is headless and therefore skips RT64. This checkout does
+not read `LAMBO_LOG_LEVEL` or `LAMBO_LOG_CATEGORIES`; the CLI flag activates
+the existing `gfx-policy` probe. Keep raw logs and profiles local; only
+non-ROM aggregate evidence belongs in the repository.
+
+Any proposed optimization must first identify a limiting hook or guest
+function. Freeze the same replay and settings, exclude warmup, and use at
+least five interleaved A/B runs with separate CPU, GPU and presentation
+timings. Precommit acceptance of at least 80% lower targeted hook cost and
+at least 0.5 ms/frame saved in the limiting stage. Preserve guest timing,
+HUD/fog results, interpolation tags and configuration/save-state restoration.
+No optimization has been implemented or tested against those thresholds.

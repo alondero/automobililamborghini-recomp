@@ -1,0 +1,824 @@
+{
+  "date": "2026-11-14",
+  "source_commit": "37d6df6225200324fe0def71884d9ceecc49ec14",
+  "rom_sha256": "cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c",
+  "replay": {
+    "path": "recordings/circuit-1-time-trial-car-0.jsonl",
+    "sha256": "86103630224e57c5ff6048630afd958e99721f985ce989e00ec743aebbc858f8",
+    "updates": 1526
+  },
+  "scope": "Bounded profiling, not an A/B optimization benchmark. One accepted capture per platform/workload. Only player one consumes the replay in four-player mode.",
+  "configuration": {
+    "res_option": "Original2x",
+    "msaa_option": "None",
+    "rr_option": "Display",
+    "rt_shadows": false,
+    "texture_pack": "",
+    "no_lod": true,
+    "draw_distance": 1.5,
+    "weather": "Dry",
+    "mods": []
+  },
+  "platforms": {
+    "windows": {
+      "os": "Windows 11 Pro Insider Preview 10.0.28120",
+      "cpu": "AMD Ryzen 9 3900X (12 cores / 24 threads)",
+      "gpu": "NVIDIA GeForce RTX 3080",
+      "backend": "D3D12",
+      "compiler": "MinGW GCC 15.2.0",
+      "optimization": "Release, -O3 -DNDEBUG",
+      "surface": "1280x720@120Hz",
+      "internal": "853x480, horizontal aspect expansion",
+      "binary_sha256": "4aceb9627d695d919789e8df489119f56ecabb1bede05f106143164f244f4487",
+      "provenance": "Reused 2026-11-10 local build, CMake cache version 0.10.3. Source and patch inputs match 8d208f2; current HEAD differs in CMake version and documentation/packaging. Exact binary source revision is not embedded.",
+      "profiling": "WPR CPU.Verbose.File failed with 0xc5585011 (system profiling policy privilege). Fallback: GetThreadTimes over 15 s and temporary SuspendThread/GetThreadContext RIP sampler, Sleep(2), timeBeginPeriod(1), module relocation from Toolhelp. Not ETW or an on-CPU sampling profile.",
+      "host_load": "Six-job Android cross-compilation ran concurrently; no isolated performance claim."
+    },
+    "android": {
+      "os": "Android 11",
+      "device": "Galaxy Tab S5e SM-T720",
+      "soc": "Snapdragon 670 / Adreno 615",
+      "backend": "Vulkan",
+      "driver": "Mesa Turnip v25.3.0-R11",
+      "compiler": "Android NDK r28c Clang",
+      "optimization": "Release, -O3 -DNDEBUG",
+      "surface": "2560x1600@60Hz",
+      "internal": "768x480, horizontal aspect expansion",
+      "provenance": "Freshly generated USA game/RSP sources and native build at source_commit. Separate debug Java profiling shell; native Release library unchanged.",
+      "native_sha256": "dff69f325f9b1a2b974055f5157626b2ea69d230468589268148c098c35b7c20",
+      "simpleperf": "1.build.12821384"
+    }
+  },
+  "runs": [
+    {
+      "platform": "windows",
+      "workload": "1p",
+      "warp": "1:1:0:1",
+      "warp_mode": 0,
+      "profile_start_utc": "2026-11-14T11:06:24.880000+00:00",
+      "profile_seconds": 15.002406,
+      "guest_threads": [
+        {
+          "tid": 67152,
+          "name": "Game Thread 1",
+          "cpu_seconds": 0.09375
+        },
+        {
+          "tid": 59240,
+          "name": "Game Thread 0",
+          "cpu_seconds": 0.03125
+        },
+        {
+          "tid": 50372,
+          "name": "Game Thread 3",
+          "cpu_seconds": 0.421875
+        },
+        {
+          "tid": 62712,
+          "name": "Game Thread 0",
+          "cpu_seconds": 0.109375
+        },
+        {
+          "tid": 64532,
+          "name": "Game Thread 4",
+          "cpu_seconds": 0.203125
+        },
+        {
+          "tid": 60284,
+          "name": "Game Thread 3",
+          "cpu_seconds": 0.21875
+        },
+        {
+          "tid": 72204,
+          "name": "Game Thread 6",
+          "cpu_seconds": 0.125
+        }
+      ],
+      "named_threads": [
+        {
+          "tid": 76776,
+          "name": "SDLAudioP2",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 64196,
+          "name": "Gfx Thread",
+          "cpu_seconds": 1.765625
+        },
+        {
+          "tid": 72972,
+          "name": "SP Task Thread",
+          "cpu_seconds": 0.1875
+        },
+        {
+          "tid": 55280,
+          "name": "D3D Background Thread 0",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 57788,
+          "name": "D3D Background Thread 1",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 56180,
+          "name": "D3D Background Thread 2",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 76660,
+          "name": "D3D Background Thread 3",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 74772,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.0625
+        },
+        {
+          "tid": 49540,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.015625
+        },
+        {
+          "tid": 70412,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 20968,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 50424,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 62908,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.03125
+        },
+        {
+          "tid": 60716,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.25
+        },
+        {
+          "tid": 76820,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 73844,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 47452,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 68320,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 58560,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 67496,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 6556,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 62344,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 62592,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 67812,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 55840,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 74716,
+          "name": "RT64 Texture",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 77336,
+          "name": "RT64 Stream",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 14392,
+          "name": "RT64 Stream",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 51400,
+          "name": "RT64 Stream",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 70012,
+          "name": "RT64 Stream",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 52060,
+          "name": "RT64 Stream",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 51644,
+          "name": "RT64 Stream",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 77476,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.0625
+        },
+        {
+          "tid": 48664,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.015625
+        },
+        {
+          "tid": 70708,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.03125
+        },
+        {
+          "tid": 49432,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.09375
+        },
+        {
+          "tid": 15224,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 70740,
+          "name": "RT64 Workload",
+          "cpu_seconds": 1.375
+        },
+        {
+          "tid": 62708,
+          "name": "RT64 Idle",
+          "cpu_seconds": 0.984375
+        },
+        {
+          "tid": 68896,
+          "name": "RT64 Present",
+          "cpu_seconds": 14.203125
+        },
+        {
+          "tid": 64788,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.015625
+        },
+        {
+          "tid": 67336,
+          "name": "VI Thread",
+          "cpu_seconds": 0.09375
+        },
+        {
+          "tid": 71100,
+          "name": "Timer Thread",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 67152,
+          "name": "Game Thread 1",
+          "cpu_seconds": 0.09375
+        },
+        {
+          "tid": 59240,
+          "name": "Game Thread 0",
+          "cpu_seconds": 0.03125
+        },
+        {
+          "tid": 50372,
+          "name": "Game Thread 3",
+          "cpu_seconds": 0.421875
+        },
+        {
+          "tid": 62712,
+          "name": "Game Thread 0",
+          "cpu_seconds": 0.109375
+        },
+        {
+          "tid": 64532,
+          "name": "Game Thread 4",
+          "cpu_seconds": 0.203125
+        },
+        {
+          "tid": 60284,
+          "name": "Game Thread 3",
+          "cpu_seconds": 0.21875
+        },
+        {
+          "tid": 72204,
+          "name": "Game Thread 6",
+          "cpu_seconds": 0.125
+        }
+      ],
+      "prepare_samples": [
+        {
+          "time_utc": "2026-11-14 11:06:26",
+          "commands": 2370,
+          "elapsed_us": 41.4
+        },
+        {
+          "time_utc": "2026-11-14 11:06:28",
+          "commands": 3847,
+          "elapsed_us": 44.2
+        },
+        {
+          "time_utc": "2026-11-14 11:06:30",
+          "commands": 4540,
+          "elapsed_us": 65.0
+        },
+        {
+          "time_utc": "2026-11-14 11:06:32",
+          "commands": 3929,
+          "elapsed_us": 47.9
+        },
+        {
+          "time_utc": "2026-11-14 11:06:34",
+          "commands": 3437,
+          "elapsed_us": 53.0
+        },
+        {
+          "time_utc": "2026-11-14 11:06:36",
+          "commands": 2915,
+          "elapsed_us": 38.9
+        },
+        {
+          "time_utc": "2026-11-14 11:06:38",
+          "commands": 2854,
+          "elapsed_us": 45.8
+        }
+      ],
+      "render_cost_after_first_two_reports": [
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.8 frames=603/603 frame_ms=1.1/5.7 gpu_ms=0.1/0.4 workload_ms=5.0/10.8 setup_ms=0.7 match_ms=0.6",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.6 frames=599/599 frame_ms=1.1/4.4 gpu_ms=0.1/0.3 workload_ms=5.2/9.6 setup_ms=0.8 match_ms=0.7",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.1 frames=604/604 frame_ms=1.0/4.4 gpu_ms=0.1/0.4 workload_ms=4.6/10.5 setup_ms=0.6 match_ms=0.6",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.6 frames=597/597 frame_ms=1.2/4.1 gpu_ms=0.1/0.6 workload_ms=5.6/18.5 setup_ms=0.7 match_ms=0.7",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.2 frames=600/604 frame_ms=1.2/25.4 gpu_ms=0.1/0.4 workload_ms=5.6/26.0 setup_ms=0.7 match_ms=0.7",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.8 frames=604/604 frame_ms=1.3/4.7 gpu_ms=0.1/0.3 workload_ms=5.8/9.9 setup_ms=0.7 match_ms=0.6",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.0 frames=604/604 frame_ms=1.0/5.4 gpu_ms=0.1/0.4 workload_ms=4.7/9.9 setup_ms=0.6 match_ms=0.6",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.0 frames=600/600 frame_ms=1.1/3.9 gpu_ms=0.1/0.4 workload_ms=5.3/10.3 setup_ms=0.7 match_ms=0.7"
+      ],
+      "harness": {
+        "exit_code": 0,
+        "final_state": 8,
+        "loaded_circuit": 1,
+        "max_abs_player_speed": 323,
+        "max_state": 8,
+        "menu_screen": 0,
+        "outcome": "passed",
+        "player_speed": 313,
+        "player_vehicle": 1,
+        "reason": "replay_complete",
+        "replay": {
+          "active": true,
+          "complete": true,
+          "configured": true,
+          "dispatcher_ticks": 1527,
+          "failed": false,
+          "frames_consumed": 1526,
+          "guest_frames_verified": 1526,
+          "recording": false,
+          "total_frames": 1526
+        },
+        "schema": 1,
+        "state_load": {
+          "applied": false,
+          "failed": false,
+          "requested": false
+        },
+        "swaps": 1527,
+        "vis": 3096,
+        "warp": {
+          "applied": true,
+          "car": 0,
+          "circuit": 1,
+          "failed": false,
+          "laps": 1,
+          "mode": 0,
+          "players": 1,
+          "requested": true
+        }
+      }
+    },
+    {
+      "platform": "windows",
+      "workload": "4p",
+      "warp": "1:3:0:4",
+      "warp_mode": 2,
+      "profile_start_utc": "2026-11-14T11:07:18.879000+00:00",
+      "profile_seconds": 15.00149,
+      "guest_threads": [
+        {
+          "tid": 62812,
+          "name": "Game Thread 1",
+          "cpu_seconds": 0.171875
+        },
+        {
+          "tid": 64228,
+          "name": "Game Thread 0",
+          "cpu_seconds": 0.03125
+        },
+        {
+          "tid": 43992,
+          "name": "Game Thread 3",
+          "cpu_seconds": 0.828125
+        },
+        {
+          "tid": 63020,
+          "name": "Game Thread 0",
+          "cpu_seconds": 0.046875
+        },
+        {
+          "tid": 67108,
+          "name": "Game Thread 4",
+          "cpu_seconds": 0.21875
+        },
+        {
+          "tid": 52080,
+          "name": "Game Thread 3",
+          "cpu_seconds": 0.3125
+        },
+        {
+          "tid": 64420,
+          "name": "Game Thread 6",
+          "cpu_seconds": 0.125
+        }
+      ],
+      "named_threads": [
+        {
+          "tid": 63184,
+          "name": "SDLAudioP2",
+          "cpu_seconds": 0.09375
+        },
+        {
+          "tid": 640,
+          "name": "Gfx Thread",
+          "cpu_seconds": 5.28125
+        },
+        {
+          "tid": 74672,
+          "name": "SP Task Thread",
+          "cpu_seconds": 0.203125
+        },
+        {
+          "tid": 60916,
+          "name": "D3D Background Thread 0",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 62484,
+          "name": "D3D Background Thread 1",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 65292,
+          "name": "D3D Background Thread 2",
+          "cpu_seconds": 0.015625
+        },
+        {
+          "tid": 60544,
+          "name": "D3D Background Thread 3",
+          "cpu_seconds": 0.015625
+        },
+        {
+          "tid": 53544,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.1875
+        },
+        {
+          "tid": 57292,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.015625
+        },
+        {
+          "tid": 54480,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 61136,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 6816,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 17280,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.078125
+        },
+        {
+          "tid": 50500,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 36164,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 59916,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.3125
+        },
+        {
+          "tid": 65076,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 58308,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 65072,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 70868,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 70556,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 69980,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 22624,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 67344,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 53640,
+          "name": "RT64 Shader",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 66536,
+          "name": "RT64 Texture",
+          "cpu_seconds": 0.015625
+        },
+        {
+          "tid": 57792,
+          "name": "RT64 Stream",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 76864,
+          "name": "RT64 Stream",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 53232,
+          "name": "RT64 Stream",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 77696,
+          "name": "RT64 Stream",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 68300,
+          "name": "RT64 Stream",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 56140,
+          "name": "RT64 Stream",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 56632,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.015625
+        },
+        {
+          "tid": 50020,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 56528,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 37524,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.078125
+        },
+        {
+          "tid": 60052,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 47840,
+          "name": "RT64 Workload",
+          "cpu_seconds": 5.953125
+        },
+        {
+          "tid": 62588,
+          "name": "RT64 Idle",
+          "cpu_seconds": 1.171875
+        },
+        {
+          "tid": 75952,
+          "name": "RT64 Present",
+          "cpu_seconds": 14.15625
+        },
+        {
+          "tid": 61584,
+          "name": "RT64 Buffer",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 77540,
+          "name": "VI Thread",
+          "cpu_seconds": 0.015625
+        },
+        {
+          "tid": 71240,
+          "name": "Timer Thread",
+          "cpu_seconds": 0.0
+        },
+        {
+          "tid": 62812,
+          "name": "Game Thread 1",
+          "cpu_seconds": 0.171875
+        },
+        {
+          "tid": 64228,
+          "name": "Game Thread 0",
+          "cpu_seconds": 0.03125
+        },
+        {
+          "tid": 43992,
+          "name": "Game Thread 3",
+          "cpu_seconds": 0.828125
+        },
+        {
+          "tid": 63020,
+          "name": "Game Thread 0",
+          "cpu_seconds": 0.046875
+        },
+        {
+          "tid": 67108,
+          "name": "Game Thread 4",
+          "cpu_seconds": 0.21875
+        },
+        {
+          "tid": 52080,
+          "name": "Game Thread 3",
+          "cpu_seconds": 0.3125
+        },
+        {
+          "tid": 64420,
+          "name": "Game Thread 6",
+          "cpu_seconds": 0.125
+        }
+      ],
+      "prepare_samples": [
+        {
+          "time_utc": "2026-11-14 11:07:20",
+          "commands": 15800,
+          "elapsed_us": 197.7
+        },
+        {
+          "time_utc": "2026-11-14 11:07:22",
+          "commands": 14686,
+          "elapsed_us": 166.5
+        },
+        {
+          "time_utc": "2026-11-14 11:07:24",
+          "commands": 14942,
+          "elapsed_us": 192.4
+        },
+        {
+          "time_utc": "2026-11-14 11:07:26",
+          "commands": 14759,
+          "elapsed_us": 160.9
+        },
+        {
+          "time_utc": "2026-11-14 11:07:28",
+          "commands": 14348,
+          "elapsed_us": 172.7
+        },
+        {
+          "time_utc": "2026-11-14 11:07:30",
+          "commands": 14685,
+          "elapsed_us": 169.2
+        },
+        {
+          "time_utc": "2026-11-14 11:07:32",
+          "commands": 14789,
+          "elapsed_us": 191.7
+        }
+      ],
+      "render_cost_after_first_two_reports": [
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.9 frames=604/604 frame_ms=2.1/9.2 gpu_ms=0.2/0.4 workload_ms=15.2/21.4 setup_ms=6.9 match_ms=6.7",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.9 frames=599/600 frame_ms=2.1/11.1 gpu_ms=0.2/0.4 workload_ms=15.9/25.8 setup_ms=7.3 match_ms=7.2",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.1 frames=604/604 frame_ms=2.1/6.9 gpu_ms=0.2/0.4 workload_ms=15.5/23.1 setup_ms=7.1 match_ms=7.0",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.9 frames=603/603 frame_ms=2.1/5.7 gpu_ms=0.2/0.4 workload_ms=14.7/19.4 setup_ms=6.4 match_ms=6.2",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.0 frames=599/603 frame_ms=2.2/19.0 gpu_ms=0.2/0.4 workload_ms=15.5/29.2 setup_ms=6.6 match_ms=6.5",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.0 frames=604/604 frame_ms=2.1/9.6 gpu_ms=0.2/0.4 workload_ms=15.3/23.0 setup_ms=7.0 match_ms=6.8",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=29.9 present_fps=118.0 frames=591/591 frame_ms=2.2/6.2 gpu_ms=0.2/0.4 workload_ms=15.1/19.3 setup_ms=6.7 match_ms=6.5",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.0 frames=600/600 frame_ms=2.2/5.9 gpu_ms=0.2/0.4 workload_ms=15.2/20.7 setup_ms=6.3 match_ms=6.2"
+      ],
+      "harness": {
+        "exit_code": 0,
+        "final_state": 8,
+        "loaded_circuit": 1,
+        "max_abs_player_speed": 174,
+        "max_state": 8,
+        "menu_screen": 0,
+        "outcome": "passed",
+        "player_speed": 103,
+        "player_vehicle": 1,
+        "reason": "replay_complete",
+        "replay": {
+          "active": true,
+          "complete": true,
+          "configured": true,
+          "dispatcher_ticks": 1527,
+          "failed": false,
+          "frames_consumed": 1526,
+          "guest_frames_verified": 1526,
+          "recording": false,
+          "total_frames": 1526
+        },
+        "schema": 1,
+        "state_load": {
+          "applied": false,
+          "failed": false,
+          "requested": false
+        },
+        "swaps": 1527,
+        "vis": 3099,
+        "warp": {
+          "applied": true,
+          "car": 0,
+          "circuit": 1,
+          "failed": false,
+          "laps": 3,
+          "mode": 2,
+          "players": 4,
+          "requested": true
+        }
+      }
+    }
+  ]
+}
