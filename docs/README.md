@@ -104,6 +104,8 @@ status line before relying on a historical measurement.
   Donkey Kong runtime, frontend, and authoring patterns used by this integration.
 - [Mod game interface](mod-api.md) defines versioned guest data, lifecycle
   events, racer extensions and private utility stores.
+- [Gameplay extension design](gameplay-extension-seams.md) proposes capability
+  discovery and stable named seams, with a pit-setting example and ROM limits.
 - [Mod loader audit](mod-loader-audit.md) records A21 coverage,
   peer comparisons, and the actual prerequisites for the JP gameplay mods.
 
