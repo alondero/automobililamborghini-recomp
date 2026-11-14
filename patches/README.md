@@ -90,6 +90,32 @@ significant single-space lines from `git diff --check`;
 | 0060 | RT64 | Frame matching (`GameFrame::matchScene`) reuses sorted vectors instead of rebuilding `std::multimap` and `std::set` containers every frame. Call hashes sort by hash, then projection and call index, the multimap's insertion order for equal hashes. Check pairs are sorted and made unique, the set's order. Iteration and matching results are unchanged; after the first frames no allocation is needed. On an Adreno 650 phone, Android's allocator was about half of the RT64 workload thread, and matching fell from about 12.8 to 3.5 ms per game frame. Applied after 0059. Compared 2026-10-29 with pinned RT64 and [upstream main at d9817c6](https://github.com/rt64/rt64/blob/d9817c68ffd7328cd0af383af124971489366e18/src/hle/rt64_game_frame.cpp), whose matching code is the same. Patch 0061 replaces the sorted call-hash vectors; the sorted, unique check pairs remain. No upstream issue was opened. |
 | 0061 | RT64 | Frame matching pairs draw calls of equal hash through joined keys instead of visiting every pair of calls. Each call adds keys holding only what decides its check pairs: for transforms the hash, world-matrix count, workload and first world matrix; for tiles the hash, tile count and slot, whether the call matches tiles, TMEM hash and tile index; for look-ats the hash, workload and first face index. Equal keys are merged, then the current and previous keys of each hash are joined. Repeated geometry drawn under one matrix therefore adds its transform pairs once. The sorted, unique check pairs are the same as before, so every transform, tile and look-at match is unchanged; look-at indices are still read only for calls with a partner, because rectangle calls have no face indices. On the desktop, matching fell from about 1.6-2.1 to 0.44-0.64 ms per game frame on all six tracks, and from 7.5 to 1.4 ms in two-player split screen. Applied after 0060. Compared 2026-10-29 with pinned RT64 and [upstream main at d9817c6](https://github.com/rt64/rt64/blob/d9817c68ffd7328cd0af383af124971489366e18/src/hle/rt64_game_frame.cpp), whose `rt64_game_frame.cpp` is identical to the pinned file. `tests/test_rt64_frame_matching.py` compiles the new `rt64_game_call_keys.h` against the call-by-call `std::multimap`/`std::set` loop on random frames, and requires equal check pairs, look-at reads only for calls with a partner, and no allocation after warm-up. No upstream issue was opened. |
 | 0062 | Plume inside RT64 | Vulkan `copyTextureRegion` handles a placed-footprint destination with a subresource source and issues `vkCmdCopyImageToBuffer`. Pinned Plume falls through to the image-to-image branch for this direction and dereferences a null destination texture, so the production readback path is unusable on Vulkan. The branch is a backport of [Plume `0ce184b`](https://github.com/renderbag/plume/commit/0ce184b19270e49236afbb74052a6b267494b86b) (`Support texture readback through copyTextureRegion`, #114); the pinned tree has only the buffer-to-image direction. It honors destination X/Y/Z within the footprint, row pitch and height, the source subresource mip level and array layer, the image layout, and a source box's offset and extent. Applied after 0055. `tests/test_vulkan_texture_readback.py` compiles the production method against a recording Vulkan boundary, and the ROM-free GPU probe uses the production copy with a padded, offset footprint before reading pixels after the completion fence. On Windows with an RTX 3080 the probe passed; the Khronos validation layer was unavailable and Android was not rerun. No upstream issue was opened. |
+| 0063 | RT64 | Aligned word-at-a-time TMEM loads preserve the byte loop's contents and every texture hash. Applies everywhere after 0061; RGBA32, TLUT and unaligned loads retain the byte loop. See [aligned TMEM loads](#aligned-tmem-loads) for the upstream comparison and differential test. |
+
+## Aligned TMEM loads
+
+Patch 0063 copies an aligned eight-byte TMEM word as two four-byte groups,
+reversing each group's RDRAM byte order and retaining the odd-row swap.
+The fast path requires a four-byte-aligned RDRAM address and an
+eight-byte-aligned TMEM address. `memcpy` avoids typed pointer aliasing and
+host pointer alignment requirements. RGBA32, TLUT and unaligned loads keep
+the original byte loop. Block DXT stepping, row skipping and TMEM wrapping
+are unchanged. The patch applies on every platform after 0061.
+
+Compared on 2026-11-14 with pinned RT64
+`f0728a2520d5aa735886240de3fee75cc805f6d6` and
+[upstream main at d9817c6](https://github.com/rt64/rt64/blob/d9817c68ffd7328cd0af383af124971489366e18/src/hle/rt64_rdp.cpp):
+both use the same byte loop and load-stepping helpers. Upstream has unrelated
+scissor-aspect changes elsewhere in that file. No upstream issue was opened.
+
+`tests/test_rt64_tmem_copy.py` replays the patch into an isolated tree and
+compiles the complete load helpers against the pinned implementation.
+It compares 50,331,648 word cases, 24,592 load sequences and 368,880 hashes
+across versions 1 through 5. Coverage includes every source and destination
+byte alignment, RGBA32 and TLUT fallback, odd rows, all 12-bit DXT values,
+zero-length loads, wrapping, skipped rows and successive partial overwrites.
+The same fixture runs on Android and has an optional `--benchmark` mode.
+See [send_dl measurements](../docs/performance.md#rt64-display-list-cpu-cost-2026-11-14).
 
 ## Mapped buffer memory
 
