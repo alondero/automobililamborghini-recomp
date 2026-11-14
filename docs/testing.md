@@ -58,17 +58,19 @@ checks its changes rather than rechecking every historical file.
 ## Continuous integration
 
 The Host checks workflow runs on every push and pull request. It installs NumPy,
-initializes the pinned RT64, Plume, RT64 shader compiler and RecompFrontend
+initializes the pinned RT64, Plume, RT64 shader compiler, xxHash and RecompFrontend
 checkouts, fetches the pinned Android SDL source, checks the complete branch
 diff, then runs:
 
 ~~~text
-python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool --require tests.test_vulkan_mapped_memory --require tests.test_vulkan_texture_readback --require tests.test_vulkan_clear_bounds --require tests.test_vulkan_shader_nonuniform --require tests.test_android_swapchain_format --require tests.test_android_sdl_surface --require tests.test_vulkan_swapchain --require tests.test_android_presentation_lifecycle --require tests.test_android_activity_lifecycle
+python tools/run_host_tests.py --require tests.test_patch_composability --require tests.test_rt64_tmem_copy --require tests.test_rt_shadow_capture --require tests.test_vulkan_descriptor_pool --require tests.test_vulkan_mapped_memory --require tests.test_vulkan_texture_readback --require tests.test_vulkan_clear_bounds --require tests.test_vulkan_shader_nonuniform --require tests.test_android_swapchain_format --require tests.test_android_sdl_surface --require tests.test_vulkan_swapchain --require tests.test_android_presentation_lifecycle --require tests.test_android_activity_lifecycle
 ~~~
 
 Skipping a test in a required module, or failing to discover the module,
 fails the job. ROM-dependent tests may still skip: public pull requests do not
-receive the private ROM. To run the SDL tests locally, fetch SDL first:
+receive the private ROM. The required TMEM copy fixture uses RT64's nested
+xxHash checkout to compare all supported texture-hash versions. To run the
+SDL tests locally, fetch SDL first:
 `python -c "from scripts.build_android import fetch_dependency; fetch_dependency('SDL')"`. Locally,
 `--require-all` requires every Python test, including ROM checks, to execute.
 

@@ -1,4 +1,5 @@
 """Compare patched TMEM loads with the pinned byte loop, including texture hashes."""
+import os
 import shutil
 import subprocess
 import tempfile
@@ -44,7 +45,7 @@ class TMEMCopyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="lambo-tmem-") as temporary:
             tree = Path(temporary)
             cpp = write_fixture(tree)
-            exe = tree / "fixture.exe"
+            exe = tree / ("fixture.exe" if os.name == "nt" else "fixture")
             build = subprocess.run([
                 "g++", "-std=c++17", "-O2", "-Wall", "-Wextra",
                 "-I", str(tree / "src"), "-I", str(RT64 / "src"),
