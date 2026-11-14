@@ -1,6 +1,7 @@
 package io.github.alondero.lamborghinirecomp;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
@@ -33,6 +34,7 @@ public final class LauncherActivity extends Activity {
     private Button systemDriver;
     private Button touchControls;
     private Button diagnostics;
+    private Button safeGraphics;
     private boolean resumed;
 
     @Override protected void onResume() { super.onResume(); resumed = true; }
@@ -47,7 +49,14 @@ public final class LauncherActivity extends Activity {
         layout.setPadding(padding, padding, padding, padding);
         status = new TextView(this);
         status.setTextSize(20);
-        status.setText("Automobili Lamborghini: Recompiled\n\nImport your own USA cartridge dump to play. Touch controls and Bluetooth/USB gamepads are supported.");
+        TextView title = new TextView(this);
+        title.setText("Automobili Lamborghini: Recompiled");
+        title.setTextSize(24);
+        layout.addView(title);
+        status.setAccessibilityLiveRegion(android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        status.setText(new File(getFilesDir(), ROM).isFile()
+            ? "ROM ready. Choose Play to start."
+            : "Import your own USA cartridge dump to enable Play. Touch controls and Bluetooth/USB gamepads are supported.");
         layout.addView(status);
         select = new Button(this);
         select.setText("Import ROM");
@@ -63,6 +72,15 @@ public final class LauncherActivity extends Activity {
         play.setEnabled(new File(getFilesDir(), ROM).isFile());
         play.setOnClickListener(v -> prepare(null));
         layout.addView(play);
+        safeGraphics = new Button(this);
+        safeGraphics.setText("Use low graphics settings");
+        safeGraphics.setOnClickListener(v -> new AlertDialog.Builder(this)
+            .setTitle("Use low graphics settings?")
+            .setMessage("For a game that runs slowly or fails after changing graphics. Uses 2x original resolution and the original frame rate; disables anti-aliasing, supersampling, high-precision colour, ray-traced shadows and the developer overlay. Other readable settings are kept. The previous graphics file is backed up. Close the game first, then choose Play after saving. This cannot fix incompatible drivers or mods.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save low settings", (dialog, which) -> recoverGraphics())
+            .show());
+        layout.addView(safeGraphics);
         driverInfo = new TextView(this);
         driverInfo.setText("GPU driver: " + DriverImport.description(this) + "\nIf graphics fail or look wrong on an Adreno device, import a Mesa Turnip driver ZIP.");
         layout.addView(driverInfo);
@@ -168,6 +186,27 @@ public final class LauncherActivity extends Activity {
         systemDriver.setEnabled(!busy);
         touchControls.setEnabled(!busy);
         diagnostics.setEnabled(!busy);
+        safeGraphics.setEnabled(!busy);
+    }
+
+    private void recoverGraphics() {
+        setBusy(true);
+        status.setText("Saving low graphics settings...");
+        IMPORTS.execute(() -> {
+            String message;
+            try {
+                GraphicsRecovery.apply(this);
+                message = "Low graphics settings saved. Choose Play to try again.";
+            } catch (Exception error) {
+                message = "Could not save graphics settings: " + error.getMessage();
+            }
+            final String resultMessage = message;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                status.setText(resultMessage);
+                setBusy(false);
+            });
+        });
     }
 
     private void prepare(Uri uri) {
@@ -180,8 +219,9 @@ public final class LauncherActivity extends Activity {
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
                     setBusy(false);
-                    status.setText("ROM ready. Saves are kept in this app’s storage.");
-                    if (resumed) startActivity(new Intent(this, GameActivity.class));
+                    status.setText("ROM ready. Choose Play to start. Saves are kept in this app’s storage.");
+                    // Import is a setup step; only the explicit Play action starts the game.
+                    if (uri == null && resumed) startActivity(new Intent(this, GameActivity.class));
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {

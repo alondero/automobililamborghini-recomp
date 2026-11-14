@@ -12,6 +12,22 @@ compatibility. The APK contains no ROM. Import your own USA cartridge dump using
 the launcher; `.z64`, `.v64`, and `.n64` byte orders are accepted and the complete
 ROM is validated before replacing an existing import.
 
+Importing stays on the launcher. Choose **Play** when you are ready.
+If graphics changes prevent startup, choose **Use low graphics settings** before
+Play. The confirmation lists the changes. It selects 2x original resolution and
+the original frame rate, and turns off anti-aliasing, supersampling, high-precision
+colour, ray-traced shadows and the developer overlay. Other readable settings
+are kept. The previous file is copied to `graphics-before-recovery.json` in app
+storage; malformed graphics JSON is backed up before being replaced. Each recovery
+replaces this backup. Close the running game before saving. This cannot repair an
+incompatible driver or code mod.
+
+Recovery is covered by `GraphicsRecoveryChecks` in the Android instrumentation
+suite. The same checks passed through `app_process` on the connected Android
+device using isolated temporary files: first use, preserved unknown settings,
+exact backup, malformed JSON, a held game lock and a failed backup write. This
+does not establish renderer startup or a full APK interaction result.
+
 Touch controls provide a steering stick, A and B, a small C pad for the camera, Start, and Menu (the port settings, top right). Z is not shown. It is a second accelerator button in the game, so A covers it. SDL gamepads and
 keyboards use the desktop control mappings. Importing a ROM does not replace
 your saves.
@@ -27,8 +43,8 @@ stay pressed.
 
 The launcher's **Touch controls** button selects the behaviour: **Auto**, the
 default, hides the controls while a controller is connected; **Always** keeps
-them; **Never** hides them, including Menu. To get Menu back after
-**Never**, choose Auto or Always in the launcher. The choice is stored on the
+them; **Never** hides the driving controls. **Menu stays available in every mode**,
+so Settings remains reachable if a controller disconnects. The choice is stored on the
 device and does not affect the desktop port.
 
 Hiding follows whether a controller is connected, not which player it is

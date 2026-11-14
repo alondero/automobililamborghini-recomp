@@ -1,1 +1,12 @@
 body { font-family: LatoLatin; }
+
+paddock-rail { display: flex; }
+paddock-actions { padding: 64dp; }
+paddock-status { display: none; }
+
+/* Reserve the narrow viewport for navigation, not decorative artwork. */
+@media (max-width: 1000dp) {
+    paddock-rail { display: none; }
+    paddock-actions { padding: 24dp; }
+    paddock-status { display: block; }
+}

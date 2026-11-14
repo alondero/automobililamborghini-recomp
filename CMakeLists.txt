@@ -1113,6 +1113,11 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         add_test(NAME lambo_frontend_debugger_default COMMAND lambo_frontend_debugger_tests)
         add_test(NAME lambo_frontend_debugger_enabled COMMAND lambo_frontend_debugger_tests enabled)
 
+        add_executable(lambo_launcher_layout_tests tests/test_launcher_layout.cpp)
+        target_link_libraries(lambo_launcher_layout_tests PRIVATE RmlUi::Core)
+        add_test(NAME lambo_launcher_layout COMMAND lambo_launcher_layout_tests
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/frontend/recomp.rcss")
+
         add_executable(lambo_frontend_asset_url_tests tests/test_frontend_asset_url.cpp)
         target_include_directories(lambo_frontend_asset_url_tests PRIVATE
             lib/RecompFrontend/recompui/src)
