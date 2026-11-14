@@ -7,7 +7,7 @@
     "sha256": "86103630224e57c5ff6048630afd958e99721f985ce989e00ec743aebbc858f8",
     "updates": 1526
   },
-  "scope": "Bounded profiling, not an A/B optimization benchmark. One retained Windows capture per workload; Android capture is pending the issue 425 session releasing the shared tablet. Only player one consumes the replay in four-player mode.",
+  "scope": "Bounded profiling, not an A/B optimization benchmark. One retained Windows capture and one final Android capture per workload. Earlier Android attempts are excluded. Only player one consumes replay in four-player mode.",
   "configuration": {
     "res_option": "Original2x",
     "msaa_option": "None",
@@ -40,14 +40,86 @@
       "soc": "Snapdragon 670 / Adreno 615",
       "backend": "Vulkan",
       "driver": "Mesa Turnip v25.3.0-R11",
-      "compiler": "Android NDK r28c Clang",
+      "compiler": "Android NDK 28.2.13676358, Clang 19.0.1",
       "optimization": "Release, -O3 -DNDEBUG",
-      "provenance": "Freshly generated USA game/RSP sources and native build at source_commit. Separate debug Java profiling shell; native Release library unchanged.",
-      "native_sha256": "dff69f325f9b1a2b974055f5157626b2ea69d230468589268148c098c35b7c20",
+      "provenance": "Fresh supported scripts/build_android.py generation/build/package at source_commit after PR 428. Release ARM64 native library; isolated debug Java shell, no native profiling probes added. Staged unstripped symbols match the installed stripped ELF build ID.",
+      "native_sha256": "a09d71315a49f067746575ce80ed21ec47339ce03f3b7fce8ca3c9e0e33921cb",
       "simpleperf": "1.build.12821384",
-      "status": "Native build confirmed. Capture pending issue 425 releasing the shared tablet; runtime settings below are intended, not an accepted measurement.",
-      "surface_expected": "2560x1600@60Hz",
-      "internal_expected": "768x480, horizontal aspect expansion"
+      "status": "Two final foreground-validated 15 s user-CPU captures with complete 1526-update replays; zero sample loss and zero truncated stack samples.",
+      "previous_unmeasured_build": {
+        "provenance": "Freshly generated USA game/RSP sources and native build at source_commit. Separate debug Java profiling shell; native Release library unchanged.",
+        "native_sha256": "dff69f325f9b1a2b974055f5157626b2ea69d230468589268148c098c35b7c20",
+        "status": "Native build confirmed. Capture pending issue 425 releasing the shared tablet; runtime settings below are intended, not an accepted measurement.",
+        "surface_expected": "2560x1600@60Hz",
+        "internal_expected": "768x480, horizontal aspect expansion"
+      },
+      "source_commit": "27c52ad669b6bb94c97c18a2993d38cf36b5fa0f",
+      "packaged_native_sha256": "262169863f05247f5dc82ab32720444e81cc192b750795563baa3d092c4ea39e",
+      "elf_build_id": "af3b601ac389749449e3fde8f58cf5c40041e278",
+      "shell_apk_sha256": "6dbf465825abe035eeb3bc409986e2a1db4680fcac0451140de715f09ee0de57",
+      "surface": "2560x1600@60Hz",
+      "internal": "768x480, fixed 2x vertical, horizontal expansion",
+      "configuration": {
+        "api_option": "Vulkan",
+        "ar_option": "Expand",
+        "automatic_pit_stops": false,
+        "camera_distance_scale": 1.0,
+        "camera_fov_add": 0.0,
+        "camera_height_scale": 1.0,
+        "car_select_info": false,
+        "developer_mode": false,
+        "draw_distance": 1.5,
+        "draw_distance_circuit": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "ds_option": 1,
+        "fog_scale": 1.0,
+        "fog_scale_circuit": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "hpfb_option": "Auto",
+        "hr_option": "Clamp16x9",
+        "menu_stick_sensitivity": 1.0,
+        "msaa_option": "None",
+        "no_lod": true,
+        "no_lod_circuit": [
+          true,
+          true,
+          true,
+          false,
+          false,
+          false
+        ],
+        "race_cars": 6,
+        "remove_blue_hud_bar": false,
+        "res_option": "Original2x",
+        "rr_manual_value": 60,
+        "rr_option": "Display",
+        "rt_shadow_rays": 8,
+        "rt_shadow_softness": 0.5,
+        "rt_shadows": false,
+        "show_launcher": false,
+        "texture_dump": "",
+        "texture_pack": "",
+        "widescreen_fog_match": true,
+        "widescreen_sky_match": true,
+        "window_height": 900,
+        "window_width": 1600,
+        "wm_option": "Fullscreen"
+      },
+      "driver_library_sha256": "919c16fa11401c18551fbd611efba39888e2f64d9bfa6ac216c7a35f106712e5",
+      "device_conditions": "USB powered, no governor/affinity/frequency changes. Battery 100%, 26 C before the first capture; background Android services and thermal variation not controlled.",
+      "notes": "Player app and its private files were not modified. Existing isolated-app ROM/assets/driver reused; this does not test launcher import or driver ZIP import."
     }
   },
   "runs": [
@@ -772,6 +844,3918 @@
           "requested": true
         }
       }
+    },
+    {
+      "platform": "android",
+      "workload": "1p",
+      "source_commit": "27c52ad669b6bb94c97c18a2993d38cf36b5fa0f",
+      "warp": "1:1:0:1",
+      "warp_mode": 0,
+      "profile_start_host_utc": "2026-11-14T13:11:06.116784+00:00",
+      "profile_end_host_utc": "2026-11-14T13:11:22.552672+00:00",
+      "profile_seconds": 15.0015,
+      "samples": 12287,
+      "lost_samples": 0,
+      "truncated_stack_samples": 0,
+      "sampled_process_user_cpu_seconds": 12.287,
+      "sampled_guest_user_cpu_seconds": 1.561,
+      "sampling_denominator": "All cpu-clock:u event periods in this process; no kernel time. Inclusive rows overlap. Percent_guest_user_cpu uses all named Game Thread threads.",
+      "symbol_selection": "Top eight func_ symbols per thread per self/inclusive table, plus named producer, HUD, no-LOD/PVS, interpolation, RSP and renderer functions. Complete tables remain in the hashed local CSV files.",
+      "thread_samples": [
+        {
+          "tid": 9523,
+          "name": "Thread-3",
+          "samples": 5010,
+          "sampled_user_cpu_seconds": 5.01
+        },
+        {
+          "tid": 9577,
+          "name": "RT64 Workload",
+          "samples": 2234,
+          "sampled_user_cpu_seconds": 2.234
+        },
+        {
+          "tid": 9591,
+          "name": "Game Thread 3",
+          "samples": 959,
+          "sampled_user_cpu_seconds": 0.959
+        },
+        {
+          "tid": 9524,
+          "name": "SP Task Thread",
+          "samples": 920,
+          "sampled_user_cpu_seconds": 0.92
+        },
+        {
+          "tid": 9470,
+          "name": "SDLThread",
+          "samples": 861,
+          "sampled_user_cpu_seconds": 0.861
+        },
+        {
+          "tid": 9579,
+          "name": "Thread-4",
+          "samples": 444,
+          "sampled_user_cpu_seconds": 0.444
+        },
+        {
+          "tid": 9595,
+          "name": "Game Thread 3",
+          "samples": 415,
+          "sampled_user_cpu_seconds": 0.415
+        },
+        {
+          "tid": 9478,
+          "name": "AudioTrack",
+          "samples": 278,
+          "sampled_user_cpu_seconds": 0.278
+        },
+        {
+          "tid": 9578,
+          "name": "RT64 Idle",
+          "samples": 234,
+          "sampled_user_cpu_seconds": 0.234
+        },
+        {
+          "tid": 28308,
+          "name": "io.github.alondero.lamborghinirecomp.profile426:game",
+          "samples": 208,
+          "sampled_user_cpu_seconds": 0.208
+        },
+        {
+          "tid": 9593,
+          "name": "Game Thread 4",
+          "samples": 145,
+          "sampled_user_cpu_seconds": 0.145
+        },
+        {
+          "tid": 9481,
+          "name": "SDLAudioP2",
+          "samples": 92,
+          "sampled_user_cpu_seconds": 0.092
+        },
+        {
+          "tid": 9535,
+          "name": "RT64 Buffer",
+          "samples": 79,
+          "sampled_user_cpu_seconds": 0.079
+        },
+        {
+          "tid": 9588,
+          "name": "Game Start Thre",
+          "samples": 69,
+          "sampled_user_cpu_seconds": 0.069
+        },
+        {
+          "tid": 9556,
+          "name": "RT64 Shader",
+          "samples": 60,
+          "sampled_user_cpu_seconds": 0.06
+        },
+        {
+          "tid": 9585,
+          "name": "VI Thread",
+          "samples": 51,
+          "sampled_user_cpu_seconds": 0.051
+        },
+        {
+          "tid": 9557,
+          "name": "RT64 Shader",
+          "samples": 49,
+          "sampled_user_cpu_seconds": 0.049
+        },
+        {
+          "tid": 9596,
+          "name": "Game Thread 6",
+          "samples": 42,
+          "sampled_user_cpu_seconds": 0.042
+        },
+        {
+          "tid": 9587,
+          "name": "Game Start Thre",
+          "samples": 26,
+          "sampled_user_cpu_seconds": 0.026
+        },
+        {
+          "tid": 9572,
+          "name": "RT64 Buffer",
+          "samples": 20,
+          "sampled_user_cpu_seconds": 0.02
+        },
+        {
+          "tid": 9540,
+          "name": "RT64 Buffer",
+          "samples": 18,
+          "sampled_user_cpu_seconds": 0.018
+        },
+        {
+          "tid": 9575,
+          "name": "RT64 Buffer",
+          "samples": 17,
+          "sampled_user_cpu_seconds": 0.017
+        },
+        {
+          "tid": 9574,
+          "name": "RT64 Buffer",
+          "samples": 15,
+          "sampled_user_cpu_seconds": 0.015
+        },
+        {
+          "tid": 9573,
+          "name": "RT64 Buffer",
+          "samples": 13,
+          "sampled_user_cpu_seconds": 0.013
+        },
+        {
+          "tid": 9537,
+          "name": "RT64 Buffer",
+          "samples": 9,
+          "sampled_user_cpu_seconds": 0.009
+        },
+        {
+          "tid": 9580,
+          "name": "RT64 Buffer",
+          "samples": 9,
+          "sampled_user_cpu_seconds": 0.009
+        },
+        {
+          "tid": 9536,
+          "name": "RT64 Buffer",
+          "samples": 8,
+          "sampled_user_cpu_seconds": 0.008
+        },
+        {
+          "tid": 9569,
+          "name": "RT64 Texture",
+          "samples": 2,
+          "sampled_user_cpu_seconds": 0.002
+        }
+      ],
+      "self_symbols": [
+        {
+          "tid": 9524,
+          "thread": "SP Task Thread",
+          "symbol": "aspMain(unsigned char*, unsigned int)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.881,
+          "percent_process_user_cpu": 7.1702,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9577,
+          "thread": "RT64 Workload",
+          "symbol": "RT64::GameFrame::matchScene(RT64::WorkloadQueue&, RT64::GameFrame const&, RT64::GameScene const&, RT64::GameScene const&, std::__ndk1::unordered_map<unsigned int, RT64::ModifiedBuffers, std::__ndk1::hash<unsigned int>, std::__ndk1::equal_to<unsigned int>, std::__ndk1::allocator<std::__ndk1::pair<unsigned int const, RT64::ModifiedBuffers>>>&, bool&, bool&)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.165,
+          "percent_process_user_cpu": 1.3429,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "SDL_ResampleAudio",
+          "dso": "libSDL2.so",
+          "sampled_user_cpu_seconds": 0.162,
+          "percent_process_user_cpu": 1.3185,
+          "percent_guest_user_cpu": 10.378
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "func_8000A6C0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.086,
+          "percent_process_user_cpu": 0.6999,
+          "percent_guest_user_cpu": 5.5093
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "func_80084E10",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.047,
+          "percent_process_user_cpu": 0.3825,
+          "percent_guest_user_cpu": 3.0109
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::Interpreter::processDisplayLists(unsigned int, RT64::DisplayList*)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.036,
+          "percent_process_user_cpu": 0.293,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo::f3dex::Walker<lambo_graphics_task_prepare::$_1>::run(unsigned int, unsigned int)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.029,
+          "percent_process_user_cpu": 0.236,
+          "percent_guest_user_cpu": 1.8578
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::DisplayList::p0(unsigned char, unsigned char) const",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.026,
+          "percent_process_user_cpu": 0.2116,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::DisplayList::p1(unsigned char, unsigned char) const",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.026,
+          "percent_process_user_cpu": 0.2116,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo::FogRewriter::command(unsigned char*, unsigned int, unsigned int, unsigned int, lambo::FogPolicy)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.023,
+          "percent_process_user_cpu": 0.1872,
+          "percent_guest_user_cpu": 1.4734
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "func_8008286C",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.02,
+          "percent_process_user_cpu": 0.1628,
+          "percent_guest_user_cpu": 1.2812
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "func_8001EC1C",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.017,
+          "percent_process_user_cpu": 0.1384,
+          "percent_guest_user_cpu": 1.089
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::setTile(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.017,
+          "percent_process_user_cpu": 0.1384,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "func_80082524",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.014,
+          "percent_process_user_cpu": 0.1139,
+          "percent_guest_user_cpu": 0.8969
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "func_800170C4",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.012,
+          "percent_process_user_cpu": 0.0977,
+          "percent_guest_user_cpu": 0.7687
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "func_80032450",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.012,
+          "percent_process_user_cpu": 0.0977,
+          "percent_guest_user_cpu": 0.7687
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "func_80056318",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.012,
+          "percent_process_user_cpu": 0.0977,
+          "percent_guest_user_cpu": 0.7687
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo::HudTextureBounds::command(unsigned int, unsigned int, unsigned int)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.011,
+          "percent_process_user_cpu": 0.0895,
+          "percent_guest_user_cpu": 0.7047
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "func_8004D468",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.01,
+          "percent_process_user_cpu": 0.0814,
+          "percent_guest_user_cpu": 0.6406
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "func_8007AF60",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.009,
+          "percent_process_user_cpu": 0.0732,
+          "percent_guest_user_cpu": 0.5766
+        },
+        {
+          "tid": 9577,
+          "thread": "RT64 Workload",
+          "symbol": "RT64::GameFrame::match(RT64::RenderWorker*, RT64::WorkloadQueue&, RT64::GameFrame const&, RT64::BufferUploader*, bool&, bool&, bool&)::$_0::operator()(std::__ndk1::vector<RT64::GameScene, std::__ndk1::allocator<RT64::GameScene>> const&, std::__ndk1::vector<RT64::GameScene, std::__ndk1::allocator<RT64::GameScene>> const&) const",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.009,
+          "percent_process_user_cpu": 0.0732,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3DEX::tri2(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.009,
+          "percent_process_user_cpu": 0.0732,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "func_800819BC",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.008,
+          "percent_process_user_cpu": 0.0651,
+          "percent_guest_user_cpu": 0.5125
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "func_80081F4C",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.008,
+          "percent_process_user_cpu": 0.0651,
+          "percent_guest_user_cpu": 0.5125
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "func_80067FB4",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.007,
+          "percent_process_user_cpu": 0.057,
+          "percent_guest_user_cpu": 0.4484
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "func_80082DF0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.007,
+          "percent_process_user_cpu": 0.057,
+          "percent_guest_user_cpu": 0.4484
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "func_80067CF0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.006,
+          "percent_process_user_cpu": 0.0488,
+          "percent_guest_user_cpu": 0.3844
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "func_8007867C",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.006,
+          "percent_process_user_cpu": 0.0488,
+          "percent_guest_user_cpu": 0.3844
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::setTextureImage(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.006,
+          "percent_process_user_cpu": 0.0488,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3DEX::vertex(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.006,
+          "percent_process_user_cpu": 0.0488,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9593,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074884",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.005,
+          "percent_process_user_cpu": 0.0407,
+          "percent_guest_user_cpu": 0.3203
+        },
+        {
+          "tid": 9593,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074470",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.004,
+          "percent_process_user_cpu": 0.0326,
+          "percent_guest_user_cpu": 0.2562
+        },
+        {
+          "tid": 9593,
+          "thread": "Game Thread 4",
+          "symbol": "func_8007F200",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.004,
+          "percent_process_user_cpu": 0.0326,
+          "percent_guest_user_cpu": 0.2562
+        },
+        {
+          "tid": 9577,
+          "thread": "RT64 Workload",
+          "symbol": "RT64::GameFrame::match(RT64::RenderWorker*, RT64::WorkloadQueue&, RT64::GameFrame const&, RT64::BufferUploader*, bool&, bool&, bool&)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.004,
+          "percent_process_user_cpu": 0.0326,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9577,
+          "thread": "RT64 Workload",
+          "symbol": "RT64::GameFrame::matchTransform(RT64::Workload&, RT64::Workload const&, RT64::GameFrameMap::WorkloadMap&, RT64::GameFrameMap::WorkloadMap const*, unsigned int, unsigned int, RT64::ModifiedBuffers&)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.004,
+          "percent_process_user_cpu": 0.0326,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::moveMem(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.004,
+          "percent_process_user_cpu": 0.0326,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9593,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074704",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0244,
+          "percent_guest_user_cpu": 0.1922
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "(anonymous namespace)::RT64Context::send_dl(OSTask const*)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0244,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::pipeSync(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0244,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::setTileSize(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0244,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::State::pushReturnAddress(RT64::DisplayList*)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0244,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_ws_pin_reset",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0163,
+          "percent_guest_user_cpu": 0.1281
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_ws_split_wide_begin",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0163,
+          "percent_guest_user_cpu": 0.1281
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::endDl(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0163,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::setOtherModeH(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0163,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::setOtherModeL(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0163,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::texture(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0163,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::texrect(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0163,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_interpolation_object_begin",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": 0.0641
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_no_lod_draw_distance",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": 0.0641
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_ws_minimap_reset",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": 0.0641
+        },
+        {
+          "tid": 9593,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074380",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": 0.0641
+        },
+        {
+          "tid": 9593,
+          "thread": "Game Thread 4",
+          "symbol": "func_800743D0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": 0.0641
+        },
+        {
+          "tid": 9593,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074654",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": 0.0641
+        },
+        {
+          "tid": 9593,
+          "thread": "Game Thread 4",
+          "symbol": "func_8007E0E0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": 0.0641
+        },
+        {
+          "tid": 9596,
+          "thread": "Game Thread 6",
+          "symbol": "func_8000A5FC",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": 0.0641
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_EXTENDED::extendedOp(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_EXTENDED::matrixGroupCommand(RT64::State*, RT64::DisplayList**, bool, bool)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_EXTENDED::setRDRAMExtendedV1(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::matrix(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::runDl(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3DEX::cullDl(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::fullSync(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::loadBlock(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::loadTLUT(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::setFillColor(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::tileSync(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        }
+      ],
+      "inclusive_symbols": [
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "(anonymous namespace)::RT64Context::send_dl(OSTask const*)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 4.348,
+          "percent_process_user_cpu": 35.387,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::Application::processDisplayLists(unsigned char*, unsigned int, unsigned int, bool)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 4.334,
+          "percent_process_user_cpu": 35.2731,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::Interpreter::processDisplayLists(unsigned int, RT64::DisplayList*)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 4.332,
+          "percent_process_user_cpu": 35.2568,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::fullSync(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 2.832,
+          "percent_process_user_cpu": 23.0488,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9524,
+          "thread": "SP Task Thread",
+          "symbol": "aspMain(unsigned char*, unsigned int)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.881,
+          "percent_process_user_cpu": 7.1702,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9577,
+          "thread": "RT64 Workload",
+          "symbol": "RT64::GameFrame::match(RT64::RenderWorker*, RT64::WorkloadQueue&, RT64::GameFrame const&, RT64::BufferUploader*, bool&, bool&, bool&)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.755,
+          "percent_process_user_cpu": 6.1447,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9577,
+          "thread": "RT64 Workload",
+          "symbol": "RT64::GameFrame::match(RT64::RenderWorker*, RT64::WorkloadQueue&, RT64::GameFrame const&, RT64::BufferUploader*, bool&, bool&, bool&)::$_0::operator()(std::__ndk1::vector<RT64::GameScene, std::__ndk1::allocator<RT64::GameScene>> const&, std::__ndk1::vector<RT64::GameScene, std::__ndk1::allocator<RT64::GameScene>> const&) const",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.738,
+          "percent_process_user_cpu": 6.0063,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9577,
+          "thread": "RT64 Workload",
+          "symbol": "RT64::GameFrame::matchScene(RT64::WorkloadQueue&, RT64::GameFrame const&, RT64::GameScene const&, RT64::GameScene const&, std::__ndk1::unordered_map<unsigned int, RT64::ModifiedBuffers, std::__ndk1::hash<unsigned int>, std::__ndk1::equal_to<unsigned int>, std::__ndk1::allocator<std::__ndk1::pair<unsigned int const, RT64::ModifiedBuffers>>>&, bool&, bool&)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.728,
+          "percent_process_user_cpu": 5.925,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "func_800028D0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.478,
+          "percent_process_user_cpu": 3.8903,
+          "percent_guest_user_cpu": 30.6214
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "func_80067B98",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.415,
+          "percent_process_user_cpu": 3.3776,
+          "percent_guest_user_cpu": 26.5855
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3DEX::tri2(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.406,
+          "percent_process_user_cpu": 3.3043,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "func_800030F8",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.379,
+          "percent_process_user_cpu": 3.0846,
+          "percent_guest_user_cpu": 24.2793
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "func_80067CF0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.335,
+          "percent_process_user_cpu": 2.7265,
+          "percent_guest_user_cpu": 21.4606
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "SDL_ResampleAudioStream",
+          "dso": "libSDL2.so",
+          "sampled_user_cpu_seconds": 0.163,
+          "percent_process_user_cpu": 1.3266,
+          "percent_guest_user_cpu": 10.442
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "SDL_ResampleAudio",
+          "dso": "libSDL2.so",
+          "sampled_user_cpu_seconds": 0.162,
+          "percent_process_user_cpu": 1.3185,
+          "percent_guest_user_cpu": 10.378
+        },
+        {
+          "tid": 9593,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074884",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.145,
+          "percent_process_user_cpu": 1.1801,
+          "percent_guest_user_cpu": 9.2889
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "func_80079BD8",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.135,
+          "percent_process_user_cpu": 1.0987,
+          "percent_guest_user_cpu": 8.6483
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "func_8006A910",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.124,
+          "percent_process_user_cpu": 1.0092,
+          "percent_guest_user_cpu": 7.9436
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "func_8007AF60",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.113,
+          "percent_process_user_cpu": 0.9197,
+          "percent_guest_user_cpu": 7.2389
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "func_8000A6C0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.111,
+          "percent_process_user_cpu": 0.9034,
+          "percent_guest_user_cpu": 7.1108
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "func_80082F04",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.094,
+          "percent_process_user_cpu": 0.765,
+          "percent_guest_user_cpu": 6.0218
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "func_800811F0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.093,
+          "percent_process_user_cpu": 0.7569,
+          "percent_guest_user_cpu": 5.9577
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "func_8008733C",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.09,
+          "percent_process_user_cpu": 0.7325,
+          "percent_guest_user_cpu": 5.7655
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "func_800102D8",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.085,
+          "percent_process_user_cpu": 0.6918,
+          "percent_guest_user_cpu": 5.4452
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "func_80019D20",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.084,
+          "percent_process_user_cpu": 0.6836,
+          "percent_guest_user_cpu": 5.3812
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "func_80006018",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.083,
+          "percent_process_user_cpu": 0.6755,
+          "percent_guest_user_cpu": 5.3171
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "func_80082DF0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.074,
+          "percent_process_user_cpu": 0.6023,
+          "percent_guest_user_cpu": 4.7406
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_graphics_task_prepare",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.068,
+          "percent_process_user_cpu": 0.5534,
+          "percent_guest_user_cpu": 4.3562
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo::f3dex::Walker<lambo_graphics_task_prepare::$_1>::run(unsigned int, unsigned int)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.067,
+          "percent_process_user_cpu": 0.5453,
+          "percent_guest_user_cpu": 4.2921
+        },
+        {
+          "tid": 9595,
+          "thread": "Game Thread 3",
+          "symbol": "func_8008286C",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.063,
+          "percent_process_user_cpu": 0.5127,
+          "percent_guest_user_cpu": 4.0359
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::texrect(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.05,
+          "percent_process_user_cpu": 0.4069,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::setTile(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.047,
+          "percent_process_user_cpu": 0.3825,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9596,
+          "thread": "Game Thread 6",
+          "symbol": "func_8000A5FC",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.042,
+          "percent_process_user_cpu": 0.3418,
+          "percent_guest_user_cpu": 2.6906
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::DisplayList::p0(unsigned char, unsigned char) const",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.026,
+          "percent_process_user_cpu": 0.2116,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::DisplayList::p1(unsigned char, unsigned char) const",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.026,
+          "percent_process_user_cpu": 0.2116,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo::FogRewriter::command(unsigned char*, unsigned int, unsigned int, unsigned int, lambo::FogPolicy)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.023,
+          "percent_process_user_cpu": 0.1872,
+          "percent_guest_user_cpu": 1.4734
+        },
+        {
+          "tid": 9577,
+          "thread": "RT64 Workload",
+          "symbol": "RT64::GameFrame::matchTransform(RT64::Workload&, RT64::Workload const&, RT64::GameFrameMap::WorkloadMap&, RT64::GameFrameMap::WorkloadMap const*, unsigned int, unsigned int, RT64::ModifiedBuffers&)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.017,
+          "percent_process_user_cpu": 0.1384,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9593,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074704",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.017,
+          "percent_process_user_cpu": 0.1384,
+          "percent_guest_user_cpu": 1.089
+        },
+        {
+          "tid": 9593,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074470",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.013,
+          "percent_process_user_cpu": 0.1058,
+          "percent_guest_user_cpu": 0.8328
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo::HudTextureBounds::command(unsigned int, unsigned int, unsigned int)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.011,
+          "percent_process_user_cpu": 0.0895,
+          "percent_guest_user_cpu": 0.7047
+        },
+        {
+          "tid": 9593,
+          "thread": "Game Thread 4",
+          "symbol": "func_800743D0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.011,
+          "percent_process_user_cpu": 0.0895,
+          "percent_guest_user_cpu": 0.7047
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::setTextureImage(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.009,
+          "percent_process_user_cpu": 0.0732,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9593,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074380",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.008,
+          "percent_process_user_cpu": 0.0651,
+          "percent_guest_user_cpu": 0.5125
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3DEX::vertex(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.007,
+          "percent_process_user_cpu": 0.057,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::setTileSize(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.007,
+          "percent_process_user_cpu": 0.057,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9593,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074654",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.007,
+          "percent_process_user_cpu": 0.057,
+          "percent_guest_user_cpu": 0.4484
+        },
+        {
+          "tid": 9593,
+          "thread": "Game Thread 4",
+          "symbol": "func_8007F200",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.006,
+          "percent_process_user_cpu": 0.0488,
+          "percent_guest_user_cpu": 0.3844
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::moveMem(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.004,
+          "percent_process_user_cpu": 0.0326,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::runDl(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.004,
+          "percent_process_user_cpu": 0.0326,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::loadBlock(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.004,
+          "percent_process_user_cpu": 0.0326,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::pipeSync(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0244,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::State::pushReturnAddress(RT64::DisplayList*)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0244,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::endDl(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0244,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::setOtherModeL(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0244,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_no_lod_pvs_entry",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0244,
+          "percent_guest_user_cpu": 0.1922
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_ws_pin_reset",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0163,
+          "percent_guest_user_cpu": 0.1281
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_ws_split_wide_begin",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0163,
+          "percent_guest_user_cpu": 0.1281
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::setOtherModeH(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0163,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::texture(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0163,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_no_lod_draw_distance",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0163,
+          "percent_guest_user_cpu": 0.1281
+        },
+        {
+          "tid": 9593,
+          "thread": "Game Thread 4",
+          "symbol": "func_8007E0E0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0163,
+          "percent_guest_user_cpu": 0.1281
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_EXTENDED::matrixGroupCommand(RT64::State*, RT64::DisplayList**, bool, bool)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0163,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_interpolation_object_begin",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": 0.0641
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_ws_minimap_reset",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": 0.0641
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_EXTENDED::extendedOp(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_EXTENDED::setRDRAMExtendedV1(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::matrix(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3DEX::cullDl(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::loadTLUT(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::setFillColor(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::tileSync(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_no_lod_scenery_guard",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": 0.0641
+        },
+        {
+          "tid": 9591,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_no_lod_seg_list_clamp",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": 0.0641
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_EXTENDED::setScissorV1(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::moveWord(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 9523,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3DEX::tri1(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0081,
+          "percent_guest_user_cpu": null
+        }
+      ],
+      "counter_interval_seconds": 19.766,
+      "counter_interval_note": "From before first thread stat read to after last stat read. Per-thread snapshots are staggered. Includes adb, symbol processing and log/counter collection beyond recording. Threads absent from either snapshot are excluded; CLK_TCK=100.",
+      "thread_counters": [
+        {
+          "tid": 9432,
+          "name": "Signal Catcher",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9433,
+          "name": "perfetto_hprof_",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9434,
+          "name": "ADB-JDWP Connec",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9435,
+          "name": "Jit thread pool",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9436,
+          "name": "HeapTaskDaemon",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9437,
+          "name": "ReferenceQueueD",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9438,
+          "name": "FinalizerDaemon",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9439,
+          "name": "FinalizerWatchd",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9441,
+          "name": "Binder:28308_1",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9442,
+          "name": "Binder:28308_2",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9450,
+          "name": "Profile Saver",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9453,
+          "name": "RenderThread",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9459,
+          "name": "SDLActivity",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9460,
+          "name": "AudioPortEventH",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9470,
+          "name": "SDLThread",
+          "user_cpu_seconds": 0.69,
+          "kernel_cpu_seconds": 0.36
+        },
+        {
+          "tid": 9472,
+          "name": "hwuiTask0",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9473,
+          "name": "hwuiTask1",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9474,
+          "name": "Binder:28308_3",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9476,
+          "name": "SDLThread",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9478,
+          "name": "AudioTrack",
+          "user_cpu_seconds": 0.14,
+          "kernel_cpu_seconds": 0.42
+        },
+        {
+          "tid": 9480,
+          "name": "Binder:28308_4",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9481,
+          "name": "SDLAudioP2",
+          "user_cpu_seconds": 0.17,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9517,
+          "name": "InsetsAnimation",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9523,
+          "name": "Thread-3",
+          "user_cpu_seconds": 5.55,
+          "kernel_cpu_seconds": 0.45
+        },
+        {
+          "tid": 9524,
+          "name": "SP Task Thread",
+          "user_cpu_seconds": 1.04,
+          "kernel_cpu_seconds": 0.02
+        },
+        {
+          "tid": 9532,
+          "name": "io.git:traceq0",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9535,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.07,
+          "kernel_cpu_seconds": 0.04
+        },
+        {
+          "tid": 9536,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.01,
+          "kernel_cpu_seconds": 0.01
+        },
+        {
+          "tid": 9537,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.01,
+          "kernel_cpu_seconds": 0.03
+        },
+        {
+          "tid": 9538,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9539,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9540,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.01,
+          "kernel_cpu_seconds": 0.03
+        },
+        {
+          "tid": 9556,
+          "name": "RT64 Shader",
+          "user_cpu_seconds": 0.06,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9557,
+          "name": "RT64 Shader",
+          "user_cpu_seconds": 0.05,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9558,
+          "name": "RT64 Shader",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9559,
+          "name": "RT64 Shader",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9569,
+          "name": "RT64 Texture",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.01
+        },
+        {
+          "tid": 9570,
+          "name": "RT64 Stream",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9571,
+          "name": "RT64 Stream",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9572,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.04
+        },
+        {
+          "tid": 9573,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.01,
+          "kernel_cpu_seconds": 0.02
+        },
+        {
+          "tid": 9574,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.01,
+          "kernel_cpu_seconds": 0.03
+        },
+        {
+          "tid": 9575,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.03
+        },
+        {
+          "tid": 9576,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9577,
+          "name": "RT64 Workload",
+          "user_cpu_seconds": 2.42,
+          "kernel_cpu_seconds": 0.44
+        },
+        {
+          "tid": 9578,
+          "name": "RT64 Idle",
+          "user_cpu_seconds": 0.15,
+          "kernel_cpu_seconds": 0.52
+        },
+        {
+          "tid": 9579,
+          "name": "Thread-4",
+          "user_cpu_seconds": 0.46,
+          "kernel_cpu_seconds": 0.47
+        },
+        {
+          "tid": 9580,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.02
+        },
+        {
+          "tid": 9582,
+          "name": "Lambo Stall",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9585,
+          "name": "VI Thread",
+          "user_cpu_seconds": 0.05,
+          "kernel_cpu_seconds": 0.11
+        },
+        {
+          "tid": 9586,
+          "name": "Timer Thread",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9587,
+          "name": "Game Start Thre",
+          "user_cpu_seconds": 0.02,
+          "kernel_cpu_seconds": 0.04
+        },
+        {
+          "tid": 9588,
+          "name": "Game Start Thre",
+          "user_cpu_seconds": 0.03,
+          "kernel_cpu_seconds": 0.07
+        },
+        {
+          "tid": 9589,
+          "name": "Game Thread 1",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9590,
+          "name": "Game Thread 0",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9591,
+          "name": "Game Thread 3",
+          "user_cpu_seconds": 1.02,
+          "kernel_cpu_seconds": 0.35
+        },
+        {
+          "tid": 9592,
+          "name": "Game Thread 0",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 9593,
+          "name": "Game Thread 4",
+          "user_cpu_seconds": 0.18,
+          "kernel_cpu_seconds": 0.14
+        },
+        {
+          "tid": 9595,
+          "name": "Game Thread 3",
+          "user_cpu_seconds": 0.46,
+          "kernel_cpu_seconds": 0.05
+        },
+        {
+          "tid": 9596,
+          "name": "Game Thread 6",
+          "user_cpu_seconds": 0.03,
+          "kernel_cpu_seconds": 0.05
+        },
+        {
+          "tid": 9635,
+          "name": "Game Thread 3",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 28308,
+          "name": "SDLActivity",
+          "user_cpu_seconds": 0.24,
+          "kernel_cpu_seconds": 0.05
+        }
+      ],
+      "counter_threads_only_before": [],
+      "counter_threads_only_after": [],
+      "prepare_samples": [
+        {
+          "device_utc": "2026-11-14 13:11:09",
+          "commands": 3847,
+          "elapsed_us": 187.24
+        },
+        {
+          "device_utc": "2026-11-14 13:11:11",
+          "commands": 4540,
+          "elapsed_us": 95.469
+        },
+        {
+          "device_utc": "2026-11-14 13:11:13",
+          "commands": 3929,
+          "elapsed_us": 262.135
+        },
+        {
+          "device_utc": "2026-11-14 13:11:15",
+          "commands": 3437,
+          "elapsed_us": 166.042
+        },
+        {
+          "device_utc": "2026-11-14 13:11:17",
+          "commands": 2915,
+          "elapsed_us": 144.167
+        },
+        {
+          "device_utc": "2026-11-14 13:11:19",
+          "commands": 2854,
+          "elapsed_us": 152.76
+        }
+      ],
+      "prepare_median_us": 159.401,
+      "prepare_max_us": 262.135,
+      "prepare_selection": {
+        "device_epoch_inclusive": [
+          1794661869,
+          1794661880
+        ],
+        "note": "Conservative interior based on device UTC clock brackets; one-second log precision. Diagnostic every-60-task samples, not every-task maximum."
+      },
+      "renderer": {
+        "reports_before": 3,
+        "reports_after": 7,
+        "selection": "New reports excluding the first two and the final report. Five-second windows; brackets include <5 s of counter/adb/post-processing overhead on either edge. Renderer wall/GPU timings are separate from sampled user CPU.",
+        "eligible_reports": [
+          "[render-cost] window_s=5.0 surface=2560x1600@60Hz vi=320x240@30Hz target_hz=60 internal=768x480 scale=2.40x2.00 msaa=1 game_fps=29.5 present_fps=40.9 frames=214/280 frame_ms=17.1/24.9 gpu_ms=7.7/8.2 workload_ms=26.9/39.2 setup_ms=2.0 match_ms=1.9"
+        ]
+      },
+      "foreground_checks": 24,
+      "foreground_all_match": true,
+      "foreground_note": "Polls about once per second through warmup/recording/replay; no competing game process at launch. Not a continuous compositor trace.",
+      "harness": {
+        "exit_code": 0,
+        "final_state": 8,
+        "loaded_circuit": 1,
+        "max_abs_player_speed": 323,
+        "max_state": 8,
+        "menu_screen": 0,
+        "outcome": "passed",
+        "player_speed": 313,
+        "player_vehicle": 1,
+        "reason": "replay_complete",
+        "replay": {
+          "active": true,
+          "complete": true,
+          "configured": true,
+          "dispatcher_ticks": 1527,
+          "failed": false,
+          "frames_consumed": 1526,
+          "guest_frames_verified": 1526,
+          "recording": false,
+          "total_frames": 1526
+        },
+        "schema": 1,
+        "state_load": {
+          "applied": false,
+          "failed": false,
+          "requested": false
+        },
+        "swaps": 1527,
+        "vis": 3432,
+        "warp": {
+          "applied": true,
+          "car": 0,
+          "circuit": 1,
+          "failed": false,
+          "laps": 1,
+          "mode": 0,
+          "players": 1,
+          "requested": true
+        }
+      },
+      "command": "python tools/profile_game_threads_android.py both",
+      "record_command": "adb shell run-as io.github.alondero.lamborghinirecomp.profile426 ./files/simpleperf record --in-app -p PID -e cpu-clock:u -f 1000 --call-graph dwarf,16384 --duration 15 --symfs files/symbols -o files/profile/perf.data",
+      "local_artifacts": "artifacts/gh426/1p-131045",
+      "artifact_sha256": {
+        "perf.data": "d72b47055d63a1b41931c791117c1f80db456dac3b8ed567314322764b4891a1",
+        "record.log": "f1c28e04425ffbf14582205bbee1a52e981a0aac34a0e49e061f91a1c512c5b1",
+        "metadata.json": "fcd9eab1cf0a8c9db11ad4124e572f54106a521a5575706bc4448003da3cf683",
+        "self.csv": "c9d62bef73e663143690b5d4df969838ca6050cc528985b82d56fa17fd59fc4d",
+        "children.csv": "dcccd6040963e285015532d9eb80384497ca54847038f29766e8b905e813df82",
+        "threads.csv": "96571b26fdbf519ce6ec6cfaaff0197d163dc819a056338efab066fe4aa71c18",
+        "render-before.log": "6ae37391473b7292ec3fab01b682f20e879f6edd57d30079ca3dd91e81297be3",
+        "render-after.log": "fd26f7604e9a31b5f30355fc2ad63248f80831e9b21613805da84dc6217b4ff0",
+        "native-before.log": "5bb43ebc88c53871ac1abd746fe394f9c1d9a18701f60aaea495f1bb6808e78b",
+        "native-after.log": "2c677b88ae1f74952e109d12a7b08935262ddf877c8d5bb0360da3f47e507f2b",
+        "native-errors.log": "0b2e0116323dcc626de95ee005045078c9363c932ec03256d40ddb558aa7e8d0",
+        "native.log": "51799d72d9ce06c3639403a1db8f9e7203e239f883e302b06589a3ec527cddea",
+        "features.txt": "0b525f81fa4508e9db0f6bcecfa2a706424456e4bcae07f878eeb1d7230131f3"
+      }
+    },
+    {
+      "platform": "android",
+      "workload": "4p",
+      "source_commit": "27c52ad669b6bb94c97c18a2993d38cf36b5fa0f",
+      "warp": "1:3:0:4",
+      "warp_mode": 2,
+      "profile_start_host_utc": "2026-11-14T13:12:10.430135+00:00",
+      "profile_end_host_utc": "2026-11-14T13:12:26.924116+00:00",
+      "profile_seconds": 14.9906,
+      "samples": 17561,
+      "lost_samples": 0,
+      "truncated_stack_samples": 0,
+      "sampled_process_user_cpu_seconds": 17.561,
+      "sampled_guest_user_cpu_seconds": 1.555,
+      "sampling_denominator": "All cpu-clock:u event periods in this process; no kernel time. Inclusive rows overlap. Percent_guest_user_cpu uses all named Game Thread threads.",
+      "symbol_selection": "Top eight func_ symbols per thread per self/inclusive table, plus named producer, HUD, no-LOD/PVS, interpolation, RSP and renderer functions. Complete tables remain in the hashed local CSV files.",
+      "thread_samples": [
+        {
+          "tid": 13133,
+          "name": "Thread-3",
+          "samples": 7760,
+          "sampled_user_cpu_seconds": 7.76
+        },
+        {
+          "tid": 13187,
+          "name": "RT64 Workload",
+          "samples": 5334,
+          "sampled_user_cpu_seconds": 5.334
+        },
+        {
+          "tid": 13202,
+          "name": "Game Thread 3",
+          "samples": 1084,
+          "sampled_user_cpu_seconds": 1.084
+        },
+        {
+          "tid": 13108,
+          "name": "SDLThread",
+          "samples": 706,
+          "sampled_user_cpu_seconds": 0.706
+        },
+        {
+          "tid": 13134,
+          "name": "SP Task Thread",
+          "samples": 663,
+          "sampled_user_cpu_seconds": 0.663
+        },
+        {
+          "tid": 13188,
+          "name": "RT64 Idle",
+          "samples": 333,
+          "sampled_user_cpu_seconds": 0.333
+        },
+        {
+          "tid": 13205,
+          "name": "Game Thread 3",
+          "samples": 324,
+          "sampled_user_cpu_seconds": 0.324
+        },
+        {
+          "tid": 13118,
+          "name": "AudioTrack",
+          "samples": 283,
+          "sampled_user_cpu_seconds": 0.283
+        },
+        {
+          "tid": 13189,
+          "name": "Thread-4",
+          "samples": 220,
+          "sampled_user_cpu_seconds": 0.22
+        },
+        {
+          "tid": 32717,
+          "name": "io.github.alondero.lamborghinirecomp.profile426:game",
+          "samples": 195,
+          "sampled_user_cpu_seconds": 0.195
+        },
+        {
+          "tid": 13145,
+          "name": "RT64 Buffer",
+          "samples": 144,
+          "sampled_user_cpu_seconds": 0.144
+        },
+        {
+          "tid": 13204,
+          "name": "Game Thread 4",
+          "samples": 119,
+          "sampled_user_cpu_seconds": 0.119
+        },
+        {
+          "tid": 13119,
+          "name": "SDLAudioP2",
+          "samples": 84,
+          "sampled_user_cpu_seconds": 0.084
+        },
+        {
+          "tid": 13169,
+          "name": "RT64 Shader",
+          "samples": 71,
+          "sampled_user_cpu_seconds": 0.071
+        },
+        {
+          "tid": 13195,
+          "name": "VI Thread",
+          "samples": 64,
+          "sampled_user_cpu_seconds": 0.064
+        },
+        {
+          "tid": 13199,
+          "name": "Game Start Thre",
+          "samples": 53,
+          "sampled_user_cpu_seconds": 0.053
+        },
+        {
+          "tid": 13206,
+          "name": "Game Thread 6",
+          "samples": 28,
+          "sampled_user_cpu_seconds": 0.028
+        },
+        {
+          "tid": 13150,
+          "name": "RT64 Buffer",
+          "samples": 16,
+          "sampled_user_cpu_seconds": 0.016
+        },
+        {
+          "tid": 13197,
+          "name": "Game Start Thre",
+          "samples": 15,
+          "sampled_user_cpu_seconds": 0.015
+        },
+        {
+          "tid": 13185,
+          "name": "RT64 Buffer",
+          "samples": 15,
+          "sampled_user_cpu_seconds": 0.015
+        },
+        {
+          "tid": 13147,
+          "name": "RT64 Buffer",
+          "samples": 11,
+          "sampled_user_cpu_seconds": 0.011
+        },
+        {
+          "tid": 13182,
+          "name": "RT64 Buffer",
+          "samples": 9,
+          "sampled_user_cpu_seconds": 0.009
+        },
+        {
+          "tid": 13146,
+          "name": "RT64 Buffer",
+          "samples": 8,
+          "sampled_user_cpu_seconds": 0.008
+        },
+        {
+          "tid": 13184,
+          "name": "RT64 Buffer",
+          "samples": 7,
+          "sampled_user_cpu_seconds": 0.007
+        },
+        {
+          "tid": 13190,
+          "name": "RT64 Buffer",
+          "samples": 7,
+          "sampled_user_cpu_seconds": 0.007
+        },
+        {
+          "tid": 13183,
+          "name": "RT64 Buffer",
+          "samples": 6,
+          "sampled_user_cpu_seconds": 0.006
+        },
+        {
+          "tid": 13179,
+          "name": "RT64 Texture",
+          "samples": 2,
+          "sampled_user_cpu_seconds": 0.002
+        }
+      ],
+      "self_symbols": [
+        {
+          "tid": 13187,
+          "thread": "RT64 Workload",
+          "symbol": "RT64::GameFrame::matchScene(RT64::WorkloadQueue&, RT64::GameFrame const&, RT64::GameScene const&, RT64::GameScene const&, std::__ndk1::unordered_map<unsigned int, RT64::ModifiedBuffers, std::__ndk1::hash<unsigned int>, std::__ndk1::equal_to<unsigned int>, std::__ndk1::allocator<std::__ndk1::pair<unsigned int const, RT64::ModifiedBuffers>>>&, bool&, bool&)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.658,
+          "percent_process_user_cpu": 3.7469,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13134,
+          "thread": "SP Task Thread",
+          "symbol": "aspMain(unsigned char*, unsigned int)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.629,
+          "percent_process_user_cpu": 3.5818,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "func_8000A6C0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.144,
+          "percent_process_user_cpu": 0.82,
+          "percent_guest_user_cpu": 9.2605
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "SDL_ResampleAudio",
+          "dso": "libSDL2.so",
+          "sampled_user_cpu_seconds": 0.117,
+          "percent_process_user_cpu": 0.6662,
+          "percent_guest_user_cpu": 7.5241
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "lambo::f3dex::Walker<lambo_graphics_task_prepare::$_1>::run(unsigned int, unsigned int)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.074,
+          "percent_process_user_cpu": 0.4214,
+          "percent_guest_user_cpu": 4.7588
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::Interpreter::processDisplayLists(unsigned int, RT64::DisplayList*)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.074,
+          "percent_process_user_cpu": 0.4214,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "lambo::FogRewriter::command(unsigned char*, unsigned int, unsigned int, unsigned int, lambo::FogPolicy)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.071,
+          "percent_process_user_cpu": 0.4043,
+          "percent_guest_user_cpu": 4.5659
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::setTile(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.066,
+          "percent_process_user_cpu": 0.3758,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::DisplayList::p0(unsigned char, unsigned char) const",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.055,
+          "percent_process_user_cpu": 0.3132,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::DisplayList::p1(unsigned char, unsigned char) const",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.05,
+          "percent_process_user_cpu": 0.2847,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "func_8007F830",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.031,
+          "percent_process_user_cpu": 0.1765,
+          "percent_guest_user_cpu": 1.9936
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3DEX::tri2(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.028,
+          "percent_process_user_cpu": 0.1594,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "func_80045BDC",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.024,
+          "percent_process_user_cpu": 0.1367,
+          "percent_guest_user_cpu": 1.5434
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "lambo::HudTextureBounds::command(unsigned int, unsigned int, unsigned int)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.024,
+          "percent_process_user_cpu": 0.1367,
+          "percent_guest_user_cpu": 1.5434
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "func_80014AC0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.02,
+          "percent_process_user_cpu": 0.1139,
+          "percent_guest_user_cpu": 1.2862
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "func_80084E10",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.018,
+          "percent_process_user_cpu": 0.1025,
+          "percent_guest_user_cpu": 1.1576
+        },
+        {
+          "tid": 13187,
+          "thread": "RT64 Workload",
+          "symbol": "RT64::GameFrame::matchTransform(RT64::Workload&, RT64::Workload const&, RT64::GameFrameMap::WorkloadMap&, RT64::GameFrameMap::WorkloadMap const*, unsigned int, unsigned int, RT64::ModifiedBuffers&)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.018,
+          "percent_process_user_cpu": 0.1025,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "func_80075E90",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.017,
+          "percent_process_user_cpu": 0.0968,
+          "percent_guest_user_cpu": 1.0932
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "func_8008286C",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.017,
+          "percent_process_user_cpu": 0.0968,
+          "percent_guest_user_cpu": 1.0932
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "func_8001EC1C",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.016,
+          "percent_process_user_cpu": 0.0911,
+          "percent_guest_user_cpu": 1.0289
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "func_80032450",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.016,
+          "percent_process_user_cpu": 0.0911,
+          "percent_guest_user_cpu": 1.0289
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "func_80082524",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.013,
+          "percent_process_user_cpu": 0.074,
+          "percent_guest_user_cpu": 0.836
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::setTileSize(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.012,
+          "percent_process_user_cpu": 0.0683,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3DEX::vertex(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.011,
+          "percent_process_user_cpu": 0.0626,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::pipeSync(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.011,
+          "percent_process_user_cpu": 0.0626,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::setTextureImage(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.009,
+          "percent_process_user_cpu": 0.0512,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13204,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074884",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.008,
+          "percent_process_user_cpu": 0.0456,
+          "percent_guest_user_cpu": 0.5145
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::texture(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.008,
+          "percent_process_user_cpu": 0.0456,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "func_80086B90",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.007,
+          "percent_process_user_cpu": 0.0399,
+          "percent_guest_user_cpu": 0.4502
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "func_8008733C",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.007,
+          "percent_process_user_cpu": 0.0399,
+          "percent_guest_user_cpu": 0.4502
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "func_80079950",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.006,
+          "percent_process_user_cpu": 0.0342,
+          "percent_guest_user_cpu": 0.3859
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "func_80081F4C",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.006,
+          "percent_process_user_cpu": 0.0342,
+          "percent_guest_user_cpu": 0.3859
+        },
+        {
+          "tid": 13187,
+          "thread": "RT64 Workload",
+          "symbol": "RT64::GameFrame::match(RT64::RenderWorker*, RT64::WorkloadQueue&, RT64::GameFrame const&, RT64::BufferUploader*, bool&, bool&, bool&)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.006,
+          "percent_process_user_cpu": 0.0342,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::setOtherModeH(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.006,
+          "percent_process_user_cpu": 0.0342,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::loadBlock(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.006,
+          "percent_process_user_cpu": 0.0342,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13204,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074704",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.005,
+          "percent_process_user_cpu": 0.0285,
+          "percent_guest_user_cpu": 0.3215
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::loadTLUT(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.005,
+          "percent_process_user_cpu": 0.0285,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "func_80067FB4",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.004,
+          "percent_process_user_cpu": 0.0228,
+          "percent_guest_user_cpu": 0.2572
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "func_8007FDCC",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.004,
+          "percent_process_user_cpu": 0.0228,
+          "percent_guest_user_cpu": 0.2572
+        },
+        {
+          "tid": 13204,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074470",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.004,
+          "percent_process_user_cpu": 0.0228,
+          "percent_guest_user_cpu": 0.2572
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3DEX::tri1(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.004,
+          "percent_process_user_cpu": 0.0228,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13187,
+          "thread": "RT64 Workload",
+          "symbol": "RT64::GameFrame::match(RT64::RenderWorker*, RT64::WorkloadQueue&, RT64::GameFrame const&, RT64::BufferUploader*, bool&, bool&, bool&)::$_0::operator()(std::__ndk1::vector<RT64::GameScene, std::__ndk1::allocator<RT64::GameScene>> const&, std::__ndk1::vector<RT64::GameScene, std::__ndk1::allocator<RT64::GameScene>> const&) const",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0171,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_EXTENDED::noOpHook(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0171,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::loadTile(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0171,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13204,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074380",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": 0.1286
+        },
+        {
+          "tid": 13204,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074654",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": 0.1286
+        },
+        {
+          "tid": 13204,
+          "thread": "Game Thread 4",
+          "symbol": "func_8007F200",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": 0.1286
+        },
+        {
+          "tid": 13204,
+          "thread": "Game Thread 4",
+          "symbol": "func_8007F240",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": 0.1286
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "(anonymous namespace)::RT64Context::send_dl(OSTask const*)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_EXTENDED::matrixGroupCommand(RT64::State*, RT64::DisplayList**, bool, bool)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_EXTENDED::setRectAlignV1(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::clearGeometryMode(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::endDl(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::matrix(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::moveMem(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::runDl(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::fullSync(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::texrect(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::tileSync(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_no_lod_pvs_entry",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": 0.0643
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_ws_quad_panel_bg_reset",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": 0.0643
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_ws_split_wide_end",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": 0.0643
+        },
+        {
+          "tid": 13204,
+          "thread": "Game Thread 4",
+          "symbol": "func_800743D0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": 0.0643
+        },
+        {
+          "tid": 13206,
+          "thread": "Game Thread 6",
+          "symbol": "func_8000A5FC",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": 0.0643
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::moveWord(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::popMatrix(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::setGeometryMode(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::setCombine(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::setFillColor(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::State::pushReturnAddress(RT64::DisplayList*)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": null
+        }
+      ],
+      "inclusive_symbols": [
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "(anonymous namespace)::RT64Context::send_dl(OSTask const*)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 7.138,
+          "percent_process_user_cpu": 40.6469,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::Application::processDisplayLists(unsigned char*, unsigned int, unsigned int, bool)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 7.133,
+          "percent_process_user_cpu": 40.6184,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::Interpreter::processDisplayLists(unsigned int, RT64::DisplayList*)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 7.131,
+          "percent_process_user_cpu": 40.607,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::fullSync(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 4.347,
+          "percent_process_user_cpu": 24.7537,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13187,
+          "thread": "RT64 Workload",
+          "symbol": "RT64::GameFrame::match(RT64::RenderWorker*, RT64::WorkloadQueue&, RT64::GameFrame const&, RT64::BufferUploader*, bool&, bool&, bool&)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 3.686,
+          "percent_process_user_cpu": 20.9897,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13187,
+          "thread": "RT64 Workload",
+          "symbol": "RT64::GameFrame::match(RT64::RenderWorker*, RT64::WorkloadQueue&, RT64::GameFrame const&, RT64::BufferUploader*, bool&, bool&, bool&)::$_0::operator()(std::__ndk1::vector<RT64::GameScene, std::__ndk1::allocator<RT64::GameScene>> const&, std::__ndk1::vector<RT64::GameScene, std::__ndk1::allocator<RT64::GameScene>> const&) const",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 3.634,
+          "percent_process_user_cpu": 20.6936,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13187,
+          "thread": "RT64 Workload",
+          "symbol": "RT64::GameFrame::matchScene(RT64::WorkloadQueue&, RT64::GameFrame const&, RT64::GameScene const&, RT64::GameScene const&, std::__ndk1::unordered_map<unsigned int, RT64::ModifiedBuffers, std::__ndk1::hash<unsigned int>, std::__ndk1::equal_to<unsigned int>, std::__ndk1::allocator<std::__ndk1::pair<unsigned int const, RT64::ModifiedBuffers>>>&, bool&, bool&)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 3.626,
+          "percent_process_user_cpu": 20.648,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3DEX::tri2(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.977,
+          "percent_process_user_cpu": 5.5635,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "func_800028D0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.759,
+          "percent_process_user_cpu": 4.3221,
+          "percent_guest_user_cpu": 48.8103
+        },
+        {
+          "tid": 13134,
+          "thread": "SP Task Thread",
+          "symbol": "aspMain(unsigned char*, unsigned int)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.629,
+          "percent_process_user_cpu": 3.5818,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "func_800030F8",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.547,
+          "percent_process_user_cpu": 3.1149,
+          "percent_guest_user_cpu": 35.1768
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "func_80067B98",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.324,
+          "percent_process_user_cpu": 1.845,
+          "percent_guest_user_cpu": 20.836
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "func_80067CF0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.277,
+          "percent_process_user_cpu": 1.5774,
+          "percent_guest_user_cpu": 17.8135
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "func_8000A6C0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.254,
+          "percent_process_user_cpu": 1.4464,
+          "percent_guest_user_cpu": 16.3344
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "func_80006018",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.202,
+          "percent_process_user_cpu": 1.1503,
+          "percent_guest_user_cpu": 12.9904
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_graphics_task_prepare",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.19,
+          "percent_process_user_cpu": 1.0819,
+          "percent_guest_user_cpu": 12.2186
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "lambo::f3dex::Walker<lambo_graphics_task_prepare::$_1>::run(unsigned int, unsigned int)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.189,
+          "percent_process_user_cpu": 1.0762,
+          "percent_guest_user_cpu": 12.1543
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::setTile(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.129,
+          "percent_process_user_cpu": 0.7346,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "func_80079BD8",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.126,
+          "percent_process_user_cpu": 0.7175,
+          "percent_guest_user_cpu": 8.1029
+        },
+        {
+          "tid": 13204,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074884",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.119,
+          "percent_process_user_cpu": 0.6776,
+          "percent_guest_user_cpu": 7.6527
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "SDL_ResampleAudioStream",
+          "dso": "libSDL2.so",
+          "sampled_user_cpu_seconds": 0.118,
+          "percent_process_user_cpu": 0.6719,
+          "percent_guest_user_cpu": 7.5884
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "SDL_ResampleAudio",
+          "dso": "libSDL2.so",
+          "sampled_user_cpu_seconds": 0.117,
+          "percent_process_user_cpu": 0.6662,
+          "percent_guest_user_cpu": 7.5241
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "func_800102D8",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.115,
+          "percent_process_user_cpu": 0.6549,
+          "percent_guest_user_cpu": 7.3955
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "func_80019D20",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.093,
+          "percent_process_user_cpu": 0.5296,
+          "percent_guest_user_cpu": 5.9807
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "func_800811F0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.083,
+          "percent_process_user_cpu": 0.4726,
+          "percent_guest_user_cpu": 5.3376
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "func_80082F04",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.083,
+          "percent_process_user_cpu": 0.4726,
+          "percent_guest_user_cpu": 5.3376
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "func_8008733C",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.081,
+          "percent_process_user_cpu": 0.4612,
+          "percent_guest_user_cpu": 5.209
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "func_8002622C",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.078,
+          "percent_process_user_cpu": 0.4442,
+          "percent_guest_user_cpu": 5.0161
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "lambo::FogRewriter::command(unsigned char*, unsigned int, unsigned int, unsigned int, lambo::FogPolicy)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.071,
+          "percent_process_user_cpu": 0.4043,
+          "percent_guest_user_cpu": 4.5659
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "func_80076024",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.059,
+          "percent_process_user_cpu": 0.336,
+          "percent_guest_user_cpu": 3.7942
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "func_80082DF0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.058,
+          "percent_process_user_cpu": 0.3303,
+          "percent_guest_user_cpu": 3.7299
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::DisplayList::p0(unsigned char, unsigned char) const",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.055,
+          "percent_process_user_cpu": 0.3132,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13187,
+          "thread": "RT64 Workload",
+          "symbol": "RT64::GameFrame::matchTransform(RT64::Workload&, RT64::Workload const&, RT64::GameFrameMap::WorkloadMap&, RT64::GameFrameMap::WorkloadMap const*, unsigned int, unsigned int, RT64::ModifiedBuffers&)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.054,
+          "percent_process_user_cpu": 0.3075,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13205,
+          "thread": "Game Thread 3",
+          "symbol": "func_8008286C",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.051,
+          "percent_process_user_cpu": 0.2904,
+          "percent_guest_user_cpu": 3.2797
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::DisplayList::p1(unsigned char, unsigned char) const",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.05,
+          "percent_process_user_cpu": 0.2847,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::texrect(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.031,
+          "percent_process_user_cpu": 0.1765,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13204,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074704",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.029,
+          "percent_process_user_cpu": 0.1651,
+          "percent_guest_user_cpu": 1.865
+        },
+        {
+          "tid": 13206,
+          "thread": "Game Thread 6",
+          "symbol": "func_8000A5FC",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.028,
+          "percent_process_user_cpu": 0.1594,
+          "percent_guest_user_cpu": 1.8006
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "lambo::HudTextureBounds::command(unsigned int, unsigned int, unsigned int)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.024,
+          "percent_process_user_cpu": 0.1367,
+          "percent_guest_user_cpu": 1.5434
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::setTileSize(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.022,
+          "percent_process_user_cpu": 0.1253,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::setTextureImage(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.016,
+          "percent_process_user_cpu": 0.0911,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::loadBlock(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.015,
+          "percent_process_user_cpu": 0.0854,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3DEX::vertex(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.013,
+          "percent_process_user_cpu": 0.074,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13204,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074470",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.013,
+          "percent_process_user_cpu": 0.074,
+          "percent_guest_user_cpu": 0.836
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::pipeSync(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.011,
+          "percent_process_user_cpu": 0.0626,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::texture(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.011,
+          "percent_process_user_cpu": 0.0626,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::loadTLUT(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.01,
+          "percent_process_user_cpu": 0.0569,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13204,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074380",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.009,
+          "percent_process_user_cpu": 0.0512,
+          "percent_guest_user_cpu": 0.5788
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::runDl(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.007,
+          "percent_process_user_cpu": 0.0399,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::setOtherModeH(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.006,
+          "percent_process_user_cpu": 0.0342,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3DEX::tri1(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.006,
+          "percent_process_user_cpu": 0.0342,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13204,
+          "thread": "Game Thread 4",
+          "symbol": "func_800743D0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.006,
+          "percent_process_user_cpu": 0.0342,
+          "percent_guest_user_cpu": 0.3859
+        },
+        {
+          "tid": 13204,
+          "thread": "Game Thread 4",
+          "symbol": "func_8007F200",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.005,
+          "percent_process_user_cpu": 0.0285,
+          "percent_guest_user_cpu": 0.3215
+        },
+        {
+          "tid": 13204,
+          "thread": "Game Thread 4",
+          "symbol": "func_80074654",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.004,
+          "percent_process_user_cpu": 0.0228,
+          "percent_guest_user_cpu": 0.2572
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_EXTENDED::noOpHook(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0171,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::loadTile(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0171,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_no_lod_pvs_entry",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0171,
+          "percent_guest_user_cpu": 0.1929
+        },
+        {
+          "tid": 13204,
+          "thread": "Game Thread 4",
+          "symbol": "func_8007E0E0",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.003,
+          "percent_process_user_cpu": 0.0171,
+          "percent_guest_user_cpu": 0.1929
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_EXTENDED::matrixGroupCommand(RT64::State*, RT64::DisplayList**, bool, bool)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_EXTENDED::setRectAlignV1(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::clearGeometryMode(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::endDl(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::matrix(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::moveMem(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::tileSync(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.002,
+          "percent_process_user_cpu": 0.0114,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_ws_quad_panel_bg_reset",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": 0.0643
+        },
+        {
+          "tid": 13202,
+          "thread": "Game Thread 3",
+          "symbol": "lambo_ws_split_wide_end",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": 0.0643
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::moveWord(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::popMatrix(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_F3D::setGeometryMode(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::setCombine(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::GBI_RDP::setFillColor(RT64::State*, RT64::DisplayList**)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": null
+        },
+        {
+          "tid": 13133,
+          "thread": "Thread-3",
+          "symbol": "RT64::State::pushReturnAddress(RT64::DisplayList*)",
+          "dso": "libmain.so",
+          "sampled_user_cpu_seconds": 0.001,
+          "percent_process_user_cpu": 0.0057,
+          "percent_guest_user_cpu": null
+        }
+      ],
+      "counter_interval_seconds": 19.938,
+      "counter_interval_note": "From before first thread stat read to after last stat read. Per-thread snapshots are staggered. Includes adb, symbol processing and log/counter collection beyond recording. Threads absent from either snapshot are excluded; CLK_TCK=100.",
+      "thread_counters": [
+        {
+          "tid": 13071,
+          "name": "Signal Catcher",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13072,
+          "name": "perfetto_hprof_",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13073,
+          "name": "ADB-JDWP Connec",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13074,
+          "name": "Jit thread pool",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13075,
+          "name": "HeapTaskDaemon",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13076,
+          "name": "ReferenceQueueD",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13077,
+          "name": "FinalizerDaemon",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13078,
+          "name": "FinalizerWatchd",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13080,
+          "name": "Binder:32717_1",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13081,
+          "name": "Binder:32717_2",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13085,
+          "name": "Binder:32717_3",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13087,
+          "name": "Profile Saver",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13092,
+          "name": "RenderThread",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13098,
+          "name": "SDLActivity",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13099,
+          "name": "AudioPortEventH",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13108,
+          "name": "SDLThread",
+          "user_cpu_seconds": 0.65,
+          "kernel_cpu_seconds": 0.21
+        },
+        {
+          "tid": 13111,
+          "name": "hwuiTask0",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13112,
+          "name": "hwuiTask1",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13114,
+          "name": "SDLThread",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13118,
+          "name": "AudioTrack",
+          "user_cpu_seconds": 0.13,
+          "kernel_cpu_seconds": 0.5
+        },
+        {
+          "tid": 13119,
+          "name": "SDLAudioP2",
+          "user_cpu_seconds": 0.03,
+          "kernel_cpu_seconds": 0.14
+        },
+        {
+          "tid": 13129,
+          "name": "InsetsAnimation",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13133,
+          "name": "Thread-3",
+          "user_cpu_seconds": 9.14,
+          "kernel_cpu_seconds": 0.16
+        },
+        {
+          "tid": 13134,
+          "name": "SP Task Thread",
+          "user_cpu_seconds": 0.75,
+          "kernel_cpu_seconds": 0.04
+        },
+        {
+          "tid": 13142,
+          "name": "io.git:traceq0",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13145,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.15,
+          "kernel_cpu_seconds": 0.02
+        },
+        {
+          "tid": 13146,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.02,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13147,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.01,
+          "kernel_cpu_seconds": 0.01
+        },
+        {
+          "tid": 13148,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13149,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13150,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.02,
+          "kernel_cpu_seconds": 0.01
+        },
+        {
+          "tid": 13166,
+          "name": "RT64 Shader",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13167,
+          "name": "RT64 Shader",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13168,
+          "name": "RT64 Shader",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13169,
+          "name": "RT64 Shader",
+          "user_cpu_seconds": 0.07,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13179,
+          "name": "RT64 Texture",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13180,
+          "name": "RT64 Stream",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13181,
+          "name": "RT64 Stream",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13182,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.02,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13183,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.02,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13184,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.01,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13185,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.03,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13186,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13187,
+          "name": "RT64 Workload",
+          "user_cpu_seconds": 6.01,
+          "kernel_cpu_seconds": 0.26
+        },
+        {
+          "tid": 13188,
+          "name": "RT64 Idle",
+          "user_cpu_seconds": 0.32,
+          "kernel_cpu_seconds": 0.78
+        },
+        {
+          "tid": 13189,
+          "name": "Thread-4",
+          "user_cpu_seconds": 0.24,
+          "kernel_cpu_seconds": 0.23
+        },
+        {
+          "tid": 13190,
+          "name": "RT64 Buffer",
+          "user_cpu_seconds": 0.01,
+          "kernel_cpu_seconds": 0.01
+        },
+        {
+          "tid": 13192,
+          "name": "Lambo Stall",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13195,
+          "name": "VI Thread",
+          "user_cpu_seconds": 0.04,
+          "kernel_cpu_seconds": 0.15
+        },
+        {
+          "tid": 13196,
+          "name": "Timer Thread",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13197,
+          "name": "Game Start Thre",
+          "user_cpu_seconds": 0.02,
+          "kernel_cpu_seconds": 0.02
+        },
+        {
+          "tid": 13199,
+          "name": "Game Start Thre",
+          "user_cpu_seconds": 0.03,
+          "kernel_cpu_seconds": 0.05
+        },
+        {
+          "tid": 13200,
+          "name": "Game Thread 1",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13201,
+          "name": "Game Thread 0",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13202,
+          "name": "Game Thread 3",
+          "user_cpu_seconds": 1.08,
+          "kernel_cpu_seconds": 0.4
+        },
+        {
+          "tid": 13203,
+          "name": "Game Thread 0",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 13204,
+          "name": "Game Thread 4",
+          "user_cpu_seconds": 0.07,
+          "kernel_cpu_seconds": 0.15
+        },
+        {
+          "tid": 13205,
+          "name": "Game Thread 3",
+          "user_cpu_seconds": 0.34,
+          "kernel_cpu_seconds": 0.06
+        },
+        {
+          "tid": 13206,
+          "name": "Game Thread 6",
+          "user_cpu_seconds": 0.03,
+          "kernel_cpu_seconds": 0.03
+        },
+        {
+          "tid": 13243,
+          "name": "Game Thread 3",
+          "user_cpu_seconds": 0.0,
+          "kernel_cpu_seconds": 0.0
+        },
+        {
+          "tid": 32717,
+          "name": "SDLActivity",
+          "user_cpu_seconds": 0.21,
+          "kernel_cpu_seconds": 0.07
+        }
+      ],
+      "counter_threads_only_before": [],
+      "counter_threads_only_after": [],
+      "prepare_samples": [
+        {
+          "device_utc": "2026-11-14 13:12:13",
+          "commands": 16400,
+          "elapsed_us": 851.146
+        },
+        {
+          "device_utc": "2026-11-14 13:12:16",
+          "commands": 15954,
+          "elapsed_us": 412.291
+        },
+        {
+          "device_utc": "2026-11-14 13:12:20",
+          "commands": 15800,
+          "elapsed_us": 1128.594
+        },
+        {
+          "device_utc": "2026-11-14 13:12:23",
+          "commands": 14686,
+          "elapsed_us": 716.875
+        }
+      ],
+      "prepare_median_us": 784.0105,
+      "prepare_max_us": 1128.594,
+      "prepare_selection": {
+        "device_epoch_inclusive": [
+          1794661933,
+          1794661945
+        ],
+        "note": "Conservative interior based on device UTC clock brackets; one-second log precision. Diagnostic every-60-task samples, not every-task maximum."
+      },
+      "renderer": {
+        "reports_before": 3,
+        "reports_after": 7,
+        "selection": "New reports excluding the first two and the final report. Five-second windows; brackets include <5 s of counter/adb/post-processing overhead on either edge. Renderer wall/GPU timings are separate from sampled user CPU.",
+        "eligible_reports": [
+          "[render-cost] window_s=5.1 surface=2560x1600@60Hz vi=320x240@20Hz target_hz=60 internal=768x480 scale=2.40x2.00 msaa=1 game_fps=17.4 present_fps=19.0 frames=102/164 frame_ms=23.7/46.5 gpu_ms=12.8/17.1 workload_ms=43.0/88.8 setup_ms=15.2 match_ms=15.2"
+        ]
+      },
+      "foreground_checks": 24,
+      "foreground_all_match": true,
+      "foreground_note": "Polls about once per second through warmup/recording/replay; no competing game process at launch. Not a continuous compositor trace.",
+      "harness": {
+        "exit_code": 0,
+        "final_state": 8,
+        "loaded_circuit": 1,
+        "max_abs_player_speed": 174,
+        "max_state": 8,
+        "menu_screen": 0,
+        "outcome": "passed",
+        "player_speed": 103,
+        "player_vehicle": 1,
+        "reason": "replay_complete",
+        "replay": {
+          "active": true,
+          "complete": true,
+          "configured": true,
+          "dispatcher_ticks": 1527,
+          "failed": false,
+          "frames_consumed": 1526,
+          "guest_frames_verified": 1526,
+          "recording": false,
+          "total_frames": 1526
+        },
+        "schema": 1,
+        "state_load": {
+          "applied": false,
+          "failed": false,
+          "requested": false
+        },
+        "swaps": 1527,
+        "vis": 5547,
+        "warp": {
+          "applied": true,
+          "car": 0,
+          "circuit": 1,
+          "failed": false,
+          "laps": 3,
+          "mode": 2,
+          "players": 4,
+          "requested": true
+        }
+      },
+      "command": "python tools/profile_game_threads_android.py both",
+      "record_command": "adb shell run-as io.github.alondero.lamborghinirecomp.profile426 ./files/simpleperf record --in-app -p PID -e cpu-clock:u -f 1000 --call-graph dwarf,16384 --duration 15 --symfs files/symbols -o files/profile/perf.data",
+      "local_artifacts": "artifacts/gh426/4p-131149",
+      "artifact_sha256": {
+        "perf.data": "f9c718f858ea4b8492f06bdd3bbe1d51d27259414d61af2b50d9bedafa09c446",
+        "record.log": "bc47b8f9a0a1695752365f38e5de629c170188decf135920723b8e57729694fd",
+        "metadata.json": "22883970806139b7c477abb7bf887d8ee02958e713392aa3c4f4e9191af79c7b",
+        "self.csv": "4b31dda008ce7ef736c91828a311624ea7cb4a5acfc03414fbbb8d5acfbfb445",
+        "children.csv": "0b68d60b6f6509f34961d1af5690866eff213f561d9d8d3a16c220d39733458d",
+        "threads.csv": "b883461ff99936e0b7f7f88e430854b6ba15ea311a0c3d72324866b26738b6f1",
+        "render-before.log": "a79fdc43d8f6fd996c58a2b37677e12b647fdb9b77e56c1ecff975a1b7c53b5c",
+        "render-after.log": "60242354f57ede5637cce10f2dd8d3734dfd4dd088c0919aa81e6a7fcb4b403e",
+        "native-before.log": "86f1a503eef8c0734dc5a5d50425948432e802342a046e8530eab292a2abf86b",
+        "native-after.log": "c10b9a3e7295d31c52afa290e9f81d892a0e6db76e1692a29ba99559127ea15b",
+        "native-errors.log": "0051e8ca726f47780a801816bb03446d82b734ffc70d602d546be45a2ba9f0b9",
+        "native.log": "1d523abe71eea61980644b9057066bea2fa3605c8200cd45d53ff249fbe81fa8",
+        "features.txt": "7c2030d78da2887607c48b41ae8e1709aa8894e7e6be098540570bcd764cd923"
+      }
     }
   ],
   "commands": {
@@ -781,5 +4765,33 @@
     "sampler_source_sha256": "878201f7de6a850876dfec637109598c3156c38fd3e5b83c02b02fb0db536c71",
     "runner_source_sha256": "54890f4cfea27b8a1f3af8ecde82df307a4a49372f39037e0bce6e83150d2113",
     "relative_executable_note": "Capture reused the parent checkout build through the explicit --exe override. The documented build/lamborghini_modern.exe example works with a matching local build."
+  },
+  "source_commit_note": "Top-level source_commit preserves the published Windows investigation reference. Android source/build identities are recorded separately under platforms.android and each Android run.",
+  "android_attempts_excluded": [
+    {
+      "artifacts": "artifacts/gh426/1p-130553",
+      "reason": "simpleperf lacked --in-app and failed before recording; no samples accepted"
+    },
+    {
+      "artifacts": "artifacts/gh426/1p-130640",
+      "reason": "Complete zero-loss preliminary profile, superseded by final pair with native stdout brackets"
+    },
+    {
+      "artifacts": "artifacts/gh426/4p-130801",
+      "reason": "Complete zero-loss preliminary profile, superseded by final pair with native stdout brackets"
+    },
+    {
+      "artifacts": "Prior handoff android-1p* attempts",
+      "reason": "Lost foreground to another workstream; none incorporated"
+    }
+  ],
+  "android_decision": {
+    "one_player_prepare_shortcut": "All six retained interior wall samples are below 500 us/task.",
+    "four_player_prepare_shortcut": "Not met: median 784.0105 us, sampled maximum 1128.594 us. Wall timing includes scheduling.",
+    "guest_source_action": "No replacement or no-LOD/PVS/HUD/interpolation caching justified by this profile; named guest CPU has headroom.",
+    "producer_followup": "https://github.com/alondero/automobililamborghini-recomp/issues/267#issuecomment-6877871567",
+    "renderer_followup": "https://github.com/alondero/automobililamborghini-recomp/issues/429",
+    "optimization_gate": "Identify the limiting stage and a specific candidate first. Frozen replay/settings, warmup excluded, at least five interleaved A/B runs per variant, separate CPU/GPU/presentation timing, at least 80% lower targeted cost AND at least 0.5 ms/game frame saved in the limiting stage, with unchanged correctness.",
+    "optimization_implemented": false
   }
 }

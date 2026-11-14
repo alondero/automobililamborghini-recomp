@@ -809,7 +809,7 @@ Interactive resize/backend checks and contention timing were not run.
 
 ## Game thread and producer hooks (2026-11-14)
 
-Status: bounded Windows measurements for
+Status: bounded Windows and Android measurements for
 [issue 426](https://github.com/alondero/automobililamborghini-recomp/issues/426).
 The [retained evidence](evidence/game-thread-profile-426.json) records binary
 identity, settings, CPU counters, sampled task timings and renderer reports.
@@ -882,12 +882,142 @@ The runner waits for the first prepared task, excludes another ten seconds,
 then records both workloads separately. It retains CPU counters, raw RIPs,
 module bases, sampler failures, logs and the harness result under `artifacts/`.
 
-The ARM64 Release build at `37d6df6` passed with freshly generated USA game
-and RSP output, NDK r28c Clang 19.0.1, and the repository's Android patch
-series. Clean Android captures remain pending: issue 425 has priority on the
-shared SM-T720. Overlapping captures lost foreground focus and are excluded.
-The Android metadata in the evidence describes the build and intended setup,
-not a completed profiling result. This partial experiment does not close 426.
+### Android follow-up after the display-list optimization
+
+The Android experiment used `27c52ad`, after the RT64 TMEM copy change in
+PR 428. The supported Android script freshly generated the USA game/RSP
+output and built and packaged ARM64 Release with NDK 28.2.13676358, Clang
+19.0.1. A separate debug Java shell loaded the production native library;
+no native timing probes or optimization were added. Its unstripped symbols
+and installed stripped library share ELF build ID
+`af3b601ac389749449e3fde8f58cf5c40041e278`. The evidence records both SHA-256
+identities separately from the published Windows build.
+
+The SM-T720 ran Android 11 with Adreno 615 and Turnip v25.3.0-R11
+(`0x6402063`), Vulkan, a 2560x1600 surface at 60 Hz and a 768x480 internal
+image. Settings match the Windows policies above; Android uses fullscreen.
+Only the isolated `profile426` application was changed. Its existing ROM,
+assets and driver selection were reused. The player's normal application,
+controls and saves were untouched. Launcher import and driver ZIP import
+were not tested.
+
+Each run excluded at least ten seconds after replay started in state 8.
+`simpleperf` sampled process-wide user CPU with `cpu-clock:u`, 1000 Hz and
+16 KiB DWARF stacks for 15 seconds. The final 1P/4P recordings lasted
+15.0015/14.9906 seconds and contained 12,287/17,561 samples, with zero lost
+samples and zero truncated stack samples. Foreground checks stayed on the
+profiling activity through recording and replay completion. Both runs
+consumed and verified all 1,526 updates, produced 1,527 swaps and ended in
+state 8; their VI counts were 3,432 and 5,547. The 30,000-VI safety bound
+did not truncate either replay. Four-player mode still replays only port 0.
+
+| Android workload | Busiest guest user CPU / ~15 s | All named guest user CPU / ~15 s | Prepare median / sampled maximum (µs/task) | Interior prepare samples |
+| --- | ---: | ---: | ---: | ---: |
+| 1P time trial | 0.959 s | 1.561 s | 159.4 / 262.1 | 6 |
+| 4P split screen | 1.084 s | 1.555 s | 784.0 / 1,128.6 | 4 |
+
+These CPU values sum sampled event periods, not wall time or kernel time.
+The busiest thread is `Game Thread 3` (TIDs 9591 and 13202); another thread
+has the same name, so the evidence keeps TIDs. Independent `/proc` user/kernel
+counters span 19.77/19.94 seconds, including enumeration, ADB and symbol
+processing. They are not a second measurement of the exact 15-second window.
+The tablet was USB powered, initially at 100% battery and 26°C. Frequency,
+governor, background services and thermal variation were not controlled.
+Profiling and foreground polling add overhead; no unprofiled speedup is claimed.
+
+`func_8000A6C0`, the viewport/world builder, was the largest sampled generated
+function on the main guest thread: 86/144 ms of self user CPU in 1P/4P.
+The next such function there was `func_80084E10` at 47 ms in 1P and
+`func_8007F830` at 31 ms in 4P. These are symbol attributions, not newly
+recovered function semantics. The audio guest thread also spent 162/117 ms
+in SDL resampling. The separate SP Task thread used 920/663 ms of sampled
+user CPU, including 881/629 ms in generated `aspMain` itself. RSP work is
+not included in the named guest-thread totals.
+
+Preparation's inclusive sampled user CPU was 68/190 ms: 4.36%/12.22% of
+named guest user CPU, or 0.55%/1.08% of the whole process's sampled user CPU.
+The walker, fog and HUD helpers are children of that measurement; their
+inclusive percentages overlap. Its wall-time diagnostic includes scheduling
+delays and samples only every sixtieth task after startup. Interior lists
+contained 2,854–4,540 commands in 1P and 14,686–16,400 in 4P. The four-player
+measurements do **not** satisfy the issue's sub-500 µs/task shortcut.
+The no-LOD draw-distance rewrite, PVS, HUD pinning and interpolation hooks
+had only a few attributed samples, or none. In particular, draw-distance had
+two inclusive samples in 1P and none in 4P. An absent symbol at this resolution
+is not evidence of zero cost or permission to cache writes across restoration.
+
+The Gfx thread (`Thread-3`, confirmed by its `gfx_thread_func` stack) used
+5.010/7.760 s of sampled user CPU, and RT64 Workload used 2.234/5.334 s.
+`send_dl` accounted for 4.348/7.138 s inclusive; `GameFrame::matchScene`
+accounted for 0.728/3.626 s inclusive on the workload thread. These are
+separate from producer preparation on the guest thread.
+
+One conservative completed renderer window inside each profile gives:
+
+| Android workload | Game / presented FPS | Frame / GPU mean (ms) | Workload / matching mean (ms) |
+| --- | ---: | ---: | ---: |
+| 1P time trial | 29.5 / 40.9 | 17.1 / 7.7 | 26.9 / 1.9 |
+| 4P split screen | 17.4 / 19.0 | 23.7 / 12.8 | 43.0 / 15.2 |
+
+Native stdout and timestamped diagnostics bracket each capture. To exclude
+five-second windows that might cross counter collection or post-processing,
+the selection discards the first two newly completed renderer reports and
+the last report. Each retained report is a 5.0–5.1-second window, not the
+entire profile or a replay-wide FPS average. Renderer frame/workload times
+include waits; GPU time is separate. Neither is exclusive guest CPU time.
+
+The guest threads show CPU headroom, while four-player gameplay misses
+30 Hz amid substantially larger renderer costs. This does not prove which
+pipeline dependency limits every frame. There is no measured basis for a
+guest-source replacement or draw-distance cache. Four-player preparation
+does exceed 500 µs in this bounded sample; further pass-removal work belongs
+with [issue 267](https://github.com/alondero/automobililamborghini-recomp/issues/267),
+whose original renderer-side description predates the combined producer pass.
+Any change must use the A/B gates below. Remaining four-player matching cost
+is tracked separately by
+[issue 429](https://github.com/alondero/automobililamborghini-recomp/issues/429).
+No production optimization was attempted in this experiment.
+
+### Reproduce the Android capture
+
+Use a Windows host with the Android build prerequisites, MinGW/Ninja on PATH,
+and `JAVA_HOME` set to the Android Studio JBR. Build and prepare the isolated
+shell from the repository root:
+
+~~~powershell
+$env:ANDROID_HOME = "$env:LOCALAPPDATA/Android/Sdk"
+python scripts/build_android.py --sdk $env:ANDROID_HOME --cmake "$env:ANDROID_HOME/cmake/3.22.1/bin/cmake.exe" --jobs 12
+python tools/prepare_game_thread_profile_android.py --sdk $env:ANDROID_HOME
+Push-Location scratch/gh426/shell
+.\gradlew.bat --no-daemon assembleDebug
+Pop-Location
+adb install -r scratch/gh426/shell/app/build/outputs/apk/debug/app-debug.apk
+~~~
+
+Write the evidence's `platforms.android.configuration` object as UTF-8 JSON
+to `scratch/gh426/graphics.json`. With the profiling app stopped, stage its
+ROM, packaged assets, replay, settings, simpleperf and unstripped symbols:
+
+~~~powershell
+python tools/prepare_game_thread_profile_android.py --sdk $env:ANDROID_HOME --stage --graphics scratch/gh426/graphics.json
+python tools/profile_game_threads_android.py both
+~~~
+
+Configure the compatible GPU driver in this isolated app before capturing;
+these runs reused its previously staged Turnip installation. Do not overwrite
+or clear the player's app to obtain it. Check for other device tests and any
+required human unlock first. The runner rejects another running game package,
+checks foreground focus, rejects sample loss and verifies the requested warp
+and complete replay. Reports include self, inclusive and per-thread tables.
+Manual review must still confirm symbol identity, stack coverage and comparable
+interior diagnostic/renderer windows. Raw profiles/logs remain under
+`artifacts/gh426/`; the evidence retains their hashes and aggregate attribution.
+The preparation tool is developer staging, not validation of the launcher.
+
+Prior interrupted captures from the handoff are excluded. One new attempt
+failed before recording because it lacked simpleperf's `--in-app` flag. A
+complete preliminary pair was superseded to add native stdout brackets;
+the final pair above is the only Android pair incorporated in the evidence.
 
 For other profiling tools, enable `RT64_RENDER_COST_REPORT=1`, run the executable with
 `--verbose` or `--log-level=debug`, and set `LAMBO_WARP`, `LAMBO_WARP_MODE`,
