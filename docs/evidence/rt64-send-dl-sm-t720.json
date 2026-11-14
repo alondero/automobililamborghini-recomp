@@ -1,0 +1,943 @@
+{
+  "date": "2026-11-14",
+  "base_commit": "37d6df6225200324fe0def71884d9ceecc49ec14",
+  "change": "patches/0063-rt64-aligned-tmem-copy.patch; no other production changes",
+  "device": {
+    "model": "Samsung Galaxy Tab S5e SM-T720",
+    "soc": "Snapdragon 670 / Adreno 615",
+    "android": "11 (T720XXS3DWA1)",
+    "driver": "Mesa Turnip v25.3.0-R11",
+    "surface": "2560x1438, 60 Hz",
+    "internal": "855x480 (fixed 2x vertical; expanded aspect)",
+    "samples": 1
+  },
+  "build": {
+    "host": "Windows x64",
+    "native_compiler": "NDK 28.2.13676358, Clang 19.0.1, Release (-O3 -DNDEBUG), arm64-v8a, android-28",
+    "fixture_host_compiler": "MinGW GCC 15.2.0, -std=c++17 -O2",
+    "rom": "USA, SHA-256 CAB2467684A58BC19C787423D704A961AA497629763367D9FE691172DE58591C",
+    "generation": "USA RecompiledFuncs and aspMain.cpp freshly generated with scripts/build_android.py; no generated output edited",
+    "apk_payload_differences": [
+      "lib/arm64-v8a/libmain.so"
+    ],
+    "measured_native_sha256": {
+      "byte": "f2a6384ce246e8d9ea5d258694e7a7d1c6d07e1fbff009d981148693eb795172",
+      "aligned": "fa3fad01f1e883468892eff14c817f59416b77d32151263ce096e42b267e999f"
+    }
+  },
+  "settings": {
+    "api_option": "Vulkan",
+    "ar_option": "Expand",
+    "automatic_pit_stops": true,
+    "camera_distance_scale": 0.45,
+    "camera_fov_add": 25.0,
+    "camera_height_scale": 0.75,
+    "car_select_info": true,
+    "developer_mode": false,
+    "draw_distance": 1.5,
+    "draw_distance_circuit": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "ds_option": 1,
+    "fog_scale": 1.0,
+    "fog_scale_circuit": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "hpfb_option": "Auto",
+    "hr_option": "Clamp16x9",
+    "menu_stick_sensitivity": 1.0,
+    "msaa_option": "MSAA2X",
+    "no_lod": true,
+    "no_lod_circuit": [
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ],
+    "race_cars": 16,
+    "remove_blue_hud_bar": true,
+    "res_option": "Original2x",
+    "rr_manual_value": 60,
+    "rr_option": "Display",
+    "rt_shadow_rays": 8,
+    "rt_shadow_softness": 0.5,
+    "rt_shadows": false,
+    "show_launcher": false,
+    "texture_dump": "",
+    "texture_pack": "",
+    "widescreen_fog_match": true,
+    "widescreen_sky_match": true,
+    "window_height": 900,
+    "window_width": 1600,
+    "wm_option": "Windowed"
+  },
+  "method": {
+    "apps": "Both libraries run in the same private debug measurement shell io.github.alondero.lamborghinirecomp.perf425; player application and saves untouched. Each launch starts fresh with an empty private Controller Pak.",
+    "order": "trial: byte1, aligned1, aligned2, byte2, byte3, aligned3; accepted attract: byte1, aligned1, byte2, byte3, aligned3, aligned2. A Play Protect prompt interrupted the initial aligned2 attempt before any display list; it was rejected and repeated after aligned3.",
+    "runs": "63 seconds after launching each process; device awake on USB; normal CPU governor and scheduling; no affinity for game runs",
+    "trial": "recordings/circuit-1-time-trial-car-0.jsonl, LAMBO_WARP=1:3:0:1, LAMBO_WARP_MODE=0; samples at replay updates 240 through 1440 inclusive; recording has 1526 frames; timings use its fixed middle interval",
+    "attract": "normal unmodified attract sequence; display lists 800 through 1400 inclusive, inside the first race after title/menu warm-up",
+    "timers": "Temporary per-display-list probes: CPU CLOCK_THREAD_CPUTIME_ID; wall CLOCK_MONOTONIC. full/fullcpu include replay, hashing, render preparation and wait. Nested phase wall timers are inclusive and cannot be added. Logging happens after the send_dl timer stops.",
+    "render": "Existing patch0058 render-cost reports, all complete 5-second windows lying inside each sample interval. workload_ms is the window mean, present_fps counts successful RT64 swapchain presentations, game_fps counts RT64 workloads. These are not SurfaceFlinger scanout measurements.",
+    "summary": "Each run stores a median of display-list samples and a median of eligible render-window means. Comparisons take the median of three run medians. Min/max are run-median ranges, not confidence intervals.",
+    "hash_detail": "Separate diagnostic launches collect repeated output hashes and same-descriptor requests since the last TMEM load; this bookkeeping and simpleperf are disabled in the 12 measured A/B runs."
+  },
+  "fixture": {
+    "word_cases": 50331648,
+    "load_sequences": 24592,
+    "hash_comparisons": 368880,
+    "hash_versions": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "passed": [
+      "Windows x64",
+      "Android ARM64 on SM-T720"
+    ],
+    "isolated_cpu": 7,
+    "isolated_flags": "-std=c++17 -O3 -DNDEBUG -static-libstdc++",
+    "isolated_block": "100000 generic non-RGBA32 non-TLUT loadBlock calls, 256 eight-byte words per call, DXT=64, indirect call prevents constant-dimension specialization",
+    "byte_ms": [
+      245.086,
+      244.859,
+      244.745
+    ],
+    "aligned_ms": [
+      109.122,
+      108.987,
+      109.038
+    ]
+  },
+  "simpleperf": {
+    "case": "separate diagnostic trial-byte launch with hash-detail bookkeeping enabled",
+    "event": "cpu-clock, 1000 Hz, 12.0031 s, dwarf stack16384",
+    "recorded_samples": 12684,
+    "lost_samples": 0,
+    "gfx_thread_samples": 5369,
+    "percent_of_gfx_samples_children": {
+      "send_dl": 88.17,
+      "fullSync": 65.93,
+      "fullSyncFramebufferPairTiles": 47.38,
+      "loadBlockOperation": 27.1,
+      "TMEMHasher_hash": 10.62
+    },
+    "interpretation": "Inclusive stacks: fullSync contains tile replay and hashing. Source and profile show rendering native framebuffers, waiting for its GPU fence and copying framebuffer results to guest RAM; the default renderToRAM=true. One fullSync and one graphics-worker fence wait per sampled display list. A repeated barrier was not found."
+  },
+  "runs": [
+    {
+      "scenario": "trial",
+      "variant": "byte",
+      "repetition": 1,
+      "display_lists": 1201,
+      "render_windows": 8,
+      "median": {
+        "wall": 23.820105,
+        "cpu": 14.349945,
+        "full": 20.011198,
+        "fullcpu": 10.792138,
+        "tiles": 6.400833,
+        "hash": 1.958809,
+        "copy": 3.373855,
+        "wait": 7.958282,
+        "uploads": 0.002084,
+        "fullcalls": 1.0,
+        "hashcalls": 539.0,
+        "blocks": 373.0,
+        "waits": 1.0
+      },
+      "battery_temperature_c": [
+        25.9,
+        26.2
+      ],
+      "render_window_medians": {
+        "workload_ms": 26.1,
+        "present_fps": 40.4,
+        "game_fps": 28.799999999999997,
+        "gpu_ms": 8.1,
+        "match_ms": 2.1
+      }
+    },
+    {
+      "scenario": "trial",
+      "variant": "byte",
+      "repetition": 2,
+      "display_lists": 1201,
+      "render_windows": 8,
+      "median": {
+        "wall": 23.589271,
+        "cpu": 14.37469,
+        "full": 19.839791,
+        "fullcpu": 10.814893,
+        "tiles": 6.285157,
+        "hash": 1.964212,
+        "copy": 3.281195,
+        "wait": 7.981094,
+        "uploads": 0.001615,
+        "fullcalls": 1.0,
+        "hashcalls": 539.0,
+        "blocks": 373.0,
+        "waits": 1.0
+      },
+      "battery_temperature_c": [
+        26.4,
+        26.5
+      ],
+      "render_window_medians": {
+        "workload_ms": 25.4,
+        "present_fps": 40.400000000000006,
+        "game_fps": 28.65,
+        "gpu_ms": 8.1,
+        "match_ms": 2.05
+      }
+    },
+    {
+      "scenario": "trial",
+      "variant": "byte",
+      "repetition": 3,
+      "display_lists": 1201,
+      "render_windows": 8,
+      "median": {
+        "wall": 23.718542,
+        "cpu": 14.293332,
+        "full": 19.987864,
+        "fullcpu": 10.708024,
+        "tiles": 6.234844,
+        "hash": 1.932178,
+        "copy": 3.280207,
+        "wait": 8.18651,
+        "uploads": 0.00177,
+        "fullcalls": 1.0,
+        "hashcalls": 539.0,
+        "blocks": 373.0,
+        "waits": 1.0
+      },
+      "battery_temperature_c": [
+        26.5,
+        26.5
+      ],
+      "render_window_medians": {
+        "workload_ms": 26.3,
+        "present_fps": 40.45,
+        "game_fps": 28.799999999999997,
+        "gpu_ms": 8.1,
+        "match_ms": 2.2
+      }
+    },
+    {
+      "scenario": "trial",
+      "variant": "aligned",
+      "repetition": 1,
+      "display_lists": 1201,
+      "render_windows": 7,
+      "median": {
+        "wall": 22.626406,
+        "cpu": 12.709895,
+        "full": 18.866302,
+        "fullcpu": 9.029169,
+        "tiles": 4.404688,
+        "hash": 1.919374,
+        "copy": 1.482917,
+        "wait": 8.922083,
+        "uploads": 0.001667,
+        "fullcalls": 1.0,
+        "hashcalls": 539.0,
+        "blocks": 373.0,
+        "waits": 1.0
+      },
+      "battery_temperature_c": [
+        26.1,
+        26.3
+      ],
+      "render_window_medians": {
+        "workload_ms": 27.6,
+        "present_fps": 41.6,
+        "game_fps": 29.7,
+        "gpu_ms": 8.1,
+        "match_ms": 2.2
+      }
+    },
+    {
+      "scenario": "trial",
+      "variant": "aligned",
+      "repetition": 2,
+      "display_lists": 1201,
+      "render_windows": 7,
+      "median": {
+        "wall": 22.558281,
+        "cpu": 12.674274,
+        "full": 18.762344,
+        "fullcpu": 9.026406,
+        "tiles": 4.403281,
+        "hash": 1.927496,
+        "copy": 1.494793,
+        "wait": 8.816719,
+        "uploads": 0.001667,
+        "fullcalls": 1.0,
+        "hashcalls": 539.0,
+        "blocks": 373.0,
+        "waits": 1.0
+      },
+      "battery_temperature_c": [
+        26.3,
+        26.4
+      ],
+      "render_window_medians": {
+        "workload_ms": 27.7,
+        "present_fps": 41.5,
+        "game_fps": 29.6,
+        "gpu_ms": 8.1,
+        "match_ms": 2.1
+      }
+    },
+    {
+      "scenario": "trial",
+      "variant": "aligned",
+      "repetition": 3,
+      "display_lists": 1201,
+      "render_windows": 7,
+      "median": {
+        "wall": 22.514948,
+        "cpu": 12.485311,
+        "full": 18.708229,
+        "fullcpu": 8.858698,
+        "tiles": 4.365624,
+        "hash": 1.868118,
+        "copy": 1.461251,
+        "wait": 8.983021,
+        "uploads": 0.001719,
+        "fullcalls": 1.0,
+        "hashcalls": 539.0,
+        "blocks": 373.0,
+        "waits": 1.0
+      },
+      "battery_temperature_c": [
+        26.5,
+        26.6
+      ],
+      "render_window_medians": {
+        "workload_ms": 26.8,
+        "present_fps": 40.4,
+        "game_fps": 29.2,
+        "gpu_ms": 8.2,
+        "match_ms": 2.1
+      }
+    },
+    {
+      "scenario": "attract",
+      "variant": "byte",
+      "repetition": 1,
+      "display_lists": 601,
+      "render_windows": 3,
+      "median": {
+        "wall": 23.875886,
+        "cpu": 14.118645,
+        "full": 19.420989,
+        "fullcpu": 10.007498,
+        "tiles": 6.398803,
+        "hash": 1.844371,
+        "copy": 3.536769,
+        "wait": 7.348073,
+        "uploads": 0.002083,
+        "fullcalls": 1.0,
+        "hashcalls": 426.0,
+        "blocks": 348.0,
+        "waits": 1.0
+      },
+      "battery_temperature_c": [
+        26.5,
+        26.7
+      ],
+      "render_window_medians": {
+        "workload_ms": 24.0,
+        "present_fps": 40.7,
+        "game_fps": 27.8,
+        "gpu_ms": 7.5,
+        "match_ms": 2.1
+      }
+    },
+    {
+      "scenario": "attract",
+      "variant": "byte",
+      "repetition": 2,
+      "display_lists": 601,
+      "render_windows": 3,
+      "median": {
+        "wall": 23.693438,
+        "cpu": 14.062394,
+        "full": 19.367448,
+        "fullcpu": 9.964792,
+        "tiles": 6.291875,
+        "hash": 1.875257,
+        "copy": 3.493902,
+        "wait": 7.757136,
+        "uploads": 0.001823,
+        "fullcalls": 1.0,
+        "hashcalls": 426.0,
+        "blocks": 348.0,
+        "waits": 1.0
+      },
+      "battery_temperature_c": [
+        26.1,
+        26.8
+      ],
+      "render_window_medians": {
+        "workload_ms": 24.3,
+        "present_fps": 42.0,
+        "game_fps": 28.4,
+        "gpu_ms": 7.2,
+        "match_ms": 2.0
+      }
+    },
+    {
+      "scenario": "attract",
+      "variant": "byte",
+      "repetition": 3,
+      "display_lists": 601,
+      "render_windows": 3,
+      "median": {
+        "wall": 23.594375,
+        "cpu": 13.887343,
+        "full": 19.122812,
+        "fullcpu": 10.043437,
+        "tiles": 6.327656,
+        "hash": 1.876515,
+        "copy": 3.500627,
+        "wait": 7.523177,
+        "uploads": 0.001875,
+        "fullcalls": 1.0,
+        "hashcalls": 426.0,
+        "blocks": 348.0,
+        "waits": 1.0
+      },
+      "battery_temperature_c": [
+        26.8,
+        27.0
+      ],
+      "render_window_medians": {
+        "workload_ms": 24.3,
+        "present_fps": 41.5,
+        "game_fps": 28.1,
+        "gpu_ms": 7.2,
+        "match_ms": 2.0
+      }
+    },
+    {
+      "scenario": "attract",
+      "variant": "aligned",
+      "repetition": 1,
+      "display_lists": 601,
+      "render_windows": 3,
+      "median": {
+        "wall": 22.088698,
+        "cpu": 12.421407,
+        "full": 17.857552,
+        "fullcpu": 8.407759,
+        "tiles": 4.162448,
+        "hash": 1.763054,
+        "copy": 1.498125,
+        "wait": 8.334167,
+        "uploads": 0.001615,
+        "fullcalls": 1.0,
+        "hashcalls": 425.0,
+        "blocks": 348.0,
+        "waits": 1.0
+      },
+      "battery_temperature_c": [
+        26.6,
+        26.7
+      ],
+      "render_window_medians": {
+        "workload_ms": 25.9,
+        "present_fps": 43.6,
+        "game_fps": 28.9,
+        "gpu_ms": 7.2,
+        "match_ms": 2.1
+      }
+    },
+    {
+      "scenario": "attract",
+      "variant": "aligned",
+      "repetition": 2,
+      "display_lists": 601,
+      "render_windows": 3,
+      "median": {
+        "wall": 21.996719,
+        "cpu": 12.437657,
+        "full": 17.69724,
+        "fullcpu": 8.240832,
+        "tiles": 4.138386,
+        "hash": 1.766515,
+        "copy": 1.535538,
+        "wait": 8.465833,
+        "uploads": 0.001771,
+        "fullcalls": 1.0,
+        "hashcalls": 426.0,
+        "blocks": 348.0,
+        "waits": 1.0
+      },
+      "battery_temperature_c": [
+        26.9,
+        27.0
+      ],
+      "render_window_medians": {
+        "workload_ms": 25.7,
+        "present_fps": 43.1,
+        "game_fps": 28.6,
+        "gpu_ms": 7.3,
+        "match_ms": 2.0
+      }
+    },
+    {
+      "scenario": "attract",
+      "variant": "aligned",
+      "repetition": 3,
+      "display_lists": 601,
+      "render_windows": 3,
+      "median": {
+        "wall": 22.04875,
+        "cpu": 12.319115,
+        "full": 17.843333,
+        "fullcpu": 8.227396,
+        "tiles": 4.108333,
+        "hash": 1.738327,
+        "copy": 1.463019,
+        "wait": 8.365104,
+        "uploads": 0.001927,
+        "fullcalls": 1.0,
+        "hashcalls": 426.0,
+        "blocks": 348.0,
+        "waits": 1.0
+      },
+      "battery_temperature_c": [
+        26.2,
+        26.9
+      ],
+      "render_window_medians": {
+        "workload_ms": 25.1,
+        "present_fps": 40.6,
+        "game_fps": 28.3,
+        "gpu_ms": 7.5,
+        "match_ms": 2.1
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "scenario": "trial",
+      "metric": "cpu",
+      "byte": {
+        "median": 14.349945,
+        "min": 14.293332,
+        "max": 14.37469,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 12.674274,
+        "min": 12.485311,
+        "max": 12.709895,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "trial",
+      "metric": "wall",
+      "byte": {
+        "median": 23.718542,
+        "min": 23.589271,
+        "max": 23.820105,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 22.558281,
+        "min": 22.514948,
+        "max": 22.626406,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "trial",
+      "metric": "copy",
+      "byte": {
+        "median": 3.281195,
+        "min": 3.280207,
+        "max": 3.373855,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 1.482917,
+        "min": 1.461251,
+        "max": 1.494793,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "trial",
+      "metric": "fullcpu",
+      "byte": {
+        "median": 10.792138,
+        "min": 10.708024,
+        "max": 10.814893,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 9.026406,
+        "min": 8.858698,
+        "max": 9.029169,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "trial",
+      "metric": "hash",
+      "byte": {
+        "median": 1.958809,
+        "min": 1.932178,
+        "max": 1.964212,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 1.919374,
+        "min": 1.868118,
+        "max": 1.927496,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "trial",
+      "metric": "wait",
+      "byte": {
+        "median": 7.981094,
+        "min": 7.958282,
+        "max": 8.18651,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 8.922083,
+        "min": 8.816719,
+        "max": 8.983021,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "trial",
+      "metric": "workload_ms",
+      "byte": {
+        "median": 26.1,
+        "min": 25.4,
+        "max": 26.3,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 27.6,
+        "min": 26.8,
+        "max": 27.7,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "trial",
+      "metric": "present_fps",
+      "byte": {
+        "median": 40.400000000000006,
+        "min": 40.4,
+        "max": 40.45,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 41.5,
+        "min": 40.4,
+        "max": 41.6,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "trial",
+      "metric": "game_fps",
+      "byte": {
+        "median": 28.799999999999997,
+        "min": 28.65,
+        "max": 28.799999999999997,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 29.6,
+        "min": 29.2,
+        "max": 29.7,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "attract",
+      "metric": "cpu",
+      "byte": {
+        "median": 14.062394,
+        "min": 13.887343,
+        "max": 14.118645,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 12.421407,
+        "min": 12.319115,
+        "max": 12.437657,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "attract",
+      "metric": "wall",
+      "byte": {
+        "median": 23.693438,
+        "min": 23.594375,
+        "max": 23.875886,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 22.04875,
+        "min": 21.996719,
+        "max": 22.088698,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "attract",
+      "metric": "copy",
+      "byte": {
+        "median": 3.500627,
+        "min": 3.493902,
+        "max": 3.536769,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 1.498125,
+        "min": 1.463019,
+        "max": 1.535538,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "attract",
+      "metric": "fullcpu",
+      "byte": {
+        "median": 10.007498,
+        "min": 9.964792,
+        "max": 10.043437,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 8.240832,
+        "min": 8.227396,
+        "max": 8.407759,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "attract",
+      "metric": "hash",
+      "byte": {
+        "median": 1.875257,
+        "min": 1.844371,
+        "max": 1.876515,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 1.763054,
+        "min": 1.738327,
+        "max": 1.766515,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "attract",
+      "metric": "wait",
+      "byte": {
+        "median": 7.523177,
+        "min": 7.348073,
+        "max": 7.757136,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 8.365104,
+        "min": 8.334167,
+        "max": 8.465833,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "attract",
+      "metric": "workload_ms",
+      "byte": {
+        "median": 24.3,
+        "min": 24.0,
+        "max": 24.3,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 25.7,
+        "min": 25.1,
+        "max": 25.9,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "attract",
+      "metric": "present_fps",
+      "byte": {
+        "median": 41.5,
+        "min": 40.7,
+        "max": 42.0,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 43.1,
+        "min": 40.6,
+        "max": 43.6,
+        "runs": 3
+      }
+    },
+    {
+      "scenario": "attract",
+      "metric": "game_fps",
+      "byte": {
+        "median": 28.1,
+        "min": 27.8,
+        "max": 28.4,
+        "runs": 3
+      },
+      "aligned": {
+        "median": 28.6,
+        "min": 28.3,
+        "max": 28.9,
+        "runs": 3
+      }
+    }
+  ],
+  "hash_audit": {
+    "first_replay_update": 201,
+    "last_replay_update": 1526,
+    "common_updates": 1326,
+    "matching_per_update_hash_stream_digests": 1326,
+    "normal_texture_hashes_compared": 716066,
+    "same_generation_repeat_requests": 0,
+    "repeated_output_values": 562676,
+    "meaning": "Every compared update had identical normal-texture hash count and 64-bit rolling digest of hash outputs. Repeated output hashes do occur, but all repeat requests follow intervening TMEM load operations. This is a measured diagnostic, not a proof that every possible cache design is unsafe.",
+    "measured_run_update_comparisons": 6005,
+    "measured_run_update_matches": 6005
+  },
+  "limits": [
+    "One tablet/driver and one fixed graphics fixture; no Linux or Windows game run, other devices, packs, weather, multiplayer or energy measurement.",
+    "Per-phase timing probes and diagnostic bookkeeping perturb performance; A/B uses matching probes without hash-detail bookkeeping or simpleperf.",
+    "Timing medians are not disjoint phase totals. Successful swapchain-present FPS includes interpolation; no physical scanout claim.",
+    "Benchmark timings compare the same fixed middle replay interval. Lap completion is not established.",
+    "No barriers were removed, no hash caching or hash algorithm/version changes were made."
+  ],
+  "verification": {
+    "command_path_note": "PowerShell commands are repository-relative. The SDK environment expression expands to the same SDK installation used by the session; no personal absolute path is retained. Helper/probe and raw-output paths below are ignored local artifacts, not shipped source.",
+    "build_command": "python scripts/build_android.py --sdk \"$env:LOCALAPPDATA/Android/Sdk\" --cmake \"$env:LOCALAPPDATA/Android/Sdk/cmake/3.22.1/bin/cmake.exe\" --jobs 8",
+    "production_rebuild_command": "& \"$env:LOCALAPPDATA/Android/Sdk/cmake/3.22.1/bin/cmake.exe\" --build build-android/native --target lamborghini_modern -j 8",
+    "production_package_command": "python scripts/build_android.py --package-only --sdk \"$env:LOCALAPPDATA/Android/Sdk\"",
+    "fixture_generate_command": "python -c \"from pathlib import Path; from tests.test_rt64_tmem_copy import write_fixture; p=Path('artifacts/issue425/tmem').resolve(); p.mkdir(exist_ok=True); write_fixture(p)\"",
+    "fixture_compile_command": "& \"$env:LOCALAPPDATA/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android28-clang++.cmd\" -std=c++17 -O3 -DNDEBUG -static-libstdc++ -I artifacts/issue425/tmem/src -I lib/rt64/src -I lib/rt64/src/contrib artifacts/issue425/tmem/fixture.cpp -o artifacts/issue425/tmem-copy",
+    "fixture_device_commands": [
+      "adb push artifacts/issue425/tmem-copy /data/local/tmp/perf425-tmem-copy",
+      "adb shell chmod 755 /data/local/tmp/perf425-tmem-copy",
+      "adb shell taskset 80 /data/local/tmp/perf425-tmem-copy",
+      "adb shell taskset 80 /data/local/tmp/perf425-tmem-copy --benchmark"
+    ],
+    "checks": [
+      "python -m unittest tests.test_rt64_tmem_copy -v",
+      "python -m unittest tests.test_rt64_tmem_copy tests.test_patch_composability tests.test_patch_line_endings -v",
+      "python -m unittest discover tests",
+      "python tools/check_docs.py",
+      "python tools/apply_patches.py --platform android",
+      "python tools/check_branch.py --base origin/main --worktree",
+      "git diff --check"
+    ],
+    "temporary_instrumentation_command": "python artifacts/issue425/instrument.py",
+    "measurement_runner": "artifacts/issue425/device.py: run(variant, scenario, sample), variant byte/aligned, scenario trial/attract, repetitions1..3 in method.order. The helper stages the declared perf425-env and captures the files below.",
+    "launch_command": "adb shell am start -n io.github.alondero.lamborghinirecomp.perf425/io.github.alondero.lamborghinirecomp.GameActivity",
+    "sample_capture_commands": [
+      "adb exec-out run-as io.github.alondero.lamborghinirecomp.perf425 cat files/native.log",
+      "adb exec-out run-as io.github.alondero.lamborghinirecomp.perf425 cat files/native-errors.log",
+      "adb shell dumpsys battery"
+    ],
+    "simpleperf_record_command": "adb shell run-as io.github.alondero.lamborghinirecomp.perf425 ./files/perf425-simpleperf record --in-app -e cpu-clock -f 1000 -p 7286 --duration 12 --call-graph dwarf,16384 -o files/perf425.data",
+    "simpleperf_report_command": "& \"$env:LOCALAPPDATA/Android/Sdk/ndk/28.2.13676358/simpleperf/bin/windows/x86_64/simpleperf.exe\" report -i artifacts/issue425/trial-byte-perf.data --symfs artifacts/issue425/binary_cache --comms Thread-3 --children --sort symbol",
+    "aggregate_command": "python artifacts/issue425/analyze.py",
+    "production_smoke_command": "python -u artifacts/issue425/production_smoke.py --installed",
+    "raw_outputs": {
+      "host_suite": "build-python425.log",
+      "focused_tests": "build-425-tests.log",
+      "initial_build": "build-android-425.log",
+      "production_build": "build-production425.log",
+      "production_package": "build-production-package425.log",
+      "device_equivalence": "artifacts/issue425/tablet-equivalence.txt",
+      "probe_patch": "artifacts/issue425/measurement.patch",
+      "run_logs": "artifacts/issue425/{trial,attract}-{byte,aligned}-{1,2,3}/native.log and native-errors.log",
+      "parsed_samples": "artifacts/issue425/{trial,attract}-{byte,aligned}-{1,2,3}/frames.json and render.json",
+      "diagnostics": "artifacts/issue425/trial-{byte,aligned}-probe/native.log",
+      "simpleperf": "artifacts/issue425/trial-byte-perf.data",
+      "symbolized_report": "artifacts/issue425/byte-gfx-report.txt",
+      "smoke_result": "artifacts/issue425/production-smoke/result.json",
+      "smoke_logs": "artifacts/issue425/production-smoke/native.log and native-errors.log",
+      "smoke_capture": "artifacts/issue425/production-smoke/screen.png"
+    }
+  },
+  "production_smoke": {
+    "exit_code": 0,
+    "final_state": 8,
+    "loaded_circuit": 1,
+    "max_abs_player_speed": 323,
+    "max_state": 8,
+    "menu_screen": 0,
+    "outcome": "passed",
+    "player_speed": 313,
+    "player_vehicle": 1,
+    "reason": "replay_complete",
+    "replay": {
+      "active": true,
+      "complete": true,
+      "configured": true,
+      "dispatcher_ticks": 1527,
+      "failed": false,
+      "frames_consumed": 1526,
+      "guest_frames_verified": 1526,
+      "recording": false,
+      "total_frames": 1526
+    },
+    "schema": 1,
+    "state_load": {
+      "applied": false,
+      "failed": false,
+      "requested": false
+    },
+    "swaps": 1527,
+    "vis": 3451,
+    "warp": {
+      "applied": true,
+      "car": 0,
+      "circuit": 1,
+      "failed": false,
+      "laps": 3,
+      "mode": 0,
+      "players": 1,
+      "requested": true
+    },
+    "method": "Same private measurement Java shell with the stripped production native libmain.so (no timing probes); full replay, exit_on_end=true; screenshot at 40 seconds visually inspected.",
+    "native_sha256": "2855aa7597311e2677e0507887838b0dbf214faf539029bf11e40913bdb7df6a"
+  }
+}
