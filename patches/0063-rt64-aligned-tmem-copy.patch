@@ -1,0 +1,39 @@
+diff --git a/src/hle/rt64_rdp.cpp b/src/hle/rt64_rdp.cpp
+index a10c11a..64e4bd3 100644
+--- a/src/hle/rt64_rdp.cpp
++++ b/src/hle/rt64_rdp.cpp
+@@ -5,6 +5,7 @@
+ #include "rt64_rdp.h"
+ 
+ #include <cassert>
++#include <cstring>
+ 
+ #include "../include/rt64_extended_gbi.h"
+ 
+@@ -367,6 +368,26 @@ namespace RT64 {
+     
+     template<bool RGBA32 = false, bool TLUT = false>
+     __forceinline void loadWord(uint8_t *TMEM, uint32_t tmemAddress, uint32_t tmemXorMask, const uint8_t *RDRAM, uint32_t textureAddress) {
++        if constexpr (!RGBA32 && !TLUT) {
++            if (((textureAddress & 3) == 0) && ((tmemAddress & 7) == 0)) {
++                // RDRAM is word-swapped; reverse each four-byte group and keep
++                // TMEM's odd-row half-word swap. memcpy avoids aliasing and
++                // host pointer alignment requirements on both byte arrays.
++                auto reverseBytes = [](uint32_t value) {
++                    return (value >> 24) | ((value >> 8) & 0x0000FF00U) |
++                        ((value << 8) & 0x00FF0000U) | (value << 24);
++                };
++                uint32_t lo, hi;
++                memcpy(&lo, &RDRAM[textureAddress], sizeof(lo));
++                memcpy(&hi, &RDRAM[textureAddress + 4], sizeof(hi));
++                lo = reverseBytes(lo);
++                hi = reverseBytes(hi);
++                memcpy(&TMEM[tmemAddress ^ tmemXorMask], &lo, sizeof(lo));
++                memcpy(&TMEM[(tmemAddress + 4) ^ tmemXorMask], &hi, sizeof(hi));
++                return;
++            }
++        }
++
+         // Only sample the first two bytes in TLUT mode.
+         uint32_t offsetMask;
+         if constexpr (TLUT) {

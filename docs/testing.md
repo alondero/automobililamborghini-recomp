@@ -6,6 +6,21 @@ guest memory, input, audio, or rendering usually needs more than a host test.
 
 ## Test layers
 
+RT64's aligned TMEM copy has a ROM-free differential fixture:
+
+```sh
+python -m unittest tests.test_rt64_tmem_copy -v
+```
+
+It compiles the patched load helpers and compares every TMEM byte with the
+pinned byte loop, then checks texture-hash versions 1 through 5. To run the
+same fixture on an Android device, use
+`tests.test_rt64_tmem_copy.write_fixture(Path(output_directory))`, compile
+the returned C++ file with the NDK ARM64 compiler, and include the output's
+`src` directory before `lib/rt64/src` and `lib/rt64/src/contrib`. Use C++17
+or newer and `-static-libstdc++`. Run the binary once without arguments for
+equivalence and with `--benchmark` for isolated block-load timing.
+
 | Layer | Needs a ROM? | Needs generated output? | What it proves |
 | --- | --- | --- | --- |
 | Documentation check | No | No | Links, paths, placeholders, and required test documentation are valid. |
