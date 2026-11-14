@@ -27,6 +27,16 @@ constexpr recompui::Color kLine{43, 48, 56, 255};
 // menu and status text remain usable instead of showing a broken image.
 constexpr char kFanArtSrc[] = "lambo-fan-art.png";
 
+// Layout lives in RCSS so viewport changes can collapse the artwork rail.
+// Remove Element's inline display value so the media query can hide it.
+class LauncherRegion : public recompui::Element {
+public:
+    LauncherRegion(recompui::ResourceId id, recompui::Element* parent, const char* tag)
+        : Element(id, parent, 0, tag) {
+        remove_property(Rml::PropertyId::Display);
+    }
+};
+
 // Keyboard/controller focus must reveal a row even when a narrow window
 // wraps its description and makes the menu taller than the viewport.
 class LauncherRowButton : public recompui::Button {
@@ -69,8 +79,7 @@ void build_paddock_launcher(recompui::LauncherMenu* menu, const LauncherActions&
     container->set_align_items(AlignItems::Stretch);
 
     // Brand rail: identity and system state.
-    Element* rail = context.create_element<Element>(container);
-    rail->set_display(Display::Flex);
+    Element* rail = context.create_element<LauncherRegion>(container, "paddock-rail");
     rail->set_flex_direction(FlexDirection::Column);
     rail->set_gap(14.0f);
     rail->set_width(400.0f);
@@ -120,14 +129,13 @@ void build_paddock_launcher(recompui::LauncherMenu* menu, const LauncherActions&
     version->set_color(kMuted);
 
     // Menu side: numbered action rows.
-    Element* menu_panel = context.create_element<Element>(container);
+    Element* menu_panel = context.create_element<LauncherRegion>(container, "paddock-actions");
     menu_panel->set_display(Display::Flex);
     menu_panel->set_flex_direction(FlexDirection::Column);
     menu_panel->set_justify_content(JustifyContent::FlexStart);
     menu_panel->set_align_items(AlignItems::Stretch);
     menu_panel->set_flex_grow(1.0f);
     menu_panel->set_min_width(0.0f);
-    menu_panel->set_padding(64.0f);
     menu_panel->set_overflow_y(Overflow::Auto);
 
     // Keep the list next to the rail. Cap its width on wide
@@ -211,6 +219,14 @@ void build_paddock_launcher(recompui::LauncherMenu* menu, const LauncherActions&
 
         if (i == 0) context.set_autofocus_element(entry);
     }
+
+    // Keep identity and readiness visible when the decorative rail is hidden.
+    Element* compact_status = context.create_element<LauncherRegion>(list, "paddock-status");
+    Label* compact_label = context.create_element<Label>(compact_status,
+        "Lamborghini Recompiled / v" + recomp::get_project_version().to_string() +
+        " / USA ROM verified", LabelStyle::Small);
+    compact_label->set_color(kMuted);
+    compact_label->set_margin_top(20.0f);
 }
 
 } // namespace lambo::ui

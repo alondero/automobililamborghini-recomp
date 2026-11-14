@@ -141,7 +141,7 @@ public final class TouchControlsTest {
         expect("Menu is the only control that works while the pad is hidden", "+" + KM);
 
         // The stored preference: Auto by default, with the launcher cycling through the three
-        // choices, and Never hiding even the Menu button because the player asked for that.
+        // choices, while Menu stays available even without a controller in Never mode.
         check(TouchOverlayPolicy.controlsShown(null, true) == false, "missing preference is Auto");
         check(TouchOverlayPolicy.controlsShown("junk", true) == false, "unknown preference is Auto");
         check(TouchOverlayPolicy.controlsShown(TouchOverlayPolicy.AUTO, false), "Auto shows without a controller");
@@ -149,7 +149,7 @@ public final class TouchControlsTest {
         check(!TouchOverlayPolicy.controlsShown(TouchOverlayPolicy.NEVER, false), "Never hides without a controller");
         check(TouchOverlayPolicy.menuShown(TouchOverlayPolicy.AUTO), "Auto keeps Menu reachable");
         check(TouchOverlayPolicy.menuShown(TouchOverlayPolicy.ALWAYS), "Always keeps Menu");
-        check(!TouchOverlayPolicy.menuShown(TouchOverlayPolicy.NEVER), "Never hides Menu too");
+        check(TouchOverlayPolicy.menuShown(TouchOverlayPolicy.NEVER), "Never keeps the settings escape route");
         check(TouchOverlayPolicy.next(null).equals(TouchOverlayPolicy.ALWAYS), "Auto cycles to Always");
         check(TouchOverlayPolicy.next(TouchOverlayPolicy.ALWAYS).equals(TouchOverlayPolicy.NEVER), "Always cycles to Never");
         check(TouchOverlayPolicy.next(TouchOverlayPolicy.NEVER).equals(TouchOverlayPolicy.AUTO), "Never cycles back to Auto");

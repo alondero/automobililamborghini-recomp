@@ -24,7 +24,8 @@ final class DriverImport {
     // separate game process might still load them. Process death releases it.
     private static DriverLock gameLock;
 
-    private static final class DriverLock implements AutoCloseable {
+    // Also guards launcher graphics edits: the game holds this before loading config.
+    static final class DriverLock implements AutoCloseable {
         private final FileChannel channel;
         private final FileLock lock;
 
@@ -33,9 +34,11 @@ final class DriverImport {
                 StandardOpenOption.CREATE, StandardOpenOption.WRITE);
             try {
                 lock = channel.tryLock();
-                if (lock == null) throw new Exception("Close the running game before changing GPU drivers");
+                if (lock == null) throw new Exception("Close the running game before changing drivers or graphics settings");
             } catch (Exception error) {
                 channel.close();
+                if (error instanceof java.nio.channels.OverlappingFileLockException)
+                    throw new Exception("Close the running game before changing drivers or graphics settings", error);
                 throw error;
             }
         }

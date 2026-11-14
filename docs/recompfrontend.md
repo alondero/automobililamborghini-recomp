@@ -116,14 +116,22 @@ All sizing uses the frontend's density-independent units; the menu list has a
 maximum width and can shrink with the window. Focused rows scroll into view
 when the list overflows. No RecompFrontend fork is needed.
 
+At viewport widths of 1000 density-independent pixels or less, the artwork rail
+is hidden and the action panel uses 24dp padding. A compact footer keeps the app
+name, version and ROM status available. The shipped RCSS owns this breakpoint;
+it responds to window resizing and display density. `lambo_launcher_layout_tests`
+checks the actual stylesheet in RmlUi at both sides of the breakpoint and three
+densities. This is a layout-rule test, not a rendered screenshot or input test.
+
 Native Windows layout is **Confirmed** in the
 [1600x900 capture](images/launcher-paddock-1600.png) and
 [2560x1440 capture](images/launcher-paddock-1440.png). Keyboard activation of
 all five destinations, game boot, and launcher Quit (exit code 0) were checked.
-The [800x600 capture](images/launcher-paddock-800x600.png) shows the smaller
-landscape layout. Separately, the [600x900 capture](images/launcher-paddock-600x900.png)
-shows wrapped rows staying separate and keyboard focus scrolling Quit into view
-before activation. Both sizes were checked in the native Windows build.
+The [800x600 capture](images/launcher-paddock-800x600.png) and
+[600x900 capture](images/launcher-paddock-600x900.png) show the **historical** split
+layout. Wrapped rows stayed separate and keyboard focus scrolled Quit into view
+before activation. Both sizes were checked in that native Windows build; the new
+compact layout has not yet had a rendered interaction check.
 Physical-controller navigation and other platforms remain **Unverified**.
 
 `lambo_launcher_menu_tests` checks row order, copy, all destination effects,

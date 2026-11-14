@@ -8,8 +8,8 @@ package io.github.alondero.lamborghinirecomp;
  * Auto, the default, hides the pad while Android reports a device that SDL's own
  * Android joystick handler accepts. Auto also keeps the Menu button, because that
  * button is the only pointer route into the port's Settings overlay. Always and
- * Never are the player's explicit choices: Never hides everything, and the launcher
- * is then the way back.
+ * Never are the player's explicit pad choices. Menu stays available in every mode,
+ * including after the player's controller disconnects.
  */
 final class TouchOverlayPolicy {
     /** SharedPreferences file and key for the launcher's choice. */
@@ -36,7 +36,7 @@ final class TouchOverlayPolicy {
     static String label(String stored) {
         switch (normalize(stored)) {
             case ALWAYS: return "Touch controls: Always";
-            case NEVER: return "Touch controls: Never";
+            case NEVER: return "Touch controls: Never (Menu stays available)";
             default: return "Touch controls: Auto (hidden while a gamepad is connected)";
         }
     }
@@ -52,6 +52,6 @@ final class TouchOverlayPolicy {
 
     /** True when the Menu button stays drawn and tappable; the route into Settings while the pad is hidden. */
     static boolean menuShown(String stored) {
-        return !NEVER.equals(normalize(stored));
+        return true;
     }
 }

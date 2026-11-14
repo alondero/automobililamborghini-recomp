@@ -157,10 +157,10 @@ public class ActivityTest {
   activity.onPause(); activity.onResume();
   check(TouchOverlay.controls, "resume shows the controls again");
 
-  // Never hides the whole overlay, including Menu; the launcher is then the way back.
+  // Never hides driving controls, but preserves the route to settings.
   SDLActivity.prefs.edit().putString(TouchOverlayPolicy.KEY, TouchOverlayPolicy.NEVER).apply();
   new GameActivity().onCreate(null);
-  check(!TouchOverlay.controls && !TouchOverlay.menu, "Never hides Menu as well");
+  check(!TouchOverlay.controls && TouchOverlay.menu, "Never keeps Menu reachable");
 
   // Always ignores controller presence.
   SDLActivity.prefs.edit().putString(TouchOverlayPolicy.KEY, TouchOverlayPolicy.ALWAYS).apply();
