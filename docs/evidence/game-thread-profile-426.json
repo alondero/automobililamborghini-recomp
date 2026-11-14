@@ -7,7 +7,7 @@
     "sha256": "86103630224e57c5ff6048630afd958e99721f985ce989e00ec743aebbc858f8",
     "updates": 1526
   },
-  "scope": "Bounded profiling, not an A/B optimization benchmark. One accepted capture per platform/workload. Only player one consumes the replay in four-player mode.",
+  "scope": "Bounded profiling, not an A/B optimization benchmark. One retained Windows capture per workload; Android capture is pending the issue 425 session releasing the shared tablet. Only player one consumes the replay in four-player mode.",
   "configuration": {
     "res_option": "Original2x",
     "msaa_option": "None",
@@ -32,7 +32,7 @@
       "binary_sha256": "4aceb9627d695d919789e8df489119f56ecabb1bede05f106143164f244f4487",
       "provenance": "Reused 2026-11-10 local build, CMake cache version 0.10.3. Source and patch inputs match 8d208f2; current HEAD differs in CMake version and documentation/packaging. Exact binary source revision is not embedded.",
       "profiling": "WPR CPU.Verbose.File failed with 0xc5585011 (system profiling policy privilege). Fallback: GetThreadTimes over 15 s and temporary SuspendThread/GetThreadContext RIP sampler, Sleep(2), timeBeginPeriod(1), module relocation from Toolhelp. Not ETW or an on-CPU sampling profile.",
-      "host_load": "Six-job Android cross-compilation ran concurrently; no isolated performance claim."
+      "host_load": "Background desktop work was not controlled; no A/B isolation is claimed. The Android cross-build had finished before these retained captures."
     },
     "android": {
       "os": "Android 11",
@@ -42,11 +42,12 @@
       "driver": "Mesa Turnip v25.3.0-R11",
       "compiler": "Android NDK r28c Clang",
       "optimization": "Release, -O3 -DNDEBUG",
-      "surface": "2560x1600@60Hz",
-      "internal": "768x480, horizontal aspect expansion",
       "provenance": "Freshly generated USA game/RSP sources and native build at source_commit. Separate debug Java profiling shell; native Release library unchanged.",
       "native_sha256": "dff69f325f9b1a2b974055f5157626b2ea69d230468589268148c098c35b7c20",
-      "simpleperf": "1.build.12821384"
+      "simpleperf": "1.build.12821384",
+      "status": "Native build confirmed. Capture pending issue 425 releasing the shared tablet; runtime settings below are intended, not an accepted measurement.",
+      "surface_expected": "2560x1600@60Hz",
+      "internal_expected": "768x480, horizontal aspect expansion"
     }
   },
   "runs": [
@@ -55,343 +56,317 @@
       "workload": "1p",
       "warp": "1:1:0:1",
       "warp_mode": 0,
-      "profile_start_utc": "2026-11-14T11:06:24.880000+00:00",
-      "profile_seconds": 15.002406,
+      "profile_start_utc": "2026-11-14T11:42:20.056000+00:00",
+      "profile_seconds": 15.000643,
       "guest_threads": [
         {
-          "tid": 67152,
+          "tid": 53724,
           "name": "Game Thread 1",
-          "cpu_seconds": 0.09375
+          "cpu_seconds": 0.109375,
+          "counter_wall_seconds": 15.042007
         },
         {
-          "tid": 59240,
+          "tid": 54452,
           "name": "Game Thread 0",
-          "cpu_seconds": 0.03125
+          "cpu_seconds": 0.078125,
+          "counter_wall_seconds": 15.042206
         },
         {
-          "tid": 50372,
+          "tid": 31504,
           "name": "Game Thread 3",
-          "cpu_seconds": 0.421875
+          "cpu_seconds": 0.46875,
+          "counter_wall_seconds": 15.042403
         },
         {
-          "tid": 62712,
+          "tid": 56164,
           "name": "Game Thread 0",
-          "cpu_seconds": 0.109375
+          "cpu_seconds": 0.09375,
+          "counter_wall_seconds": 15.042597
         },
         {
-          "tid": 64532,
+          "tid": 77364,
           "name": "Game Thread 4",
-          "cpu_seconds": 0.203125
+          "cpu_seconds": 0.0625,
+          "counter_wall_seconds": 15.042782
         },
         {
-          "tid": 60284,
+          "tid": 64436,
           "name": "Game Thread 3",
-          "cpu_seconds": 0.21875
+          "cpu_seconds": 0.125,
+          "counter_wall_seconds": 15.04297
         },
         {
-          "tid": 72204,
+          "tid": 72120,
           "name": "Game Thread 6",
-          "cpu_seconds": 0.125
+          "cpu_seconds": 0.0625,
+          "counter_wall_seconds": 15.043166
         }
       ],
-      "named_threads": [
+      "other_thread_counters": [
         {
-          "tid": 76776,
-          "name": "SDLAudioP2",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 64196,
+          "tid": 55420,
           "name": "Gfx Thread",
-          "cpu_seconds": 1.765625
+          "cpu_seconds": 1.171875,
+          "counter_wall_seconds": 15.030199
         },
         {
-          "tid": 72972,
+          "tid": 72660,
           "name": "SP Task Thread",
-          "cpu_seconds": 0.1875
+          "cpu_seconds": 0.21875,
+          "counter_wall_seconds": 15.030383
         },
         {
-          "tid": 55280,
-          "name": "D3D Background Thread 0",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 57788,
-          "name": "D3D Background Thread 1",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 56180,
-          "name": "D3D Background Thread 2",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 76660,
-          "name": "D3D Background Thread 3",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 74772,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.0625
-        },
-        {
-          "tid": 49540,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.015625
-        },
-        {
-          "tid": 70412,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 20968,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 50424,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 62908,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.03125
-        },
-        {
-          "tid": 60716,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.25
-        },
-        {
-          "tid": 76820,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 73844,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 47452,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 68320,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 58560,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 67496,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 6556,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 62344,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 62592,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 67812,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 55840,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 74716,
-          "name": "RT64 Texture",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 77336,
-          "name": "RT64 Stream",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 14392,
-          "name": "RT64 Stream",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 51400,
-          "name": "RT64 Stream",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 70012,
-          "name": "RT64 Stream",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 52060,
-          "name": "RT64 Stream",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 51644,
-          "name": "RT64 Stream",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 77476,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.0625
-        },
-        {
-          "tid": 48664,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.015625
-        },
-        {
-          "tid": 70708,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.03125
-        },
-        {
-          "tid": 49432,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.09375
-        },
-        {
-          "tid": 15224,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 70740,
-          "name": "RT64 Workload",
-          "cpu_seconds": 1.375
-        },
-        {
-          "tid": 62708,
-          "name": "RT64 Idle",
-          "cpu_seconds": 0.984375
-        },
-        {
-          "tid": 68896,
-          "name": "RT64 Present",
-          "cpu_seconds": 14.203125
-        },
-        {
-          "tid": 64788,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.015625
-        },
-        {
-          "tid": 67336,
+          "tid": 54292,
           "name": "VI Thread",
-          "cpu_seconds": 0.09375
+          "cpu_seconds": 0.046875,
+          "counter_wall_seconds": 15.041378
         },
         {
-          "tid": 71100,
+          "tid": 69492,
           "name": "Timer Thread",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 67152,
-          "name": "Game Thread 1",
-          "cpu_seconds": 0.09375
-        },
-        {
-          "tid": 59240,
-          "name": "Game Thread 0",
-          "cpu_seconds": 0.03125
-        },
-        {
-          "tid": 50372,
-          "name": "Game Thread 3",
-          "cpu_seconds": 0.421875
-        },
-        {
-          "tid": 62712,
-          "name": "Game Thread 0",
-          "cpu_seconds": 0.109375
-        },
-        {
-          "tid": 64532,
-          "name": "Game Thread 4",
-          "cpu_seconds": 0.203125
-        },
-        {
-          "tid": 60284,
-          "name": "Game Thread 3",
-          "cpu_seconds": 0.21875
-        },
-        {
-          "tid": 72204,
-          "name": "Game Thread 6",
-          "cpu_seconds": 0.125
+          "cpu_seconds": 0.0,
+          "counter_wall_seconds": 15.041551
         }
       ],
+      "rip_samples": {
+        "rounds": 5226,
+        "api_failures": 0,
+        "classification": "Executable image membership from Toolhelp base/size; nearest preceding nm -n -C text symbol after PE image-base relocation. Outside-image samples are not classified as idle or on-CPU.",
+        "threads": [
+          {
+            "tid": 53724,
+            "name": "Game Thread 1",
+            "samples": 5226,
+            "missing_samples": 0,
+            "outside_executable": 5226,
+            "inside_executable": 0,
+            "nearest_text_symbol_hits": [],
+            "other_inside_samples": 0
+          },
+          {
+            "tid": 54452,
+            "name": "Game Thread 0",
+            "samples": 5226,
+            "missing_samples": 0,
+            "outside_executable": 5226,
+            "inside_executable": 0,
+            "nearest_text_symbol_hits": [],
+            "other_inside_samples": 0
+          },
+          {
+            "tid": 31504,
+            "name": "Game Thread 3",
+            "samples": 5226,
+            "missing_samples": 0,
+            "outside_executable": 5039,
+            "inside_executable": 187,
+            "nearest_text_symbol_hits": [
+              {
+                "symbol": "func_80084E10",
+                "samples": 33
+              },
+              {
+                "symbol": "ultramodern::resume_thread_and_wait(unsigned char*, OSThread_t*)",
+                "samples": 33
+              },
+              {
+                "symbol": "lambo_joybus_answer",
+                "samples": 13
+              },
+              {
+                "symbol": "func_80019D20",
+                "samples": 7
+              },
+              {
+                "symbol": "func_8007ADE4",
+                "samples": 6
+              },
+              {
+                "symbol": "func_800850E4",
+                "samples": 5
+              },
+              {
+                "symbol": "func_80084D60",
+                "samples": 5
+              },
+              {
+                "symbol": "lambo::replay_runtime::playback_frame(lambo::replay::InputFrame&)",
+                "samples": 4
+              },
+              {
+                "symbol": "func_8007AF60",
+                "samples": 4
+              },
+              {
+                "symbol": "func_80084EE0",
+                "samples": 4
+              },
+              {
+                "symbol": "func_80083F70",
+                "samples": 4
+              },
+              {
+                "symbol": "input_get_input(int, unsigned short*, float*, float*)",
+                "samples": 3
+              },
+              {
+                "symbol": "osContStartReadData_recomp",
+                "samples": 3
+              },
+              {
+                "symbol": "bool moodycamel::ConcurrentQueue<QueuedMessage, moodycamel::ConcurrentQueueDefaultTraits>::try_dequeue<QueuedMessage>(QueuedMessage&)",
+                "samples": 3
+              },
+              {
+                "symbol": "lambo::analog_throttle::publish(unsigned int, bool, float)",
+                "samples": 3
+              }
+            ],
+            "other_inside_samples": 57
+          },
+          {
+            "tid": 56164,
+            "name": "Game Thread 0",
+            "samples": 5226,
+            "missing_samples": 0,
+            "outside_executable": 5226,
+            "inside_executable": 0,
+            "nearest_text_symbol_hits": [],
+            "other_inside_samples": 0
+          },
+          {
+            "tid": 77364,
+            "name": "Game Thread 4",
+            "samples": 5226,
+            "missing_samples": 0,
+            "outside_executable": 5221,
+            "inside_executable": 5,
+            "nearest_text_symbol_hits": [
+              {
+                "symbol": "func_80074884",
+                "samples": 1
+              },
+              {
+                "symbol": "func_8007F200",
+                "samples": 1
+              },
+              {
+                "symbol": "ultramodern::run_next_thread_and_wait(unsigned char*)",
+                "samples": 1
+              },
+              {
+                "symbol": "ultramodern::is_game_thread()",
+                "samples": 1
+              },
+              {
+                "symbol": "run_next_thread(unsigned char*)",
+                "samples": 1
+              }
+            ],
+            "other_inside_samples": 0
+          },
+          {
+            "tid": 64436,
+            "name": "Game Thread 3",
+            "samples": 5226,
+            "missing_samples": 0,
+            "outside_executable": 5222,
+            "inside_executable": 4,
+            "nearest_text_symbol_hits": [
+              {
+                "symbol": "func_80082ED0",
+                "samples": 1
+              },
+              {
+                "symbol": "func_80077E5C",
+                "samples": 1
+              },
+              {
+                "symbol": "func_80082524",
+                "samples": 1
+              },
+              {
+                "symbol": "ultramodern::run_next_thread_and_wait(unsigned char*)",
+                "samples": 1
+              }
+            ],
+            "other_inside_samples": 0
+          },
+          {
+            "tid": 72120,
+            "name": "Game Thread 6",
+            "samples": 5226,
+            "missing_samples": 0,
+            "outside_executable": 5213,
+            "inside_executable": 13,
+            "nearest_text_symbol_hits": [
+              {
+                "symbol": "ultramodern::run_next_thread_and_wait(unsigned char*)",
+                "samples": 10
+              },
+              {
+                "symbol": "ultramodern::is_game_thread()",
+                "samples": 1
+              },
+              {
+                "symbol": "run_next_thread(unsigned char*)",
+                "samples": 1
+              },
+              {
+                "symbol": "ultramodern::check_running_queue(unsigned char*)",
+                "samples": 1
+              }
+            ],
+            "other_inside_samples": 0
+          }
+        ]
+      },
       "prepare_samples": [
         {
-          "time_utc": "2026-11-14 11:06:26",
+          "time_utc": "2026-11-14 11:42:21",
           "commands": 2370,
-          "elapsed_us": 41.4
+          "elapsed_us": 28.5
         },
         {
-          "time_utc": "2026-11-14 11:06:28",
+          "time_utc": "2026-11-14 11:42:23",
           "commands": 3847,
-          "elapsed_us": 44.2
+          "elapsed_us": 30.7
         },
         {
-          "time_utc": "2026-11-14 11:06:30",
+          "time_utc": "2026-11-14 11:42:25",
           "commands": 4540,
-          "elapsed_us": 65.0
+          "elapsed_us": 50.8
         },
         {
-          "time_utc": "2026-11-14 11:06:32",
+          "time_utc": "2026-11-14 11:42:27",
           "commands": 3929,
-          "elapsed_us": 47.9
+          "elapsed_us": 32.3
         },
         {
-          "time_utc": "2026-11-14 11:06:34",
+          "time_utc": "2026-11-14 11:42:29",
           "commands": 3437,
-          "elapsed_us": 53.0
+          "elapsed_us": 28.4
         },
         {
-          "time_utc": "2026-11-14 11:06:36",
+          "time_utc": "2026-11-14 11:42:31",
           "commands": 2915,
-          "elapsed_us": 38.9
+          "elapsed_us": 36.2
         },
         {
-          "time_utc": "2026-11-14 11:06:38",
+          "time_utc": "2026-11-14 11:42:33",
           "commands": 2854,
-          "elapsed_us": 45.8
+          "elapsed_us": 25.2
         }
       ],
       "render_cost_after_first_two_reports": [
-        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.8 frames=603/603 frame_ms=1.1/5.7 gpu_ms=0.1/0.4 workload_ms=5.0/10.8 setup_ms=0.7 match_ms=0.6",
-        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.6 frames=599/599 frame_ms=1.1/4.4 gpu_ms=0.1/0.3 workload_ms=5.2/9.6 setup_ms=0.8 match_ms=0.7",
-        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.1 frames=604/604 frame_ms=1.0/4.4 gpu_ms=0.1/0.4 workload_ms=4.6/10.5 setup_ms=0.6 match_ms=0.6",
-        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.6 frames=597/597 frame_ms=1.2/4.1 gpu_ms=0.1/0.6 workload_ms=5.6/18.5 setup_ms=0.7 match_ms=0.7",
-        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.2 frames=600/604 frame_ms=1.2/25.4 gpu_ms=0.1/0.4 workload_ms=5.6/26.0 setup_ms=0.7 match_ms=0.7",
-        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.8 frames=604/604 frame_ms=1.3/4.7 gpu_ms=0.1/0.3 workload_ms=5.8/9.9 setup_ms=0.7 match_ms=0.6",
-        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.0 frames=604/604 frame_ms=1.0/5.4 gpu_ms=0.1/0.4 workload_ms=4.7/9.9 setup_ms=0.6 match_ms=0.6",
-        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.0 frames=600/600 frame_ms=1.1/3.9 gpu_ms=0.1/0.4 workload_ms=5.3/10.3 setup_ms=0.7 match_ms=0.7"
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.0 frames=604/604 frame_ms=1.0/4.2 gpu_ms=0.1/0.4 workload_ms=4.4/11.3 setup_ms=0.5 match_ms=0.5",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.2 present_fps=120.7 frames=604/604 frame_ms=1.1/4.6 gpu_ms=0.1/0.3 workload_ms=4.9/9.6 setup_ms=0.6 match_ms=0.6",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=29.9 present_fps=119.5 frames=599/599 frame_ms=1.2/8.3 gpu_ms=0.1/0.3 workload_ms=5.2/12.3 setup_ms=0.5 match_ms=0.5",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.0 frames=600/600 frame_ms=1.0/3.8 gpu_ms=0.1/0.4 workload_ms=4.6/10.0 setup_ms=0.6 match_ms=0.6",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.0 frames=600/600 frame_ms=1.3/5.6 gpu_ms=0.1/0.3 workload_ms=5.9/12.6 setup_ms=0.6 match_ms=0.6",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.8 frames=603/603 frame_ms=1.1/3.0 gpu_ms=0.1/0.3 workload_ms=5.1/8.5 setup_ms=0.6 match_ms=0.6",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.8 frames=600/600 frame_ms=1.0/4.1 gpu_ms=0.1/0.3 workload_ms=4.5/9.6 setup_ms=0.5 match_ms=0.5",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.0 frames=599/599 frame_ms=1.2/4.2 gpu_ms=0.1/0.3 workload_ms=5.3/12.1 setup_ms=0.6 match_ms=0.6"
       ],
       "harness": {
         "exit_code": 0,
@@ -422,7 +397,7 @@
           "requested": false
         },
         "swaps": 1527,
-        "vis": 3096,
+        "vis": 3097,
         "warp": {
           "applied": true,
           "car": 0,
@@ -440,343 +415,321 @@
       "workload": "4p",
       "warp": "1:3:0:4",
       "warp_mode": 2,
-      "profile_start_utc": "2026-11-14T11:07:18.879000+00:00",
-      "profile_seconds": 15.00149,
+      "profile_start_utc": "2026-11-14T11:43:13.489000+00:00",
+      "profile_seconds": 15.000844,
       "guest_threads": [
         {
-          "tid": 62812,
+          "tid": 57660,
           "name": "Game Thread 1",
-          "cpu_seconds": 0.171875
+          "cpu_seconds": 0.09375,
+          "counter_wall_seconds": 15.076549
         },
         {
-          "tid": 64228,
+          "tid": 70460,
           "name": "Game Thread 0",
-          "cpu_seconds": 0.03125
+          "cpu_seconds": 0.046875,
+          "counter_wall_seconds": 15.076705
         },
         {
-          "tid": 43992,
+          "tid": 74560,
           "name": "Game Thread 3",
-          "cpu_seconds": 0.828125
+          "cpu_seconds": 0.59375,
+          "counter_wall_seconds": 15.076857
         },
         {
-          "tid": 63020,
+          "tid": 57848,
           "name": "Game Thread 0",
-          "cpu_seconds": 0.046875
+          "cpu_seconds": 0.046875,
+          "counter_wall_seconds": 15.077008
         },
         {
-          "tid": 67108,
+          "tid": 62824,
           "name": "Game Thread 4",
-          "cpu_seconds": 0.21875
+          "cpu_seconds": 0.140625,
+          "counter_wall_seconds": 15.077167
         },
         {
-          "tid": 52080,
+          "tid": 32604,
           "name": "Game Thread 3",
-          "cpu_seconds": 0.3125
+          "cpu_seconds": 0.125,
+          "counter_wall_seconds": 15.077328
         },
         {
-          "tid": 64420,
+          "tid": 68236,
           "name": "Game Thread 6",
-          "cpu_seconds": 0.125
+          "cpu_seconds": 0.0625,
+          "counter_wall_seconds": 15.077482
         }
       ],
-      "named_threads": [
+      "other_thread_counters": [
         {
-          "tid": 63184,
-          "name": "SDLAudioP2",
-          "cpu_seconds": 0.09375
-        },
-        {
-          "tid": 640,
+          "tid": 70468,
           "name": "Gfx Thread",
-          "cpu_seconds": 5.28125
+          "cpu_seconds": 3.8125,
+          "counter_wall_seconds": 15.065948
         },
         {
-          "tid": 74672,
+          "tid": 74232,
           "name": "SP Task Thread",
-          "cpu_seconds": 0.203125
+          "cpu_seconds": 0.171875,
+          "counter_wall_seconds": 15.066088
         },
         {
-          "tid": 60916,
-          "name": "D3D Background Thread 0",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 62484,
-          "name": "D3D Background Thread 1",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 65292,
-          "name": "D3D Background Thread 2",
-          "cpu_seconds": 0.015625
-        },
-        {
-          "tid": 60544,
-          "name": "D3D Background Thread 3",
-          "cpu_seconds": 0.015625
-        },
-        {
-          "tid": 53544,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.1875
-        },
-        {
-          "tid": 57292,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.015625
-        },
-        {
-          "tid": 54480,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 61136,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 6816,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 17280,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.078125
-        },
-        {
-          "tid": 50500,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 36164,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 59916,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.3125
-        },
-        {
-          "tid": 65076,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 58308,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 65072,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 70868,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 70556,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 69980,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 22624,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 67344,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 53640,
-          "name": "RT64 Shader",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 66536,
-          "name": "RT64 Texture",
-          "cpu_seconds": 0.015625
-        },
-        {
-          "tid": 57792,
-          "name": "RT64 Stream",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 76864,
-          "name": "RT64 Stream",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 53232,
-          "name": "RT64 Stream",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 77696,
-          "name": "RT64 Stream",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 68300,
-          "name": "RT64 Stream",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 56140,
-          "name": "RT64 Stream",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 56632,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.015625
-        },
-        {
-          "tid": 50020,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 56528,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 37524,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.078125
-        },
-        {
-          "tid": 60052,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 47840,
-          "name": "RT64 Workload",
-          "cpu_seconds": 5.953125
-        },
-        {
-          "tid": 62588,
-          "name": "RT64 Idle",
-          "cpu_seconds": 1.171875
-        },
-        {
-          "tid": 75952,
-          "name": "RT64 Present",
-          "cpu_seconds": 14.15625
-        },
-        {
-          "tid": 61584,
-          "name": "RT64 Buffer",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 77540,
+          "tid": 64024,
           "name": "VI Thread",
-          "cpu_seconds": 0.015625
+          "cpu_seconds": 0.03125,
+          "counter_wall_seconds": 15.075947
         },
         {
-          "tid": 71240,
+          "tid": 56424,
           "name": "Timer Thread",
-          "cpu_seconds": 0.0
-        },
-        {
-          "tid": 62812,
-          "name": "Game Thread 1",
-          "cpu_seconds": 0.171875
-        },
-        {
-          "tid": 64228,
-          "name": "Game Thread 0",
-          "cpu_seconds": 0.03125
-        },
-        {
-          "tid": 43992,
-          "name": "Game Thread 3",
-          "cpu_seconds": 0.828125
-        },
-        {
-          "tid": 63020,
-          "name": "Game Thread 0",
-          "cpu_seconds": 0.046875
-        },
-        {
-          "tid": 67108,
-          "name": "Game Thread 4",
-          "cpu_seconds": 0.21875
-        },
-        {
-          "tid": 52080,
-          "name": "Game Thread 3",
-          "cpu_seconds": 0.3125
-        },
-        {
-          "tid": 64420,
-          "name": "Game Thread 6",
-          "cpu_seconds": 0.125
+          "cpu_seconds": 0.0,
+          "counter_wall_seconds": 15.076094
         }
       ],
+      "rip_samples": {
+        "rounds": 5224,
+        "api_failures": 0,
+        "classification": "Executable image membership from Toolhelp base/size; nearest preceding nm -n -C text symbol after PE image-base relocation. Outside-image samples are not classified as idle or on-CPU.",
+        "threads": [
+          {
+            "tid": 57660,
+            "name": "Game Thread 1",
+            "samples": 5224,
+            "missing_samples": 0,
+            "outside_executable": 5224,
+            "inside_executable": 0,
+            "nearest_text_symbol_hits": [],
+            "other_inside_samples": 0
+          },
+          {
+            "tid": 70460,
+            "name": "Game Thread 0",
+            "samples": 5224,
+            "missing_samples": 0,
+            "outside_executable": 5224,
+            "inside_executable": 0,
+            "nearest_text_symbol_hits": [],
+            "other_inside_samples": 0
+          },
+          {
+            "tid": 74560,
+            "name": "Game Thread 3",
+            "samples": 5224,
+            "missing_samples": 0,
+            "outside_executable": 4996,
+            "inside_executable": 228,
+            "nearest_text_symbol_hits": [
+              {
+                "symbol": "func_80084E10",
+                "samples": 37
+              },
+              {
+                "symbol": "ultramodern::resume_thread_and_wait(unsigned char*, OSThread_t*)",
+                "samples": 33
+              },
+              {
+                "symbol": "lambo_joybus_answer",
+                "samples": 11
+              },
+              {
+                "symbol": "func_800850E4",
+                "samples": 8
+              },
+              {
+                "symbol": "bool moodycamel::ConcurrentQueue<QueuedMessage, moodycamel::ConcurrentQueueDefaultTraits>::try_dequeue<QueuedMessage>(QueuedMessage&)",
+                "samples": 7
+              },
+              {
+                "symbol": "func_8000A6C0",
+                "samples": 6
+              },
+              {
+                "symbol": "lambo_sky_extend_panorama",
+                "samples": 5
+              },
+              {
+                "symbol": "func_80019D20",
+                "samples": 5
+              },
+              {
+                "symbol": "func_8001EC1C",
+                "samples": 5
+              },
+              {
+                "symbol": "BootLoadInitialAssets",
+                "samples": 5
+              },
+              {
+                "symbol": "lambo_mod_frame",
+                "samples": 4
+              },
+              {
+                "symbol": "pthread_getspecific",
+                "samples": 4
+              },
+              {
+                "symbol": "do_send(unsigned char*, int, int, bool, bool)",
+                "samples": 4
+              },
+              {
+                "symbol": "do_recv(unsigned char*, int, int, bool)",
+                "samples": 4
+              },
+              {
+                "symbol": "func_8006A910",
+                "samples": 4
+              }
+            ],
+            "other_inside_samples": 86
+          },
+          {
+            "tid": 57848,
+            "name": "Game Thread 0",
+            "samples": 5224,
+            "missing_samples": 0,
+            "outside_executable": 5224,
+            "inside_executable": 0,
+            "nearest_text_symbol_hits": [],
+            "other_inside_samples": 0
+          },
+          {
+            "tid": 62824,
+            "name": "Game Thread 4",
+            "samples": 5224,
+            "missing_samples": 0,
+            "outside_executable": 5220,
+            "inside_executable": 4,
+            "nearest_text_symbol_hits": [
+              {
+                "symbol": "ultramodern::check_running_queue(unsigned char*)",
+                "samples": 1
+              },
+              {
+                "symbol": "cop0_status_write",
+                "samples": 1
+              },
+              {
+                "symbol": "ultramodern::run_next_thread_and_wait(unsigned char*)",
+                "samples": 1
+              },
+              {
+                "symbol": "do_send(unsigned char*, int, int, bool, bool)",
+                "samples": 1
+              }
+            ],
+            "other_inside_samples": 0
+          },
+          {
+            "tid": 32604,
+            "name": "Game Thread 3",
+            "samples": 5224,
+            "missing_samples": 0,
+            "outside_executable": 5210,
+            "inside_executable": 14,
+            "nearest_text_symbol_hits": [
+              {
+                "symbol": "ultramodern::run_next_thread_and_wait(unsigned char*)",
+                "samples": 3
+              },
+              {
+                "symbol": "func_8007699C",
+                "samples": 2
+              },
+              {
+                "symbol": "func_80082DF0",
+                "samples": 2
+              },
+              {
+                "symbol": "func_800819BC",
+                "samples": 2
+              },
+              {
+                "symbol": "get_function",
+                "samples": 2
+              },
+              {
+                "symbol": "func_8008286C",
+                "samples": 1
+              },
+              {
+                "symbol": "func_80081F4C",
+                "samples": 1
+              },
+              {
+                "symbol": "func_80079950",
+                "samples": 1
+              }
+            ],
+            "other_inside_samples": 0
+          },
+          {
+            "tid": 68236,
+            "name": "Game Thread 6",
+            "samples": 5224,
+            "missing_samples": 0,
+            "outside_executable": 5209,
+            "inside_executable": 15,
+            "nearest_text_symbol_hits": [
+              {
+                "symbol": "ultramodern::run_next_thread_and_wait(unsigned char*)",
+                "samples": 14
+              },
+              {
+                "symbol": "ultramodern::check_running_queue(unsigned char*)",
+                "samples": 1
+              }
+            ],
+            "other_inside_samples": 0
+          }
+        ]
+      },
       "prepare_samples": [
         {
-          "time_utc": "2026-11-14 11:07:20",
+          "time_utc": "2026-11-14 11:43:15",
           "commands": 15800,
-          "elapsed_us": 197.7
+          "elapsed_us": 192.6
         },
         {
-          "time_utc": "2026-11-14 11:07:22",
+          "time_utc": "2026-11-14 11:43:17",
           "commands": 14686,
-          "elapsed_us": 166.5
+          "elapsed_us": 149.7
         },
         {
-          "time_utc": "2026-11-14 11:07:24",
+          "time_utc": "2026-11-14 11:43:19",
           "commands": 14942,
-          "elapsed_us": 192.4
+          "elapsed_us": 149.7
         },
         {
-          "time_utc": "2026-11-14 11:07:26",
+          "time_utc": "2026-11-14 11:43:21",
           "commands": 14759,
-          "elapsed_us": 160.9
+          "elapsed_us": 175.5
         },
         {
-          "time_utc": "2026-11-14 11:07:28",
+          "time_utc": "2026-11-14 11:43:23",
           "commands": 14348,
-          "elapsed_us": 172.7
+          "elapsed_us": 158.3
         },
         {
-          "time_utc": "2026-11-14 11:07:30",
+          "time_utc": "2026-11-14 11:43:25",
           "commands": 14685,
-          "elapsed_us": 169.2
+          "elapsed_us": 119.8
         },
         {
-          "time_utc": "2026-11-14 11:07:32",
+          "time_utc": "2026-11-14 11:43:27",
           "commands": 14789,
-          "elapsed_us": 191.7
+          "elapsed_us": 109.1
         }
       ],
       "render_cost_after_first_two_reports": [
-        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.9 frames=604/604 frame_ms=2.1/9.2 gpu_ms=0.2/0.4 workload_ms=15.2/21.4 setup_ms=6.9 match_ms=6.7",
-        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.9 frames=599/600 frame_ms=2.1/11.1 gpu_ms=0.2/0.4 workload_ms=15.9/25.8 setup_ms=7.3 match_ms=7.2",
-        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.1 frames=604/604 frame_ms=2.1/6.9 gpu_ms=0.2/0.4 workload_ms=15.5/23.1 setup_ms=7.1 match_ms=7.0",
-        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.9 frames=603/603 frame_ms=2.1/5.7 gpu_ms=0.2/0.4 workload_ms=14.7/19.4 setup_ms=6.4 match_ms=6.2",
-        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.0 frames=599/603 frame_ms=2.2/19.0 gpu_ms=0.2/0.4 workload_ms=15.5/29.2 setup_ms=6.6 match_ms=6.5",
-        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.0 frames=604/604 frame_ms=2.1/9.6 gpu_ms=0.2/0.4 workload_ms=15.3/23.0 setup_ms=7.0 match_ms=6.8",
-        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=29.9 present_fps=118.0 frames=591/591 frame_ms=2.2/6.2 gpu_ms=0.2/0.4 workload_ms=15.1/19.3 setup_ms=6.7 match_ms=6.5",
-        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.0 frames=600/600 frame_ms=2.2/5.9 gpu_ms=0.2/0.4 workload_ms=15.2/20.7 setup_ms=6.3 match_ms=6.2"
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.9 frames=603/603 frame_ms=1.8/11.7 gpu_ms=0.2/0.4 workload_ms=12.9/21.8 setup_ms=5.7 match_ms=5.5",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.0 frames=597/598 frame_ms=1.7/8.4 gpu_ms=0.2/0.4 workload_ms=12.9/23.4 setup_ms=6.2 match_ms=6.1",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.0 frames=603/603 frame_ms=1.9/4.1 gpu_ms=0.4/0.9 workload_ms=13.7/20.3 setup_ms=6.1 match_ms=6.0",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.9 frames=600/600 frame_ms=2.1/4.5 gpu_ms=0.5/0.9 workload_ms=13.6/17.7 setup_ms=5.2 match_ms=5.1",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.5 frames=597/598 frame_ms=2.2/12.8 gpu_ms=0.5/1.0 workload_ms=14.2/25.5 setup_ms=5.6 match_ms=5.5",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.5 frames=602/604 frame_ms=2.1/14.9 gpu_ms=0.4/0.9 workload_ms=14.4/24.5 setup_ms=5.9 match_ms=5.8",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=119.7 frames=599/599 frame_ms=2.1/4.1 gpu_ms=0.5/0.9 workload_ms=14.0/18.2 setup_ms=5.5 match_ms=5.4",
+        "[render-cost] window_s=5.0 surface=1280x720@120Hz vi=320x240@30Hz target_hz=120 internal=853x480 scale=2.67x2.00 msaa=1 game_fps=30.0 present_fps=120.0 frames=604/604 frame_ms=2.1/4.5 gpu_ms=0.5/1.0 workload_ms=13.6/18.7 setup_ms=5.3 match_ms=5.2"
       ],
       "harness": {
         "exit_code": 0,
@@ -807,7 +760,7 @@
           "requested": false
         },
         "swaps": 1527,
-        "vis": 3099,
+        "vis": 3098,
         "warp": {
           "applied": true,
           "car": 0,
@@ -820,5 +773,13 @@
         }
       }
     }
-  ]
+  ],
+  "commands": {
+    "compile_sampler": "g++ -O2 -std=c++20 tools/sample_game_threads_windows.cpp -lwinmm -o scratch/gh426/sample.exe",
+    "capture_windows": "python tools/profile_game_threads_windows.py --exe ../../build/lamborghini_modern.exe --sampler scratch/gh426/sample.exe --artifacts-dir artifacts/gh426-verified --workload both",
+    "sampler_sha256": "5aa314908299a320163ba429f811a6b0c19668e01ab5a967059ea75ab6a62800",
+    "sampler_source_sha256": "878201f7de6a850876dfec637109598c3156c38fd3e5b83c02b02fb0db536c71",
+    "runner_source_sha256": "54890f4cfea27b8a1f3af8ecde82df307a4a49372f39037e0bce6e83150d2113",
+    "relative_executable_note": "Capture reused the parent checkout build through the explicit --exe override. The documented build/lamborghini_modern.exe example works with a matching local build."
+  }
 }

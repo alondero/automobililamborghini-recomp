@@ -729,8 +729,8 @@ the internal image 853x480. The reused November 10 executable has a 0.10.3
 CMake cache; its source reference is `8d208f2`. Current `37d6df6` changes that
 reference's CMake version and documentation/packaging, with no gameplay or
 hook source changes. The executable does not embed an exact source revision.
-Android cross-compilation ran concurrently on the Windows host. These are
-not isolated workstation measurements or a low-end hardware specification.
+Background desktop work was not controlled. These are not isolated
+workstation measurements or a low-end hardware specification.
 
 WPR's `CPU.Verbose.File` profile failed with `0xc5585011`: this session could
 not enable the system profiling policy. The fallback read `GetThreadTimes`
@@ -739,13 +739,16 @@ temporary sampler also suspended each named guest thread, read its RIP with
 `GetThreadContext`, resumed it immediately and waited 2 ms with a 1 ms timer
 resolution. Toolhelp module bases relocated the executable's symbols. This
 is an intrusive wall-clock sampler, not ETW or an on-CPU sample distribution.
-Most samples were waiting outside the executable; no fine hook ranking is
-inferred from their small counts.
+More than 99% of the samples landed outside the executable. The evidence
+retains per-thread counts, missing samples, API failures and symbol bins;
+outside-image samples are not classified as idle or on-CPU. No fine hook
+ranking is inferred from the small executable counts. CPU-counter intervals
+include enumeration/logging and are reported separately (15.03–15.08 s).
 
-| Windows workload | Busiest guest CPU / 15 s | All seven guest threads / 15 s | Prepare median / maximum (µs/task) | Game FPS |
+| Windows workload | Busiest guest CPU / ~15 s | All seven guest threads / ~15 s | Prepare median / maximum (µs/task) | Game FPS |
 | --- | --- | --- | --- | --- |
-| 1P time trial | 0.422 s | 1.203 s | 45.8 / 65.0 | 30.0 |
-| 4P split screen | 0.828 s | 1.734 s | 172.7 / 197.7 | 29.9–30.0 |
+| 1P time trial | 0.469 s | 1.000 s | 30.7 / 50.8 | 29.9–30.2 |
+| 4P split screen | 0.594 s | 1.109 s | 149.7 / 192.6 | 30.0 |
 
 The prepare columns contain seven diagnostic samples per run wholly inside
 the capture interval, with 2,370–4,540 commands in 1P and 14,348–15,800 in 4P.
@@ -753,12 +756,12 @@ The existing probe times the HUD/fog walk and rain publication after task
 validation, before log formatting. It samples the first twelve tasks, then
 every sixtieth task. The table excludes startup; its maximum is a sampled
 maximum, not a worst-case bound on every task. Warm renderer reports averaged
-1.0–1.3 ms per rendered frame in 1P and 2.1–2.2 ms in 4P, with GPU averages of
-0.1 and 0.2 ms respectively. Matching averaged 0.6–0.7 and 6.2–7.2 ms per game
+1.0–1.3 ms per rendered frame in 1P and 1.7–2.2 ms in 4P, with GPU averages of
+0.1 and 0.2–0.5 ms respectively. Matching averaged 0.5–0.6 and 5.1–6.1 ms per game
 workload. Those wall times include renderer waits and are not guest CPU time.
-The separate SP Task thread used 0.188 s and 0.203 s of CPU over the same 15 s
+The separate SP Task thread used 0.219 s and 0.172 s of CPU over the same ~15 s
 windows; these are thread totals, not exclusive `aspMain` timings. The Gfx
-thread used 1.766 s and 5.281 s respectively. Its work is distinct from the
+thread used 1.172 s and 3.813 s respectively. Its work is distinct from the
 guest producer hooks and from RT64's matching/render threads.
 
 These Windows samples satisfy the issue's sub-500 µs/task check and show guest
@@ -766,7 +769,27 @@ CPU headroom at the game's 30 Hz target. They do not justify a guest-source
 replacement, skipping the F3DEX walk, or caching draw-distance writes across
 configuration and save-state changes.
 
-For reproduction, enable `RT64_RENDER_COST_REPORT=1`, run the executable with
+The retained Windows runner and sampler reproduce the isolated fixture and
+15-second window (MinGW x64, from the repository root):
+
+~~~powershell
+New-Item -ItemType Directory -Force artifacts/game-thread-profile | Out-Null
+g++ -O2 -std=c++20 tools/sample_game_threads_windows.cpp -lwinmm -o artifacts/game-thread-profile/sample.exe
+python tools/profile_game_threads_windows.py --exe build/lamborghini_modern.exe --sampler artifacts/game-thread-profile/sample.exe --workload both
+~~~
+
+The runner waits for the first prepared task, excludes another ten seconds,
+then records both workloads separately. It retains CPU counters, raw RIPs,
+module bases, sampler failures, logs and the harness result under `artifacts/`.
+
+The ARM64 Release build at `37d6df6` passed with freshly generated USA game
+and RSP output, NDK r28c Clang 19.0.1, and the repository's Android patch
+series. Clean Android captures remain pending: issue 425 has priority on the
+shared SM-T720. Overlapping captures lost foreground focus and are excluded.
+The Android metadata in the evidence describes the build and intended setup,
+not a completed profiling result. This partial experiment does not close 426.
+
+For other profiling tools, enable `RT64_RENDER_COST_REPORT=1`, run the executable with
 `--verbose` or `--log-level=debug`, and set `LAMBO_WARP`, `LAMBO_WARP_MODE`,
 `LAMBO_INPUT_REPLAY`, `LAMBO_INPUT_START_STATE=8`, `LAMBO_INPUT_START_DELAY=0`
 and `LAMBO_INPUT_EXIT_ON_END=1`. Isolate graphics, controller Pak and user
