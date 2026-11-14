@@ -23,8 +23,8 @@ replaces this backup. Close the running game before saving. This cannot repair a
 incompatible driver or code mod.
 
 Recovery is covered by `GraphicsRecoveryChecks` in the Android instrumentation
-suite. The same checks passed through `app_process` on the connected Android
-device using isolated temporary files: first use, preserved unknown settings,
+suite. The same checks passed through `app_process` on an SM-T720 running Android
+11 using isolated temporary files: first use, preserved unknown settings,
 exact backup, malformed JSON, a held game lock and a failed backup write. This
 does not establish renderer startup or a full APK interaction result.
 

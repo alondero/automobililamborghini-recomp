@@ -127,10 +127,11 @@ Native Windows layout is **Confirmed** in the
 [1600x900 capture](images/launcher-paddock-1600.png) and
 [2560x1440 capture](images/launcher-paddock-1440.png). Keyboard activation of
 all five destinations, game boot, and launcher Quit (exit code 0) were checked.
-The [800x600 capture](images/launcher-paddock-800x600.png) shows the smaller
-landscape layout. Separately, the [600x900 capture](images/launcher-paddock-600x900.png)
-shows the historical split layout, with wrapped rows staying separate and keyboard focus scrolling Quit into view
-before activation. Both sizes were checked in the native Windows build.
+The [800x600 capture](images/launcher-paddock-800x600.png) and
+[600x900 capture](images/launcher-paddock-600x900.png) show the **historical** split
+layout. Wrapped rows stayed separate and keyboard focus scrolled Quit into view
+before activation. Both sizes were checked in that native Windows build; the new
+compact layout has not yet had a rendered interaction check.
 Physical-controller navigation and other platforms remain **Unverified**.
 
 `lambo_launcher_menu_tests` checks row order, copy, all destination effects,

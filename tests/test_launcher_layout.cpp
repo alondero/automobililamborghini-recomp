@@ -1,5 +1,6 @@
 #include <RmlUi/Core.h>
 #include <cstdio>
+#include <cmath>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -40,7 +41,9 @@ int main(int argc, char** argv) {
             const bool compact = width <= 1000;
             const bool rail_hidden = doc->GetElementById("rail")->GetProperty<Rml::Style::Display>("display") == Rml::Style::Display::None;
             const bool status_hidden = doc->GetElementById("status")->GetProperty<Rml::Style::Display>("display") == Rml::Style::Display::None;
-            if (rail_hidden != compact || status_hidden == compact) {
+            const float padding = doc->GetElementById("actions")->GetBox().GetEdge(Rml::BoxArea::Padding, Rml::BoxEdge::Left);
+            if (rail_hidden != compact || status_hidden == compact ||
+                std::abs(padding - (compact ? 24.0f : 64.0f) * density) > 0.1f) {
                 std::fprintf(stderr, "FAIL: width=%d density=%g\n", width, density);
                 ++failures;
             }
