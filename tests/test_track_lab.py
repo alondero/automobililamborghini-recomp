@@ -86,8 +86,9 @@ def make_rdram() -> bytes:
 
     for index, (x, z) in enumerate(((100, 200), (300, 400), (-500, 600))):
         record = bytearray(16)
-        struct.pack_into(">hh", record, 0, x, z)
-        record[4:] = bytes([index + 1]) * 12
+        # N64 Vtx is x, height, z. Keep height distinct to catch an XY map.
+        struct.pack_into(">hhh", record, 0, x, 123, z)
+        record[6:] = bytes([index + 1]) * 10
         put_logical(memory, anchor_base + index * 16, record)
 
     # The extractor deliberately assumes one 16-byte waypoint per PVS row.
@@ -181,6 +182,8 @@ class TestExtraction(TrackLabFixture):
                          + self.raw_bytes + bytes(0x24000))
         document = tl.extract_document(path)
         self.assertEqual(document["provenance"]["snapshot_format"], "lmbostat-v2")
+        tl.validate_document(document)
+        self.assertEqual(tl.compile_document(document), tl.compile_document(self.document))
         self.assertEqual(document["provenance"]["rdram_sha256"],
                          self.document["provenance"]["rdram_sha256"])
 

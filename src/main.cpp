@@ -1177,7 +1177,7 @@ static int application_main(int argc, char** argv) {
                             error != nullptr ? error : "unknown error");
             return 2;
         }
-        LAMBO_LOG_INFO("track", "loaded Track Lab correction %s\n",
+        LAMBO_LOG_INFO("track", "loaded Track Lab package %s\n",
                        track_patch_path_string.c_str());
     } else {
         lambo::track_patch::disable();

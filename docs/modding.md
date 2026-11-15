@@ -172,10 +172,11 @@ dependency combinations and other platforms need their own tests.
 
 ## Track Lab
 
-Track Lab still applies guarded `.altrk` visibility corrections to stock
-circuits through its existing workflow. It is separate from the package manager.
-Mod loading does not provide arbitrary custom playable tracks, geometry,
-collision, navigation, AI data, or another regional ROM.
+Track Lab applies guarded `.altrk` visibility corrections and fixed-capacity
+track bundles. Its generated Circuit 1 oval includes road/collision, routes,
+grid and minimap data. It is separate from the package manager and replaces a
+stock slot for that launch. Arbitrary topology, extra circuit menu slots and
+other regional ROMs are unsupported.
 See [Track Lab](TRACK_LAB.md).
 
 ## Verification recorded for this integration

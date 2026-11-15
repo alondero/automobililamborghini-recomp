@@ -1,7 +1,8 @@
 # Track Lab
 
-Status: experimental stock-track correction tool. It does not support general
-custom tracks or code mods.
+Status: experimental visibility/elevation editor and fixed-capacity track bundles.
+The generated Circuit 1 oval has passed a forward four-car AI lap test. Arbitrary
+topology, extra menu slots and other regional ROMs are not supported.
 
 Track Lab is the first safe track-modding workflow for this port. It extracts a
 loaded stock circuit into readable JSON, records decoded segment anchors and
@@ -9,13 +10,15 @@ assumed AI waypoints for inspection, edits the circuit's authored visibility
 rows, and compiles those edits into a guarded `.altrk` package that the port can
 apply.
 
-This is intentionally a **stock-circuit correction editor**, not yet an
-arbitrary playable-track editor. Geometry, collision, waypoint data, segment
-links, minimap data, and setup descriptors are inspect-only or unsupported.
+The original visibility format remains supported. A second bundle format now
+replaces named buffers while retaining stock capacities and segment pointers.
+The companion editor can change road elevation and generate a new oval with
+matching collision, routes, grid and minimap. A bundle replaces its target
+stock slot for that launch; it does not add a circuit to the menu.
 The reverse-engineering basis and remaining work are recorded in
 [Track modding research](./TRACK_MODDING_RESEARCH.md).
 
-## What v0 can do
+## Supported data
 
 | Data | Support | Reason |
 | --- | --- | --- |
@@ -23,9 +26,54 @@ The reverse-engineering basis and remaining work are recorded in
 | Segment display-list pointers | Inspect | Useful for diagnosing a missing road/wall/scenery layer; external assets are not loaded. |
 | Segment cull anchors | Inspect and map | The anchor calculation is confirmed, but the surrounding record is not fully decoded. |
 | Waypoint-like records | Inspect and map | Coordinates and 16-byte stride are confirmed; table extent and other fields remain uncertain. |
-| Geometry and materials | Unsupported | No safe allocation, relocation, and display-list import contract exists yet. |
-| Collision/surfaces | Unsupported | Candidate plane-like data exists, but its live consumer and mapping are not proven. |
-| Branches, shortcuts, new circuits | Unsupported | Stock AI and progression follow an ordered closed loop through separate metadata. |
+| Geometry and materials | Elevation and generated oval | Same-capacity vertex/display-list replacement; general relocation is unsupported. |
+| Collision/surfaces | Shared vertices and generated oval triangles | Confirmed triangle/neighbor/owner records reference the rendered road vertices. |
+| Branches, shortcuts, new circuits | Circuit 1 oval replacement | Preserves the stock main/pit range and event topology; arbitrary branches are unsupported. |
+
+## Fixed-capacity bundles
+
+The companion editor's snapshot workflow extracts road, wall and scenery
+display lists into a geometric preview. Its local Python bridge imports this
+repository's `track_lab.py` and `track_bundle.py`. Version 2 documents carry
+`track_source` buffers and optional `editor_preview`; the preview is never
+compiled. Use the same CLI to validate, diff or compile either document version.
+
+`ALTRKBD1` packages use the existing 64-byte little-endian header with flag 2,
+block count in the edit-count field, and zero global hash/reserved fields.
+Each block has a 32-byte `<BBHIIIQQ` descriptor: kind, zero byte, index, size,
+two zero words, baseline/result FNV-1a64 hashes; logical big-endian replacement
+bytes follow. Kinds are visibility (0), shared vertices (1), collision (2),
+waypoints (3), segments (4), road/wall/scenery lists (5/6/7), inline grid (8),
+and 80x80 IA4 minimap (9). List indices select stock segment records; other
+indices are zero. There are no package-supplied destination pointers.
+
+The native loader resolves and bounds every buffer from the active context,
+checks overlap, complete fingerprints and replacement references, then writes
+transactionally. Segment pointers, route event/scalar fields and spawn range
+IDs stay unchanged. Changed display lists use a restricted command set and
+may load vertices only from the named vertex buffer. Mixed partial application
+rejects; a complete matching result is idempotent. Invalid references, corrupt
+payloads and late baseline mismatches have host tests proving no writes.
+
+The oval generator builds 904 road/collision triangles, 25 render segments,
+250 main plus 56 pit waypoints, a containing collision seed for each grid slot,
+and a matching minimap. It preserves Circuit 1's event/range topology and
+uses its existing assets as storage, without copying its road layout. Run
+without `--track-patch` to load the original circuit.
+
+Local November 2026 verification covered all six stock geometry previews;
+every nonzero collision triangle matched a rendered road triangle. The actual
+generated game height consumer passed 12,927 nondegenerate triangle elevation
+checks. Browser-authored elevation and oval packages matched every imported
+buffer after a fresh native load. Three AI opponents completed a full forward
+oval lap in a four-car race and remained moving; reverse, multiplayer and
+Championship custom-track behavior are not claimed verified. Actual RT64
+presented frames were captured, including the generated minimap.
+
+The companion repository's `verify_track_cycle.py` creates fresh run directories,
+checks compiler bytes and post-load buffers, and optionally captures a native
+frame with `--presented`. Snapshots and generated packages contain local game
+assets and must remain uncommitted.
 
 A PVS row controls which existing segment records are candidates for rendering
 from a camera segment. It does not add geometry, make a surface driveable, or
@@ -178,8 +226,13 @@ target and visibility fields only, so clients may omit inspection-only records.
 `raw_base_rows` retains unusual negative hole values even though the editor
 displays every negative value as `null`.
 
+Companion editors may include an optional `editor_preview` rendering cache.
+This is opaque presentation metadata, not extraction evidence. Validation and
+compilation never treat it as writable game data or include it in `.altrk`.
+
 The extractor accepts either exactly 8 MiB of raw N64Recomp word-swapped RDRAM
-or the port's 32-byte `LMBOSTAT` v1 header followed by that payload. Header
+or the port's 32-byte `LMBOSTAT` v1/v2 header followed by that payload. Version 2
+also carries the port's 0x24000-byte race-field extension. Header
 reserved words remain opaque to Track Lab; the capture's table fingerprint is
 the baseline guard.
 
@@ -205,6 +258,13 @@ anchor x = anchor[segment.anchor_index].x + segment.offset_x
 anchor z = anchor[segment.anchor_index].z + segment.offset_z
 ```
 
+The anchor is an N64 vertex: X is the signed halfword at `+0`, height at `+2`,
+and Z at `+4`. The scene builder reads `+0` at runtime `0x8000D0A8` and `+4` at
+`0x8000D0EC`. Older Track Lab exports incorrectly decoded height as Z; re-extract
+those snapshots or migrate the derived coordinates using the preserved raw
+records. Segment translation remains X/Z at segment `+0x10/+0x12`.
+Cull anchors are test points, not road centerline points or segment links.
+
 The waypoint view reads one 16-byte record per PVS row beginning at the dual-use
 PVS-end pointer. This is a useful inspection hypothesis, not a proven table
 extent. The two floats are horizontal-plane coordinates used by AI/path code;
@@ -218,22 +278,18 @@ direction from neighboring waypoint coordinates. A visibility correction can
 fix pop-in or expose an existing nearby section; it cannot teach AI to follow a
 new route.
 
-## Next implementation milestones
+## Remaining implementation milestones
 
-The route from this correction editor to genuinely new playable tracks is:
+Collision, Circuit 1 route extent, grid seeds and minimap generation are now
+confirmed for the bounded oval workflow above. General authoring still needs:
 
-1. identify the live collision/surface consumer with watchpoints and prove the
-   six candidate plane-table mappings;
-2. decode the remaining segment and waypoint fields plus exact waypoint extent;
-3. recover and generate loop/wrap, lap/progress, race-position, and minimap data
-   from one logical route model;
-4. add a bounded host allocation/swizzle layer for relocated segment records,
-   display lists, vertices, textures, and palettes;
-5. raise or replace the stock 20-entry drawn-segment-list capacity safely; and
-6. only then add geometry/collision authoring and call the result a new track.
-
-Until collision is proven, copied stock collision under replacement visuals is
-a render experiment, not a playable custom track.
+1. editable route topology, branches and event placement beyond the preserved
+   stock range graph;
+2. a bounded host allocation/swizzle layer for relocated segment records,
+   display lists, vertices, textures and palettes;
+3. a safely raised or replaced stock 20-entry drawn-segment-list capacity;
+4. extra menu entries and a stable mod distribution format; and
+5. reverse, multiplayer, Championship and reference-emulator validation.
 
 Extraction, compilation, package loading, and hook guards are verified for all
 six stock circuits in the recomp port. A correction write and matching/mismatched

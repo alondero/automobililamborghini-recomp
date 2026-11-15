@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Extract and compile the first safe, deliberately narrow track-edit format.
+"""Extract stock track evidence and compile guarded track packages.
 
 Track Lab v1 edits only the active track's authored visibility (PVS) rows.  It
 also exports the segment records, referenced cull anchors, and one assumed
 waypoint record per segment for inspection.  Those records are intentionally
 not compiled: geometry, collision, and the true waypoint extent are not yet
 understood well enough to expose as writable data.
+
+Version 2 authoring documents delegate to track_bundle.py for fixed-capacity
+geometry/collision/route bundles. The original version 1 compiler remains
+visibility-only.
 
 The input snapshot is either:
 
@@ -352,7 +356,9 @@ def extract_document(path: str | os.PathLike[str]) -> dict[str, Any]:
     for index in sorted(referenced_anchor_indices):
         address = anchor_base + index * 16
         raw = memory.logical_bytes(address, 16, label=f"anchor {index}")
-        x, z = struct.unpack_from(">hh", raw, 0)
+        # Scene builder 0x8000D0A8/0x8000D0EC reads Vtx x/z at +0/+4.
+        # +2 is height, not the second horizontal coordinate.
+        x, z = struct.unpack_from(">h2xh", raw, 0)
         anchor_coordinates[index] = (x, z)
         anchors.append(
             {
@@ -680,7 +686,7 @@ def _validate_inspection_data(document: dict[str, Any], row_count: int) -> None:
             raise TrackLabError("anchors must be unique and sorted by index")
         previous_index = index
         raw = _require_raw_hex(anchor["raw_be_hex"], 16, f"anchors[{position}].raw_be_hex")
-        raw_x, raw_z = struct.unpack_from(">hh", raw, 0)
+        raw_x, raw_z = struct.unpack_from(">h2xh", raw, 0)
         decoded = _require_object(anchor["decoded"], f"anchors[{position}].decoded")
         _require_keys(decoded, {"x", "z"}, f"anchors[{position}].decoded")
         x = _require_int(decoded["x"], f"anchors[{position}].decoded.x", -0x8000, 0x7FFF)
@@ -764,7 +770,9 @@ def validate_document(
     """
     document = _require_object(document, "document")
     required_keys = {"format", "version", "target", "visibility"}
-    optional_keys = set()
+    # Companion-editor rendering cache is opaque presentation metadata, not
+    # immutable extraction evidence and never part of a native package.
+    optional_keys = {"editor_preview", "track_source"}
     if include_inspection:
         required_keys.update(
             {"provenance", "capabilities", "segments", "anchors", "waypoints"}
@@ -816,6 +824,7 @@ def validate_document(
         if provenance["snapshot_format"] not in {
             "raw-word-swapped-rdram",
             "lmbostat-v1",
+            "lmbostat-v2",
         }:
             raise TrackLabError("provenance.snapshot_format is not a supported snapshot type")
         _require_hex(provenance["snapshot_sha256"], _SHA256_RE, "provenance.snapshot_sha256")
@@ -998,6 +1007,15 @@ def diff_document(document: dict[str, Any]) -> dict[str, Any]:
 
 def compile_document(document: dict[str, Any]) -> bytes:
     """Compile patch-relevant fields to deterministic portable ``.altrk`` bytes."""
+    if isinstance(document, dict) and document.get('version') == 2:
+        try:
+            try:
+                from .track_bundle import compile_bundle
+            except ImportError:
+                from track_bundle import compile_bundle
+            return compile_bundle(document)
+        except (ValueError, TypeError, KeyError, StopIteration, struct.error) as exc:
+            raise TrackLabError(f'invalid track bundle: {exc}') from exc
     validated = validate_patch_document(document)
     edit_count = len(validated.edits)
     payload_size = edit_count * PATCH_EDIT.size
@@ -1113,20 +1131,37 @@ def main(argv: list[str] | None = None) -> int:
                 f"{document['visibility']['row_count']} visibility rows -> {args.json}"
             )
         elif args.command == "validate":
-            validated = validate_document(load_document(args.json))
+            document = load_document(args.json)
+            if document.get('version') == 2:
+                package = compile_document(document)
+                print(f"valid bundle: circuit {document['target']['circuit']}, {len(package)} bytes")
+                return 0
+            validated = validate_document(document)
             print(
                 f"valid: circuit {validated.document['target']['circuit']}, "
                 f"{validated.row_count} rows, {len(validated.edits)} edit(s), "
                 f"base {_fnv_hex(validated.base_hash)}"
             )
         elif args.command == "diff":
-            sys.stdout.write(_canonical_json(diff_document(load_document(args.json))))
+            document = load_document(args.json)
+            if document.get('version') == 2:
+                package = compile_document(document)
+                changes, offset = [], 64
+                while offset < len(package):
+                    kind, _, index, size, _, _, before, after = struct.unpack_from('<BBHIIIQQ', package, offset)
+                    if before != after:
+                        changes.append(dict(kind=kind, index=index, bytes=size))
+                    offset += 32 + size
+                sys.stdout.write(_canonical_json({'blocks': changes}))
+            else:
+                sys.stdout.write(_canonical_json(diff_document(document)))
         elif args.command == "compile":
             document = load_document(args.json)
             patch = compile_document(document)
             _atomic_write(args.altrk, patch)
-            edit_count = (len(patch) - PATCH_HEADER_SIZE) // PATCH_EDIT.size
-            print(f"compiled {edit_count} guarded edit(s), {len(patch)} bytes -> {args.altrk}")
+            count = struct.unpack_from('<I', patch, 32)[0]
+            unit = 'block(s)' if document.get('version') == 2 else 'edit(s)'
+            print(f"compiled {count} guarded {unit}, {len(patch)} bytes -> {args.altrk}")
         else:  # pragma: no cover - argparse makes this unreachable.
             raise TrackLabError(f"unknown command {args.command!r}")
     except TrackLabError as exc:

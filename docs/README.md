@@ -25,8 +25,8 @@ Developers need evidence, ownership, and exact boundaries.
   notes.
 - [Texture packs](TEXTURES.md) describes the supported texture replacement
   format.
-- [Track Lab](TRACK_LAB.md) describes the experimental stock-track visibility
-  correction format. It is not a general custom-track system.
+- [Track Lab](TRACK_LAB.md) describes experimental visibility corrections and
+  geometry bundles, including elevation edits and generated oval replacements.
 
 ## Developer help
 
@@ -56,7 +56,7 @@ status line before relying on a historical measurement.
 | [Frontend notes](recompfrontend.md) | Current settings, profiles, and migration limits. |
 | [Automated harness](automation-harness.md) | Scenario format, replay timing, and oracle limits. |
 | [Texture packs](TEXTURES.md) | Dump, decode, author, and package workflow. |
-| [Track Lab](TRACK_LAB.md) | Experimental stock-track visibility corrections. |
+| [Track Lab](TRACK_LAB.md) | Experimental visibility and bounded geometry authoring. |
 | [Track research](TRACK_MODDING_RESEARCH.md) | Historical track data map and unresolved hypotheses. |
 | [Track index](TRACK_INDEX.md) | Circuit, menu, and developer-warp numbering. |
 | [Race fields](race-fields.md) | Configurable competitors, relocated tables, grids and validation. |

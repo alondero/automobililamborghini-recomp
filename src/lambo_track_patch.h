@@ -18,7 +18,8 @@ enum class LoadResult {
 
 // apply_to_active_track is suitable for a post-track-load or post-savestate
 // hook: it performs no allocation or file I/O. Every rejection is read-only;
-// writes occur only after the complete live PVS has passed its guards. See
+// writes occur only after all live tables and replacement references pass their
+// guards. Bundles retain stock buffer capacities and segment pointers. See
 // docs/modding.md for the deliberately narrow current contract.
 enum class ApplyResult {
     Disabled,

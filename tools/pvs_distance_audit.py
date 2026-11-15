@@ -53,7 +53,7 @@ def main(path):
     def point(seg):
         idx = gh(rec64 + seg * 64 + 0x20)
         x = gh(rec16 + idx * 16 + 0x0) + gh(rec64 + seg * 64 + 0x10)
-        z = gh(rec16 + idx * 16 + 0x2) + gh(rec64 + seg * 64 + 0x12)
+        z = gh(rec16 + idx * 16 + 0x4) + gh(rec64 + seg * 64 + 0x12)
         return x, z
 
     # Segment count = the PVS block size itself: the track header (ptr 0x80098238)
