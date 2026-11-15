@@ -130,7 +130,8 @@ def load_scenario(path: Path) -> dict[str, Any]:
     if set(developer) - {"LAMBO_RACE_CARS", "LAMBO_RT_SHADOW_FAULT", "LAMBO_TEST_RESIZE", "LAMBO_RT_SHADOW_DEBUG",
                          "LAMBO_RT_SHADOW_CONTACT", "LAMBO_RT_SHADOW_CONTACT_DISTANCE",
                          "LAMBO_RT_SHADOW_SKY_DISTANCE", "LAMBO_RT_SHADOW_SKY_OPEN", "LAMBO_RT_SHADOW_CACHE",
-                         "LAMBO_UI_ACCEPTANCE", "LAMBO_LAUNCHER"}:
+                         "LAMBO_UI_ACCEPTANCE", "LAMBO_LAUNCHER",
+                         "LAMBO_ENGINE_AUDIO", "LAMBO_ENGINE_AUDIO_TRACE"}:
         raise ScenarioError("unsupported scenario developer variable")
     if any(type(value) is not str for value in developer.values()):
         raise ScenarioError("scenario.developer_env values must be a string")

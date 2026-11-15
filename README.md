@@ -57,6 +57,13 @@ off and does not affect race steering.
 acceleration to the car select screen. It is off by default. See
 [car select info](docs/car-select-info.md).
 
+## Engine audio
+
+Engine sounds use a procedural sports-car replacement that follows the game's
+revs, gear changes and stereo positioning. Set `LAMBO_ENGINE_AUDIO=0` before
+launching to use the original sounds. See [engine audio](docs/engine-audio.md)
+for comparisons, implementation details and tuning.
+
 ## Settings
 
 The settings screen includes:
