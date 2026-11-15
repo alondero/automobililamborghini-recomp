@@ -67,6 +67,7 @@ status line before relying on a historical measurement.
 | [Camera sequences](camera-sequences.md) | Camera gate measurements and visual comparisons. |
 | [Sky panorama](sky-panorama.md) | Sky motion, projection coverage and task-owned panorama extensions. |
 | [No-LOD audit](no_lod_audit.md) | Historical LOD measurements and later addenda. |
+| [Slip rumble](slip-rumble.md) | Experimental additive slide feedback, ownership and validation limits. |
 | [Rumble audit](rumble-triggers.md) | Rumble discovery and Controller Pak coexistence evidence. |
 | [Slip rumble research](slip-rumble-research.md) | GT64 implementation review and additive slip-feedback proposal. |
 | [Automatic pit-stops](automatic-pit-stops.md) | Guest source replacement, assistance and ROM parity tests. |

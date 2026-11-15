@@ -137,6 +137,10 @@ void set_automatic_pit_stops(bool enabled);
 bool remove_blue_hud_bar();
 void set_remove_blue_hud_bar(bool enabled);
 
+// Experimental slide feedback; persistent as slip_rumble, default off.
+bool slip_rumble();
+void set_slip_rumble(bool enabled);
+
 // Show a car info card on the car-select screen. Applied live, persisted as
 // car_select_info in graphics.json; default false (original screen).
 bool car_select_info();

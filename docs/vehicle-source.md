@@ -55,7 +55,9 @@ stock branch. Throttle retains the ten-unit ramp and A/Z fallback. Player-one
 steering retains the scheme-2 exclusion and the centered-stick special case,
 including a configured deadzone of zero.
 
-`lambo_vehicle_observe(kind, authored, snapshot)` only records diagnostics.
+`lambo_vehicle_observe(kind, authored, snapshot)` records diagnostics for kinds
+0..2. Kind 3 publishes optional [slide feedback](slip-rumble.md) after the human
+branch returns from `func_8002622C`; it does not modify the CPU context.
 The host observer reads guest state on the game thread and writes no game RAM.
 For steering, the pre-override work value and the settings snapshot are passed
 explicitly so the existing CSV's authored/demand distinction is preserved.

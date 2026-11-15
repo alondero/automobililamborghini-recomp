@@ -1,6 +1,7 @@
 #include "vehicle_update.h"
 
-/* Only input snapshots cross to the host. The game thread owns all demand,
+/* Host input queries and read-only observers leave all game state here.
+ * The game thread owns all demand,
  * accumulator and latch updates. Bit 30 requests a read-only diagnostic. */
 #define INPUT_ANALOG 0x80000000u
 #define INPUT_PROBE  0x40000000u
@@ -699,6 +700,8 @@ void func_80019D20(s16 first_vehicle) {
                     vehicles_update[update_vehicle_index].steering_demand = steering_work;
                     func_80028250();
                     func_8002622C();
+                    /* Read-only feedback after the human physics update. */
+                    lambo_vehicle_observe(3, 0, 0);
                 } else {
                     func_80028250();
                     if (D_800CE808 == 0) {

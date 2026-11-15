@@ -501,6 +501,19 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_window_resize COMMAND lambo_window_resize_tests)
 
+    add_executable(lambo_slip_rumble_tests tests/test_slip_rumble.cpp src/lambo_slip_rumble.cpp)
+    target_include_directories(lambo_slip_rumble_tests PRIVATE src)
+    target_link_libraries(lambo_slip_rumble_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_slip_rumble COMMAND lambo_slip_rumble_tests)
+
+    add_executable(lambo_slip_rumble_runtime_tests tests/test_slip_rumble_runtime.cpp
+        src/lambo_slip_rumble.cpp src/lambo_slip_rumble_runtime.cpp
+        src/lambo_driving_assists.cpp src/lambo_input_gate.cpp)
+    target_include_directories(lambo_slip_rumble_runtime_tests PRIVATE src
+        ${N64MR}/N64Recomp/include ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
+    target_link_libraries(lambo_slip_rumble_runtime_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_slip_rumble_runtime COMMAND lambo_slip_rumble_runtime_tests)
+
     add_executable(lambo_driving_assists_tests tests/test_driving_assists.cpp src/lambo_driving_assists.cpp)
     target_include_directories(lambo_driving_assists_tests PRIVATE src)
     add_test(NAME lambo_input_driving_assists COMMAND lambo_driving_assists_tests)
@@ -599,6 +612,7 @@ if(BUILD_TESTING)
         tests/test_lambo_replay_runtime.cpp
         src/lambo_driving_assists.cpp
         src/lambo_driving_assists_runtime.cpp
+        src/lambo_slip_rumble.cpp
         src/lambo_replay_runtime.cpp
         src/lambo_replay.cpp
         src/lambo_file.cpp
@@ -924,6 +938,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_replay.cpp
         src/lambo_replay_runtime.cpp
         src/lambo_driving_assists_runtime.cpp
+        src/lambo_slip_rumble.cpp
+        src/lambo_slip_rumble_runtime.cpp
         src/lambo_harness_report.cpp
         src/lambo_file.cpp
         src/lambo_race_field.cpp

@@ -3,6 +3,7 @@
 #include "lambo_analog_brake.h"
 #include "lambo_driving_assists.h"
 #include "lambo_input_gate.h"
+#include "lambo_slip_rumble.h"
 #include "recomp.h"
 #include "lambo_race_field.h"
 
@@ -30,7 +31,7 @@ extern "C" void lambo_driving_assists_tick(std::uint8_t* rdram) noexcept {
     const bool allowed = driving && !player_finished &&
         !lambo::input_gate::guest_input_suppressed() && !lambo::driving::replay_playback();
     lambo::driving::set_racing(allowed);
-    if (!allowed) return;
+    if (!allowed) { lambo_slip_rumble_reset(); return; }
 
     const auto demand = lambo::driving::sample();
     if (!demand.gyro_valid && !demand.auto_accelerate) return;

@@ -54,6 +54,7 @@
 #include "lambo_audio.h"
 #include "lambo_frame_pump.h"
 #include "lambo_config.h"
+#include "lambo_slip_rumble.h"
 #include "lambo_mods.h"
 #include "lambo_mod_gameplay.h"
 #include "lambo_paths.h"
@@ -454,6 +455,9 @@ static void announce_runtime_ready() {
 
 static void dispatch_sdl_event(const SDL_Event& event) {
     lambo::ui::driving_sensor_event(event);
+    if (event.type == SDL_CONTROLLERDEVICEADDED ||
+        event.type == SDL_CONTROLLERDEVICEREMOVED ||
+        event.type == SDL_CONTROLLERDEVICEREMAPPED) lambo_slip_rumble_reset();
     // Quit/window-close is handled before any UI or guest dispatch. In particular,
     // a launcher close before the first VI is a successful application exit, not a
     // failed boot probe.
@@ -664,14 +668,26 @@ extern "C" void lambo_savestate_request_save(void);
 extern "C" void lambo_savestate_request_load(void);
 
 // Apply the published rumble state to the physical pad. Called once per main-thread pump.
-// N64 rumble is bang-bang (motor fully on or off), so map to SDL full strength. We refresh the
-// effect every pump with a short expiry (150 ms > one 30 fps frame) so a sustained motor-on
-// keeps buzzing without needing a re-trigger, and a single motor-off (or a dropped controller)
-// lets it lapse. Idempotent-ish: we only issue an SDL call on an on/off EDGE plus periodic
-// refresh while on, to avoid hammering the HID layer every frame.
+// The frontend smooths the boolean request and applies global Rumble Strength.
+static bool rumble_controller_connected() {
+    if (!recompinput::players::is_single_player_mode()) {
+        auto* controller = recompinput::players::get_player(0).controller;
+        return controller && SDL_GameControllerGetAttached(controller);
+    }
+    // Single-player frontend output targets all opened controllers, even when
+    // keyboard input is selected. Player assignment is not a connection test.
+    for (int i = 0; i < SDL_NumJoysticks(); ++i) {
+        auto* controller = SDL_GameControllerFromInstanceID(SDL_JoystickGetDeviceInstanceID(i));
+        if (controller && SDL_GameControllerGetAttached(controller)) return true;
+    }
+    return false;
+}
+
 static void rumble_apply() {
     int on = g_rumble_on.load(std::memory_order_relaxed);
-    recompinput::set_rumble(0, on != 0 && !lambo::ui::captures_input());
+    recompinput::set_rumble(0, lambo::rumble::slip().output(on != 0,
+        lambo::config::slip_rumble(), rumble_controller_connected(),
+        lambo::ui::captures_input(), lambo::rumble::now_ms()));
     recompinput::update_rumble();
 }
 
