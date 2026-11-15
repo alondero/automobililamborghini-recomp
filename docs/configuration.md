@@ -205,6 +205,8 @@ most useful ones are:
 | `LAMBO_ANALOG_THROTTLE`, `LAMBO_ANALOG_BRAKE` | Inject pedal values. |
 | `LAMBO_STEERING_DIRECT` | `1` or `0` forces direct steering response on or off. |
 | `LAMBO_STEERING_DEADZONE` | Override the game steering deadzone (0..20). |
+| `LAMBO_ENGINE_AUDIO` | Procedural engine sound (default on); `0` restores cartridge engines at next launch. See [engine audio](engine-audio.md). |
+| `LAMBO_ENGINE_AUDIO_TRACE` | Log engine start/update controls when debug logging is enabled. |
 | `LAMBO_STEERING_TRACE` | Write one CSV row per player-one steering update to this path. |
 | `LAMBO_RACE_DL_DUMP`, `LAMBO_MENU_DL_TRACE`, `LAMBO_MENU_DL_DUMP` | Capture display-list diagnostics. |
 | `LAMBO_DL_INSPECT`, `LAMBO_DL_RENDER_STATE`, `LAMBO_DL_RENDER_OUT` | Inspect or capture the headless renderer. |

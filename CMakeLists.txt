@@ -58,6 +58,20 @@ if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/CMakeLists.txt)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(lambo_engine_audio_tests tests/test_engine_audio.cpp src/lambo_engine_audio.cpp)
+    target_include_directories(lambo_engine_audio_tests PRIVATE src)
+    target_link_libraries(lambo_engine_audio_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_engine_audio COMMAND lambo_engine_audio_tests)
+    add_executable(lambo_engine_audio_runtime_tests tests/test_engine_audio_runtime.cpp
+        src/lambo_engine_audio.cpp src/lambo_engine_audio_runtime.cpp src/lambo_log.cpp)
+    target_include_directories(lambo_engine_audio_runtime_tests PRIVATE src
+        ${N64MR}/N64Recomp/include ${N64MR}/librecomp/include)
+    target_link_libraries(lambo_engine_audio_runtime_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_engine_audio_bridge COMMAND lambo_engine_audio_runtime_tests)
+    add_test(NAME lambo_engine_audio_original COMMAND lambo_engine_audio_runtime_tests)
+    set_tests_properties(lambo_engine_audio_original PROPERTIES ENVIRONMENT "LAMBO_ENGINE_AUDIO=0")
+
+
     add_executable(lambo_rain_tests tests/test_rain.cpp src/lambo_rain.cpp)
     target_include_directories(lambo_rain_tests PRIVATE src tests lib/rt64/include)
     add_test(NAME lambo_rain_geometry COMMAND lambo_rain_tests)
@@ -802,6 +816,7 @@ if(BUILD_TESTING)
         add_executable(${target}
             tests/test_audio_${stem}.cpp
             src/lambo_audio.cpp
+            src/lambo_engine_audio.cpp
             src/lambo_log.cpp
         )
         target_include_directories(${target} PRIVATE
@@ -891,6 +906,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/register_overlays.cpp
         src/stub_renderer.cpp
         src/lambo_audio.cpp    # SDL2 push-audio sink for the AI buffer
+        src/lambo_engine_audio.cpp
+        src/lambo_engine_audio_runtime.cpp
         src/lambo_audio_override.cpp # audio status getter override
         src/lambo_config.cpp   # persistent graphics.json -> GraphicsConfig
         src/lambo_player_name.cpp # remember player one's confirmed name for later name-entry screens

@@ -30,6 +30,7 @@
 //    production is complete.
 
 #include "lambo_audio.h"
+#include "lambo_engine_audio.h"
 
 #include "lambo_log.h"
 
@@ -335,6 +336,8 @@ void submit(const int16_t* pcm, size_t sample_count) {
     if (sample_count & 1) {
         swapped[sample_count - 1] = pcm[sample_count - 1];
     }
+
+    lambo::engine_audio::mix(swapped.data(), sample_count / 2, desired_rate, generation);
 
     // Cheap passthrough: native format + native channels + native rate.
     const bool native_rate  = (uint32_t)obtained.freq == desired_rate;
