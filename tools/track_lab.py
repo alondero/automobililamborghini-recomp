@@ -773,6 +773,10 @@ def validate_document(
     # Companion-editor rendering cache is opaque presentation metadata, not
     # immutable extraction evidence and never part of a native package.
     optional_keys = {"editor_preview", "track_source"}
+    is_bundle = document.get('version') == 2
+    if is_bundle:
+        required_keys.add('track_source')
+        optional_keys.add('authoring')
     if include_inspection:
         required_keys.update(
             {"provenance", "capabilities", "segments", "anchors", "waypoints"}
@@ -791,8 +795,16 @@ def validate_document(
         raise TrackLabError(
             f"format must be {DOCUMENT_FORMAT!r}; got {document['format']!r}"
         )
-    if document["version"] != DOCUMENT_VERSION or not _is_int(document["version"]):
-        raise TrackLabError(f"version must be integer {DOCUMENT_VERSION}")
+    if document["version"] not in (DOCUMENT_VERSION, 2) or not _is_int(document["version"]):
+        raise TrackLabError('version must be integer 1 or 2')
+    if 'authoring' in document:
+        authoring = _require_object(document['authoring'], 'authoring')
+        _require_keys(authoring, {'name'}, 'authoring', optional={'radius', 'half_width'})
+        if not isinstance(authoring['name'], str) or not authoring['name'].strip():
+            raise TrackLabError('authoring.name must be a nonempty string')
+        for field, low, high in (('radius', 12000, 28000), ('half_width', 800, 2000)):
+            if field in authoring:
+                _require_int(authoring[field], f'authoring.{field}', low, high)
 
     target = _require_object(document["target"], "target")
     _require_keys(target, {"game_id", "rom_xxh3_64", "circuit"}, "target")
@@ -875,14 +887,15 @@ def validate_document(
         capabilities = _require_object(document["capabilities"], "capabilities")
         _require_keys(capabilities, {"editable", "inspect_only", "unsupported"}, "capabilities")
         editable = _validate_string_array(capabilities["editable"], "capabilities.editable")
-        unknown_editable = set(editable) - set(CAPABILITIES_EDITABLE)
+        expected_editable = set(CAPABILITIES_EDITABLE) | ({'track_bundle'} if is_bundle else set())
+        unknown_editable = set(editable) - expected_editable
         if unknown_editable:
             raise TrackLabError(
                 "capabilities.editable contains unsupported label(s): "
                 + ", ".join(sorted(unknown_editable))
             )
-        if set(editable) != set(CAPABILITIES_EDITABLE):
-            raise TrackLabError("capabilities.editable must declare visibility")
+        if set(editable) != expected_editable:
+            raise TrackLabError(f'capabilities.editable must declare {sorted(expected_editable)}')
         inspect_only = _validate_string_array(
             capabilities["inspect_only"], "capabilities.inspect_only"
         )
@@ -893,9 +906,10 @@ def validate_document(
         unsupported = _validate_string_array(
             capabilities["unsupported"], "capabilities.unsupported"
         )
-        if set(unsupported) != set(CAPABILITIES_UNSUPPORTED):
+        expected_unsupported = {'arbitrary_topology'} if is_bundle else set(CAPABILITIES_UNSUPPORTED)
+        if set(unsupported) != expected_unsupported:
             raise TrackLabError(
-                "capabilities.unsupported must declare geometry, collision, and new_track"
+                f'capabilities.unsupported must declare {sorted(expected_unsupported)}'
             )
 
     visibility = _require_object(document["visibility"], "visibility")
@@ -970,6 +984,12 @@ def validate_document(
 
     if include_inspection:
         _validate_inspection_data(document, row_count)
+    if is_bundle:
+        _compile_bundle(document)
+        pvs = next(b for b in document['track_source']['blocks'] if b['kind'] == 0)
+        baseline = b''.join(struct.pack('>10h', *row) for row in raw_base_rows)
+        if bytes.fromhex(pvs['before_hex']) != baseline:
+            raise TrackLabError('track_source visibility baseline disagrees with visibility evidence')
     return ValidatedDocument(
         document=document,
         row_count=row_count,
@@ -1005,18 +1025,22 @@ def diff_document(document: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _compile_bundle(document: dict[str, Any]) -> bytes:
+    try:
+        try:
+            from .track_bundle import compile_bundle
+        except ImportError:
+            from track_bundle import compile_bundle
+        return compile_bundle(document)
+    except (ValueError, TypeError, KeyError, StopIteration, struct.error) as exc:
+        raise TrackLabError(f'invalid track bundle: {exc}') from exc
+
+
 def compile_document(document: dict[str, Any]) -> bytes:
     """Compile patch-relevant fields to deterministic portable ``.altrk`` bytes."""
-    if isinstance(document, dict) and document.get('version') == 2:
-        try:
-            try:
-                from .track_bundle import compile_bundle
-            except ImportError:
-                from track_bundle import compile_bundle
-            return compile_bundle(document)
-        except (ValueError, TypeError, KeyError, StopIteration, struct.error) as exc:
-            raise TrackLabError(f'invalid track bundle: {exc}') from exc
     validated = validate_patch_document(document)
+    if document['version'] == 2:
+        return _compile_bundle(document)
     edit_count = len(validated.edits)
     payload_size = edit_count * PATCH_EDIT.size
     file_size = PATCH_HEADER_SIZE + payload_size
@@ -1132,11 +1156,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "validate":
             document = load_document(args.json)
+            validated = validate_document(document)
             if document.get('version') == 2:
                 package = compile_document(document)
                 print(f"valid bundle: circuit {document['target']['circuit']}, {len(package)} bytes")
                 return 0
-            validated = validate_document(document)
             print(
                 f"valid: circuit {validated.document['target']['circuit']}, "
                 f"{validated.row_count} rows, {len(validated.edits)} edit(s), "

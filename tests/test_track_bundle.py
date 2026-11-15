@@ -34,7 +34,11 @@ def source_document():
     block(4, 0, segments, 0x80234000)
     return dict(format='al-track-document', version=1,
                 target=dict(game_id='lamborghini.us', rom_xxh3_64=f'{bundle.ROM:016x}', circuit=0),
-                visibility=dict(row_count=rows, rows=[[None] * 10 for _ in range(rows)]),
+                visibility=dict(row_count=rows, slots_per_row=10,
+                                rows=[[None] * 10 for _ in range(rows)],
+                                base_rows=[[None] * 10 for _ in range(rows)],
+                                raw_base_rows=[[-1] * 10 for _ in range(rows)],
+                                base_fnv1a64=f'{bundle.fingerprint(bytes([255]) * rows * 20):016x}'),
                 track_source=dict(format='al-track-source', version=1, blocks=blocks),
                 segments=records, waypoints=dict(records=[]))
 
@@ -98,6 +102,12 @@ class BundleTests(unittest.TestCase):
         self.original['target']['circuit'] = 1
         with self.assertRaisesRegex(ValueError, 'Circuit 1'):
             bundle.new_oval(self.original)
+
+    def test_elevation_rejects_empty_road(self):
+        self.original['editor_preview'] = dict(groups=[
+            dict(segment=0, layer='road', vertices=[], vertex_indices=[])])
+        with self.assertRaisesRegex(ValueError, 'no vertices'):
+            bundle.elevation_edit(self.original, 0, 12)
 
 
 if __name__ == '__main__':

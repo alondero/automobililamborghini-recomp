@@ -38,6 +38,11 @@ repository's `track_lab.py` and `track_bundle.py`. Version 2 documents carry
 `track_source` buffers and optional `editor_preview`; the preview is never
 compiled. Use the same CLI to validate, diff or compile either document version.
 
+Full validation checks provenance, visibility baseline evidence and decoded
+inspection records for both versions. For bundles it also checks the encoded
+buffers and requires their visibility baseline to match the document evidence.
+Compilation may omit inspection records, but still validates baseline evidence.
+
 `ALTRKBD1` packages use the existing 64-byte little-endian header with flag 2,
 block count in the edit-count field, and zero global hash/reserved fields.
 Each block has a 32-byte `<BBHIIIQQ` descriptor: kind, zero byte, index, size,

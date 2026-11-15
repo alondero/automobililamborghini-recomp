@@ -160,6 +160,8 @@ def elevation_edit(document, segment_index, delta, radius=8000):
     vertices = bytearray.fromhex(blocks[1, 0]['after_hex'])
     preview = document['editor_preview']
     selected = next(g for g in preview['groups'] if g['segment'] == segment_index and g['layer'] == 'road')
+    if not selected['vertices']:
+        raise ValueError('Selected road segment has no vertices to elevate')
     center = [sum(v[axis] for v in selected['vertices']) / len(selected['vertices']) for axis in (0, 2)]
     updates = {}
     for group in preview['groups']:

@@ -316,6 +316,66 @@ class TestValidationAndDiff(TrackLabFixture):
         )
 
 
+class TestBundleValidation(TrackLabFixture):
+    def bundle_document(self):
+        doc = self.fresh_document()
+        doc['version'] = 2
+        doc['authoring'] = {'name': 'Synthetic bundle'}
+        doc['capabilities']['editable'].append('track_bundle')
+        doc['capabilities']['unsupported'] = ['arbitrary_topology']
+        raw = b''.join(struct.pack('>10h', *row) for row in doc['visibility']['raw_base_rows'])
+        doc['track_source'] = dict(format='al-track-source', version=1, blocks=[
+            dict(kind=0, index=0, before_hex=raw.hex(), after_hex=raw.hex())])
+        return doc
+
+    def test_full_validator_and_cli_accept_bundle(self):
+        doc = self.bundle_document()
+        self.assertEqual(tl.validate_document(doc).row_count, 3)
+        path = self.directory / 'valid-bundle.json'
+        tl.write_document(path, doc)
+        self.assertEqual(tl.main(['validate', str(path)]), 0)
+
+    def test_bundle_validator_and_cli_reject_corrupt_evidence(self):
+        cases = [
+            ('visibility', 'base_fnv1a64', '0' * 16),
+            ('visibility', 'base_rows', []),
+            ('visibility', 'raw_base_rows', []),
+            ('provenance', 'snapshot_sha256', 'invalid'),
+            ('authoring', 'name', 42),
+        ]
+        for section, key, value in cases:
+            doc = self.bundle_document()
+            doc[section][key] = value
+            with self.subTest(section=section, key=key):
+                self.assert_invalid_bundle(doc)
+        for key in ('segments', 'anchors', 'waypoints'):
+            doc = self.bundle_document()
+            doc[key] = []
+            with self.subTest(key=key):
+                self.assert_invalid_bundle(doc)
+        for key, field in (('segments', 'road_dl'), ('anchors', 'x'), ('waypoints', 'plane_a')):
+            doc = self.bundle_document()
+            records = doc[key]['records'] if key == 'waypoints' else doc[key]
+            records[0]['decoded'][field] = None
+            with self.subTest(decoded=key):
+                self.assert_invalid_bundle(doc)
+
+    def assert_invalid_bundle(self, doc):
+        with self.assertRaises(tl.TrackLabError):
+            tl.validate_document(doc)
+        path = self.directory / 'invalid-bundle.json'
+        tl.write_document(path, doc)
+        self.assertNotEqual(tl.main(['validate', str(path)]), 0)
+
+    def test_bundle_baseline_must_match_visibility_evidence(self):
+        doc = self.bundle_document()
+        doc['track_source']['blocks'][0]['before_hex'] = 'ffff' * 30
+        with self.assertRaisesRegex(tl.TrackLabError, 'baseline'):
+            tl.validate_document(doc)
+        with self.assertRaisesRegex(tl.TrackLabError, 'baseline'):
+            tl.compile_document(doc)
+
+
 class TestCompile(TrackLabFixture):
     def test_compile_accepts_document_without_inspection_metadata(self):
         document = self.fresh_document()
