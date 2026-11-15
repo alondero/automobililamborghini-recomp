@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "input_sha256": "6fb5a8910c346b18709caee9654007a32e75a84ff400b2473b156bebc988e3f5",
+  "input_sha256": "daf961967835c000dd897cbca588b7f98a39bd7bd06e02a45ca28c9a8d2ba5d7",
   "rom_sha1": {
     "usa": "78b36b48040426478011caef5e11884af2e80375",
     "japan": "98009e4948faf885864e52e1268700a0144c1b2e"
@@ -739,6 +739,39 @@
       },
       "status": "unresolved",
       "candidates": []
+    },
+    {
+      "usa": "0x8009869C",
+      "uses": {
+        "src/lambo_engine_audio_runtime.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x8008CA54",
+          "witness_count": 74,
+          "witnesses": [
+            {
+              "function": "func_8000F068",
+              "usa_pc": "0x8000E498",
+              "japan_pc": "0x8001032C",
+              "indexed": false
+            },
+            {
+              "function": "func_8000F068",
+              "usa_pc": "0x8000E6CC",
+              "japan_pc": "0x80010560",
+              "indexed": false
+            },
+            {
+              "function": "func_8000F068",
+              "usa_pc": "0x8000E6E4",
+              "japan_pc": "0x80010578",
+              "indexed": false
+            }
+          ]
+        }
+      ]
     },
     {
       "usa": "0x800986C8",
@@ -2183,7 +2216,8 @@
     {
       "usa": "0x8013D490",
       "uses": {
-        "src/lambo_car_card.cpp": 1
+        "src/lambo_car_card.cpp": 1,
+        "src/lambo_engine_audio_runtime.cpp": 1
       },
       "status": "unresolved",
       "candidates": []

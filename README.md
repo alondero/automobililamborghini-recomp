@@ -59,8 +59,10 @@ acceleration to the car select screen. It is off by default. See
 
 ## Engine audio
 
-Engine sounds use a procedural sports-car replacement that follows the game's
-revs, gear changes and stereo positioning. Set `LAMBO_ENGINE_AUDIO=0` before
+Engine sounds are synthesized for each car's engine layout: V12, V10,
+flat-six or flat-twelve. They follow the revs, accelerator, gear changes and
+stereo position. Lifting off sounds different from accelerating, and the
+turbocharged cars vent boost. Set `LAMBO_ENGINE_AUDIO=0` before
 launching to use the original sounds. See [engine audio](docs/engine-audio.md)
 for comparisons, implementation details and tuning.
 
