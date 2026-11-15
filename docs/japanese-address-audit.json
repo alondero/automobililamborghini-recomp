@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "input_sha256": "41fcab9a2be67310b16f9935f9c5f48b2f3817624cb787216ead3ed40f7a03b6",
+  "input_sha256": "6fb5a8910c346b18709caee9654007a32e75a84ff400b2473b156bebc988e3f5",
   "rom_sha1": {
     "usa": "78b36b48040426478011caef5e11884af2e80375",
     "japan": "98009e4948faf885864e52e1268700a0144c1b2e"
@@ -2139,6 +2139,33 @@
               "usa_pc": "0x800101DC",
               "japan_pc": "0x80012070",
               "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x801265B0",
+      "uses": {
+        "src/lambo_track_patch.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x8012C6E0",
+          "witness_count": 2,
+          "witnesses": [
+            {
+              "function": "func_80044E2C",
+              "usa_pc": "0x80044314",
+              "japan_pc": "0x8004CD90",
+              "indexed": true
+            },
+            {
+              "function": "func_80054FFC",
+              "usa_pc": "0x8005449C",
+              "japan_pc": "0x80041DDC",
+              "indexed": true
             }
           ]
         }

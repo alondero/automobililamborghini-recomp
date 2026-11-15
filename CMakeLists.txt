@@ -687,7 +687,7 @@ if(BUILD_TESTING)
         COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_reset_rom.py)
     add_test(NAME lambo_track_lab_codec
         COMMAND ${LAMBO_PYTHON_EXECUTABLE}
-            -m unittest tests.test_track_lab
+            -m unittest tests.test_track_lab tests.test_track_bundle
     )
     add_test(NAME lambo_track_patch_python_interop
         COMMAND ${LAMBO_PYTHON_EXECUTABLE}
@@ -977,7 +977,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_interpolation.cpp
         src/lambo_no_lod.cpp   # per-segment scenery policy; see docs/no_lod_audit.md
         src/lambo_no_lod_policy.cpp # measured exceptions for synthesized PVS extras
-        src/lambo_track_patch.cpp # Track Lab: guarded sparse PVS corrections applied after the stock track loader
+        src/lambo_track_patch.cpp # Track Lab: guarded visibility corrections and fixed-capacity track bundles
         src/lambo_camera.cpp   # sense of speed: chase-camera distance/height + FOV delta float-bit shims for the hooks
         src/lambo_gpu_advisory.cpp  # outdated-Intel-driver detection and user advisory
         src/lambo_warp.c       # developer warp menu (Ctrl+Shift+1-6 / LAMBO_WARP)

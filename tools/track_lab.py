@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Extract and compile the first safe, deliberately narrow track-edit format.
+"""Extract stock track evidence and compile guarded track packages.
 
 Track Lab v1 edits only the active track's authored visibility (PVS) rows.  It
 also exports the segment records, referenced cull anchors, and one assumed
 waypoint record per segment for inspection.  Those records are intentionally
 not compiled: geometry, collision, and the true waypoint extent are not yet
 understood well enough to expose as writable data.
+
+Version 2 authoring documents delegate to track_bundle.py for fixed-capacity
+geometry/collision/route bundles. The original version 1 compiler remains
+visibility-only.
 
 The input snapshot is either:
 
@@ -352,7 +356,9 @@ def extract_document(path: str | os.PathLike[str]) -> dict[str, Any]:
     for index in sorted(referenced_anchor_indices):
         address = anchor_base + index * 16
         raw = memory.logical_bytes(address, 16, label=f"anchor {index}")
-        x, z = struct.unpack_from(">hh", raw, 0)
+        # Scene builder 0x8000D0A8/0x8000D0EC reads Vtx x/z at +0/+4.
+        # +2 is height, not the second horizontal coordinate.
+        x, z = struct.unpack_from(">h2xh", raw, 0)
         anchor_coordinates[index] = (x, z)
         anchors.append(
             {
@@ -680,7 +686,7 @@ def _validate_inspection_data(document: dict[str, Any], row_count: int) -> None:
             raise TrackLabError("anchors must be unique and sorted by index")
         previous_index = index
         raw = _require_raw_hex(anchor["raw_be_hex"], 16, f"anchors[{position}].raw_be_hex")
-        raw_x, raw_z = struct.unpack_from(">hh", raw, 0)
+        raw_x, raw_z = struct.unpack_from(">h2xh", raw, 0)
         decoded = _require_object(anchor["decoded"], f"anchors[{position}].decoded")
         _require_keys(decoded, {"x", "z"}, f"anchors[{position}].decoded")
         x = _require_int(decoded["x"], f"anchors[{position}].decoded.x", -0x8000, 0x7FFF)
@@ -764,7 +770,13 @@ def validate_document(
     """
     document = _require_object(document, "document")
     required_keys = {"format", "version", "target", "visibility"}
-    optional_keys = set()
+    # Companion-editor rendering cache is opaque presentation metadata, not
+    # immutable extraction evidence and never part of a native package.
+    optional_keys = {"editor_preview", "track_source"}
+    is_bundle = document.get('version') == 2
+    if is_bundle:
+        required_keys.add('track_source')
+        optional_keys.add('authoring')
     if include_inspection:
         required_keys.update(
             {"provenance", "capabilities", "segments", "anchors", "waypoints"}
@@ -783,8 +795,16 @@ def validate_document(
         raise TrackLabError(
             f"format must be {DOCUMENT_FORMAT!r}; got {document['format']!r}"
         )
-    if document["version"] != DOCUMENT_VERSION or not _is_int(document["version"]):
-        raise TrackLabError(f"version must be integer {DOCUMENT_VERSION}")
+    if document["version"] not in (DOCUMENT_VERSION, 2) or not _is_int(document["version"]):
+        raise TrackLabError('version must be integer 1 or 2')
+    if 'authoring' in document:
+        authoring = _require_object(document['authoring'], 'authoring')
+        _require_keys(authoring, {'name'}, 'authoring', optional={'radius', 'half_width'})
+        if not isinstance(authoring['name'], str) or not authoring['name'].strip():
+            raise TrackLabError('authoring.name must be a nonempty string')
+        for field, low, high in (('radius', 12000, 28000), ('half_width', 800, 2000)):
+            if field in authoring:
+                _require_int(authoring[field], f'authoring.{field}', low, high)
 
     target = _require_object(document["target"], "target")
     _require_keys(target, {"game_id", "rom_xxh3_64", "circuit"}, "target")
@@ -816,6 +836,7 @@ def validate_document(
         if provenance["snapshot_format"] not in {
             "raw-word-swapped-rdram",
             "lmbostat-v1",
+            "lmbostat-v2",
         }:
             raise TrackLabError("provenance.snapshot_format is not a supported snapshot type")
         _require_hex(provenance["snapshot_sha256"], _SHA256_RE, "provenance.snapshot_sha256")
@@ -866,14 +887,15 @@ def validate_document(
         capabilities = _require_object(document["capabilities"], "capabilities")
         _require_keys(capabilities, {"editable", "inspect_only", "unsupported"}, "capabilities")
         editable = _validate_string_array(capabilities["editable"], "capabilities.editable")
-        unknown_editable = set(editable) - set(CAPABILITIES_EDITABLE)
+        expected_editable = set(CAPABILITIES_EDITABLE) | ({'track_bundle'} if is_bundle else set())
+        unknown_editable = set(editable) - expected_editable
         if unknown_editable:
             raise TrackLabError(
                 "capabilities.editable contains unsupported label(s): "
                 + ", ".join(sorted(unknown_editable))
             )
-        if set(editable) != set(CAPABILITIES_EDITABLE):
-            raise TrackLabError("capabilities.editable must declare visibility")
+        if set(editable) != expected_editable:
+            raise TrackLabError(f'capabilities.editable must declare {sorted(expected_editable)}')
         inspect_only = _validate_string_array(
             capabilities["inspect_only"], "capabilities.inspect_only"
         )
@@ -884,9 +906,10 @@ def validate_document(
         unsupported = _validate_string_array(
             capabilities["unsupported"], "capabilities.unsupported"
         )
-        if set(unsupported) != set(CAPABILITIES_UNSUPPORTED):
+        expected_unsupported = {'arbitrary_topology'} if is_bundle else set(CAPABILITIES_UNSUPPORTED)
+        if set(unsupported) != expected_unsupported:
             raise TrackLabError(
-                "capabilities.unsupported must declare geometry, collision, and new_track"
+                f'capabilities.unsupported must declare {sorted(expected_unsupported)}'
             )
 
     visibility = _require_object(document["visibility"], "visibility")
@@ -961,6 +984,12 @@ def validate_document(
 
     if include_inspection:
         _validate_inspection_data(document, row_count)
+    if is_bundle:
+        _compile_bundle(document)
+        pvs = next(b for b in document['track_source']['blocks'] if b['kind'] == 0)
+        baseline = b''.join(struct.pack('>10h', *row) for row in raw_base_rows)
+        if bytes.fromhex(pvs['before_hex']) != baseline:
+            raise TrackLabError('track_source visibility baseline disagrees with visibility evidence')
     return ValidatedDocument(
         document=document,
         row_count=row_count,
@@ -996,9 +1025,22 @@ def diff_document(document: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _compile_bundle(document: dict[str, Any]) -> bytes:
+    try:
+        try:
+            from .track_bundle import compile_bundle
+        except ImportError:
+            from track_bundle import compile_bundle
+        return compile_bundle(document)
+    except (ValueError, TypeError, KeyError, StopIteration, struct.error) as exc:
+        raise TrackLabError(f'invalid track bundle: {exc}') from exc
+
+
 def compile_document(document: dict[str, Any]) -> bytes:
     """Compile patch-relevant fields to deterministic portable ``.altrk`` bytes."""
     validated = validate_patch_document(document)
+    if document['version'] == 2:
+        return _compile_bundle(document)
     edit_count = len(validated.edits)
     payload_size = edit_count * PATCH_EDIT.size
     file_size = PATCH_HEADER_SIZE + payload_size
@@ -1113,20 +1155,37 @@ def main(argv: list[str] | None = None) -> int:
                 f"{document['visibility']['row_count']} visibility rows -> {args.json}"
             )
         elif args.command == "validate":
-            validated = validate_document(load_document(args.json))
+            document = load_document(args.json)
+            validated = validate_document(document)
+            if document.get('version') == 2:
+                package = compile_document(document)
+                print(f"valid bundle: circuit {document['target']['circuit']}, {len(package)} bytes")
+                return 0
             print(
                 f"valid: circuit {validated.document['target']['circuit']}, "
                 f"{validated.row_count} rows, {len(validated.edits)} edit(s), "
                 f"base {_fnv_hex(validated.base_hash)}"
             )
         elif args.command == "diff":
-            sys.stdout.write(_canonical_json(diff_document(load_document(args.json))))
+            document = load_document(args.json)
+            if document.get('version') == 2:
+                package = compile_document(document)
+                changes, offset = [], 64
+                while offset < len(package):
+                    kind, _, index, size, _, _, before, after = struct.unpack_from('<BBHIIIQQ', package, offset)
+                    if before != after:
+                        changes.append(dict(kind=kind, index=index, bytes=size))
+                    offset += 32 + size
+                sys.stdout.write(_canonical_json({'blocks': changes}))
+            else:
+                sys.stdout.write(_canonical_json(diff_document(document)))
         elif args.command == "compile":
             document = load_document(args.json)
             patch = compile_document(document)
             _atomic_write(args.altrk, patch)
-            edit_count = (len(patch) - PATCH_HEADER_SIZE) // PATCH_EDIT.size
-            print(f"compiled {edit_count} guarded edit(s), {len(patch)} bytes -> {args.altrk}")
+            count = struct.unpack_from('<I', patch, 32)[0]
+            unit = 'block(s)' if document.get('version') == 2 else 'edit(s)'
+            print(f"compiled {count} guarded {unit}, {len(patch)} bytes -> {args.altrk}")
         else:  # pragma: no cover - argparse makes this unreachable.
             raise TrackLabError(f"unknown command {args.command!r}")
     except TrackLabError as exc:
