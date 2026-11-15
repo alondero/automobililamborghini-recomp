@@ -49,6 +49,10 @@ Logs use the state directory, not the Linux config directory:
 The LAMBO_GRAPHICS_CONFIG and LAMBO_CONTROLS_CONFIG variables can point at
 specific files for testing. LAMBO_LOG_DIR changes the log directory.
 
+Slip Rumble (experimental) in Enhancements defaults off and persists as
+`slip_rumble` in `graphics.json`. It adds slide feedback using the existing
+Rumble Strength setting. See [scope and limitations](slip-rumble.md).
+
 ## Graphics file
 
 For a weaker PC, open Graphics, select Low hardware under Graphics preset,
