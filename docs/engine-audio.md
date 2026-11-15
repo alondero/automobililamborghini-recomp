@@ -171,5 +171,7 @@ The race trace observed delayed player start `0x3E` at pitch 0.25 and gain
 0.549, an immediate nearby-car start `0x3F`, and changing pitch/pan during the
 race. A time-trial trace ranged from approximately 0.34 to 1.58 pitch and
 showed later drops. A four-player replay started IDs `0x3E..0x41` and passed.
+The full Python suite passed all 427 tests, with 14 platform-dependent skips.
+Documentation and branch whitespace checks also passed.
 These establish execution and control transport, not a human listening verdict.
 The audition WAV and logs are local build artifacts, not repository assets.
