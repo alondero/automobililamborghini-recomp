@@ -68,6 +68,7 @@ status line before relying on a historical measurement.
 | [Sky panorama](sky-panorama.md) | Sky motion, projection coverage and task-owned panorama extensions. |
 | [No-LOD audit](no_lod_audit.md) | Historical LOD measurements and later addenda. |
 | [Rumble audit](rumble-triggers.md) | Rumble discovery and Controller Pak coexistence evidence. |
+| [Slip rumble research](slip-rumble-research.md) | GT64 implementation review and additive slip-feedback proposal. |
 | [Automatic pit-stops](automatic-pit-stops.md) | Guest source replacement, assistance and ROM parity tests. |
 | [Guest-source candidates](guest-source-candidates.md) | Ranked migration shortlist and links to the guest bridge inventory. |
 | [Vehicle selection source](guest-vehicle-select.md) | Complete selector replacements, ROM evidence and parity checks. |
