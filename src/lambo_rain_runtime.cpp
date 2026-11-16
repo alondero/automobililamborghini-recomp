@@ -190,27 +190,41 @@ const List& footer() {
     return list;
 }
 // Road buffer layout, sized to the mesh: the vertex block, then the sublist
-// (header, four commands per face, footer) with no slack after it.
+// (header, one load per 21 faces, three commands per face, footer).
 uint32_t list_offset(const Segment& segment) { return uint32_t(segment.vertices.size())*4; }
 uint32_t buffer_bytes(const Segment& segment) {
     uint32_t faces=uint32_t(segment.vertices.size()/12);
-    return list_offset(segment)+(header_commands()+faces*4+uint32_t(footer().words.size()))*8;
+    return list_offset(segment)+(header_commands()+faces*3+(faces+20)/21+uint32_t(footer().words.size()))*8;
 }
 uint32_t face_color(const Segment& segment,size_t face) {
     const uint32_t* v=&segment.vertices[face*12];
     return 0xFFFFFF00u|((v[3]&255)+(v[7]&255)+(v[11]&255))/3;
 }
 uint32_t face_command(uint32_t buffer,const Segment& segment,size_t face) {
-    return buffer+list_offset(segment)+(header_commands()+uint32_t(face)*4)*8;
+    return buffer+list_offset(segment)+(header_commands()+uint32_t(face)*3+uint32_t(face)/21+1)*8;
 }
-// Each face: pipe sync, face color, its three vertices, one triangle.
+void face_alpha(uint8_t* ram,uint32_t buffer,const Segment& segment,size_t face) {
+    const uint32_t color=face_color(segment,face);
+    // An identical primitive-color command still flushes RT64's draw call.
+    // A no-op preserves the fixed layout used by animated ripple updates.
+    const uint32_t words[]{face && face_color(segment,face-1)==color ? 0u : 0xFA000000u,color};
+    store(ram,face_command(buffer,segment,face)+8,words,2);
+}
+// Load 63 vertices into RT64's extended slots 32..94. Native slots 0..31,
+// triangle order, primitive alpha and the fog blender remain unchanged.
 void face_commands(uint8_t* ram,uint32_t buffer,const Segment& segment,size_t count) {
     for (size_t k=0;k<count;++k) {
-        // RT64's expanded vertex cache slots 32..34 preserve the native
-        // F3DEX 0..31 bank, including vertices inherited by the next list.
-        const uint32_t words[8]{0xE7000000,0,0xFA000000,face_color(segment,k),
-            0x04400C2F,buffer+uint32_t(k)*48,0xBF000000,(32u<<17)|(33u<<9)|(34u<<1)};
-        store(ram,face_command(buffer,segment,k),words,8);
+        const uint32_t at=face_command(buffer,segment,k);
+        if (k%21==0) {
+            const uint32_t n=uint32_t(std::min<size_t>(21,count-k))*3;
+            const uint32_t load[]{0x04400000u|(n<<10)|(n*16-1),buffer+uint32_t(k)*48};
+            store(ram,at-8,load,2);
+        }
+        const uint32_t v=32+uint32_t(k%21)*3;
+        const uint32_t words[]{0xE7000000,0,0xFA000000,face_color(segment,k),
+            0xBF000000,(v<<17)|((v+1)<<9)|((v+2)<<1)};
+        store(ram,at,words,6);
+        face_alpha(ram,buffer,segment,k);
     }
 }
 void animate(Segment& segment) {
@@ -238,16 +252,17 @@ void emit(uint8_t* ram,Buffer& buffer,const Segment& segment) {
         store(ram,address,segment.vertices.data(),segment.vertices.size());
         header().write(ram,address+list_offset(segment));
         face_commands(ram,address,segment,faces);
-        footer().write(ram,face_command(address,segment,faces));
+        footer().write(ram,address+list_offset(segment)+(header_commands()+uint32_t(faces)*3+uint32_t((faces+20)/21))*8);
     } else if (!segment.ripples.empty() && buffer.seconds!=segment.animated) {
-        // Ripple vertices and the color word of their two faces; every other
-        // command word is time independent.
+        // Ripple vertices and primitive-alpha commands at affected boundaries.
         ++stats.ripple_writes;
         for (const auto& p:segment.ripples) for (int side=0;side<ripple_sides;++side) {
             uint32_t first=ripple_vertex(p,side);
             store(ram,address+first*16,&segment.vertices[first*4],24);
-            for (size_t face:{first/3,first/3+1})
-                word(ram,face_command(address,segment,face)+12)=int32_t(face_color(segment,face));
+            // Re-evaluate the following face too: it may have shared the old
+            // alpha, but needs to restore its own color after this animation.
+            for (size_t face:{first/3,first/3+1,first/3+2})
+                if (face<faces) face_alpha(ram,address,segment,face);
         }
     }
     buffer.generation=segment.generation;
