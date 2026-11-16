@@ -89,7 +89,7 @@ targets and modified vertices are rejected. No partial mesh is rendered after
 failure. Flat road faces receive a dark transparent sheen and inset puddle
 polygons. Modern ripples share that face's plane. Walls and steep faces do not
 receive water. Puddles use depth-tested translucent decals without depth writes.
-The expanded RT64 vertex cache uses slots 32..34, preserving native F3DEX's
+The expanded RT64 vertex cache uses slots 32..94, preserving native F3DEX's
 0..31 bank. Geometry, combiner, primitive color and other-mode state are saved
 and restored. Camera rectangles also save and restore scissor state.
 
@@ -136,8 +136,10 @@ changes visibility rows only, and modding does not support replacing geometry.
 
 Each road buffer records the build it holds. Static vertices and commands are
 copied into it once per build. Later frames reuse them and only add the
-insertion. A Modern frame rewrites the ripple vertices and the color word of
-their faces when the animation clock has moved. Pause stops that clock, so a
+insertion. A Modern frame rewrites the ripple vertices and primitive-color
+commands of their faces when the animation clock has moved. It also refreshes
+the following face's command, because that face may need to restore a color
+previously shared with the ripple. Pause stops that clock, so a
 paused frame writes no road geometry. A rebuild or an invalidation rewrites
 the whole buffer. All writes still follow the task-reuse fence of the slot
 that owns the buffer. Root copies and camera lists reuse their command storage,
@@ -150,9 +152,14 @@ cache entry, so the order in which records appear in a frame does not matter.
 A changed order moves and rewrites nothing.
 
 The size is exact. The vertex block comes first (16 bytes a vertex). The
-sublist follows it directly: the render-state header, four commands for each
-face, and the footer (8 bytes a command). Nothing is reserved after the footer.
-A mesh at the 12,000-vertex limit needs 320,128 bytes. A typical mesh needs a
+sublist follows it directly: the render-state header, one vertex load per
+21 faces, three commands for each face, and the footer (8 bytes a command).
+Each load contains at most 63 vertices. Triangle order and vertex bytes are
+unchanged. A primitive-color command becomes a no-op only when the immediately
+preceding face has the same color; RT64 otherwise splits even identical state
+writes into separate draws. The fixed command slots permit animation updates.
+Nothing is reserved after the footer.
+A mesh at the 12,000-vertex limit needs 289,656 bytes. A typical mesh needs a
 small fraction of that. The limit itself is unchanged, and so is the output.
 
 Lifecycle:
@@ -316,8 +323,11 @@ render-state stacks and disabled effects.
 
 `tests/rain_reference.h` freezes the uncached producer from `e053389`. The
 geometry test compares puddle bytes, roof coverage, ripple rewrites and vertex
-rounding with it. The producer test compares every emitted road sublist with
-it, command words and vertex payload. It covers Retro and Modern, one and four
+rounding with it. The producer test interprets every emitted road sublist and
+compares ordered vertex identities, primitive alpha and saved/restored state
+with it; vertex payloads remain byte-identical. It additionally checks batched
+load counts and one primitive-color write per alpha transition. Raw command
+streams intentionally differ from the frozen producer. It covers Retro and Modern, one and four
 viewports, both task slots, pause, reordered emission and shelter. It also
 covers each invalidation rule and the decode, build and allocation counts.
 It replays each camera list the way RT64 draws it: Modern must draw no
