@@ -48,6 +48,12 @@ ultramodern::renderer::GraphicsConfig load_and_apply_graphics();
 // Snapshot/apply helpers for the settings overlay. apply_graphics() persists the
 // changed fields and, unless apply_live is false, updates RT64 through ultramodern's
 // config action queue. API selection is startup-only, so its callers pass false.
+// Thread contract: current_graphics(), apply_graphics(), update_saved_window_mode(),
+// developer_mode() and set_developer_mode() may each be called from any thread. The
+// snapshot is copied in and out under one lock, so a reader always gets one whole
+// config, never a mix of two. Read-modify-write sequences (current_graphics(), edit,
+// apply_graphics()) are not atomic as a whole; the callers serialise those under
+// lambo::ui::frontend_mutex(). apply_graphics() itself has one calling thread.
 ultramodern::renderer::GraphicsConfig current_graphics();
 void apply_graphics(const ultramodern::renderer::GraphicsConfig& cfg, bool apply_live = true);
 
@@ -57,7 +63,7 @@ void apply_graphics(const ultramodern::renderer::GraphicsConfig& cfg, bool apply
 void save_graphics(const ultramodern::renderer::GraphicsConfig& cfg);
 void flush_pending_graphics_updates();
 
-// Persist a runtime window-mode change (F11 / Alt+Enter) in the main-thread snapshot.
+// Persist a runtime window-mode change (F11 / Alt+Enter) in the locked snapshot.
 void update_saved_window_mode(ultramodern::renderer::WindowMode wm);
 
 // Requested window size for windowed mode (from graphics.json; defaults 1600x900,
@@ -66,9 +72,8 @@ void update_saved_window_mode(ultramodern::renderer::WindowMode wm);
 // frame, so a size picked in the menu resizes the window without a restart (see
 // src/lambo_window_resize.h for the rule and the states that defer a request).
 // This pair is published under its own lock because the settings Apply writes it
-// on the render thread while the pump reads it on the main thread. That says
-// nothing about the GraphicsConfig snapshot returned by current_graphics(), which
-// is still written unlocked from the render thread.
+// on the render thread while the pump reads it on the main thread. The
+// GraphicsConfig snapshot returned by current_graphics() has its own lock.
 struct WindowSize { int width; int height; };
 WindowSize window_size();
 
