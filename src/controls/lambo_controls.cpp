@@ -14,6 +14,7 @@
 #include "json/json.hpp"
 
 #include "lambo_config.h"
+#include "lambo_paths.h"
 #include "lambo_file.h"
 
 namespace {
@@ -424,7 +425,9 @@ std::optional<std::string> canonicalize_guid(std::string_view guid) {
 }
 
 std::filesystem::path controls_config_path() {
-    if (const char* override_path = std::getenv("LAMBO_CONTROLS_CONFIG")) return override_path;
+    if (const char* override_path = lambo::paths::profile_environment("LAMBO_CONTROLS_CONFIG")) {
+        return override_path;
+    }
     return lambo::config::app_config_dir() / "controls.json";
 }
 

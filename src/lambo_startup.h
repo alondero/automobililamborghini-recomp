@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <functional>
+#include <optional>
 
 namespace lambo {
 
@@ -19,9 +20,7 @@ enum class StartupState {
     Exiting,
 };
 
-// Keep all environment-driven bypass policy in one place. This is deliberately
-// independent of SDL and the renderer so probe tests can exercise it directly.
-StartupMode startup_mode_from_environment();
+StartupMode resolve_startup_mode(std::optional<StartupMode> requested, bool show_launcher);
 
 class StartupController {
 public:

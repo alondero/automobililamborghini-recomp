@@ -40,12 +40,23 @@ void clear_startup_environment() {
 
 int main() {
     clear_startup_environment();
-    expect(lambo::startup_mode_from_environment() == lambo::StartupMode::Automatic,
+    using lambo::resolve_startup_mode;
+    using lambo::StartupMode;
+    expect(resolve_startup_mode(std::nullopt, false) == StartupMode::Automatic,
            "ordinary graphical startup uses automatic boot");
+    expect(resolve_startup_mode(std::nullopt, true) == StartupMode::InteractiveLauncher,
+           "a saved launcher preference selects interactive startup");
 
     set_environment("LAMBO_LAUNCHER", "1");
-    expect(lambo::startup_mode_from_environment() == lambo::StartupMode::InteractiveLauncher,
+    expect(resolve_startup_mode(std::nullopt, false) == StartupMode::InteractiveLauncher,
            "LAMBO_LAUNCHER selects interactive launcher mode");
+    expect(resolve_startup_mode(StartupMode::Automatic, true) == StartupMode::Automatic,
+           "--play beats the environment and saved launcher preference");
+    set_environment("LAMBO_LAUNCHER", "0");
+    expect(resolve_startup_mode(std::nullopt, true) == StartupMode::Automatic,
+           "LAMBO_LAUNCHER=0 overrides a saved launcher preference");
+    expect(resolve_startup_mode(StartupMode::InteractiveLauncher, false) == StartupMode::InteractiveLauncher,
+           "--launcher beats the environment and saved direct boot preference");
     set_environment("LAMBO_LAUNCHER", nullptr);
 
     int starts = 0;

@@ -665,7 +665,7 @@ void install() {
     // erase the previous report and ordinary sessions leave no empty file.
     {
         std::filesystem::path report_dir;
-        if (const char* override_dir = std::getenv("LAMBO_LOG_DIR");
+        if (const char* override_dir = lambo::paths::profile_environment("LAMBO_LOG_DIR");
             override_dir != nullptr && override_dir[0] != '\0') {
             report_dir = std::filesystem::path{override_dir} / "crashes";
         } else {

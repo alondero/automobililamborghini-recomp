@@ -8,14 +8,8 @@
 
 namespace {
 
-bool env_has_value(const char* name) {
-    const char* value = std::getenv(name);
-    return value != nullptr && value[0] != '\0';
-}
-
-bool env_enabled(const char* name) {
-    const char* value = std::getenv(name);
-    if (value == nullptr || value[0] == '\0') return false;
+bool env_enabled(const char* value) {
+    if (value[0] == '\0') return false;
     std::string normalized(value);
     std::transform(normalized.begin(), normalized.end(), normalized.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -27,13 +21,12 @@ bool env_enabled(const char* name) {
 
 namespace lambo {
 
-StartupMode startup_mode_from_environment() {
-    // 1. Explicit env var override wins (for tests / CLI).
-    if (std::getenv("LAMBO_LAUNCHER") != nullptr) {
-        return env_enabled("LAMBO_LAUNCHER") ? StartupMode::InteractiveLauncher : StartupMode::Automatic;
+StartupMode resolve_startup_mode(std::optional<StartupMode> requested, bool show_launcher) {
+    if (requested) return *requested;
+    if (const char* value = std::getenv("LAMBO_LAUNCHER")) {
+        show_launcher = env_enabled(value);
     }
-    // 2. Default is direct auto-boot straight into gameplay.
-    return StartupMode::Automatic;
+    return show_launcher ? StartupMode::InteractiveLauncher : StartupMode::Automatic;
 }
 
 StartupController::StartupController(StartupMode mode, StartGameAction start_game)

@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 
 #include "ultramodern/config.hpp"
@@ -43,7 +44,8 @@ ultramodern::renderer::GraphicsConfig default_graphics_config();
 // users always have a complete, editable file on disk. Returns the applied config.
 // Call before starting game/render threads: this also captures their launch-time
 // environment overrides. Reloading while those threads run is unsupported.
-ultramodern::renderer::GraphicsConfig load_and_apply_graphics();
+ultramodern::renderer::GraphicsConfig load_and_apply_graphics(
+    std::optional<ultramodern::renderer::WindowMode> startup_window_mode = std::nullopt);
 
 // Snapshot/apply helpers for the settings overlay. apply_graphics() persists the
 // changed fields and, unless apply_live is false, updates RT64 through ultramodern's

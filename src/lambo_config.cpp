@@ -357,7 +357,7 @@ ReadResult read_graphics_file(const std::filesystem::path& path,
 
 std::filesystem::path graphics_json_path() {
     // Test/harness override: point at (or isolate to) an explicit file.
-    if (const char* p = std::getenv("LAMBO_GRAPHICS_CONFIG")) {
+    if (const char* p = lambo::paths::profile_environment("LAMBO_GRAPHICS_CONFIG")) {
         return std::filesystem::path{p};
     }
     return lambo::config::app_config_dir() / kGraphicsFile;
@@ -519,15 +519,13 @@ ultramodern::renderer::GraphicsConfig default_graphics_config() {
 // of which a load-time bool could capture. The old lambo_ws_hud_widescreen_active()
 // (Expand + Clamp16x9) has been removed.
 
-ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
+ultramodern::renderer::GraphicsConfig load_and_apply_graphics(
+    std::optional<ultramodern::renderer::WindowMode> startup_window_mode) {
     capture_environment_overrides();
     ultramodern::renderer::GraphicsConfig cfg = default_graphics_config();
     const std::filesystem::path path = graphics_json_path();
     const ReadResult r = read_graphics_file(path, cfg);
 
-    ultramodern::renderer::set_graphics_config(cfg);
-    g_current_graphics = cfg;
-    g_live_graphics = cfg;
     // Write the merged config back so the on-disk file is always complete and
     // editable (new keys appear with their defaults after an upgrade) -- but NEVER
     // overwrite a file that failed to parse: a hand-edit typo must stay recoverable,
@@ -535,8 +533,12 @@ ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
     if (r != ReadResult::Unparseable) {
         save_graphics(cfg);
     }
+    if (startup_window_mode) cfg.wm_option = *startup_window_mode;
+    ultramodern::renderer::set_graphics_config(cfg);
+    g_current_graphics = cfg;
+    g_live_graphics = cfg;
     lambo::settings::changed();
-    LAMBO_LOG_INFO("config", "graphics config: %s\n", path.string().c_str());
+    LAMBO_LOG_INFO("config", "graphics config: %s\n", paths::path_to_utf8(path).c_str());
     return cfg;
 }
 

@@ -6,7 +6,6 @@
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
-#include <cstring>
 #include <ctime>
 #include <cstdlib>
 #include <filesystem>
@@ -33,7 +32,6 @@ bool g_initialized = false;
 std::mutex g_mutex;
 std::ofstream g_file;
 std::string g_path;
-std::string g_error;
 
 const char* level_name(LamboLogLevel level) {
     switch (level) {
@@ -46,25 +44,8 @@ const char* level_name(LamboLogLevel level) {
     return "unknown";
 }
 
-bool parse_level(const char* value, LamboLogLevel* out) {
-    if (value == nullptr || out == nullptr) return false;
-    struct Name { const char* text; LamboLogLevel level; };
-    constexpr Name names[] = {
-        {"error", LAMBO_LEVEL_ERROR}, {"warn", LAMBO_LEVEL_WARN},
-        {"warning", LAMBO_LEVEL_WARN}, {"info", LAMBO_LEVEL_INFO},
-        {"debug", LAMBO_LEVEL_DEBUG}, {"trace", LAMBO_LEVEL_TRACE}
-    };
-    for (const Name& name : names) {
-        if (std::strcmp(value, name.text) == 0) {
-            *out = name.level;
-            return true;
-        }
-    }
-    return false;
-}
-
 std::filesystem::path log_directory() {
-    if (const char* override_dir = std::getenv("LAMBO_LOG_DIR");
+    if (const char* override_dir = lambo::paths::profile_environment("LAMBO_LOG_DIR");
         override_dir != nullptr && override_dir[0] != '\0') {
         return std::filesystem::path{override_dir};
     }
@@ -79,34 +60,32 @@ unsigned long process_id() {
 #endif
 }
 
-void open_console() {
 #if defined(_WIN32)
-    // A test harness or terminal may already have supplied a pipe/console
-    // handle even when GetConsoleWindow() is null. Preserve that inherited
-    // sink; only create a new window for an Explorer-style launch.
-    HANDLE error_handle = GetStdHandle(STD_ERROR_HANDLE);
-    const bool inherited_sink = error_handle != nullptr &&
-        error_handle != INVALID_HANDLE_VALUE && GetFileType(error_handle) != FILE_TYPE_UNKNOWN;
-    // Existing consoles already have correctly inherited CRT handles. This
-    // also preserves deliberate stdout/stderr redirection from a shell.
-    if (GetConsoleWindow() != nullptr || inherited_sink) {
+bool has_standard_handle(DWORD stream) {
+    const HANDLE handle = GetStdHandle(stream);
+    return handle != nullptr && handle != INVALID_HANDLE_VALUE &&
+        GetFileType(handle) != FILE_TYPE_UNKNOWN;
+}
+#endif
+
+void open_console([[maybe_unused]] bool allow_new_window) {
+#if defined(_WIN32)
+    const bool has_input = has_standard_handle(STD_INPUT_HANDLE);
+    const bool has_output = has_standard_handle(STD_OUTPUT_HANDLE);
+    const bool has_error = has_standard_handle(STD_ERROR_HANDLE);
+    if (has_output && has_error) {
         g_stderr_sink.store(true, std::memory_order_release);
         return;
     }
-    {
-        // A GUI process started from cmd/PowerShell often has no inherited
-        // standard handles. Attach to that parent before falling back to a
-        // new console, so --console behaves like a normal CLI switch.
-        if (AttachConsole(ATTACH_PARENT_PROCESS) == 0 && AllocConsole() == 0) return;
-    }
-    g_stderr_sink.store(true, std::memory_order_release);
+    if (GetConsoleCP() == 0 && !AttachConsole(ATTACH_PARENT_PROCESS) &&
+        (!allow_new_window || has_error || !AllocConsole())) return;
+
+    // Keep redirected streams, including when only one was supplied.
     FILE* stream = nullptr;
-    (void)freopen_s(&stream, "CONIN$", "r", stdin);
-    (void)freopen_s(&stream, "CONOUT$", "w", stdout);
-    (void)freopen_s(&stream, "CONOUT$", "w", stderr);
-    clearerr(stdin);
-    clearerr(stdout);
-    clearerr(stderr);
+    if (!has_input) (void)freopen_s(&stream, "CONIN$", "r", stdin);
+    if (!has_output) (void)freopen_s(&stream, "CONOUT$", "w", stdout);
+    const bool error_ready = has_error || freopen_s(&stream, "CONOUT$", "w", stderr) == 0;
+    g_stderr_sink.store(error_ready, std::memory_order_release);
 #endif
 }
 
@@ -133,55 +112,23 @@ volatile int g_log_threshold = LAMBO_LEVEL_WARN;
 }
 bool lambo_log_enabled = false;
 
-extern "C" bool lambo_log_parse_args(int argc, char** argv) {
-    g_error.clear();
-    g_console_requested = false;
-    LamboLogLevel requested = LAMBO_LEVEL_WARN;
-    bool valid = true;
-    for (int i = 1; i < argc; ++i) {
-        const char* arg = argv[i];
-        if (arg == nullptr) continue;
-        if (std::strcmp(arg, "--console") == 0) {
-            g_console_requested = true;
-        } else if (std::strcmp(arg, "--verbose") == 0 ||
-                   std::strcmp(arg, "--lambo-debug") == 0) {
-            requested = LAMBO_LEVEL_DEBUG;
-        } else if (std::strncmp(arg, "--log-level=", 12) == 0) {
-            if (!parse_level(arg + 12, &requested)) {
-                g_error = "--log-level must be error, warn, info, debug, or trace";
-                valid = false;
-            }
-        } else if (std::strcmp(arg, "--log-level") == 0) {
-            if (i + 1 >= argc) {
-                g_error = "--log-level requires error, warn, info, debug, or trace";
-                valid = false;
-            } else if (!parse_level(argv[++i], &requested)) {
-                g_error = "--log-level requires error, warn, info, debug, or trace";
-                valid = false;
-            }
-        }
-    }
-    __atomic_store_n(&g_log_threshold, static_cast<int>(requested), __ATOMIC_RELEASE);
-    lambo_log_enabled = requested >= LAMBO_LEVEL_DEBUG;
-    return valid;
+extern "C" void lambo_log_configure(bool console, LamboLogLevel level) {
+    g_console_requested.store(console, std::memory_order_release);
+    __atomic_store_n(&g_log_threshold, static_cast<int>(level), __ATOMIC_RELEASE);
+    lambo_log_enabled = level >= LAMBO_LEVEL_DEBUG;
 }
 
-extern "C" void lambo_log_parse_flag(int argc, char** argv) {
-    (void)lambo_log_parse_args(argc, argv);
+extern "C" void lambo_log_open_parent_console(void) {
+    open_console(false);
 }
-
-extern "C" const char* lambo_log_last_error(void) { return g_error.c_str(); }
 
 extern "C" bool lambo_log_initialize(void) {
     std::lock_guard<std::mutex> lock(g_mutex);
     if (g_initialized) return g_file.good() || g_console_requested.load(std::memory_order_acquire);
-    if (g_console_requested.load(std::memory_order_acquire)) open_console();
+    if (g_console_requested.load(std::memory_order_acquire)) open_console(true);
 #if defined(_WIN32)
     if (!g_stderr_sink.load(std::memory_order_acquire)) {
-        HANDLE error_handle = GetStdHandle(STD_ERROR_HANDLE);
-        g_stderr_sink.store(error_handle != nullptr && error_handle != INVALID_HANDLE_VALUE &&
-                                GetFileType(error_handle) != FILE_TYPE_UNKNOWN,
-                            std::memory_order_release);
+        g_stderr_sink.store(has_standard_handle(STD_ERROR_HANDLE), std::memory_order_release);
     }
 #else
     g_stderr_sink.store(true, std::memory_order_release);
@@ -203,7 +150,7 @@ extern "C" bool lambo_log_initialize(void) {
         const std::filesystem::path path = directory / name.str();
         g_file.open(path, std::ios::out | std::ios::app);
         if (g_file.good()) {
-            g_path = path.string();
+            g_path = lambo::paths::path_to_utf8(path);
             prune_old_logs(directory);
         }
     }
