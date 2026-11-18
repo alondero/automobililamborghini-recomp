@@ -1,0 +1,37 @@
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -3070,13 +3070,23 @@
+         }
+     }
+ 
++    static VkRect2D toVkScissor(const RenderRect &rect) {
++        // RT64's widescreen alignment can move an edge outside the target.
++        // Vulkan requires a nonnegative offset (VUID-vkCmdSetScissor-x-00595).
++        const int32_t left = std::max(rect.left, 0);
++        const int32_t top = std::max(rect.top, 0);
++        const int32_t right = std::max(rect.right, left);
++        const int32_t bottom = std::max(rect.bottom, top);
++        return { { left, top }, { uint32_t(right - left), uint32_t(bottom - top) } };
++    }
++
+     void VulkanCommandList::setScissors(const RenderRect *scissorRects, uint32_t count) {
+         if (count > 1) {
+             thread_local std::vector<VkRect2D> scissorVector;
+             scissorVector.clear();
+ 
+             for (uint32_t i = 0; i < count; i++) {
+-                scissorVector.emplace_back(VkRect2D{ VkOffset2D{ scissorRects[i].left, scissorRects[i].top }, VkExtent2D{ uint32_t(scissorRects[i].right - scissorRects[i].left), uint32_t(scissorRects[i].bottom - scissorRects[i].top) } });
++                scissorVector.emplace_back(toVkScissor(scissorRects[i]));
+             }
+ 
+             if (!scissorVector.empty()) {
+@@ -3085,7 +3095,7 @@
+         }
+         else {
+             // Single element fast path.
+-            VkRect2D scissor = VkRect2D{ VkOffset2D{ scissorRects[0].left, scissorRects[0].top }, VkExtent2D{ uint32_t(scissorRects[0].right - scissorRects[0].left), uint32_t(scissorRects[0].bottom - scissorRects[0].top) } };
++            VkRect2D scissor = toVkScissor(scissorRects[0]);
+             vkCmdSetScissor(vk, 0, 1, &scissor);
+         }
+     }
