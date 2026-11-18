@@ -67,7 +67,25 @@ int main() {
     unsetenv("LAMBO_MENU_STICK_SENSITIVITY");
 #endif
 
-    auto cfg = lambo::config::load_and_apply_graphics();
+    using ultramodern::renderer::WindowMode;
+    auto cfg = lambo::config::load_and_apply_graphics(WindowMode::Fullscreen);
+    expect(cfg.wm_option == WindowMode::Fullscreen &&
+           lambo::config::current_graphics().wm_option == WindowMode::Fullscreen &&
+           ultramodern::renderer::last_live_graphics.wm_option == WindowMode::Fullscreen,
+           "fullscreen launch override reaches the frontend and renderer");
+    expect(read_json(path).at("wm_option") == "Windowed", "fullscreen launch keeps the saved default");
+    cfg.rr_manual_value = 95;
+    lambo::config::apply_graphics(cfg);
+    lambo::config::flush_pending_graphics_updates();
+    expect(read_json(path).at("wm_option") == "Windowed", "applying unrelated settings keeps the saved mode");
+    lambo::config::update_saved_window_mode(WindowMode::Fullscreen);
+    lambo::config::flush_pending_graphics_updates();
+    cfg = lambo::config::load_and_apply_graphics(WindowMode::Windowed);
+    expect(cfg.wm_option == WindowMode::Windowed && read_json(path).at("wm_option") == "Fullscreen",
+           "windowed launch overrides a saved fullscreen mode for one run");
+    cfg = lambo::config::default_graphics_config();
+    lambo::config::save_graphics(cfg);
+    lambo::config::load_and_apply_graphics();
     expect(!lambo::config::remove_blue_hud_bar(), "blue HUD bar removal defaults off");
     lambo::config::set_remove_blue_hud_bar(true);
     expect(lambo::config::remove_blue_hud_bar(), "blue HUD bar removal updates live");

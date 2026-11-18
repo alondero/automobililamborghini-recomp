@@ -9,7 +9,6 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -59,9 +58,10 @@
 #include "lambo_mod_gameplay.h"
 #include "lambo_paths.h"
 #include "lambo_rom_path.h"
+#include "lambo_launch_options.h"
 #include "lambo_crash.h"   // native crash reporting
 #include "lambo_gpu_advisory.h"  // graphics-driver advisory
-#include "lambo_log.h"   
+#include "lambo_log.h"
 #include "lambo_pak_io.h"
 #include "lambo_pak_storage.h"
 #include "lambo_input_gate.h"
@@ -284,26 +284,22 @@ static int SDLCALL android_lifecycle_event(void*, SDL_Event* event) {
 }
 #endif
 
-// F11 / Alt+Enter fullscreen toggle (main thread, called from the SDL event loop).
-// SDL owns the window state; the new mode is persisted to graphics.json so the next
-// launch starts in the same mode. Two deliberate omissions:
-//  - rt64_renderer.cpp's update_config setFullScreen path is not used (one owner);
-//  - ultramodern::renderer::set_graphics_config is NOT called here: it would be the
-//    only mid-game config writer, racing the gfx thread's UNLOCKED config copy
-//    (get_graphics_config returns a reference whose guard is released on return --
-//    an upstream ultramodern flaw). Nothing renderer-side consumes wm_option, so the
-//    live config staying at its startup value is harmless.
-// This is the only window-mode writer now that the Windows native menu bar is gone
-// (issue #242); the settings overlay writes wm_option through graphics.json and the
-// pump below reconciles SDL with that snapshot.
+// SDL owns live window mode on the main thread. The renderer does not consume
+// wm_option after startup.
+static bool set_window_fullscreen(bool fullscreen) {
+    if (SDL_SetWindowFullscreen(g_sdl_window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0) != 0) {
+        LAMBO_LOG_WARN("config", "cannot change window mode: %s\n", SDL_GetError());
+        return false;
+    }
+    return true;
+}
+
+// F11 / Alt+Enter is an explicit settings change. Reconciliation also uses
+// set_window_fullscreen, and can apply a temporary startup override.
 static void toggle_fullscreen() {
     if (g_sdl_window == nullptr) return;
     const bool fullscreen = (SDL_GetWindowFlags(g_sdl_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == 0;
-    if (SDL_SetWindowFullscreen(g_sdl_window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0) != 0) {
-        LAMBO_LOG_WARN("config", "fullscreen toggle FAILED: %s\n", SDL_GetError());
-        return;
-    }
-    // Window mode is owned by SDL and deliberately not sent through RT64.
+    if (!set_window_fullscreen(fullscreen)) return;
     lambo::config::update_saved_window_mode(fullscreen ? ultramodern::renderer::WindowMode::Fullscreen
                                                        : ultramodern::renderer::WindowMode::Windowed);
     LAMBO_LOG_INFO("config", "fullscreen %s (F11 / Alt+Enter)\n", fullscreen ? "ON" : "OFF");
@@ -365,8 +361,8 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
 #if defined(__linux__)
         flags |= SDL_WINDOW_VULKAN;
 #endif
-        // Window size + startup fullscreen come from graphics.json (loaded in main()
-        // before recomp::start). Fullscreen is owned by SDL on this (main) thread --
+        // Window size and the effective startup mode are loaded before
+        // recomp::start. Fullscreen is owned by SDL on this (main) thread --
         // see the F11 handler in update_gfx_stub.
         const lambo::config::WindowSize win_size = lambo::config::window_size();
         if (ultramodern::renderer::get_graphics_config().wm_option ==
@@ -535,7 +531,7 @@ static void reconcile_window() {
     const lambo::window_resize::Plan plan = lambo::window_resize::reconciler().plan(
         want_fullscreen, wanted.width, wanted.height, window_state);
 
-    if (plan.mode != lambo::window_resize::ModeAction::None) toggle_fullscreen();
+    if (plan.mode != lambo::window_resize::ModeAction::None) set_window_fullscreen(want_fullscreen);
 
     // A new size picked in the Graphics tab resizes the window straight
     // away, no restart: the request lives in graphics.json (the port owns
@@ -816,42 +812,8 @@ static ultramodern::input::connected_device_info_t input_device_info(int control
     return { Device::None, Pak::None };
 }
 
-static bool is_controller_pak_container(const char* path) {
-    const char* extension_start = std::strrchr(path, '.');
-    const char* forward_slash = std::strrchr(path, '/');
-    const char* back_slash = std::strrchr(path, '\\');
-    const char* slash = forward_slash == nullptr ? back_slash :
-        (back_slash == nullptr || forward_slash > back_slash ? forward_slash : back_slash);
-    if (extension_start == nullptr || (slash != nullptr && extension_start < slash)) return false;
-    std::string extension = extension_start;
-    std::transform(extension.begin(), extension.end(), extension.begin(),
-                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-    if (extension != ".mpk" && extension != ".pak" &&
-        extension != ".srm" && extension != ".n64") return false;
-    const LamboPakIoResult result = lambo_pak_probe_file(path);
-    if (!result.ok) return false;
-    switch (result.format) {
-    case LAMBO_PAK_FORMAT_RAW:
-    case LAMBO_PAK_FORMAT_FOUR_PORT:
-        return extension == ".mpk" || extension == ".pak";
-    case LAMBO_PAK_FORMAT_RETROARCH:
-        return extension == ".srm";
-    case LAMBO_PAK_FORMAT_DEXDRIVE:
-        return extension == ".n64";
-    default:
-        return false;
-    }
-}
-
-static std::string path_to_utf8(const std::filesystem::path& path) {
-    const std::u8string value = path.u8string();
-    return {reinterpret_cast<const char*>(value.data()), value.size()};
-}
-
-static std::filesystem::path path_from_utf8(const char* path) {
-    const auto* begin = reinterpret_cast<const char8_t*>(path);
-    return std::filesystem::path(std::u8string(begin, begin + std::strlen(path)));
-}
+using lambo::paths::path_from_utf8;
+using lambo::paths::path_to_utf8;
 
 static std::filesystem::path unused_backup_path(const std::filesystem::path& path) {
     std::filesystem::path candidate = path;
@@ -861,15 +823,6 @@ static std::filesystem::path unused_backup_path(const std::filesystem::path& pat
         candidate += ".bak." + std::to_string(index);
     }
     return candidate;
-}
-
-// Portable mode: exact --portable match. Parsed here rather than
-// in lambo_log_parse_args because the log directory itself depends on it.
-static bool has_portable_arg(int argc, char** argv) {
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i] != nullptr && std::strcmp(argv[i], "--portable") == 0) return true;
-    }
-    return false;
 }
 
 // Resolve the directory containing this executable. The launch working
@@ -930,23 +883,41 @@ static std::optional<std::filesystem::path> executable_dir_from_platform(const c
     return std::nullopt;
 }
 
+static int cli_error(const std::string& message) {
+    lambo_log_open_parent_console();
+    std::fprintf(stderr, "%s\nRun with --help for usage.\n", message.c_str());
+    return 2;
+}
+
 static int application_main(int argc, char** argv) {
-    // Portable mode must resolve before logging initialises: the log file
-    // directory itself depends on it.
-    if (const auto exe = executable_dir_from_platform(argc > 0 ? argv[0] : nullptr);
-        exe.has_value())
-        lambo::paths::set_executable_dir(*exe);
-    lambo::paths::set_portable_forced(has_portable_arg(argc, argv));
-    // Parse and initialise logging before any startup path can emit a message.
-    // The Windows target is GUI-subsystem, so --console is responsible for
-    // attaching/allocating the live stderr sink.
-    if (!lambo_log_parse_args(argc, argv)) {
-        (void)lambo_log_initialize();
-        // Command-line syntax errors must remain visible even when the user
-        // did not request a console or the log directory is unavailable.
-        std::fprintf(stderr, "[error] [log] %s\n", lambo_log_last_error());
-        return 2;
+    lambo::LaunchOptions launch;
+    if (const std::string error = lambo::parse_launch_options(argc, argv, launch); !error.empty()) {
+        return cli_error(error);
     }
+    if (launch.action != lambo::LaunchAction::Run) {
+        lambo_log_open_parent_console();
+        if (launch.action == lambo::LaunchAction::Help) {
+            std::fputs(lambo::launch_help(), stdout);
+        } else {
+            std::puts("lamborghini_modern " LAMBO_VERSION);
+        }
+        return 0;
+    }
+
+    // Resolve the profile before initializing any file-backed service.
+    const auto executable_dir = executable_dir_from_platform(argc > 0 ? argv[0] : nullptr);
+    if (executable_dir) lambo::paths::set_executable_dir(*executable_dir);
+    lambo::paths::set_portable_forced(launch.portable);
+    if (!launch.data_dir.empty()) {
+        std::error_code error;
+        auto data_dir = std::filesystem::absolute(path_from_utf8(launch.data_dir), error);
+        if (!error) std::filesystem::create_directories(data_dir, error);
+        if (error) {
+            return cli_error("cannot open data directory '" + launch.data_dir + "': " + error.message());
+        }
+        lambo::paths::set_data_dir(std::move(data_dir));
+    }
+    lambo_log_configure(launch.console, launch.log_level);
     (void)lambo_log_initialize();
     // Say once where settings and saves live so "it forgot my progress"
     // reports are answerable from the log.
@@ -968,50 +939,10 @@ static int application_main(int argc, char** argv) {
     if (std::getenv("LAMBO_LIGHTING_SELFTEST")) {
         return headless::run_lighting_selftest();
     }
-    const char* rom_path = lambo::default_rom_filename;
-    const char* import_path = nullptr;
-    const char* controller_pak_path = nullptr;
-    std::filesystem::path track_patch_path;
-    bool rom_was_selected = false;
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i] && std::strcmp(argv[i], "--import-save") == 0) {
-            if (i + 1 >= argc || argv[i + 1] == nullptr || argv[i + 1][0] == '\0') {
-                std::fprintf(stderr,
-                             "[error] [cli] --import-save requires an MPK, SRM, or DexDrive N64 file\n");
-                return 2;
-            }
-            import_path = argv[++i];
-        } else if (argv[i] && std::strcmp(argv[i], "--controller-pak") == 0) {
-            if (i + 1 >= argc || argv[i + 1] == nullptr || argv[i + 1][0] == '\0') {
-                std::fprintf(stderr,
-                             "[error] [cli] --controller-pak requires an MPK, SRM, or DexDrive N64 file\n");
-                return 2;
-            }
-            controller_pak_path = argv[++i];
-        } else if (argv[i] && std::strcmp(argv[i], "--track-patch") == 0) {
-            if (i + 1 >= argc || argv[i + 1] == nullptr || argv[i + 1][0] == '\0') {
-                std::fprintf(stderr,
-                             "[error] [cli] --track-patch requires a Track Lab .altrk file\n");
-                return 2;
-            }
-            track_patch_path = path_from_utf8(argv[++i]);
-        } else if (argv[i] && std::strcmp(argv[i], "--log-level") == 0) {
-            // lambo_log_parse_args already validated and consumed this value;
-            // keep the ROM selector from mistaking it for a ROM path.
-            ++i;
-        } else if (argv[i] && argv[i][0] != '-' && argv[i][0] != '\0' &&
-                   is_controller_pak_container(argv[i])) {
-            import_path = argv[i];
-        } else if (!rom_was_selected && argv[i] && argv[i][0] != '-' && argv[i][0] != '\0') {
-            rom_path = argv[i];
-            rom_was_selected = true;
-        } else if (argv[i] && argv[i][0] == '-') {
-            // Logging and future switches are parsed by their owning subsystem;
-            // they must never be mistaken for a ROM or save path here.
-        }
-    }
-    if (!rom_was_selected) rom_path = lambo::find_default_rom_filename();
-    LAMBO_LOG("probe", "ROM: %s\n", rom_path);
+    const auto rom_path = launch.rom.empty() ? lambo::find_default_rom_path(executable_dir)
+                                             : path_from_utf8(launch.rom);
+    const std::string rom_path_text = path_to_utf8(rom_path);
+    LAMBO_LOG("probe", "ROM: %s\n", rom_path_text.c_str());
 
     register_overlays();
     // After register_overlays so the native-ptr -> vram map is already wired.
@@ -1030,10 +961,13 @@ static int application_main(int argc, char** argv) {
         }, ct).detach();
     }
 
-    // Load + apply graphics.json BEFORE recomp::start: ultramodern latches the config
-    // and the RT64 context constructor reads it via get_graphics_config(). This is the
-    // authoritative backing store for the shared frontend.
-    lambo::config::load_and_apply_graphics();
+    // Apply the effective graphics config before SDL and RT64 create the window.
+    using ultramodern::renderer::WindowMode;
+    std::optional<WindowMode> startup_window_mode;
+    if (launch.fullscreen) {
+        startup_window_mode = *launch.fullscreen ? WindowMode::Fullscreen : WindowMode::Windowed;
+    }
+    lambo::config::load_and_apply_graphics(startup_window_mode);
 
     // librecomp's config path is where game SAVES (EEPROM/SRAM/pak) and mod config
     // live -- point it at the same persistent per-user directory as graphics.json.
@@ -1046,9 +980,9 @@ static int application_main(int argc, char** argv) {
     const std::filesystem::path pak_path = config_dir / "lambo_controller_pak.mpk";
     const std::string pak_path_string = path_to_utf8(pak_path);
     std::filesystem::path active_pak_path = pak_path;
-    if (controller_pak_path != nullptr) {
-        active_pak_path = path_from_utf8(controller_pak_path);
-    } else {
+    if (!launch.controller_pak.empty()) {
+        active_pak_path = path_from_utf8(launch.controller_pak);
+    } else if (launch.data_dir.empty()) {
 #if defined(_WIN32)
         if (const wchar_t* environment_path = _wgetenv(L"LAMBO_CONTROLLER_PAK_FILE");
             environment_path != nullptr && environment_path[0] != L'\0')
@@ -1062,10 +996,8 @@ static int application_main(int argc, char** argv) {
     const std::string active_pak_path_string = path_to_utf8(active_pak_path);
     lambo_pak_storage_configure(active_pak_path_string.c_str());
 
-    if (import_path != nullptr && controller_pak_path != nullptr) {
-        LAMBO_LOG_ERROR("cli", "--import-save and --controller-pak cannot be used together\n");
-        return 2;
-    } else if (import_path != nullptr) {
+    if (!launch.import_save.empty()) {
+        const char* import_path = launch.import_save.c_str();
         std::error_code error;
         const LamboPakIoResult source = lambo_pak_probe_file(import_path);
         if (!source.ok) {
@@ -1099,7 +1031,8 @@ static int application_main(int argc, char** argv) {
             LAMBO_LOG_INFO("pak", "imported %s to %s\n",
                            lambo_pak_format_name(imported.format), pak_path_string.c_str());
         }
-    } else if (controller_pak_path == nullptr && !std::filesystem::exists(pak_path)) {
+    } else if (launch.controller_pak.empty() && launch.data_dir.empty() &&
+               !std::filesystem::exists(pak_path)) {
         // One-time migration for older builds, which accidentally stored the
         // default Controller Pak beside the executable/current working directory.
         const std::filesystem::path legacy = "lambo_controller_pak.mpk";
@@ -1129,10 +1062,19 @@ static int application_main(int argc, char** argv) {
     recomp::register_game(game);
     lambo::mods::register_content();
 
-    std::u8string game_id = u8"lamborghini.us";
-    recomp::RomValidationError verr = recomp::select_rom(rom_path, game_id);
-    if (verr != recomp::RomValidationError::Good) {
-        LAMBO_LOG_ERROR("rom", "select_rom FAILED (RomValidationError=%d)\n", (int)verr);
+    using recomp::RomValidationError;
+    std::error_code rom_error;
+    const auto rom_size = std::filesystem::file_size(rom_path, rom_error);
+    // The runtime reads identifying fields from the cartridge header.
+    const auto validation = rom_error ? RomValidationError::FailedToOpen
+        : rom_size < 64 ? RomValidationError::NotARom : recomp::select_rom(rom_path, game.game_id);
+    if (validation != RomValidationError::Good) {
+        const char* reason = "expected an Automobili Lamborghini USA ROM";
+        if (validation == RomValidationError::FailedToOpen) reason = "file could not be opened";
+        if (validation == RomValidationError::NotARom) reason = "file is not an N64 ROM";
+        if (!launch.rom.empty()) lambo_log_open_parent_console();
+        LAMBO_LOG_ERROR("rom", "Could not load ROM '%s': %s. Use --rom PATH to select a USA ROM.\n",
+                        rom_path_text.c_str(), reason);
         return 1;
     }
     LAMBO_LOG("probe", "ROM validated; rom_hash matches\n");
@@ -1154,7 +1096,10 @@ static int application_main(int argc, char** argv) {
     // Track Lab corrections are parsed and fully validated before the game starts;
     // the transactional memory-application routine performs no file I/O or allocation.
     // A CLI path wins so launchers can override a developer's shell setting.
-    if (track_patch_path.empty()) {
+    std::filesystem::path track_patch_path;
+    if (!launch.track_patch.empty()) {
+        track_patch_path = path_from_utf8(launch.track_patch);
+    } else {
 #if defined(_WIN32)
         if (const wchar_t* environment_path = _wgetenv(L"LAMBO_TRACK_PATCH");
             environment_path != nullptr && environment_path[0] != L'\0') {
@@ -1183,10 +1128,7 @@ static int application_main(int argc, char** argv) {
         lambo::track_patch::disable();
     }
 
-    lambo::StartupMode startup_mode = lambo::startup_mode_from_environment();
-    if (startup_mode == lambo::StartupMode::Automatic && lambo::config::show_launcher()) {
-        startup_mode = lambo::StartupMode::InteractiveLauncher;
-    }
+    const auto startup_mode = lambo::resolve_startup_mode(launch.startup_mode, lambo::config::show_launcher());
     lambo::StartupController startup_controller(startup_mode, []() {
         LAMBO_LOG("probe", "calling start_game\n");
         recomp::start_game(u8"lamborghini.us", "");

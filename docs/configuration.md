@@ -231,17 +231,35 @@ contract and may change with the harness.
 
 ## Command-line options
 
-The executable accepts a ROM path as its first non-option argument. Useful
-player-facing options are:
+Windows and Linux launchers can pass flags directly to `lamborghini_modern`
+(`lamborghini_modern.exe` on Windows).
 
-~~~text
---portable
---import-save PATH
---controller-pak PATH
-~~~
+| Flag | Effect |
+| --- | --- |
+| `--rom PATH` | Load the specified USA ROM. A positional ROM path also works. |
+| `--fullscreen` / `--windowed` | Choose the initial window mode for this run. |
+| `--play` / `--launcher` | Boot directly into the game or show the built-in launcher for this run. |
+| `--data-dir PATH` | Use a directory for this profile's settings, saves, mods, and logs. The game creates it if needed. |
+| `--portable` | Store data beside the executable. Use this or `--data-dir`. |
+| `--import-save PATH` | Import a Controller Pak save into the active profile. |
+| `--controller-pak PATH` | Use a Controller Pak file directly. Use this or `--import-save`. |
+| `--track-patch PATH` | Load a Track Lab `.altrk` file. |
+| `--console` | Enable terminal logging on Windows. |
+| `--verbose`, `--log-level LEVEL` | Enable debug logging or choose `error`, `warn`, `info`, `debug`, or `trace`. |
+| `-h`, `--help`, `--version` | Print usage or the version and exit without starting the game. |
 
-Developer options include --track-patch, --console, --verbose, and
---log-level. Use the same command and configuration in a bug report.
+Relative paths start from the working directory. Quote paths containing spaces.
+Path options accept `--flag=PATH`, which also works for a path starting with a
+dash. Use `--` before a positional ROM path starting with a dash. With no ROM
+argument, the game checks the working directory, then the executable directory.
+
+`--play` and `--launcher` take priority over `LAMBO_LAUNCHER` and the saved
+launcher preference. The startup flags leave the saved preferences in place.
+If you pass both window modes or both startup modes, the last one wins.
+`--data-dir` takes priority over portable mode from the environment or a
+marker file, and over the environment paths for graphics, controls, the player
+name, the Controller Pak, and logs. `--controller-pak` can still select an
+individual save file when you use `--data-dir`.
 
 The graphics API takes effect on the next launch. The texture-pack path also
 needs a restart. Window size, window mode and enhancement values that the

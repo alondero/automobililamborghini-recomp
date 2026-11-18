@@ -11,6 +11,7 @@
 #include "json/json.hpp"
 #include "lambo_config.h"
 #include "lambo_log.h"
+#include "lambo_paths.h"
 #include "recomp.h"
 
 namespace {
@@ -69,7 +70,7 @@ std::string g_cached_name;
 bool g_name_loaded = false;
 
 std::filesystem::path player_config_path() {
-    if (const char* path = std::getenv("LAMBO_PLAYER_CONFIG")) {
+    if (const char* path = lambo::paths::profile_environment("LAMBO_PLAYER_CONFIG")) {
         return std::filesystem::path{path};
     }
     return lambo::config::app_config_dir() / kPlayerConfigFile;

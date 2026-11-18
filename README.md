@@ -23,9 +23,18 @@ Supported release packages are provided for Windows x64 and Linux x64:
 
 The project does not include the game data. Only the USA release is supported.
 If the game cannot find the ROM, check its name and location first.
-When both default filenames exist, the .z64 file takes priority. You can also
-pass a different ROM filename as the first command-line argument. Byte order
-is detected from the file contents; the original file is not changed.
+The game looks for the default filenames in the working directory, then beside
+the executable. Within either folder, the .z64 file takes priority. To start
+fullscreen with a ROM from another folder, run this command from the extracted
+folder (use `./lamborghini_modern` on Linux).
+
+```powershell
+.\lamborghini_modern.exe --rom "../My ROMs/Automobili Lamborghini (USA).z64" --fullscreen --play
+```
+
+Use `--help` or see the [launch options](docs/configuration.md#command-line-options)
+for other flags. The positional ROM path still works. The game detects byte
+order from the file contents and leaves the original ROM untouched.
 
 Android ARM64 APKs are also published as experimental builds, with a file
 picker for importing the ROM. Device and driver compatibility varies. See

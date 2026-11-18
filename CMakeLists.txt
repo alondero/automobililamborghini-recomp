@@ -302,6 +302,11 @@ if(BUILD_TESTING)
     target_link_libraries(lambo_log_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_logging_policy COMMAND lambo_log_tests)
 
+    add_executable(lambo_launch_options_tests
+        tests/test_launch_options.cpp src/lambo_launch_options.cpp src/lambo_pak_io.c)
+    target_include_directories(lambo_launch_options_tests PRIVATE src)
+    add_test(NAME lambo_launch_options COMMAND lambo_launch_options_tests)
+
     add_executable(lambo_portable_paths_tests
         tests/test_portable_paths.cpp
     )
@@ -926,6 +931,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_config.cpp   # persistent graphics.json -> GraphicsConfig
         src/lambo_player_name.cpp # remember player one's confirmed name for later name-entry screens
         src/lambo_startup.cpp  # runtime-ready -> Play startup state machine
+        src/lambo_launch_options.cpp
         src/lambo_mods.cpp
         src/lambo_mod_api.cpp
         src/lambo_mod_game.cpp
@@ -992,7 +998,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
 
     # The shipped Windows application is a GUI-subsystem executable.  Its
     # WinMain wrapper still accepts normal command-line arguments; lambo_log
-    # allocates a console only when --console is requested.
+    # allocates a console only when --console is requested. CLI messages can
+    # also attach to the terminal that started the process.
     if(ANDROID)
         add_library(lamborghini_modern SHARED ${LAMBO_SOURCES})
         set_target_properties(lamborghini_modern PROPERTIES OUTPUT_NAME main)
