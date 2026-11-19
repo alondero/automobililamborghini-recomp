@@ -177,6 +177,10 @@ controllers it attaches. It keeps physical controllers out of its own process
 by setting SDL hints before SDL starts, so it passes with a gamepad connected
 and needs no environment setup. Game runs are unaffected.
 
+Its startup check loads a custom mapping for an unmapped virtual controller.
+It verifies platform filtering, profile-directory precedence, player-one game
+input, and release of the SDL handle after a duplicate added event.
+
 The same fixture covers settings revision invalidation, forced opens, pending
 edits and Discard after an external change. Run its executable with an isolated
 data-directory argument followed by `--benchmark` to compare forced schema

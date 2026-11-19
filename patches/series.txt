@@ -76,6 +76,7 @@
 0037-recompfrontend-optional-ui-debugger.patch
 0040-recompfrontend-config-open-event.patch
 0045-recompfrontend-android-swap-chain-format.patch
+0065-recompfrontend-idempotent-controller-add.patch
 
 # SDL is fetched by scripts/build_android.py, not a submodule.
 [build-android/deps/SDL]

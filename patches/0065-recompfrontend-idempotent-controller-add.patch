@@ -1,0 +1,46 @@
+diff --git a/recompinput/src/input_events.cpp b/recompinput/src/input_events.cpp
+--- a/recompinput/src/input_events.cpp
++++ b/recompinput/src/input_events.cpp
+@@ -73,22 +73,28 @@
+     case SDL_EventType::SDL_CONTROLLERDEVICEADDED:
+     {
+         SDL_ControllerDeviceEvent* controller_event = &event->cdevice;
+-        // Hosts may enumerate at startup before SDL's queued added events arrive.
+-        if (recompinput::get_controller_from_joystick_id(SDL_JoystickGetDeviceInstanceID(controller_event->which))) break;
+         SDL_GameController* controller = SDL_GameControllerOpen(controller_event->which);
++        if (controller == nullptr) break;
++
++        SDL_Joystick* joystick = SDL_GameControllerGetJoystick(controller);
++        const SDL_JoystickID instance_id = SDL_JoystickInstanceID(joystick);
++        // Startup enumeration and SDL hotplug can report the same controller.
++        // Identify the opened device because indices can change on hotplug.
++        if (recompinput::get_controller_from_joystick_id(instance_id) != nullptr) {
++            SDL_GameControllerClose(controller);
++            break;
++        }
++
+         printf("Controller added: %d\n", controller_event->which);
+-        if (controller != nullptr) {
+-            printf("  Instance ID: %d\n", SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller)));
+-            printf("  Path: %s\n", SDL_JoystickPath(SDL_GameControllerGetJoystick(controller)));
+-            recompinput::add_controller_state(SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller)), controller);
+-
+-            if (SDL_GameControllerHasSensor(controller, SDL_SensorType::SDL_SENSOR_GYRO) && SDL_GameControllerHasSensor(controller, SDL_SensorType::SDL_SENSOR_ACCEL)) {
+-                SDL_GameControllerSetSensorEnabled(controller, SDL_SensorType::SDL_SENSOR_GYRO, SDL_TRUE);
+-                SDL_GameControllerSetSensorEnabled(controller, SDL_SensorType::SDL_SENSOR_ACCEL, SDL_TRUE);
+-            }
+-        }
+-        
+-        if (controller == nullptr) break;
++        printf("  Instance ID: %d\n", instance_id);
++        printf("  Path: %s\n", SDL_JoystickPath(joystick));
++        recompinput::add_controller_state(instance_id, controller);
++
++        if (SDL_GameControllerHasSensor(controller, SDL_SensorType::SDL_SENSOR_GYRO) && SDL_GameControllerHasSensor(controller, SDL_SensorType::SDL_SENSOR_ACCEL)) {
++            SDL_GameControllerSetSensorEnabled(controller, SDL_SensorType::SDL_SENSOR_GYRO, SDL_TRUE);
++            SDL_GameControllerSetSensorEnabled(controller, SDL_SensorType::SDL_SENSOR_ACCEL, SDL_TRUE);
++        }
++
+         ControllerGUID guid = profiles::get_guid_from_sdl_controller(controller);
+         if (profiles::get_controller_by_guid(guid) < 0) {
+             if (players::is_single_player_mode()) {

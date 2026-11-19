@@ -587,8 +587,53 @@ int main(int argc, char** argv) {
         players::set_single_player_mode(false);
         lambo::ui::initialize_frontend_controllers();
         require(players::get_player(0).keyboard_enabled, "no-controller keyboard fallback");
-        const int startup_device = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER, 6, 15, 0);
+        SDL_VirtualJoystickDesc startup_desc{};
+        startup_desc.version = SDL_VIRTUAL_JOYSTICK_DESC_VERSION;
+        startup_desc.type = SDL_JOYSTICK_TYPE_UNKNOWN;
+        startup_desc.naxes = 6;
+        startup_desc.nbuttons = 15;
+        startup_desc.vendor_id = 1;
+        startup_desc.product_id = 1;
+        startup_desc.name = "Unmapped startup controller";
+        const int startup_device = SDL_JoystickAttachVirtualEx(&startup_desc);
         require(startup_device >= 0, "startup controller attach");
+        require(!SDL_IsGameController(startup_device), "startup controller already had a mapping");
+        char startup_guid[33]{};
+        SDL_JoystickGetGUIDString(SDL_JoystickGetDeviceGUID(startup_device), startup_guid, sizeof(startup_guid));
+        const auto executable_dir = path / "controller-db-executable";
+        const auto profile_dir = path / "controller-db-profile";
+        std::filesystem::create_directories(executable_dir);
+        std::filesystem::create_directories(profile_dir);
+        std::filesystem::remove(profile_dir / "gamecontrollerdb.txt");
+        lambo::paths::set_executable_dir(executable_dir);
+        lambo::paths::set_data_dir(profile_dir);
+        const auto write_mapping = [&](const std::filesystem::path& directory, const char* binding,
+                                       const std::string& platform) {
+            std::ofstream file(directory / "gamecontrollerdb.txt");
+            file << startup_guid << ",Unmapped startup controller,a:" << binding << ',' << platform << '\n';
+            file.close();
+            require(file.good(), "write startup controller database");
+        };
+        write_mapping(executable_dir, "b1", "");
+        lambo::ui::load_controller_mappings();
+        require(!SDL_IsGameController(startup_device), "SDL accepted an untagged file mapping");
+        const std::string platform = std::string("platform:") + SDL_GetPlatform() + ',';
+        write_mapping(executable_dir, "b1", platform);
+        lambo::ui::load_controller_mappings();
+        auto* mapped = SDL_GameControllerOpen(startup_device);
+        require(mapped != nullptr, "executable controller database was not loaded");
+        const auto binding = SDL_GameControllerGetBindForButton(mapped, SDL_CONTROLLER_BUTTON_A);
+        require(binding.bindType == SDL_CONTROLLER_BINDTYPE_BUTTON && binding.value.button == 1,
+            "executable controller mapping did not bind A to button 1");
+        SDL_GameControllerClose(mapped);
+        write_mapping(profile_dir, "b0", platform);
+        lambo::ui::load_controller_mappings();
+        lambo::paths::set_data_dir({});
+        lambo::paths::set_executable_dir(path);
+        std::filesystem::remove(profile_dir / "gamecontrollerdb.txt");
+        std::filesystem::remove(executable_dir / "gamecontrollerdb.txt");
+        std::filesystem::remove(profile_dir);
+        std::filesystem::remove(executable_dir);
         // Device is present before host startup; deliberately discard added events.
         SDL_FlushEvents(SDL_CONTROLLERDEVICEADDED, SDL_CONTROLLERDEVICEADDED);
         lambo::ui::initialize_frontend_controllers();
@@ -596,12 +641,13 @@ int main(int argc, char** argv) {
         const auto startup_instance = SDL_JoystickGetDeviceInstanceID(startup_device);
         require(get_controller_from_joystick_id(startup_instance) == players::get_player(0).controller,
             "startup controller missing framework state");
-        SDL_JoystickSetVirtualButton(SDL_GameControllerGetJoystick(players::get_player(0).controller), SDL_CONTROLLER_BUTTON_A, 1);
+        require(SDL_JoystickSetVirtualButton(SDL_GameControllerGetJoystick(players::get_player(0).controller), 0, 1) == 0,
+            "press physical button 0 on startup controller");
         SDL_JoystickUpdate();
         poll_inputs();
         uint16_t startup_buttons = 0; float startup_x = 0, startup_y = 0;
         profiles::get_n64_input(0, &startup_buttons, &startup_x, &startup_y);
-        require(startup_buttons & 0x8000, "startup controller cannot drive guest A");
+        require(startup_buttons & 0x8000, "profile directory mapping did not drive guest A from button 0");
         const auto live_guid = profiles::get_guid_from_sdl_controller(players::get_player(0).controller);
         const nlohmann::json saved_guid = live_guid;
         ControllerGUID restored_guid{};
@@ -662,6 +708,8 @@ int main(int argc, char** argv) {
             "missing preferred device did not fall back to connected controller");
         remove_controller_state(startup_instance);
         SDL_GameControllerClose(players::get_player(0).controller);
+        require(SDL_GameControllerFromInstanceID(startup_instance) == nullptr,
+            "duplicate device event leaked a controller reference");
         SDL_JoystickDetachVirtual(startup_device);
         lambo::ui::initialize_frontend_controllers();
         profiles::set_input_profile_for_player(0, p1, InputDevice::Keyboard);

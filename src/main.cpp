@@ -354,6 +354,7 @@ static ultramodern::renderer::WindowHandle create_window_stub(void* /*gfx_data*/
                          SDL_GetError());
             return ultramodern::renderer::WindowHandle{};
         }
+        lambo::ui::load_controller_mappings();
         uint32_t flags = SDL_WINDOW_RESIZABLE;
 #if defined(__ANDROID__)
         flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;

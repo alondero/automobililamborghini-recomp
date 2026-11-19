@@ -29,6 +29,7 @@ The main configuration and save files are:
 | --- | --- | --- |
 | graphics.json | port and runtime | Graphics, window, texture, camera, fog, and draw-distance settings. |
 | controls-framework.json | RecompFrontend | Current controller profiles and bindings. |
+| gamecontrollerdb.txt | player | Optional [custom SDL controller mappings](controllers.md#custom-controller-mappings) loaded at startup. |
 | controls.json | legacy port import | Read as an import source when the framework profile does not exist. It is not the current writer. |
 | player.json | port | Player name and player identity. |
 | pedals.json | legacy import | Fills pedal values the Driving page has not stored yet, so previously saved settings survive the merge. It is not the current writer. |
