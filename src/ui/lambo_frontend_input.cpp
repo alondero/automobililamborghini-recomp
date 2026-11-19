@@ -2,6 +2,8 @@
 #include "lambo_config.h"
 #include "lambo_driving_assists.h"
 #include "lambo_input_gate.h"
+#include "lambo_log.h"
+#include "lambo_paths.h"
 #include "lambo_steering.h"
 #include "recompinput/profiles.h"
 #include "recompinput/input_events.h"
@@ -321,6 +323,35 @@ void configure_frontend_input_defaults() {
         }
         set_default_mapping_for_controller(targets[target], fields);
     }
+}
+
+void load_controller_mappings() {
+    constexpr char filename[] = "gamecontrollerdb.txt";
+    const auto load = [](const std::filesystem::path& file) {
+        std::error_code error;
+        if (!std::filesystem::is_regular_file(file, error)) return;
+        const auto utf8 = lambo::paths::path_to_utf8(file);
+        const int added = SDL_GameControllerAddMappingsFromFile(utf8.c_str());
+        if (added < 0) {
+            LAMBO_LOG_WARN("input", "Could not load controller mappings from %s: %s\n",
+                           utf8.c_str(), SDL_GetError());
+        } else {
+            LAMBO_LOG_INFO("input", "Read controller mappings from %s (%d new mappings)\n",
+                           utf8.c_str(), added);
+        }
+    };
+
+    const auto profile_file = lambo::paths::app_config_dir() / filename;
+#if !defined(__ANDROID__)
+    if (const auto& executable_dir = lambo::paths::executable_dir()) {
+        const auto executable_file = *executable_dir / filename;
+        load(executable_file);
+        std::error_code error;
+        if (executable_file == profile_file ||
+            std::filesystem::equivalent(executable_file, profile_file, error)) return;
+    }
+#endif
+    load(profile_file);
 }
 
 void initialize_frontend_controllers() {

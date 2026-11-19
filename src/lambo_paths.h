@@ -85,6 +85,9 @@ inline const char* profile_environment(const char* name) {
 inline void set_executable_dir(const std::filesystem::path& dir) {
     detail::executable_dir_slot() = dir;
 }
+inline const std::optional<std::filesystem::path>& executable_dir() {
+    return detail::executable_dir_slot();
+}
 inline void clear_executable_dir() { detail::executable_dir_slot().reset(); }
 inline void set_portable_forced(bool forced) { detail::portable_forced_slot() = forced; }
 
