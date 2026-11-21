@@ -1,8 +1,10 @@
+#include <barrier>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <thread>
 #include <vector>
 
 #include "json/json.hpp"
@@ -392,6 +394,81 @@ int main() {
            lambo::config::camera_distance_scale() == 3.0,
            "config reload recaptures cleared overrides and restores stored settings");
 
+    // Thread contract of the GraphicsConfig snapshot (issue #265): the settings
+    // Apply writes it on the render thread while the main-thread pump reads it.
+    // A reader must always get one whole applied config, never fields from two.
+    // The two configs differ in every field so any mix is detectable. A torn
+    // read is timing-dependent. The source check verifies the guard placement
+    // regardless of how these threads are scheduled.
+    {
+        using namespace ultramodern::renderer;
+        GraphicsConfig first = lambo::config::default_graphics_config();
+        first.res_option = Resolution::Original;
+        first.wm_option = WindowMode::Windowed;
+        first.hr_option = HUDRatioMode::Original;
+        first.api_option = GraphicsApi::D3D12;
+        first.ar_option = AspectRatio::Original;
+        first.msaa_option = Antialiasing::None;
+        first.rr_option = RefreshRate::Original;
+        first.hpfb_option = HighPrecisionFramebuffer::Off;
+        first.rr_manual_value = 30;
+        first.ds_option = 1;
+        first.developer_mode = false;
+        GraphicsConfig second = first;
+        second.res_option = Resolution::Auto;
+        second.wm_option = WindowMode::Fullscreen;
+        second.hr_option = HUDRatioMode::Clamp16x9;
+        second.api_option = GraphicsApi::Vulkan;
+        second.ar_option = AspectRatio::Expand;
+        second.msaa_option = Antialiasing::MSAA4X;
+        second.rr_option = RefreshRate::Manual;
+        second.hpfb_option = HighPrecisionFramebuffer::On;
+        second.rr_manual_value = 240;
+        second.ds_option = 4;
+        second.developer_mode = true;
+
+        // apply_live=false: this exercises the port snapshot, not the renderer queue.
+        lambo::config::apply_graphics(first, false);
+        constexpr int rounds = 256;
+        std::barrier phase{2};
+        std::thread writer([&] {
+            for (int round = 0; round < rounds; ++round) {
+                phase.arrive_and_wait();
+                lambo::config::apply_graphics(round % 2 == 0 ? second : first, false);
+                phase.arrive_and_wait();
+            }
+        });
+        bool whole = true;
+        bool published = true;
+        bool developer_mode_matches = true;
+        for (int round = 0; round < rounds; ++round) {
+            // Both operations start in the same phase. The next write waits
+            // for the reader to check this round's published values.
+            phase.arrive_and_wait();
+            const GraphicsConfig seen = lambo::config::current_graphics();
+            whole &= seen == first || seen == second;
+            phase.arrive_and_wait();
+            const auto& expected = round % 2 == 0 ? second : first;
+            published &= lambo::config::current_graphics() == expected;
+            developer_mode_matches &= lambo::config::developer_mode() == expected.developer_mode;
+        }
+        writer.join();
+        lambo::config::flush_pending_graphics_updates();
+        expect(whole, "a concurrent reader sees one whole graphics snapshot");
+        expect(published, "each writer round publishes the expected graphics snapshot");
+        expect(developer_mode_matches, "developer mode follows each published snapshot");
+
+        // Single-field writers go through the same snapshot and keep the rest intact.
+        lambo::config::apply_graphics(first, false);
+        lambo::config::update_saved_window_mode(WindowMode::Fullscreen);
+        lambo::config::set_developer_mode(true);
+        GraphicsConfig expected = first;
+        expected.wm_option = WindowMode::Fullscreen;
+        expected.developer_mode = true;
+        expect(lambo::config::current_graphics() == expected && lambo::config::developer_mode(),
+               "window-mode and developer-mode writers change only their own field");
+        lambo::config::flush_pending_graphics_updates();
+    }
     // Every public mutation path must invalidate the frontend when it changes
     // a value. Run at the end so these writes cannot affect the checks above.
     const auto check_revision = [](auto write) {
