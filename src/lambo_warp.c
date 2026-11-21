@@ -170,6 +170,8 @@ static int warpable(int state) {
 
 // Per-frame tick, injected at the entry of func_800030F8 (see the [[patches.hook]]
 // block carried by scripts/gen_syms_toml.py). Runs on the game thread.
+extern void lambo_slip_rumble_reset(void);
+
 void lambo_warp_tick(uint8_t* rdram, recomp_context* ctx) {
     if (!g_warp_options_parsed) {
         g_warp_options_parsed = 1;
@@ -188,6 +190,7 @@ void lambo_warp_tick(uint8_t* rdram, recomp_context* ctx) {
         return;
     }
 
+    lambo_slip_rumble_reset();
     int circuit0 = (int)(req & 0xFF);
     int laps     = (int)((req >> 8) & 0xFF);
     int car      = (int)((req >> 16) & 0xFF);

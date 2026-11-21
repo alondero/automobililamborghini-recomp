@@ -29,7 +29,9 @@ struct PathsReset {
     static void reset() {
         lambo::paths::clear_executable_dir();
         lambo::paths::set_portable_forced(false);
+        lambo::paths::set_data_dir({});
         set_env("LAMBO_PORTABLE", "");
+        set_env("LAMBO_GRAPHICS_CONFIG", "");
     }
 };
 
@@ -138,8 +140,8 @@ int main() {
         // the executable directory.
         PathsReset reset;
         lambo::paths::set_executable_dir(plain_dir);
-        CwdGuard cwd{plain_dir};
-        expect(cwd.ok, "test setup: chdir to plain dir works");
+        CwdGuard cwd{cwd_dir};
+        expect(cwd.ok, "test setup: chdir to marker directory works");
         lambo::paths::set_portable_forced(true);
         expect(lambo::paths::portable_mode(), "--portable forces portable mode");
         expect(same_dir(lambo::paths::portable_root(), plain_dir),
@@ -149,6 +151,20 @@ int main() {
         expect(std::string(lambo::paths::portable_mode_source()).find("portable flag") !=
                    std::string::npos,
                "source names the --portable flag");
+    }
+
+    {
+        PathsReset reset;
+        CwdGuard cwd{cwd_dir};
+        lambo::paths::set_executable_dir(exe_dir);
+        set_env("LAMBO_PORTABLE", "1");
+        set_env("LAMBO_GRAPHICS_CONFIG", "override.json");
+        lambo::paths::set_data_dir(plain_dir);
+        expect(!lambo::paths::portable_mode(), "--data-dir takes precedence over portable markers and environment");
+        expect(lambo::paths::app_config_dir() == plain_dir && lambo::paths::app_state_dir() == plain_dir,
+               "--data-dir selects both config and state roots");
+        expect(!lambo::paths::profile_environment("LAMBO_GRAPHICS_CONFIG"),
+               "an explicit profile isolates files from inherited path overrides");
     }
 
     {

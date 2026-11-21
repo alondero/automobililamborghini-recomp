@@ -192,7 +192,8 @@ class ScenarioRunnerTests(unittest.TestCase):
         developer = {"LAMBO_RT_SHADOW_FAULT": "as", "LAMBO_TEST_RESIZE": "300:1280x720",
                      "LAMBO_RT_SHADOW_DEBUG": "2", "LAMBO_RT_SHADOW_CONTACT": "0.4",
                      "LAMBO_RT_SHADOW_CONTACT_DISTANCE": "1.2", "LAMBO_RT_SHADOW_SKY_DISTANCE": "40",
-                     "LAMBO_RT_SHADOW_SKY_OPEN": "0.6", "LAMBO_RT_SHADOW_CACHE": "2"}
+                     "LAMBO_RT_SHADOW_SKY_OPEN": "0.6", "LAMBO_RT_SHADOW_CACHE": "2",
+                     "LAMBO_ENGINE_AUDIO": "1", "LAMBO_ENGINE_AUDIO_TRACE": "1"}
         completed, artifact = self.run_scenario({"schema": 1, "name": "dev", "developer_env": developer})
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         environment = json.loads((artifact / "harness-environment.json").read_text())

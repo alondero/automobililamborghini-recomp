@@ -64,6 +64,39 @@ that turns a pad's B into the Back action was covered by
 [frontend notes](recompfrontend.md#the-quit-confirmation) for the route, the
 F15 substitution, and what the playthrough showed.
 
+## Custom controller mappings
+
+If SDL does not recognize your controller, add its SDL mapping to a file named
+`gamecontrollerdb.txt` and restart the game. On Windows and Linux the game checks
+beside the executable first, then in the active [configuration directory](configuration.md),
+including a directory selected with `--data-dir`. Portable mode normally uses
+the same directory for both. For equivalent mappings, the configuration file
+takes priority. SDL's `SDL_GAMECONTROLLERCONFIG` environment variable can still
+override an equivalent mapping for one launch.
+
+Include a matching platform field followed by a comma on each mapping line,
+such as `platform:Windows,` or `platform:Linux,`. On Android the game checks
+the app-private `files/LamborghiniRecomp` directory. The Android launcher has
+no mapping import option.
+
+For an N64-style pad, the default bindings use SDL `a`, `b`, `start`,
+`leftshoulder` and `rightshoulder` for A, B, Start, L and R, and `lefttrigger`
+for Z. Use `leftx` and `lefty` for the stick, the four `dp` directions for the
+D-pad, and the signed halves of `rightx` and `righty` for the C buttons. If
+the pad has no Select button, leave `back` unmapped and use F1 to open Settings.
+Saved profiles can still change the game's bindings in **Controls**.
+
+The [optional Windows example](controller-profiles/generic-n64-windows.txt)
+comes from MatyMeatBoy's measurements for one transparent-red, three-prong
+N64 USB pad. Copy its lines into `gamecontrollerdb.txt` only if your pad
+matches the measured layout. A, B and
+Start are buttons 5, 4 and 9. Z, L and R are buttons 8, 6 and 7. C-up, C-right,
+C-down and C-left are buttons 0, 1, 2 and 3. The stick uses axes 0 and 1, and the
+D-pad uses hat 0. Incompatible pads share USB ID `0079:0006`, and SDL 2.26.3
+can fall back across CRC variants for that base GUID. This example can therefore
+affect a second pad with the same USB ID. Physical play in this port remains
+**Unverified**. [AeroGauge PR #129](https://github.com/alondero/aerogauge-recomp/pull/129/files)
+
 ## The Android touch overlay
 
 The on-screen controls send keyboard keys, and the frontend adds the keyboard

@@ -6,6 +6,8 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <utility>
 
 #if defined(_WIN32)
 #include <cwchar>
@@ -36,6 +38,11 @@ inline bool& portable_forced_slot() {
     return forced;
 }
 
+inline std::filesystem::path& data_dir_slot() {
+    static std::filesystem::path dir;
+    return dir;
+}
+
 inline bool env_portable_requested() {
     if (const char* value = std::getenv("LAMBO_PORTABLE");
         value != nullptr && value[0] != '\0') {
@@ -53,11 +60,33 @@ inline bool marker_in(const std::filesystem::path& dir) {
 
 } // namespace detail
 
+inline std::filesystem::path path_from_utf8(std::string_view path) {
+    return std::filesystem::path{std::u8string(path.begin(), path.end())};
+}
+
+inline std::string path_to_utf8(const std::filesystem::path& path) {
+    const auto text = path.u8string();
+    return {text.begin(), text.end()};
+}
+
+inline void set_data_dir(std::filesystem::path dir) {
+    detail::data_dir_slot() = std::move(dir);
+}
+
+// Individual file overrides are for the default/portable profile. A data
+// directory explicitly selected on the command line owns those files.
+inline const char* profile_environment(const char* name) {
+    return detail::data_dir_slot().empty() ? std::getenv(name) : nullptr;
+}
+
 // Startup seam: main() records the executable directory before logging
 // initialises (the log directory itself depends on portable resolution).
 // Tests use this plus the forced flag to control resolution hermetically.
 inline void set_executable_dir(const std::filesystem::path& dir) {
     detail::executable_dir_slot() = dir;
+}
+inline const std::optional<std::filesystem::path>& executable_dir() {
+    return detail::executable_dir_slot();
 }
 inline void clear_executable_dir() { detail::executable_dir_slot().reset(); }
 inline void set_portable_forced(bool forced) { detail::portable_forced_slot() = forced; }
@@ -78,6 +107,7 @@ inline std::optional<std::filesystem::path> portable_marker_dir() {
 }
 
 inline bool portable_mode() {
+    if (!detail::data_dir_slot().empty()) return false;
     if (detail::portable_forced_slot() || detail::env_portable_requested()) return true;
     return portable_marker_dir().has_value();
 }
@@ -86,8 +116,10 @@ inline bool portable_mode() {
 // the executable directory (forced mode), falling back to the launch
 // directory when the executable directory is unknown (tests).
 inline std::filesystem::path portable_root() {
-    if (const auto marker = portable_marker_dir(); marker.has_value()) return *marker;
     const auto& exe = detail::executable_dir_slot();
+    if (!detail::portable_forced_slot()) {
+        if (const auto marker = portable_marker_dir()) return *marker;
+    }
     if (exe.has_value()) return *exe;
     return std::filesystem::current_path();
 }
@@ -103,6 +135,7 @@ inline const char* portable_mode_source() {
 }
 
 inline std::filesystem::path app_config_dir() {
+    if (!detail::data_dir_slot().empty()) return detail::data_dir_slot();
     if (portable_mode()) return portable_root();
 #if defined(_WIN32)
     if (const wchar_t* localappdata = _wgetenv(L"LOCALAPPDATA");
@@ -121,6 +154,7 @@ inline std::filesystem::path app_config_dir() {
 }
 
 inline std::filesystem::path app_state_dir() {
+    if (!detail::data_dir_slot().empty()) return detail::data_dir_slot();
     if (portable_mode()) return portable_root();
 #if defined(_WIN32)
     return app_config_dir();

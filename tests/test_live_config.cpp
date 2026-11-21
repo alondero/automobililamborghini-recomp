@@ -1,4 +1,4 @@
-#include <atomic>
+#include <barrier>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -69,7 +69,25 @@ int main() {
     unsetenv("LAMBO_MENU_STICK_SENSITIVITY");
 #endif
 
-    auto cfg = lambo::config::load_and_apply_graphics();
+    using ultramodern::renderer::WindowMode;
+    auto cfg = lambo::config::load_and_apply_graphics(WindowMode::Fullscreen);
+    expect(cfg.wm_option == WindowMode::Fullscreen &&
+           lambo::config::current_graphics().wm_option == WindowMode::Fullscreen &&
+           ultramodern::renderer::last_live_graphics.wm_option == WindowMode::Fullscreen,
+           "fullscreen launch override reaches the frontend and renderer");
+    expect(read_json(path).at("wm_option") == "Windowed", "fullscreen launch keeps the saved default");
+    cfg.rr_manual_value = 95;
+    lambo::config::apply_graphics(cfg);
+    lambo::config::flush_pending_graphics_updates();
+    expect(read_json(path).at("wm_option") == "Windowed", "applying unrelated settings keeps the saved mode");
+    lambo::config::update_saved_window_mode(WindowMode::Fullscreen);
+    lambo::config::flush_pending_graphics_updates();
+    cfg = lambo::config::load_and_apply_graphics(WindowMode::Windowed);
+    expect(cfg.wm_option == WindowMode::Windowed && read_json(path).at("wm_option") == "Fullscreen",
+           "windowed launch overrides a saved fullscreen mode for one run");
+    cfg = lambo::config::default_graphics_config();
+    lambo::config::save_graphics(cfg);
+    lambo::config::load_and_apply_graphics();
     expect(!lambo::config::remove_blue_hud_bar(), "blue HUD bar removal defaults off");
     lambo::config::set_remove_blue_hud_bar(true);
     expect(lambo::config::remove_blue_hud_bar(), "blue HUD bar removal updates live");
@@ -380,8 +398,8 @@ int main() {
     // Apply writes it on the render thread while the main-thread pump reads it.
     // A reader must always get one whole applied config, never fields from two.
     // The two configs differ in every field so any mix is detectable. A torn
-    // read is timing-dependent, so this passing is not proof on its own; under
-    // ThreadSanitizer the same test reports any unlocked access directly.
+    // read is timing-dependent. The source check verifies the guard placement
+    // regardless of how these threads are scheduled.
     {
         using namespace ultramodern::renderer;
         GraphicsConfig first = lambo::config::default_graphics_config();
@@ -411,28 +429,34 @@ int main() {
 
         // apply_live=false: this exercises the port snapshot, not the renderer queue.
         lambo::config::apply_graphics(first, false);
-        std::atomic<bool> stop{false};
+        constexpr int rounds = 256;
+        std::barrier phase{2};
         std::thread writer([&] {
-            bool use_second = true;
-            while (!stop.load()) {
-                lambo::config::apply_graphics(use_second ? second : first, false);
-                use_second = !use_second;
+            for (int round = 0; round < rounds; ++round) {
+                phase.arrive_and_wait();
+                lambo::config::apply_graphics(round % 2 == 0 ? second : first, false);
+                phase.arrive_and_wait();
             }
         });
         bool whole = true;
-        bool flag_matches_a_config = true;
-        for (int i = 0; i < 20000 && whole; ++i) {
+        bool published = true;
+        bool developer_mode_matches = true;
+        for (int round = 0; round < rounds; ++round) {
+            // Both operations start in the same phase. The next write waits
+            // for the reader to check this round's published values.
+            phase.arrive_and_wait();
             const GraphicsConfig seen = lambo::config::current_graphics();
-            whole = seen == first || seen == second;
-            const bool developer = lambo::config::developer_mode();
-            flag_matches_a_config = flag_matches_a_config &&
-                (developer == first.developer_mode || developer == second.developer_mode);
+            whole &= seen == first || seen == second;
+            phase.arrive_and_wait();
+            const auto& expected = round % 2 == 0 ? second : first;
+            published &= lambo::config::current_graphics() == expected;
+            developer_mode_matches &= lambo::config::developer_mode() == expected.developer_mode;
         }
-        stop.store(true);
         writer.join();
         lambo::config::flush_pending_graphics_updates();
         expect(whole, "a concurrent reader sees one whole graphics snapshot");
-        expect(flag_matches_a_config, "developer mode reads stay valid during concurrent applies");
+        expect(published, "each writer round publishes the expected graphics snapshot");
+        expect(developer_mode_matches, "developer mode follows each published snapshot");
 
         // Single-field writers go through the same snapshot and keep the rest intact.
         lambo::config::apply_graphics(first, false);

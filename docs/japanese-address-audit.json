@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "input_sha256": "dd94a00bc2d4e23b8156d497963abd18e2e5906fb9fc1d29e7a0a81d3b8acaa6",
+  "input_sha256": "daf961967835c000dd897cbca588b7f98a39bd7bd06e02a45ca28c9a8d2ba5d7",
   "rom_sha1": {
     "usa": "78b36b48040426478011caef5e11884af2e80375",
     "japan": "98009e4948faf885864e52e1268700a0144c1b2e"
@@ -741,6 +741,39 @@
       "candidates": []
     },
     {
+      "usa": "0x8009869C",
+      "uses": {
+        "src/lambo_engine_audio_runtime.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x8008CA54",
+          "witness_count": 74,
+          "witnesses": [
+            {
+              "function": "func_8000F068",
+              "usa_pc": "0x8000E498",
+              "japan_pc": "0x8001032C",
+              "indexed": false
+            },
+            {
+              "function": "func_8000F068",
+              "usa_pc": "0x8000E6CC",
+              "japan_pc": "0x80010560",
+              "indexed": false
+            },
+            {
+              "function": "func_8000F068",
+              "usa_pc": "0x8000E6E4",
+              "japan_pc": "0x80010578",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
       "usa": "0x800986C8",
       "uses": {
         "src/lambo_race_field.cpp": 1
@@ -843,6 +876,39 @@
               "function": "func_800102D8",
               "usa_pc": "0x8000F7A8",
               "japan_pc": "0x8001163C",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "usa": "0x800A2BE2",
+      "uses": {
+        "src/lambo_engine_audio_runtime.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x80096F6E",
+          "witness_count": 13,
+          "witnesses": [
+            {
+              "function": "func_8003FBE4",
+              "usa_pc": "0x8003EFF0",
+              "japan_pc": "0x802020D4",
+              "indexed": false
+            },
+            {
+              "function": "func_8003FBE4",
+              "usa_pc": "0x8003F004",
+              "japan_pc": "0x802020E8",
+              "indexed": false
+            },
+            {
+              "function": "func_8003FBE4",
+              "usa_pc": "0x8003F01C",
+              "japan_pc": "0x80202100",
               "indexed": false
             }
           ]
@@ -1276,6 +1342,7 @@
         "src/lambo_replay_runtime.cpp": 1,
         "src/lambo_rt_shadows.cpp": 1,
         "src/lambo_savestate.c": 1,
+        "src/lambo_slip_rumble_runtime.cpp": 1,
         "src/lambo_vehicle.h": 1,
         "src/stub_renderer.cpp": 3
       },
@@ -1299,7 +1366,8 @@
       "usa": "0x800CE6B0",
       "uses": {
         "src/lambo_camera.cpp": 2,
-        "src/lambo_driving_assists_runtime.cpp": 1
+        "src/lambo_driving_assists_runtime.cpp": 1,
+        "src/lambo_slip_rumble_runtime.cpp": 1
       },
       "status": "candidate",
       "candidates": [
@@ -1337,6 +1405,7 @@
         "src/lambo_race_field.cpp": 1,
         "src/lambo_rain_runtime.cpp": 2,
         "src/lambo_rt_shadows.cpp": 1,
+        "src/lambo_slip_rumble_runtime.cpp": 1,
         "src/lambo_vehicle.h": 1,
         "src/lambo_warp.c": 1
       },
@@ -1660,7 +1729,8 @@
       "usa": "0x800CE808",
       "uses": {
         "src/lambo_driving_assists_runtime.cpp": 1,
-        "src/lambo_rain_runtime.cpp": 1
+        "src/lambo_rain_runtime.cpp": 1,
+        "src/lambo_slip_rumble_runtime.cpp": 1
       },
       "status": "candidate",
       "candidates": [
@@ -2108,6 +2178,33 @@
       ]
     },
     {
+      "usa": "0x801265B0",
+      "uses": {
+        "src/lambo_track_patch.cpp": 1
+      },
+      "status": "candidate",
+      "candidates": [
+        {
+          "japan": "0x8012C6E0",
+          "witness_count": 2,
+          "witnesses": [
+            {
+              "function": "func_80044E2C",
+              "usa_pc": "0x80044314",
+              "japan_pc": "0x8004CD90",
+              "indexed": true
+            },
+            {
+              "function": "func_80054FFC",
+              "usa_pc": "0x8005449C",
+              "japan_pc": "0x80041DDC",
+              "indexed": true
+            }
+          ]
+        }
+      ]
+    },
+    {
       "usa": "0x8013D3C8",
       "uses": {
         "src/lambo_rt_admission.cpp": 1,
@@ -2119,7 +2216,8 @@
     {
       "usa": "0x8013D490",
       "uses": {
-        "src/lambo_car_card.cpp": 1
+        "src/lambo_car_card.cpp": 1,
+        "src/lambo_engine_audio_runtime.cpp": 1
       },
       "status": "unresolved",
       "candidates": []

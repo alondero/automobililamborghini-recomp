@@ -25,8 +25,8 @@ Developers need evidence, ownership, and exact boundaries.
   notes.
 - [Texture packs](TEXTURES.md) describes the supported texture replacement
   format.
-- [Track Lab](TRACK_LAB.md) describes the experimental stock-track visibility
-  correction format. It is not a general custom-track system.
+- [Track Lab](TRACK_LAB.md) describes experimental visibility corrections and
+  geometry bundles, including elevation edits and generated oval replacements.
 
 ## Developer help
 
@@ -56,7 +56,7 @@ status line before relying on a historical measurement.
 | [Frontend notes](recompfrontend.md) | Current settings, profiles, and migration limits. |
 | [Automated harness](automation-harness.md) | Scenario format, replay timing, and oracle limits. |
 | [Texture packs](TEXTURES.md) | Dump, decode, author, and package workflow. |
-| [Track Lab](TRACK_LAB.md) | Experimental stock-track visibility corrections. |
+| [Track Lab](TRACK_LAB.md) | Experimental visibility and bounded geometry authoring. |
 | [Track research](TRACK_MODDING_RESEARCH.md) | Historical track data map and unresolved hypotheses. |
 | [Track index](TRACK_INDEX.md) | Circuit, menu, and developer-warp numbering. |
 | [Race fields](race-fields.md) | Configurable competitors, relocated tables, grids and validation. |
@@ -67,10 +67,13 @@ status line before relying on a historical measurement.
 | [Camera sequences](camera-sequences.md) | Camera gate measurements and visual comparisons. |
 | [Sky panorama](sky-panorama.md) | Sky motion, projection coverage and task-owned panorama extensions. |
 | [No-LOD audit](no_lod_audit.md) | Historical LOD measurements and later addenda. |
+| [Slip rumble](slip-rumble.md) | Experimental additive slide feedback, ownership and validation limits. |
 | [Rumble audit](rumble-triggers.md) | Rumble discovery and Controller Pak coexistence evidence. |
+| [Slip rumble research](slip-rumble-research.md) | GT64 implementation review and additive slip-feedback proposal. |
 | [Automatic pit-stops](automatic-pit-stops.md) | Guest source replacement, assistance and ROM parity tests. |
 | [Guest-source candidates](guest-source-candidates.md) | Ranked migration shortlist and links to the guest bridge inventory. |
 | [Vehicle selection source](guest-vehicle-select.md) | Complete selector replacements, ROM evidence and parity checks. |
+| [Engine audio](engine-audio.md) | Procedural engine replacement, guest voice controls, tuning and tests. |
 | [Vehicle update source](vehicle-source.md) | Complete race updater, guest input ownership and verification limits. |
 | [Cheats](cheats.md) | Live cheat toggles, reference review, native seams and tests. |
 | [Analog throttle](analog-throttle.md) | Throttle bridge measurements and tests. |
@@ -104,6 +107,8 @@ status line before relying on a historical measurement.
   Donkey Kong runtime, frontend, and authoring patterns used by this integration.
 - [Mod game interface](mod-api.md) defines versioned guest data, lifecycle
   events, racer extensions and private utility stores.
+- [Gameplay extension design](gameplay-extension-seams.md) proposes capability
+  discovery and stable named seams, with a pit-setting example and ROM limits.
 - [Mod loader audit](mod-loader-audit.md) records A21 coverage,
   peer comparisons, and the actual prerequisites for the JP gameplay mods.
 

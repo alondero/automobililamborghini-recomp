@@ -29,6 +29,7 @@ The main configuration and save files are:
 | --- | --- | --- |
 | graphics.json | port and runtime | Graphics, window, texture, camera, fog, and draw-distance settings. |
 | controls-framework.json | RecompFrontend | Current controller profiles and bindings. |
+| gamecontrollerdb.txt | player | Optional [custom SDL controller mappings](controllers.md#custom-controller-mappings) loaded at startup. |
 | controls.json | legacy port import | Read as an import source when the framework profile does not exist. It is not the current writer. |
 | player.json | port | Player name and player identity. |
 | pedals.json | legacy import | Fills pedal values the Driving page has not stored yet, so previously saved settings survive the merge. It is not the current writer. |
@@ -48,6 +49,10 @@ Logs use the state directory, not the Linux config directory:
 
 The LAMBO_GRAPHICS_CONFIG and LAMBO_CONTROLS_CONFIG variables can point at
 specific files for testing. LAMBO_LOG_DIR changes the log directory.
+
+Slip Rumble (experimental) in Enhancements defaults off and persists as
+`slip_rumble` in `graphics.json`. It adds slide feedback using the existing
+Rumble Strength setting. See [scope and limitations](slip-rumble.md).
 
 ## Graphics file
 
@@ -205,6 +210,8 @@ most useful ones are:
 | `LAMBO_ANALOG_THROTTLE`, `LAMBO_ANALOG_BRAKE` | Inject pedal values. |
 | `LAMBO_STEERING_DIRECT` | `1` or `0` forces direct steering response on or off. |
 | `LAMBO_STEERING_DEADZONE` | Override the game steering deadzone (0..20). |
+| `LAMBO_ENGINE_AUDIO` | Procedural engine sound (default on); `0` restores cartridge engines at next launch. See [engine audio](engine-audio.md). |
+| `LAMBO_ENGINE_AUDIO_TRACE` | Log engine start/update controls when debug logging is enabled. |
 | `LAMBO_STEERING_TRACE` | Write one CSV row per player-one steering update to this path. |
 | `LAMBO_RACE_DL_DUMP`, `LAMBO_MENU_DL_TRACE`, `LAMBO_MENU_DL_DUMP` | Capture display-list diagnostics. |
 | `LAMBO_DL_INSPECT`, `LAMBO_DL_RENDER_STATE`, `LAMBO_DL_RENDER_OUT` | Inspect or capture the headless renderer. |
@@ -225,17 +232,35 @@ contract and may change with the harness.
 
 ## Command-line options
 
-The executable accepts a ROM path as its first non-option argument. Useful
-player-facing options are:
+Windows and Linux launchers can pass flags directly to `lamborghini_modern`
+(`lamborghini_modern.exe` on Windows).
 
-~~~text
---portable
---import-save PATH
---controller-pak PATH
-~~~
+| Flag | Effect |
+| --- | --- |
+| `--rom PATH` | Load the specified USA ROM. A positional ROM path also works. |
+| `--fullscreen` / `--windowed` | Choose the initial window mode for this run. |
+| `--play` / `--launcher` | Boot directly into the game or show the built-in launcher for this run. |
+| `--data-dir PATH` | Use a directory for this profile's settings, saves, mods, and logs. The game creates it if needed. |
+| `--portable` | Store data beside the executable. Use this or `--data-dir`. |
+| `--import-save PATH` | Import a Controller Pak save into the active profile. |
+| `--controller-pak PATH` | Use a Controller Pak file directly. Use this or `--import-save`. |
+| `--track-patch PATH` | Load a Track Lab `.altrk` file. |
+| `--console` | Enable terminal logging on Windows. |
+| `--verbose`, `--log-level LEVEL` | Enable debug logging or choose `error`, `warn`, `info`, `debug`, or `trace`. |
+| `-h`, `--help`, `--version` | Print usage or the version and exit without starting the game. |
 
-Developer options include --track-patch, --console, --verbose, and
---log-level. Use the same command and configuration in a bug report.
+Relative paths start from the working directory. Quote paths containing spaces.
+Path options accept `--flag=PATH`, which also works for a path starting with a
+dash. Use `--` before a positional ROM path starting with a dash. With no ROM
+argument, the game checks the working directory, then the executable directory.
+
+`--play` and `--launcher` take priority over `LAMBO_LAUNCHER` and the saved
+launcher preference. The startup flags leave the saved preferences in place.
+If you pass both window modes or both startup modes, the last one wins.
+`--data-dir` takes priority over portable mode from the environment or a
+marker file, and over the environment paths for graphics, controls, the player
+name, the Controller Pak, and logs. `--controller-pak` can still select an
+individual save file when you use `--data-dir`.
 
 The graphics API takes effect on the next launch. The texture-pack path also
 needs a restart. Window size, window mode and enhancement values that the

@@ -183,6 +183,7 @@ bool refresh_frontend_settings(bool force) {
     sync_value(enhancements, "automatic_pit_stops", port::automatic_pit_stops());
     sync_value(enhancements, "remove_blue_hud_bar", port::remove_blue_hud_bar());
     sync_value(enhancements, "car_select_info", port::car_select_info());
+    sync_value(enhancements, "slip_rumble", port::slip_rumble());
     sync_value(enhancements, "menu_stick_sensitivity", port::menu_stick_sensitivity());
     for (int i = 0; i < 6; ++i) sync_value(enhancements, "circuit_" + std::to_string(i + 1), port::no_lod_circuit(i));
     sync_value(enhancements, "draw_distance", port::global_draw_distance());
@@ -304,6 +305,7 @@ void create_frontend_settings() {
     boolean(enhancements, "remove_blue_hud_bar", "Remove blue bar from HUD", port::remove_blue_hud_bar(), port::set_remove_blue_hud_bar);
     enhancements.update_option_description("remove_blue_hud_bar", "Hide the decorative blue strip during races. Applies immediately.");
     boolean(enhancements, "car_select_info", "Show car details on car select", port::car_select_info(), port::set_car_select_info);
+    boolean(enhancements, "slip_rumble", "Slip Rumble (experimental)", port::slip_rumble(), port::set_slip_rumble);
     enhancements.update_option_description("car_select_info", "Show the car's name, power, top speed and acceleration on the car select screen. Acceleration follows the chosen difficulty. Applies immediately.");
     enhancements.add_number_option("race_cars", "Cars per race",
         "Total cars including you. Applies to the next single-player race or championship. Default: 6. Time trials and multiplayer keep their usual fields.",

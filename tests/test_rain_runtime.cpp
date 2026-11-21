@@ -181,7 +181,7 @@ Frame frame(int slot,const std::vector<int>& order,int players=1) {
     }
     return out;
 }
-// The road sublist matches the uncached producer byte for byte.
+// Geometry and ordered drawing operations match the frozen uncached producer.
 std::vector<lambo::rain::Vertex> reference_mesh(int i,unsigned settings,float seconds) {
     uint32_t r=record(i);
     std::vector<lambo::rain::Triangle> road;
@@ -192,7 +192,9 @@ std::vector<lambo::rain::Vertex> reference_mesh(int i,unsigned settings,float se
 // Bytes a sublist needs: the vertex block, then every command word pair.
 size_t payload(int i,unsigned settings,float seconds) {
     auto vertices=reference_mesh(i,settings,seconds);
-    return vertices.empty() ? 0 : vertices.size()*16+reference::encode(vertices,0).commands.size()*4;
+    const size_t faces=vertices.size()/3;
+    return vertices.empty() ? 0 : vertices.size()*16+
+        reference::encode(vertices,0).commands.size()*4-(faces-(faces+20)/21)*8;
 }
 bool matches(uint32_t target,int i,unsigned settings,float seconds) {
     auto vertices=reference_mesh(i,settings,seconds);
@@ -205,7 +207,53 @@ bool matches(uint32_t target,int i,unsigned settings,float seconds) {
         for (int f=0;f<4;++f) if (h(v+f*2)!=e.halves[k*4+f]) return false;
         if (w(v+8)!=0 || uint32_t(w(v+12))!=e.colors[k]) return false;
     }
-    for (size_t k=0;k<e.commands.size();++k) if (uint32_t(w(target+uint32_t(k)*4))!=e.commands[k]) return false;
+    // Interpret the vertex cache and primitive color rather than requiring the
+    // old one-load-per-triangle encoding. Triangle order and every vertex/color
+    // remain exact, including the fog alpha carried in the vertex payload.
+    std::array<uint32_t,128> slots{};
+    uint32_t color=0;
+    size_t face=0,loads=0,color_writes=0,expected_writes=0;
+    uint32_t previous_alpha=UINT32_MAX;
+    std::vector<uint32_t> state;
+    for (uint32_t at=target;at<target+e.commands.size()*4;at+=8) {
+        const uint32_t a=uint32_t(w(at)),b=uint32_t(w(at+4));
+        if ((a>>24)==0x04) {
+            const unsigned first=(a>>17)&127,n=(a>>10)&63;
+            if (first<32 || first+n>95 || !n || (a&1023)!=n*16-1) return false;
+            for (unsigned k=0;k<n;++k) slots[first+k]=b+k*16;
+            ++loads;
+        } else if ((a>>24)==0xFA) { color=b; ++color_writes; }
+        else if ((a>>24)==0xBF) {
+            if (face*3+2>=vertices.size()) return false;
+            const unsigned indices[]{(b>>17)&127,(b>>9)&127,(b>>1)&127};
+            uint32_t alpha=0;
+            for (unsigned k=0;k<3;++k) {
+                if (slots[indices[k]]!=buffer+uint32_t(face*3+k)*16) return false;
+                alpha+=vertices[face*3+k].rgba&255;
+            }
+            if (color!=(0xFFFFFF00u|alpha/3)) return false;
+            if (alpha/3!=previous_alpha) ++expected_writes;
+            previous_alpha=alpha/3;
+            ++face;
+        } else if ((a>>24)!=0xE7 && a!=0) {
+            state.push_back(uint32_t(face)); // State must bracket the same triangles.
+            state.push_back(a);state.push_back(b);
+        }
+        if ((a>>24)==0xB8) break;
+    }
+    std::vector<uint32_t> expected_state;
+    uint32_t expected_face=0;
+    for (size_t k=0;k<e.commands.size();k+=2) {
+        const unsigned op=e.commands[k]>>24;
+        if (op==0xBF) ++expected_face;
+        if (op!=0x04 && op!=0xFA && op!=0xBF && op!=0xE7) {
+            expected_state.push_back(expected_face);
+            expected_state.push_back(e.commands[k]);expected_state.push_back(e.commands[k+1]);
+        }
+    }
+    if (face*3!=vertices.size() || state!=expected_state) return false;
+    require(loads<=(vertices.size()+62)/63,"road vertices load in batches, not once per triangle");
+    require(color_writes==expected_writes,"identical primitive alpha must not split rain draws");
     return true;
 }
 void pause_tick() { std::this_thread::sleep_for(std::chrono::milliseconds(25)); }

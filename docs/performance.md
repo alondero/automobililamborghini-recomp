@@ -11,6 +11,245 @@ guest layouts. It does not claim measured game-wide speedups. A CPU saving
 cannot improve a GPU-bound frame, and a graphics preset trades visual quality
 for less work.
 
+## Circuit 4 wet stress investigation (2026-11-16)
+
+This investigation uses desktop Release builds from `b6f92ebe`, a Ryzen 9
+3900X and RTX 3080, Windows display driver `32.0.16.3020`, and a
+3840x2160, 120 Hz display. The stress case is a single race, 16 cars, Wet
+weather, Heavy Modern rain with camera drops, D3D12, 4K internal resolution,
+4x MSAA, 16 shadow rays, softness 0.5, a 60 Hz presentation target, no HD
+texture pack, unlimited distance and expanded visibility on every circuit.
+Circuit 4 is circuit index 3. Time trial is unsuitable: it spawns only one car.
+The ordinary Circuit 4 visibility settings are tested separately; they are
+not silently substituted for the stress case.
+
+### Cost classification and controls
+
+The dominant stress cost is **host graphics processing and renderer
+submission**, followed by **GPU shadow receiver work**. A 15-second Windows
+thread-counter sample recorded 10.156 CPU seconds on GfxThread and 9.344 on
+RT64Workload, versus 0.578 on the busiest guest thread and 0.156 on SP.
+Concurrent threads' times must not be added to obtain frame time. The accompanying
+suspended-thread RIP samples are wall samples, not an on-CPU percentage profile.
+They point to RSP vertex processing, draw submission and frame matching, not
+evidence that a particular guest function is an optimization target.
+
+Initial controls used the same parent-checkout executable (SHA-256 prefix
+`3be40033dbc05088a`) and a 900-update fixed input trace:
+
+| Control | Elapsed, including startup | Observation |
+| --- | --- | --- |
+| Rain on, RT off | 59.20 s | Heavy sections still around 8–10 graphics workloads/s (`game_fps`); RT is not the only bottleneck. |
+| Rain off, Wet weather retained, RT on | 32.40 s | Post-startup reporting windows held about 30 graphics workloads/s (`game_fps`). Dry weather would also change fog and AI. |
+| Rain and RT on, 1440p | 61.35 s | Heavy sections still around 8–11 graphics workloads/s (`game_fps`); fewer pixels do not remove CPU overhead. |
+
+These are single-run diagnostic controls, not repeated estimates of savings.
+The initial full-load run used 2,442 updates and is not elapsed-time comparable
+with this table. Existing paused Circuit 4 GPU evidence in this document
+already includes traversal patch 0039; its benefit cannot be claimed again.
+Steady-state I/O and synchronization were not separately traced. Neither has
+evidence supporting a guest rewrite here; fences protecting task buffers must
+remain intact. Guest logic has no measured hotspot justifying decompilation.
+
+### Ranked opportunities and remaining leads
+
+**Measured opportunities:**
+
+1. **Rain display-list construction — implemented host fix.**
+   `src/lambo_rain_runtime.cpp`: `lambo_rain_road` → `current`/`animate` →
+   `emit` → `face_commands`/`face_alpha`. Road hooks at USA `0x8000CF2C`
+   and `0x8000D7C0` belong to `func_8000A6C0`, whose actual entry is
+   `0x80009AC0` (the generated symbol suffix is not its entry address).
+   Publication is in `func_80006018`, entry `0x80005418`, at hook
+   `0x80005728`, before `osSendMesg` at `0x80005734`.
+   The two task slots, segment-record pointers, animation clock, native cursor
+   and failure paths remain owned by the guest graphics thread; see
+   [rain contracts](rain.md). The replacement eliminates 20 of every 21 vertex
+   load commands and redundant adjacent primitive-color writes, without
+   removing triangles or changing their order. Vertex transformation itself
+   still remains. Expected beneficiaries are rain-heavy CPU-limited desktop
+   scenes and potentially weaker CPUs; Android performance is unmeasured.
+   Confidence in command equivalence is high; performance evidence is confined
+   to the measured desktop workload. Effort is small. Main risks are extended
+   vertex-cache limits, alpha restoration at animated boundaries and mods that
+   rewrite cached geometry without the existing invalidation events. Native
+   slots 0–31 are preserved; a mod retaining vertices in extended slots 32–94
+   across a rain hook must reload them (camera rain already uses that bank).
+   Disabling rain is cheaper but removes the requested effect. Recovering the
+   caller into readable C would add maintenance value, not demonstrated speed.
+   Validation uses the frozen producer and the repeated comparison below.
+
+2. **Bound visibility — configuration alternative, not a code speedup.**
+   `src/lambo_no_lod.cpp`: `lambo_no_lod_draw_distance` at hook `0x8000CD3C`
+   updates the `float[6][5]` radius table at `0x80088FD0`; the same world
+   builder tests it at `0x8000D370` and `0x8000D568`. Visibility expansion
+   replaces row reads at `0x8000D058` and the loop bound at `0x8000D904`.
+   Returning Circuit 4 to its normal visibility row and a 1.5 distance setting
+   avoids processing many distant road segments and their rain lists. The
+   first 900-update pilot held 30 graphics workloads/s (`game_fps`) with 4K,
+   rain, 16 cars and 16-ray RT retained. Longer runs below exposed small dips
+   and establish the practical 8-ray alternative. Confidence is limited to the
+   tested route and hardware. Effort is a settings change; risk is distant pop-in and changed
+   visible scenery. Benefits span CPU submission and GPU work. No guest
+   decompilation is needed. Validate the full trace and tunnel/portal views;
+   keep unlimited visibility available for users accepting its cost.
+
+**Profiling leads, not claimed improvements:**
+
+3. **RT receiver traversal.** `src/lambo_rt_shadows.cpp` supplies the scene;
+   `lib/rt64/src/render/rt64_sun_shadow_pass.cpp`,
+   `SunShadowPass::recordReplacement`, records the receiver pass;
+   `SunShadowReceiverPS.hlsl` and `SunShadow.hlsli` execute the pixel/ray work.
+   The measured full-load pilot reports receiver medians around 21–24 ms in
+   120-sample windows, versus AS-build medians around 0.6 ms. GPU timing
+   overlaps CPU work and must not be added to CPU frame time. A possible
+   experiment would mark proven opaque cached static geometry opaque in its
+   BLAS and avoid forced candidate handling for it. It must retain moving
+   geometry's originating-face exclusion, alpha-cutout coverage and unsupported
+   material fallback. Traversal-order effects and the shared shader contract
+   are unresolved; savings are **unmeasured**. Effort/risk are medium to high.
+   High-resolution RT workloads could benefit, depending on hardware. Cheaper
+   alternatives are fewer rays, lower resolution or no change; AS rebuild
+   optimization is a lower priority on this evidence. Before implementation,
+   require at least 10% lower receiver GPU median and 0.5 ms lower frame GPU
+   time, exceeding repeated-run variation, with no >5% tail regression.
+   Use an independent pre-change shader/scene-builder GPU oracle, cutout and
+   self-shadow fixtures, then five alternating A/B pairs under the fixed
+   settings below. Do not infer visual equivalence from readable source.
+
+4. **Remaining frame matching — tested and rejected as a session change.**
+   `lib/rt64/src/hle/rt64_game_frame.cpp`, `GameFrame::buildCallKeys` and
+   `matchScene`, own transform/tile/look-at pairing from current and previous
+   draw workloads. A trial suppressed adjacent exact keys before the existing
+   sort/unique stage, preserving every identity field and matching the original
+   call-by-call reference. One pilot changed elapsed time from 52.14 to
+   51.69 seconds, insufficient to establish a material gain. The patch was
+   discarded. Rain still produces many distinct draw calls; exact keys do not
+   establish that their transforms or state can be merged. Further work needs
+   a CPU profile of the residual matching cost. Confidence in a future saving
+   is low; effort medium, interpolation/mod risks significant. The cheaper
+   response is the retained rain fix or no renderer change.
+
+The discovery binary's ASLR base was `0x7ff663ee0000`. Its host RVA/runtime
+entry examples were `lambo_rain_road` `0x4e320` / `0x7ff663f2e320`,
+`GameFrame::buildCallKeys` `0x626cb0` / `0x7ff664506cb0`,
+`GameFrame::matchScene` `0x628bc0` / `0x7ff664508bc0`, and
+`SunShadowPass::recordReplacement` `0x42e7e0` / `0x7ff66430e7e0`.
+These belong only to the identified discovery binary, not later builds.
+GPU shaders have no guest runtime address. Resolve host symbols against each
+executable and its loaded base; do not reuse those PCs across builds.
+
+### Behavior reference and benchmark protocol
+
+Five accepted stress runs per binary, after warmup:
+
+| Metric | Baseline | Rain batching and alpha suppression |
+| --- | --- | --- |
+| Median time for 900 verified updates, including startup | 78.68 s | 56.48 s |
+| Run range | 72.32–87.92 s | 55.81–60.46 s |
+| Slowest steady five-second graphics-workload/presentation rate | 4.6 / 4.6 Hz | 8.6 / 8.6 Hz |
+| Range of steady frame-wall-time window means | 22.1–152.1 ms | 19.0–82.3 ms |
+| Range of steady GPU-time window means | 13.9–47.6 ms | 13.8–30.1 ms |
+| Range of steady matching-time window means | 1.9–44.3 ms | 1.3–16.3 ms |
+
+Median elapsed fell **28.2%**; every candidate run was faster than every
+baseline run. This is not a 28.2% FPS claim, a matched-frame GPU comparison,
+or evidence of 60 Hz presentation. Unlimited visibility still fails the
+raceability gate. Paired elapsed seconds were A/B: 76.93/56.48, 72.32/55.81,
+87.92/60.46, 78.68/56.10, 81.06/57.58. Boost clocks and unrelated desktop
+activity were not locked; the alternating order and ranges expose variation
+rather than hiding it. The changes were measured together, so their individual
+contributions are not isolated.
+
+The baseline executable SHA-256 is
+`d23dd48a6921270d4c75a934b1c768703374bae5df1d68f708fe82679ce60284`;
+the measured candidate is
+`7b1c15a08ca4dc8b81b434b2129d7f19cd28e16915ae5326bc2bd942f0915e1f`.
+
+The longer practical test used all **2,442 verified dispatcher updates** per
+run, around 81 seconds of input plus startup, with the same candidate binary.
+Three runs each alternated normal Circuit 4 visibility at 16 and 8 rays:
+
+| Bounded-visibility configuration | Median elapsed | Steady graphics workloads/s | Actual presentations/s | GPU window means |
+| --- | --- | --- | --- | --- |
+| Baseline, 16 rays (one control run) | 86.07 s | 25.5–30.1 | 25.5–30.1 | Not used for a repeated GPU claim |
+| Rain fix, 16 rays (three runs) | 84.19 s | 29.2–30.0 | 29.2–31.2 | 13.5–23.7 ms |
+| Rain fix, 8 rays (three runs) | 84.06 s | 29.9–30.1 | 32.5–57.9 | 10.1–15.9 ms |
+
+The **8-ray configuration passes the steady-workload gate** on this route.
+It retains 4K, 16 cars, Heavy Modern rain, camera drops, RT and 4x MSAA.
+Use `no_lod=true`, `no_lod_circuit=[true,true,true,false,false,false]`,
+`draw_distance=1.5`, `rt_shadow_rays=8`, `rt_shadow_softness=0.5`.
+This restores the authored Circuit 4 visibility row while keeping scaled
+distance and the global detail enhancement. Fewer shadow samples and bounded
+visibility are quality tradeoffs, not equivalent-output code optimizations.
+It is a tested racing workload, not a whole-race/lap-completion proof or a
+locked 60-presentation/s guarantee. The 16-ray setting is close to the native
+target but misses the strict gate in one run. No player's saved settings were
+changed by these isolated experiments.
+
+[Retained measurements](evidence/circuit4-rain-2026-11-16.json) include every
+reporting window, both warmups, run variation, build identities and the longer
+configuration comparisons. Raw captures and logs remain local.
+The final rebuilt executable is SHA-256
+`1121d8a4abf22d82501a07ac28a3145ccbd27be837cdb553ab0729e04ef08833`;
+all 20 PE section payloads match the measured candidate byte for byte.
+The Release build and four focused CTests passed (rain geometry, rain
+producers, weather bridge and sky). Python discovery ran 436 tests successfully,
+with 24 skipped. Documentation
+and branch whitespace checks passed. Independent standards and behavior reviews
+found no production defect; their benchmark-completion and state-oracle findings
+were addressed. Mobile/Vulkan runtime and arbitrary third-party mods remain
+untested for this change.
+
+`tests/rain_reference.h` remains frozen at the pre-cache `e053389` producer.
+The host test compares all encoded vertex bytes, ordered triangle identities,
+effective per-face alpha and rendering-state boundaries against that independent
+implementation. It covers both task slots, Retro/Modern, animation, pause,
+multiple views, invalidation, maximum-size meshes and allocation failures.
+The old producer fails the added batched-load-count requirement. The reference
+does not depend on the replacement's command offsets. Moving-race captures
+differ even with identical binaries because rain uses wall time; they are not
+a pixel-equality oracle. Capture runs also force a diagnostic presentation path
+and incur readback/I/O overhead, so they are excluded from performance results.
+
+`tools/benchmark_circuit4.py` stages an isolated profile, weather package and
+controller pak, launches a bounded race and rejects incomplete replays even
+when the process exits normally. The first 900 dispatcher updates of
+`recordings/circuit-4-time-trial-car-0.jsonl` provide fixed input in race mode 2,
+warp `4:3:0:1`. Input verification is not a whole-world deterministic-state
+checksum or proof of lap completion. The USA ROM SHA-256 is
+`cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c`.
+The trimmed replay hash is
+`9372b25723502024e4049f82c701b83296179ed639f23717b799fa8ec4c30e25`;
+the weather package hash is
+`51caca56b50a9c48bb05ec6373ff86f3ccebd8a644d61748b1ece8fac1f9a5eb`.
+
+The confirmatory comparison uses fresh baseline and candidate builds from
+the same checkout/dependencies/toolchain, one full warmup per binary excluded,
+then five pairs in order AB, BA, AB, BA, AB. No captures, sampler, compiler or
+test suite runs alongside them. Elapsed includes startup; steady-state timing
+summaries exclude the first five-second report. The confirmatory acceptance
+gate, chosen after discovery pilots but before these repeated runs, is at least
+10% lower median elapsed with unchanged behavior. Raceability is a separate
+gate: every measured steady reporting window at least 29.5 graphics workloads/s (`game_fps`).
+The 60 Hz target is not evidence of 60 presentations/s. `game_fps` counts
+graphics workloads, `present_fps` counts successful presentations, and the
+native replay separately verifies dispatcher updates. Frame/workload CPU wall
+timings include waits; GPU timestamps and shadow-stage percentiles are reported
+separately. Five-second averages/maxima are not per-frame p95 or 1% lows.
+
+Example, once the weather package is built:
+
+```text
+python tools/benchmark_circuit4.py --weather build/jp-weather/lambo_jp_weather.nrm --exe build/lamborghini_modern.exe
+python tools/benchmark_circuit4.py --weather build/jp-weather/lambo_jp_weather.nrm --case bounded-distance --updates 2442
+python tools/benchmark_circuit4.py --weather build/jp-weather/lambo_jp_weather.nrm --case bounded-8-rays --updates 2442
+```
+
+Local raw runs, logs, captures, build identities and rejected experiments are
+under ignored `artifacts/circuit4-perf/`. No generated guest code was edited.
+
 ## v0.11.0 race comparison (2026-11-10)
 
 The [retained aggregate results](evidence/v0.11.0-performance.json) compare
@@ -374,8 +613,10 @@ RT64 CPU time in `send_dl` on the tablet, from `simpleperf`:
 
 A word-at-a-time TMEM (texture memory) copy for aligned, non-RGBA32, non-TLUT
 loads matched the byte loop on 4,194,304 cases. It ran 2.4 times faster on the
-tablet's Cortex-A75 in an isolated benchmark. It is not applied. Texture hashes
-define texture-pack identity, so a hashing change must keep every value.
+tablet's Cortex-A75 in an isolated benchmark. It was not applied during this
+audit; [patch 0063](#rt64-display-list-cpu-cost-2026-11-14) now applies it with
+broader equivalence checks. Texture hashes define texture-pack identity, so a
+hashing change must keep every value.
 
 Verification on this checkout:
 
@@ -403,6 +644,104 @@ Android devices, Linux and a measured energy saving. The Japanese
 configuration's USA-input digest was updated with the generator's digest
 function, because the Japanese ROM was not available. Hooks are not carried to
 the Japanese configuration, so no other generated line changes.
+
+## RT64 display-list CPU cost (2026-11-14)
+
+[Issue 425](https://github.com/alondero/automobililamborghini-recomp/issues/425)
+applies the aligned TMEM copy as patch 0063. It requires four-byte-aligned
+RDRAM and eight-byte-aligned TMEM addresses. Other loads use the pinned byte
+loop. The copy reverses each RDRAM four-byte group and retains TMEM's odd-row
+swap. Load stepping, DXT, wrapping, RGBA32 and palette handling are unchanged.
+
+The ROM-free fixture compares 50,331,648 word cases, 24,592 successive load
+sequences and 368,880 texture hashes across all published versions (1-5).
+It passed on Windows x64 with MinGW GCC 15.2.0 and on the SM-T720 with NDK
+28.2 Clang 19, ARM64, `-O3`. The tablet's isolated 100,000-load benchmark,
+pinned to CPU 7, measured median byte/aligned times of 244.859/109.038 ms
+across three interleaved pairs, a 2.25x copy speedup. This is not a game FPS
+measurement. The fixture and cross-compile instructions are in
+[Testing](testing.md#test-layers).
+
+The [retained device results](evidence/rt64-send-dl-sm-t720.json) record the
+settings, commands, local log/capture paths, run order, sampling intervals
+and individual run medians. Android
+11 used Mesa Turnip v25.3.0-R11 and a 2560x1438 surface. Fixed 2x vertical
+resolution produced an 855x480 expanded-aspect target; requested MSAA2X fell
+back to one sample. There were no packs, weather or RT shadows. Each build
+ran in the same private benchmark Java shell, leaving player saves untouched.
+Both native libraries came from the same freshly generated USA build, NDK
+28.2 Clang 19.0.1 Release, differing only in the aligned copy.
+
+Each case runs three times per build. Time trial uses
+byte/aligned/aligned/byte/byte/aligned order; attract uses
+byte/aligned/byte/byte/aligned/aligned after repeating an attempt interrupted
+by Android's APK-submission prompt before any display list. Time trial uses
+`recordings/circuit-1-time-trial-car-0.jsonl`, warp
+`1:3:0:1`, mode 0. The compared interval is replay updates 240-1440 inclusive;
+timing excludes the beginning and end of the 1526-update recording. Attract sampling uses
+display lists 800-1400 in the first race, after title/menu warm-up. CPU time
+uses `CLOCK_THREAD_CPUTIME_ID`; wall time includes GPU waits and scheduling.
+Temporary phase probes are identical in both builds and removed from the
+production APK. Hash-detail collection and `simpleperf` run separately.
+
+Medians of the three run medians, milliseconds except FPS:
+
+| Metric | Trial byte | Trial aligned | Attract byte | Attract aligned |
+| --- | ---: | ---: | ---: | ---: |
+| `send_dl` thread CPU | 14.35 | 12.67 | 14.06 | 12.42 |
+| `send_dl` wall | 23.72 | 22.56 | 23.69 | 22.05 |
+| Block-copy wall | 3.28 | 1.48 | 3.50 | 1.50 |
+| `fullSync` thread CPU, inclusive | 10.79 | 9.03 | 10.01 | 8.24 |
+| TMEM-hash wall | 1.96 | 1.92 | 1.88 | 1.76 |
+| Graphics-fence wait wall | 7.98 | 8.92 | 7.52 | 8.37 |
+| `workload_ms` | 26.1 | 27.6 | 24.3 | 25.7 |
+| Presented FPS | 40.4 | 41.5 | 41.5 | 43.1 |
+| Game FPS | 28.8 | 29.6 | 28.1 | 28.6 |
+
+The CPU reduction is 11.7% in each case. Trial CPU run medians range from
+14.29-14.37 ms before and 12.49-12.71 ms after; attract from 13.89-14.12 ms
+before and 12.32-12.44 ms after. Phase timers overlap and cannot be added.
+`workload_ms` and FPS use complete five-second render-cost windows inside
+the selected interval. These are successful RT64 swapchain presentations,
+including interpolation, rather than physical scanout measurements. FPS
+ranges overlap: trial 40.4-40.5 before versus 40.4-41.6 after; attract
+40.7-42.0 before versus 40.6-43.6 after. The workload timer and fence wait
+did not improve; this establishes a display-list CPU saving, not a general
+FPS speedup. All 6,005 compared trial-update hash counts/digests across the
+six measured runs matched the first byte-loop run.
+
+Profiling findings:
+
+- `fullSync` is an inclusive function, containing load replay, hashing, native
+  framebuffer rendering and guest-RAM readback. A 12-second `simpleperf`
+  capture recorded 12,684 samples with none lost. On the graphics thread,
+  `send_dl` accounted for 88.17%, `fullSync` 65.93%, block loads 27.10% and
+  `TMEMHasher::hash` 10.62%; these shares overlap. The diagnostic saw one
+  `fullSync` and one graphics-worker fence wait per sampled display list.
+  The default `renderToRAM=true` path waits before `copyNativeToRAM`; removing
+  that wait would change guest-memory visibility. No redundant barrier was
+  identified, and synchronization is unchanged.
+- The two diagnostic launches compared 716,066 normal texture hashes over
+  1,326 common replay updates. Every update had the same hash count and
+  rolling output digest. Of those hashes, 562,676 repeated an output value
+  within the update, but no identical request repeated without an intervening
+  TMEM load. A cache based only on a texture address or tile descriptor would
+  need additional validation of the bytes and palette. Hashing already uses
+  xxHash's inline implementation. The algorithm, version and uploads remain
+  unchanged.
+
+The fixture proves byte equality against the pinned loader; the game digest
+check covers the observed hash stream. Neither establishes every game's
+behavior or a safe general hash cache. Other devices, texture packs, weather,
+multiplayer, energy use and desktop game rendering were not measured here.
+
+Final verification used the production native library without timing probes
+in the private Java shell. It completed all 1,526 replay updates with exit
+code 0, 1,526 guest frames verified, 1,527 swaps, 3,451 VIs and final state 8.
+The captured race frame was visually inspected on the tablet. The supported
+Android script built and packaged the production APK. The host Python suite
+ran 427 tests successfully, with 10 skips. The patch-series, documentation,
+branch-whitespace checks and independent standards/spec reviews passed.
 
 ## Android render cost (2026-10-29)
 
@@ -516,7 +855,7 @@ measure an older revision with the same workload, compile the benchmark with
 on the include path. Medians of three interleaved runs, MinGW GCC 15.2.0
 `-O2 -DNDEBUG`, Ryzen 9 3900X, other work running:
 
-| Producers, 25 segments | e053389 per task (µs) | Cached per task (µs) | e053389 allocations | Cached allocations |
+| Producers, 25 segments | e053389 per task (Âµs) | Cached per task (Âµs) | e053389 allocations | Cached allocations |
 | --- | ---: | ---: | ---: | ---: |
 | 36 faces, Retro, 1P | 447 | 1.2 | 957 | 0 |
 | 36 faces, Modern, 1P | 3649 | 182 | 1139 | 0 |
@@ -536,7 +875,7 @@ Modern camera rain changed from sub-pixel rectangles to triangles; see
 [Rain rendering](rain.md#camera-rain). One run of `lambo_rain_benchmark` on the
 same machine after the change, producers per task, steady frames:
 
-| Producers, 25 segments | Steady per task (µs) | Steady allocations |
+| Producers, 25 segments | Steady per task (Âµs) | Steady allocations |
 | --- | ---: | ---: |
 | 36 faces, Modern, 1P | 108 | 0 |
 | 36 faces, Modern, 4P | 121 | 0 |
@@ -551,7 +890,7 @@ Issue #410 made the streaks a drop volume that follows each view's car (see
 [Rain rendering](rain.md#streaks-follow-the-car)). One later run on the same
 machine, with the benchmark's views at rest:
 
-| Producers, 25 segments | Steady per task (µs) | Steady allocations |
+| Producers, 25 segments | Steady per task (Âµs) | Steady allocations |
 | --- | ---: | ---: |
 | 36 faces, Modern, 1P | 105 | 0 |
 | 36 faces, Modern, 4P | 112 | 0 |
@@ -706,3 +1045,233 @@ these are wall-clock samples and are not a replay frame clock. The changed
 production objects were rebuilt and linked with unchanged objects from the
 matching `49b1d18` build; ROM-derived output was reused without edits.
 Interactive resize/backend checks and contention timing were not run.
+
+## Game thread and producer hooks (2026-11-14)
+
+Status: bounded Windows and Android measurements for
+[issue 426](https://github.com/alondero/automobililamborghini-recomp/issues/426).
+The [retained evidence](evidence/game-thread-profile-426.json) records binary
+identity, settings, CPU counters, sampled task timings and renderer reports.
+This is a profiling experiment, not an optimization or an A/B speedup claim.
+
+The workloads use `recordings/circuit-1-time-trial-car-0.jsonl`: the time-trial
+scenario's `1:1:0:1` warp, mode 0, and a `1:3:0:4` warp, mode 2. Only player one
+consumes the recording in four-player mode. Both runs consumed and verified
+all 1,526 updates, reached state 8 and produced 1,527 swaps. This verifies
+movement and input consumption, not a completed lap or four human inputs.
+Both use fixed 2x, no MSAA, display-rate interpolation, expanded geometry,
+1.5x draw distance, default fog/HUD policies, and no packs, mods, weather or RT.
+
+Windows used a Ryzen 9 3900X, RTX 3080, D3D12, a 1280x720 window on a 120 Hz
+display, and MinGW GCC 15.2.0 Release (`-O3 -DNDEBUG`). Aspect expansion made
+the internal image 853x480. The reused November 10 executable has a 0.10.3
+CMake cache; its source reference is `8d208f2`. Current `37d6df6` changes that
+reference's CMake version and documentation/packaging, with no gameplay or
+hook source changes. The executable does not embed an exact source revision.
+Background desktop work was not controlled. These are not isolated
+workstation measurements or a low-end hardware specification.
+
+WPR's `CPU.Verbose.File` profile failed with `0xc5585011`: this session could
+not enable the system profiling policy. The fallback read `GetThreadTimes`
+over 15 seconds, starting ten seconds after the first prepared task. A
+temporary sampler also suspended each named guest thread, read its RIP with
+`GetThreadContext`, resumed it immediately and waited 2 ms with a 1 ms timer
+resolution. Toolhelp module bases relocated the executable's symbols. This
+is an intrusive wall-clock sampler, not ETW or an on-CPU sample distribution.
+More than 99% of the samples landed outside the executable. The evidence
+retains per-thread counts, missing samples, API failures and symbol bins;
+outside-image samples are not classified as idle or on-CPU. No fine hook
+ranking is inferred from the small executable counts. CPU-counter intervals
+include enumeration/logging and are reported separately (15.03–15.08 s).
+
+| Windows workload | Busiest guest CPU / ~15 s | All seven guest threads / ~15 s | Prepare median / maximum (µs/task) | Game FPS |
+| --- | --- | --- | --- | --- |
+| 1P time trial | 0.469 s | 1.000 s | 30.7 / 50.8 | 29.9–30.2 |
+| 4P split screen | 0.594 s | 1.109 s | 149.7 / 192.6 | 30.0 |
+
+The prepare columns contain seven diagnostic samples per run wholly inside
+the capture interval, with 2,370–4,540 commands in 1P and 14,348–15,800 in 4P.
+The existing probe times the HUD/fog walk and rain publication after task
+validation, before log formatting. It samples the first twelve tasks, then
+every sixtieth task. The table excludes startup; its maximum is a sampled
+maximum, not a worst-case bound on every task. Warm renderer reports averaged
+1.0–1.3 ms per rendered frame in 1P and 1.7–2.2 ms in 4P, with GPU averages of
+0.1 and 0.2–0.5 ms respectively. Matching averaged 0.5–0.6 and 5.1–6.1 ms per game
+workload. Those wall times include renderer waits and are not guest CPU time.
+The separate SP Task thread used 0.219 s and 0.172 s of CPU over the same ~15 s
+windows; these are thread totals, not exclusive `aspMain` timings. The Gfx
+thread used 1.172 s and 3.813 s respectively. Its work is distinct from the
+guest producer hooks and from RT64's matching/render threads.
+
+These Windows samples satisfy the issue's sub-500 µs/task check and show guest
+CPU headroom at the game's 30 Hz target. They do not justify a guest-source
+replacement, skipping the F3DEX walk, or caching draw-distance writes across
+configuration and save-state changes.
+
+The retained Windows runner and sampler reproduce the isolated fixture and
+15-second window (MinGW x64, from the repository root):
+
+~~~powershell
+New-Item -ItemType Directory -Force artifacts/game-thread-profile | Out-Null
+g++ -O2 -std=c++20 tools/sample_game_threads_windows.cpp -lwinmm -o artifacts/game-thread-profile/sample.exe
+python tools/profile_game_threads_windows.py --exe build/lamborghini_modern.exe --sampler artifacts/game-thread-profile/sample.exe --workload both
+~~~
+
+The runner waits for the first prepared task, excludes another ten seconds,
+then records both workloads separately. It retains CPU counters, raw RIPs,
+module bases, sampler failures, logs and the harness result under `artifacts/`.
+
+### Android follow-up after the display-list optimization
+
+The Android experiment used `27c52ad`, after the RT64 TMEM copy change in
+PR 428. The supported Android script freshly generated the USA game/RSP
+output and built and packaged ARM64 Release with NDK 28.2.13676358, Clang
+19.0.1. A separate debug Java shell loaded the production native library;
+no native timing probes or optimization were added. Its unstripped symbols
+and installed stripped library share ELF build ID
+`af3b601ac389749449e3fde8f58cf5c40041e278`. The evidence records both SHA-256
+identities separately from the published Windows build.
+
+The SM-T720 ran Android 11 with Adreno 615 and Turnip v25.3.0-R11
+(`0x6402063`), Vulkan, a 2560x1600 surface at 60 Hz and a 768x480 internal
+image. Settings match the Windows policies above; Android uses fullscreen.
+Only the isolated `profile426` application was changed. Its existing ROM,
+assets and driver selection were reused. The player's normal application,
+controls and saves were untouched. Launcher import and driver ZIP import
+were not tested.
+
+Each run excluded at least ten seconds after replay started in state 8.
+`simpleperf` sampled process-wide user CPU with `cpu-clock:u`, 1000 Hz and
+16 KiB DWARF stacks for 15 seconds. The final 1P/4P recordings lasted
+15.0015/14.9906 seconds and contained 12,287/17,561 samples, with zero lost
+samples and zero truncated stack samples. Foreground checks stayed on the
+profiling activity through recording and replay completion. Both runs
+consumed and verified all 1,526 updates, produced 1,527 swaps and ended in
+state 8; their VI counts were 3,432 and 5,547. The 30,000-VI safety bound
+did not truncate either replay. Four-player mode still replays only port 0.
+
+| Android workload | Busiest guest user CPU / ~15 s | All named guest user CPU / ~15 s | Prepare median / sampled maximum (µs/task) | Interior prepare samples |
+| --- | ---: | ---: | ---: | ---: |
+| 1P time trial | 0.959 s | 1.561 s | 159.4 / 262.1 | 6 |
+| 4P split screen | 1.084 s | 1.555 s | 784.0 / 1,128.6 | 4 |
+
+These CPU values sum sampled event periods, not wall time or kernel time.
+The busiest thread is `Game Thread 3` (TIDs 9591 and 13202); another thread
+has the same name, so the evidence keeps TIDs. Independent `/proc` user/kernel
+counters span 19.77/19.94 seconds, including enumeration, ADB and symbol
+processing. They are not a second measurement of the exact 15-second window.
+The tablet was USB powered, initially at 100% battery and 26°C. Frequency,
+governor, background services and thermal variation were not controlled.
+Profiling and foreground polling add overhead; no unprofiled speedup is claimed.
+
+`func_8000A6C0`, the viewport/world builder, was the largest sampled generated
+function on the main guest thread: 86/144 ms of self user CPU in 1P/4P.
+The next such function there was `func_80084E10` at 47 ms in 1P and
+`func_8007F830` at 31 ms in 4P. These are symbol attributions, not newly
+recovered function semantics. The audio guest thread also spent 162/117 ms
+in SDL resampling. The separate SP Task thread used 920/663 ms of sampled
+user CPU, including 881/629 ms in generated `aspMain` itself. RSP work is
+not included in the named guest-thread totals.
+
+Preparation's inclusive sampled user CPU was 68/190 ms: 4.36%/12.22% of
+named guest user CPU, or 0.55%/1.08% of the whole process's sampled user CPU.
+The walker, fog and HUD helpers are children of that measurement; their
+inclusive percentages overlap. Its wall-time diagnostic includes scheduling
+delays and samples only every sixtieth task after startup. Interior lists
+contained 2,854–4,540 commands in 1P and 14,686–16,400 in 4P. The four-player
+measurements do **not** satisfy the issue's sub-500 µs/task shortcut.
+The no-LOD draw-distance rewrite, PVS, HUD pinning and interpolation hooks
+had only a few attributed samples, or none. In particular, draw-distance had
+two inclusive samples in 1P and none in 4P. An absent symbol at this resolution
+is not evidence of zero cost or permission to cache writes across restoration.
+
+The Gfx thread (`Thread-3`, confirmed by its `gfx_thread_func` stack) used
+5.010/7.760 s of sampled user CPU, and RT64 Workload used 2.234/5.334 s.
+`send_dl` accounted for 4.348/7.138 s inclusive; `GameFrame::matchScene`
+accounted for 0.728/3.626 s inclusive on the workload thread. These are
+separate from producer preparation on the guest thread.
+
+One conservative completed renderer window inside each profile gives:
+
+| Android workload | Game / presented FPS | Frame / GPU mean (ms) | Workload / matching mean (ms) |
+| --- | ---: | ---: | ---: |
+| 1P time trial | 29.5 / 40.9 | 17.1 / 7.7 | 26.9 / 1.9 |
+| 4P split screen | 17.4 / 19.0 | 23.7 / 12.8 | 43.0 / 15.2 |
+
+Native stdout and timestamped diagnostics bracket each capture. To exclude
+five-second windows that might cross counter collection or post-processing,
+the selection discards the first two newly completed renderer reports and
+the last report. Each retained report is a 5.0–5.1-second window, not the
+entire profile or a replay-wide FPS average. Renderer frame/workload times
+include waits; GPU time is separate. Neither is exclusive guest CPU time.
+
+The guest threads show CPU headroom, while four-player gameplay misses
+30 Hz amid substantially larger renderer costs. This does not prove which
+pipeline dependency limits every frame. There is no measured basis for a
+guest-source replacement or draw-distance cache. Four-player preparation
+does exceed 500 µs in this bounded sample; further pass-removal work belongs
+with [issue 267](https://github.com/alondero/automobililamborghini-recomp/issues/267),
+whose original renderer-side description predates the combined producer pass.
+Any change must use the A/B gates below. Remaining four-player matching cost
+is tracked separately by
+[issue 429](https://github.com/alondero/automobililamborghini-recomp/issues/429).
+No production optimization was attempted in this experiment.
+
+### Reproduce the Android capture
+
+Use a Windows host with the Android build prerequisites, MinGW/Ninja on PATH,
+and `JAVA_HOME` set to the Android Studio JBR. Build and prepare the isolated
+shell from the repository root:
+
+~~~powershell
+$env:ANDROID_HOME = "$env:LOCALAPPDATA/Android/Sdk"
+python scripts/build_android.py --sdk $env:ANDROID_HOME --cmake "$env:ANDROID_HOME/cmake/3.22.1/bin/cmake.exe" --jobs 12
+python tools/prepare_game_thread_profile_android.py --sdk $env:ANDROID_HOME
+Push-Location scratch/gh426/shell
+.\gradlew.bat --no-daemon assembleDebug
+Pop-Location
+adb install -r scratch/gh426/shell/app/build/outputs/apk/debug/app-debug.apk
+~~~
+
+Write the evidence's `platforms.android.configuration` object as UTF-8 JSON
+to `scratch/gh426/graphics.json`. With the profiling app stopped, stage its
+ROM, packaged assets, replay, settings, simpleperf and unstripped symbols:
+
+~~~powershell
+python tools/prepare_game_thread_profile_android.py --sdk $env:ANDROID_HOME --stage --graphics scratch/gh426/graphics.json
+python tools/profile_game_threads_android.py both
+~~~
+
+Configure the compatible GPU driver in this isolated app before capturing;
+these runs reused its previously staged Turnip installation. Do not overwrite
+or clear the player's app to obtain it. Check for other device tests and any
+required human unlock first. The runner rejects another running game package,
+checks foreground focus, rejects sample loss and verifies the requested warp
+and complete replay. Reports include self, inclusive and per-thread tables.
+Manual review must still confirm symbol identity, stack coverage and comparable
+interior diagnostic/renderer windows. Raw profiles/logs remain under
+`artifacts/gh426/`; the evidence retains their hashes and aggregate attribution.
+The preparation tool is developer staging, not validation of the launcher.
+
+Prior interrupted captures from the handoff are excluded. One new attempt
+failed before recording because it lacked simpleperf's `--in-app` flag. A
+complete preliminary pair was superseded to add native stdout brackets;
+the final pair above is the only Android pair incorporated in the evidence.
+
+For other profiling tools, enable `RT64_RENDER_COST_REPORT=1`, run the executable with
+`--verbose` or `--log-level=debug`, and set `LAMBO_WARP`, `LAMBO_WARP_MODE`,
+`LAMBO_INPUT_REPLAY`, `LAMBO_INPUT_START_STATE=8`, `LAMBO_INPUT_START_DELAY=0`
+and `LAMBO_INPUT_EXIT_ON_END=1`. Isolate graphics, controller Pak and user
+configuration as the scenario runner does. Use a window: the checked-in
+time-trial scenario is headless and therefore skips RT64. This checkout does
+not read `LAMBO_LOG_LEVEL` or `LAMBO_LOG_CATEGORIES`; the CLI flag activates
+the existing `gfx-policy` probe. Keep raw logs and profiles local; only
+non-ROM aggregate evidence belongs in the repository.
+
+Any proposed optimization must first identify a limiting hook or guest
+function. Freeze the same replay and settings, exclude warmup, and use at
+least five interleaved A/B runs with separate CPU, GPU and presentation
+timings. Precommit acceptance of at least 80% lower targeted hook cost and
+at least 0.5 ms/frame saved in the limiting stage. Preserve guest timing,
+HUD/fog results, interpolation tags and configuration/save-state restoration.
+No optimization has been implemented or tested against those thresholds.

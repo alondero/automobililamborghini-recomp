@@ -1,5 +1,52 @@
 # Track modding research
 
+## November 2026 confirmed contract
+
+This section supersedes the historical unknown collision, waypoint-range and
+minimap descriptions below. Current consumers and six live snapshots establish:
+
+- Context `+0x0C` points to 16-byte collision records. Three u16 vertex IDs at
+  `+0/+2/+4` reference the same Vtx array as the road display lists. Signed
+  neighbors at `+6/+8/+A` cross edges `(v0,v1)/(v1,v2)/(v2,v0)`; negative means
+  boundary. `+C` is owner segment, `+E` selects its surface halfword at
+  `segment+0x14+2*selector`. Consumer: runtime `0x80059BB0`; surface selection
+  `0x80017644..0x80017690`.
+- Vtx X/Y/Z occupy `+0/+2/+4`. The old extractor incorrectly used Y as Z.
+  Segment `+0x10/+0x12` translates X/Z. Floor consumer runtime `0x80013790`
+  computes the plane from shared vertices and solves height at
+  `0x80013E10..0x80013E70`; no speculative ROM plane table is needed.
+- Collision/rendered-road triangle counts match exactly after zero padding:
+  904, 1187, 1353, 4872, 2349, 2264. The actual generated height routine passed
+  every nondegenerate triangle when its three vertex heights were raised by100;
+  maximum observed delta error was0.007324. Circuit 5 has two X/Z-degenerate
+  triangles excluded from this height test.
+- Runtime `0x80027650` consumes waypoint X/Z multiplied by100. `+8` is a
+  width/proximity scalar; consumers use half of it, so it must not be named
+  twice the next-point distance. `+A` is an event code. Event1 is the lap line;
+  5/6 participate in pit branches and15–17 in Arcade checkpoints.
+- `D_80121750` range fields `+0/+2/+4/+6` are first waypoint, last waypoint,
+  previous range and next range. Circuit 1 uses main rows36→37→38→36 over
+  points0..249 and pit rows39/40 over250..305. Pit250 connects near main216;
+  pit283 crosses the lap line near main0; pit305 rejoins main18.
+- Spawn records are inline at `context+0x14`, stride28: signed32 X/Y/Z,
+  heading degrees, collision seed, range, waypoint. Seed/range/waypoint consumers
+  are runtime `0x80007A30`, `0x80007A88`, `0x80007AD0`. Heading is clockwise
+  from+Z. Current relocated Racer state is at `0x80902000`, stride0x84;
+  `+0C/+0E` select range/waypoint, `+24/+26` collision seeds.
+- Race minimaps are80x80 IA4 textures,3200bytes plus8padding, via pointer table
+  `0x801265B0`. Circuit 1 is `0x80124020`; runtime `0x8005449C` selects it.
+  Dots use live waypoints scaled by0.061 and camera rotation. Texture mapping
+  approximately `u=39+x*0.059475, v=39-z*0.059475` aligns the stock route.
+
+These findings support the fixed-capacity bundle in `tools/track_bundle.py`.
+The generated oval's three opponents completed a full forward lap in an actual
+four-car race. General topology relocation and extra track menu slots remain
+future work. Historical function labels below should be rechecked against
+current generated source before use; notably the old `func_80015044` summary
+and minimap-emitter attribution did not survive that comparison.
+
+## Historical September audit
+
 **Status:** ROM/decomp/port-runtime audit plus Track Lab v0; ares parity pending,
 2026-09-03
 
@@ -173,7 +220,7 @@ builder's point calculation as:
 point(segment):
     point_index = segment_record[+0x20]
     x = point16[point_index][+0x00] + segment_record[+0x10]
-    z = point16[point_index][+0x02] + segment_record[+0x12]
+    z = point16[point_index][+0x04] + segment_record[+0x12]
 ```
 
 The record-relative `+0x20` index, the `+0x10/+0x12` offsets, and the 16-byte

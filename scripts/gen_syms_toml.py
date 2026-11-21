@@ -1806,6 +1806,41 @@ text = "{ extern unsigned int lambo_ai_maneuver_cap(uint8_t*); ctx->r1 = SIGNED(
 func = "func_8002D37C"
 before_vram = 0x8002FF14
 text = "{ extern unsigned int lambo_ai_maneuver_cap(uint8_t*); ctx->r8 = lambo_ai_maneuver_cap(rdram); }"
+
+# Engine replacement observes accepted sound-player operations and mutes only
+# their cartridge amplitude. See docs/engine-audio.md; all addresses are USA runtime.
+[[patches.hook]]
+func = "func_80077550"
+before_vram = 0x80076950
+text = "{ extern void lambo_engine_sound(uint8_t*, recomp_context*, int); lambo_engine_sound(rdram, ctx, 0); }"
+
+# Low-level volume setter is only called by the three game sound wrappers.
+# Keep func_80066F84 itself unprotected for the bundled weather mod's hook.
+[[patches.hook]]
+func = "func_800774F0"
+before_vram = 0x800768F0
+text = "{ extern void lambo_engine_mute_volume(uint8_t*, recomp_context*); lambo_engine_mute_volume(rdram, ctx); }"
+
+[[patches.hook]]
+func = "func_800670BC"
+before_vram = 0x80066538
+text = "{ extern void lambo_engine_sound(uint8_t*, recomp_context*, int); lambo_engine_sound(rdram, ctx, 3); }"
+
+[[patches.hook]]
+func = "func_800671F8"
+before_vram = 0x80066668
+text = "{ extern void lambo_engine_sound(uint8_t*, recomp_context*, int); lambo_engine_sound(rdram, ctx, 1); }"
+
+[[patches.hook]]
+func = "func_800673A0"
+before_vram = 0x80066804
+text = "{ extern void lambo_engine_sound(uint8_t*, recomp_context*, int); lambo_engine_sound(rdram, ctx, 2); }"
+
+[[patches.hook]]
+func = "func_80066EB4"
+before_vram = 0x800662B4
+text = "{ extern void lambo_engine_sound_reset(void); lambo_engine_sound_reset(); }"
+
 """
 
 UNSTUB = [

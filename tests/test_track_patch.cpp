@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -225,6 +226,92 @@ int run_python_interop(const std::filesystem::path& package_path) {
 
 } // namespace
 
+struct BundleTestBlock {
+    uint8_t kind;
+    uint16_t index;
+    std::vector<uint8_t> before, after;
+};
+
+std::vector<uint8_t> make_bundle(const std::vector<BundleTestBlock>& blocks) {
+    auto bytes = make_package(0, 3, std::vector<int16_t>(30, -1), {});
+    std::memcpy(bytes.data(), "ALTRKBD1", 8);
+    put_u32(bytes, 24, 2);
+    put_u32(bytes, 32, static_cast<uint32_t>(blocks.size()));
+    put_u64(bytes, 40, 0); put_u64(bytes, 48, 0);
+    for (const auto& block : blocks) {
+        size_t start = bytes.size();
+        bytes.resize(start + 32 + block.after.size());
+        bytes[start] = block.kind;
+        put_u16(bytes, start + 2, block.index);
+        put_u32(bytes, start + 4, static_cast<uint32_t>(block.after.size()));
+        put_u64(bytes, start + 16, fnv_bytes(block.before.data(), block.before.size()));
+        put_u64(bytes, start + 24, fnv_bytes(block.after.data(), block.after.size()));
+        std::copy(block.after.begin(), block.after.end(), bytes.begin() + start + 32);
+    }
+    put_u32(bytes, 12, static_cast<uint32_t>(bytes.size()));
+    put_u32(bytes, 36, static_cast<uint32_t>(bytes.size() - 64));
+    return bytes;
+}
+
+void test_bundles(const std::filesystem::path& path) {
+    using namespace lambo::track_patch;
+    std::vector<uint8_t> memory(0x800000);
+    auto setup = [&] {
+        set_live_track(memory, 0, std::vector<int16_t>(30, -1), 3);
+        write_word(memory, kContextAddress, 0x80005100);
+        write_word(memory, kContextAddress + 12, 0x80005000);
+        write_word(memory, kContextAddress + 16, 0x80003000);
+    };
+    std::vector<BundleTestBlock> blocks = {
+        {0, 0, std::vector<uint8_t>(60, 255), std::vector<uint8_t>(60, 255)},
+        {1, 0, std::vector<uint8_t>(64), std::vector<uint8_t>(64)},
+        {2, 0, std::vector<uint8_t>(256), std::vector<uint8_t>(256)},
+    };
+    blocks[0].after[0] = 0; blocks[0].after[1] = 1;
+    blocks[1].after[3] = 100; // logical Vtx Y at +2
+    auto load = [&](const auto& data) {
+        expect(write_file(path, make_bundle(data)), "write bundle fixture");
+        expect(load_package(path) == LoadResult::Loaded, "load bundle fixture");
+    };
+    setup(); load(blocks);
+    expect(apply_to_active_track(memory.data()) == ApplyResult::Applied, "bundle applies all buffers");
+    expect(read_halfword(memory, 0x80003002) == 100 && read_halfword(memory, kPvsAddress) == 1,
+           "bundle writes correct logical byte order");
+    auto before = memory;
+    expect(apply_to_active_track(memory.data()) == ApplyResult::AlreadyApplied && memory == before,
+           "bundle is idempotent without writes");
+    write_halfword(memory, 0x80003002, 0);
+    before = memory;
+    expect(apply_to_active_track(memory.data()) == ApplyResult::BaseMismatch && memory == before,
+           "partially applied bundle rejects transactionally");
+    setup(); write_halfword(memory, 0x80005000, 1); before = memory;
+    expect(apply_to_active_track(memory.data()) == ApplyResult::BaseMismatch && memory == before,
+           "late block baseline mismatch leaves earlier buffers untouched");
+    auto invalid = blocks;
+    invalid[0].after[1] = 3;
+    setup(); load(invalid); before = memory;
+    expect(apply_to_active_track(memory.data()) == ApplyResult::BadContext && memory == before,
+           "out of range PVS reference rejects without geometry writes");
+    invalid = blocks; invalid[2].after[1] = 4;
+    setup(); load(invalid); before = memory;
+    expect(apply_to_active_track(memory.data()) == ApplyResult::BadContext && memory == before,
+           "out of range collision vertex rejects without writes");
+    invalid = blocks; invalid[2].after[6] = 255; invalid[2].after[7] = 254;
+    setup(); load(invalid); before = memory;
+    expect(apply_to_active_track(memory.data()) == ApplyResult::BadContext && memory == before,
+           "invalid collision neighbor rejects without writes");
+    invalid = blocks;
+    invalid.push_back({5, 0, std::vector<uint8_t>(16),
+        {4,0,12,47, 0x80,0x70,0,0, 0xB8,0,0,0, 0,0,0,0}});
+    setup(); write_word(memory, 0x80005104, 0x80004000); load(invalid); before = memory;
+    expect(apply_to_active_track(memory.data()) == ApplyResult::BadContext && memory == before,
+           "display list cannot read vertices outside the named buffer");
+    auto corrupt = make_bundle(blocks); corrupt.back() ^= 1;
+    expect(write_file(path, corrupt), "write corrupt bundle");
+    expect(load_package(path) == LoadResult::InvalidFormat, "reject corrupted replacement hash");
+    disable();
+}
+
 int main(int argc, char** argv) {
     using lambo::track_patch::ApplyResult;
     using lambo::track_patch::LoadResult;
@@ -331,7 +418,7 @@ int main(int argc, char** argv) {
     expect(std::string(lambo::track_patch::apply_result_name(ApplyResult::Applied)) ==
                "applied" &&
                std::string(lambo::track_patch::apply_result_name(
-                   ApplyResult::BaseMismatch)) == "PVS fingerprint mismatch",
+                   ApplyResult::BaseMismatch)) == "track fingerprint mismatch",
            "apply results have stable runtime diagnostic names");
 
     malformed = valid_package;
@@ -458,6 +545,7 @@ int main(int argc, char** argv) {
     lambo_track_patch_on_track_loaded(rdram.data());
     expect(rdram == before, "disabled wrapper is a no-op");
 
+    test_bundles(package_path);
     std::filesystem::remove(package_path, cleanup_error);
     return failures == 0 ? 0 : 1;
 }

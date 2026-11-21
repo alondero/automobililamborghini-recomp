@@ -4,8 +4,8 @@
 The settings Apply writes the GraphicsConfig snapshot on the render thread while
 the main-thread pump reads it, so every access must hold g_graphics_snapshot_mutex.
 tests/test_live_config.cpp exercises that across threads, but a torn read depends
-on timing and that test can pass without the lock. This check fails for certain
-when an access is added outside the lock.
+on timing and that test can pass without the lock. This check enforces a
+braced scope containing the guard followed by the snapshot accesses.
 """
 
 import sys
@@ -22,22 +22,27 @@ LOCK = "std::lock_guard<std::mutex> lock(g_graphics_snapshot_mutex);"
 
 
 def unlocked_accesses(source: str) -> list[int]:
-    """Return the 1-based lines that touch the snapshot without the lock.
+    """Return accesses outside the snapshot's braced locking pattern.
 
-    An access counts as locked when the lock guard is the statement directly
-    above it, or directly above a run of consecutive snapshot statements.
+    The guard must be the first statement in the block. The snapshot accesses
+    must follow it directly, before any further scope boundary.
     """
-    lines = [line.strip() for line in source.splitlines()]
     unlocked = []
-    for index, line in enumerate(lines):
-        code = line.split("//", 1)[0]
-        if SNAPSHOT not in code or code == DEFINITION:
+    previous = ""
+    locked = False
+    for line_number, line in enumerate(source.splitlines(), start=1):
+        code = line.split("//", 1)[0].strip()
+        if not code:
             continue
-        above = index - 1
-        while above >= 0 and SNAPSHOT in lines[above].split("//", 1)[0]:
-            above -= 1
-        if above < 0 or lines[above] != LOCK:
-            unlocked.append(index + 1)
+        if code == LOCK:
+            locked = previous.endswith("{")
+        elif SNAPSHOT in code and code != DEFINITION:
+            if not locked or "{" in code or "}" in code:
+                unlocked.append(line_number)
+                locked = False
+        else:
+            locked = False
+        previous = code
     return unlocked
 
 
@@ -53,9 +58,15 @@ def main() -> None:
             f"{SNAPSHOT} is used without g_graphics_snapshot_mutex at "
             f"src/lambo_config.cpp line(s) {unlocked}")
 
-    # The checker itself must reject the unlocked form it exists to catch.
-    require(unlocked_accesses(f"int f() {{\nreturn {SNAPSHOT}.ds_option;\n}}\n") == [2],
-            "the checker no longer detects an unlocked snapshot read")
+    read = f"return {SNAPSHOT}.ds_option;"
+    require(unlocked_accesses(f"int f() {{\n{LOCK}\n{read}\n}}") == [],
+            "the checker rejected a read in the guard's scope")
+    require(unlocked_accesses(f"int f() {{\n{read}\n}}") == [2],
+            "the checker accepted a read without a guard")
+    require(unlocked_accesses(f"int f(bool take_lock) {{\nif (take_lock)\n{LOCK}\n{read}\n}}") == [4],
+            "the checker accepted a read after a guard scoped to an unbraced if")
+    require(unlocked_accesses(f"int f() {{\n{{\n{LOCK}\n}}\n{read}\n}}") == [5],
+            "the checker accepted a read after the guard's block ended")
 
 
 if __name__ == "__main__":

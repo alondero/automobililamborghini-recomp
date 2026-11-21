@@ -23,9 +23,8 @@ typedef enum LamboLogLevel {
 // the selected threshold includes debug messages.
 extern bool lambo_log_enabled;
 extern volatile int g_log_threshold;
-bool lambo_log_parse_args(int argc, char** argv);
-void lambo_log_parse_flag(int argc, char** argv); // compatibility entry point
-const char* lambo_log_last_error(void);
+void lambo_log_configure(bool console, LamboLogLevel level);
+void lambo_log_open_parent_console(void);
 bool lambo_log_initialize(void);
 void lambo_log_shutdown(void);
 const char* lambo_log_path(void);

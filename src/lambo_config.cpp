@@ -70,6 +70,7 @@ std::atomic_int g_race_cars{6};
 std::atomic_bool g_automatic_pit_stops{false};
 std::atomic_bool g_remove_blue_hud_bar{false};
 std::atomic_bool g_car_select_info{false};
+std::atomic_bool g_slip_rumble{false};
 
 // Per-circuit refinement of the global no_lod. Rationale + JSON key in
 // lambo_config.h; see that header for the ship-safe default and the
@@ -162,8 +163,8 @@ ultramodern::renderer::GraphicsConfig g_current_graphics{};
 
 // The renderer's API is selected when it is constructed. Keep its last applied
 // API separately so a later live-safe setting cannot smuggle a persisted,
-// restart-only API choice into RT64's update queue. Unlocked: written at startup
-// and afterwards only by apply_graphics(), which has a single calling thread.
+// restart-only API choice into RT64's update queue. Set at startup, then accessed
+// only by apply_graphics() under caller-side serialization.
 ultramodern::renderer::GraphicsConfig g_live_graphics{};
 
 // Read a key into `out`, keeping the existing (default) value when the key is
@@ -221,6 +222,7 @@ nlohmann::json to_json(const ultramodern::renderer::GraphicsConfig& c) {
         {"automatic_pit_stops", g_automatic_pit_stops.load()},
         {"remove_blue_hud_bar", g_remove_blue_hud_bar.load()},
         {"car_select_info", g_car_select_info.load()},
+        {"slip_rumble", g_slip_rumble.load()},
         {"no_lod_circuit", nlohmann::json::array({
             g_no_lod_circuit[0].load(), g_no_lod_circuit[1].load(),
             g_no_lod_circuit[2].load(), g_no_lod_circuit[3].load(),
@@ -269,6 +271,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     bool automatic_pit_stops = false;
     bool remove_blue_hud_bar = false;
     bool car_select_info = false;
+    bool slip_rumble = false;
     std::array<bool, 6> no_lod_circuit{};
     for (size_t i = 0; i < no_lod_circuit.size(); ++i) {
         no_lod_circuit[i] = g_no_lod_circuit[i].load();
@@ -290,6 +293,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     from_or_default(j, "automatic_pit_stops", automatic_pit_stops);
     from_or_default(j, "remove_blue_hud_bar", remove_blue_hud_bar);
     from_or_default(j, "car_select_info", car_select_info);
+    from_or_default(j, "slip_rumble", slip_rumble);
     from_or_default(j, "no_lod_circuit", no_lod_circuit);
     from_or_default(j, "fog_scale", fog_scale);
     from_or_default(j, "fog_scale_circuit", g_fog_scale_circuit);
@@ -310,6 +314,7 @@ void from_json(const nlohmann::json& j, ultramodern::renderer::GraphicsConfig& c
     g_automatic_pit_stops.store(automatic_pit_stops);
     g_remove_blue_hud_bar.store(remove_blue_hud_bar);
     g_car_select_info.store(car_select_info);
+    g_slip_rumble.store(slip_rumble);
     for (size_t i = 0; i < no_lod_circuit.size(); ++i) {
         g_no_lod_circuit[i].store(no_lod_circuit[i]);
     }
@@ -360,7 +365,7 @@ ReadResult read_graphics_file(const std::filesystem::path& path,
 
 std::filesystem::path graphics_json_path() {
     // Test/harness override: point at (or isolate to) an explicit file.
-    if (const char* p = std::getenv("LAMBO_GRAPHICS_CONFIG")) {
+    if (const char* p = lambo::paths::profile_environment("LAMBO_GRAPHICS_CONFIG")) {
         return std::filesystem::path{p};
     }
     return lambo::config::app_config_dir() / kGraphicsFile;
@@ -395,8 +400,7 @@ void save_graphics_updates_sync(const nlohmann::json& updates) {
     std::ifstream in{path};
     if (!in.good()) {
         // Startup creates a complete file synchronously. If it is removed while
-        // the game is running, write the requested delta rather than reading the
-        // main-thread snapshot from this worker thread.
+        // the game is running, write the requested delta to an empty object.
         current = nlohmann::json::object();
     } else {
         try {
@@ -522,18 +526,13 @@ ultramodern::renderer::GraphicsConfig default_graphics_config() {
 // of which a load-time bool could capture. The old lambo_ws_hud_widescreen_active()
 // (Expand + Clamp16x9) has been removed.
 
-ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
+ultramodern::renderer::GraphicsConfig load_and_apply_graphics(
+    std::optional<ultramodern::renderer::WindowMode> startup_window_mode) {
     capture_environment_overrides();
     ultramodern::renderer::GraphicsConfig cfg = default_graphics_config();
     const std::filesystem::path path = graphics_json_path();
     const ReadResult r = read_graphics_file(path, cfg);
 
-    ultramodern::renderer::set_graphics_config(cfg);
-    {
-        std::lock_guard<std::mutex> lock(g_graphics_snapshot_mutex);
-        g_current_graphics = cfg;
-    }
-    g_live_graphics = cfg;
     // Write the merged config back so the on-disk file is always complete and
     // editable (new keys appear with their defaults after an upgrade) -- but NEVER
     // overwrite a file that failed to parse: a hand-edit typo must stay recoverable,
@@ -541,8 +540,15 @@ ultramodern::renderer::GraphicsConfig load_and_apply_graphics() {
     if (r != ReadResult::Unparseable) {
         save_graphics(cfg);
     }
+    if (startup_window_mode) cfg.wm_option = *startup_window_mode;
+    ultramodern::renderer::set_graphics_config(cfg);
+    {
+        std::lock_guard<std::mutex> lock(g_graphics_snapshot_mutex);
+        g_current_graphics = cfg;
+    }
+    g_live_graphics = cfg;
     lambo::settings::changed();
-    LAMBO_LOG_INFO("config", "graphics config: %s\n", path.string().c_str());
+    LAMBO_LOG_INFO("config", "graphics config: %s\n", paths::path_to_utf8(path).c_str());
     return cfg;
 }
 
@@ -581,9 +587,8 @@ void apply_graphics(const ultramodern::renderer::GraphicsConfig& cfg, bool apply
 }
 
 void update_saved_window_mode(ultramodern::renderer::WindowMode wm) {
-    // All runtime config values now have one locked snapshot. Do not re-run
-    // from_json here: its enhancement fields are read by the game/render threads.
-    // Mutating those arrays during an F11 press would introduce a data race.
+    // Publish the window mode directly. from_json also changes enhancement
+    // arrays that the game and render threads can read during an F11 press.
     {
         std::lock_guard<std::mutex> lock(g_graphics_snapshot_mutex);
         g_current_graphics.wm_option = wm;
@@ -707,6 +712,16 @@ void set_car_select_info(bool enabled) {
     g_car_select_info.store(enabled);
     lambo::settings::changed();
     save_graphics_updates({{"car_select_info", enabled}});
+}
+
+bool slip_rumble() {
+    return g_slip_rumble.load();
+}
+
+void set_slip_rumble(bool enabled) {
+    g_slip_rumble.store(enabled);
+    lambo::settings::changed();
+    save_graphics_updates({{"slip_rumble", enabled}});
 }
 
 // LAMBO_NO_LOD=1/0 overrides the JSON key for headless capture/testing.

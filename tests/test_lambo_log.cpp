@@ -33,38 +33,18 @@ int main() {
         }
     };
 
-    {
-        char a0[] = "game";
-        char a1[] = "--log-level=bogus";
-        char* args[] = {a0, a1};
-        expect(!lambo_log_parse_args(2, args), "invalid log level is rejected");
-        expect(std::string(lambo_log_last_error()).find("must be") != std::string::npos,
-               "invalid log level reports a useful error");
-    }
-
-    {
-        char a0[] = "game";
-        char a1[] = "--log-level=bogus";
-        char a2[] = "--console";
-        char* args[] = {a0, a1, a2};
-        expect(!lambo_log_parse_args(3, args), "invalid log level remains an error");
-        expect(lambo_log_console_requested(),
-               "console switch is still honored when another switch is invalid");
-    }
-
     const std::filesystem::path directory =
         std::filesystem::temp_directory_path() / "lambo-log-test";
     std::error_code ec;
     std::filesystem::remove_all(directory, ec);
     set_env("LAMBO_LOG_DIR", directory.string());
 
-    char a0[] = "game";
-    char a1[] = "--verbose";
-    char a2[] = "--log-level=error";
-    char* args[] = {a0, a1, a2};
-    expect(lambo_log_parse_args(3, args), "valid log arguments are accepted");
-    expect(lambo_log_level() == LAMBO_LEVEL_ERROR,
-           "last log level argument wins deterministically");
+    lambo_log_configure(true, LAMBO_LEVEL_DEBUG);
+    expect(lambo_log_console_requested() && lambo_log_enabled,
+           "debug logging can be configured with a console");
+    lambo_log_configure(false, LAMBO_LEVEL_ERROR);
+    expect(!lambo_log_console_requested() && lambo_log_level() == LAMBO_LEVEL_ERROR,
+           "logger uses the configured threshold and console setting");
     expect(!lambo_log_would_emit(LAMBO_LEVEL_WARN), "error threshold filters warnings");
     expect(lambo_log_would_emit(LAMBO_LEVEL_ERROR), "error threshold keeps errors");
     expect(lambo_log_initialize(), "logger creates the session file");

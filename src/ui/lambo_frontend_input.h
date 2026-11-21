@@ -11,6 +11,8 @@ void create_frontend_driving_settings();
 void sample_frontend_driving_assists();
 void driving_sensor_event(const SDL_Event& event);
 void configure_frontend_input_defaults();
+// Call on the SDL main thread after controller initialization and before assigning players.
+void load_controller_mappings();
 // Call after SDL controller initialization and profile loading, before polling.
 void initialize_frontend_controllers();
 void import_frontend_profiles();

@@ -14,6 +14,9 @@ These definitions describe this repository, not every N64 project.
 | Guest memory | The emulated RDRAM byte array. A guest address is not a normal host pointer. |
 | RDRAM | The N64's main memory. Port code uses this word in developer documentation. |
 | Hook | A controlled call from generated game code into hand-written port code. |
+| Gameplay seam | A named operation or event with documented meaning, ownership, timing and failure behavior independent of a cartridge address. |
+| Gameplay capability | An available version of a gameplay seam's contract for the selected cartridge. |
+| Regional adapter | The part of the port that translates a shared gameplay contract to one cartridge's behavior. |
 | Patch | A small, reviewable change applied to a dependency or source boundary. |
 | Symbol | A name and address that tells the recompiler what a function or data object is. |
 | Stub | A placeholder implementation used when a generated function is not yet routed or needed. |

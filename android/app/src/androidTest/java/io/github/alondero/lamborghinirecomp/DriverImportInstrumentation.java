@@ -43,6 +43,7 @@ public final class DriverImportInstrumentation extends Instrumentation {
         File sandbox = null;
         try {
             sandbox = Files.createTempDirectory(getTargetContext().getCacheDir().toPath(), "driver-tests-").toFile();
+            GraphicsRecoveryChecks.run(sandbox);
             if (arguments != null && arguments.containsKey("assetcheck")) {
                 LauncherAssetChecks.run(this, sandbox);
                 result.putString("stream", "\nPackaged launcher asset extraction checks passed.\n");

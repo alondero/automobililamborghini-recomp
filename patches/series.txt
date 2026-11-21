@@ -46,6 +46,7 @@
 0059-rt64-android-automatic-resolution-budget.patch
 0060-rt64-frame-matching-reused-containers.patch
 0061-rt64-frame-matching-joined-call-keys.patch
+0063-rt64-aligned-tmem-copy.patch
 
 [lib/rt64/src/contrib/plume]
 0004-plume-d3d12-mingw-com-abi-struct-return.patch              windows
@@ -63,6 +64,7 @@
 0053-plume-vulkan-nested-read-map-guard.patch
 0055-plume-android-surface-recovery.patch
 0062-plume-vulkan-texture-readback.patch
+0064-plume-vulkan-scissor-offsets.patch
 
 [lib/RecompFrontend]
 0017-recompfrontend-lamborghini-integration.patch
@@ -74,6 +76,7 @@
 0037-recompfrontend-optional-ui-debugger.patch
 0040-recompfrontend-config-open-event.patch
 0045-recompfrontend-android-swap-chain-format.patch
+0065-recompfrontend-idempotent-controller-add.patch
 
 # SDL is fetched by scripts/build_android.py, not a submodule.
 [build-android/deps/SDL]

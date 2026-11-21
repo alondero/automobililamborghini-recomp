@@ -237,6 +237,10 @@ Rules:
 - The game's own scissor is untagged, so RT64 centers it on 4:3 and CROPS moved rects.
   Each bracket must push + set a full-width extended scissor
   (`gEXSetScissor(0, LEFT, RIGHT, 0,0, 0,240)`) and pop on reset.
+- With HUD Placement set to Expand, RT64's render-target pixel alignment can move
+  the full-width scissor's left edge below zero. This occurred at 20:9 with Auto
+  resolution on Android. The Vulkan backend clips that scissor at the framebuffer
+  origin before submission so the pinned lap count, rank, and speedometer still draw.
 - **Never wrap a GEOMETRY draw in a wide scissor**: the draw merges the wide scissor
   into the fbPair scissor, flipping RT64's `coversWholeWidth` heuristic
   (`rt64_framebuffer_renderer.cpp:1493`) for every untagged full-width-viewport

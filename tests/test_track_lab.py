@@ -86,8 +86,9 @@ def make_rdram() -> bytes:
 
     for index, (x, z) in enumerate(((100, 200), (300, 400), (-500, 600))):
         record = bytearray(16)
-        struct.pack_into(">hh", record, 0, x, z)
-        record[4:] = bytes([index + 1]) * 12
+        # N64 Vtx is x, height, z. Keep height distinct to catch an XY map.
+        struct.pack_into(">hhh", record, 0, x, 123, z)
+        record[6:] = bytes([index + 1]) * 10
         put_logical(memory, anchor_base + index * 16, record)
 
     # The extractor deliberately assumes one 16-byte waypoint per PVS row.
@@ -181,6 +182,8 @@ class TestExtraction(TrackLabFixture):
                          + self.raw_bytes + bytes(0x24000))
         document = tl.extract_document(path)
         self.assertEqual(document["provenance"]["snapshot_format"], "lmbostat-v2")
+        tl.validate_document(document)
+        self.assertEqual(tl.compile_document(document), tl.compile_document(self.document))
         self.assertEqual(document["provenance"]["rdram_sha256"],
                          self.document["provenance"]["rdram_sha256"])
 
@@ -311,6 +314,66 @@ class TestValidationAndDiff(TrackLabFixture):
                 },
             ],
         )
+
+
+class TestBundleValidation(TrackLabFixture):
+    def bundle_document(self):
+        doc = self.fresh_document()
+        doc['version'] = 2
+        doc['authoring'] = {'name': 'Synthetic bundle'}
+        doc['capabilities']['editable'].append('track_bundle')
+        doc['capabilities']['unsupported'] = ['arbitrary_topology']
+        raw = b''.join(struct.pack('>10h', *row) for row in doc['visibility']['raw_base_rows'])
+        doc['track_source'] = dict(format='al-track-source', version=1, blocks=[
+            dict(kind=0, index=0, before_hex=raw.hex(), after_hex=raw.hex())])
+        return doc
+
+    def test_full_validator_and_cli_accept_bundle(self):
+        doc = self.bundle_document()
+        self.assertEqual(tl.validate_document(doc).row_count, 3)
+        path = self.directory / 'valid-bundle.json'
+        tl.write_document(path, doc)
+        self.assertEqual(tl.main(['validate', str(path)]), 0)
+
+    def test_bundle_validator_and_cli_reject_corrupt_evidence(self):
+        cases = [
+            ('visibility', 'base_fnv1a64', '0' * 16),
+            ('visibility', 'base_rows', []),
+            ('visibility', 'raw_base_rows', []),
+            ('provenance', 'snapshot_sha256', 'invalid'),
+            ('authoring', 'name', 42),
+        ]
+        for section, key, value in cases:
+            doc = self.bundle_document()
+            doc[section][key] = value
+            with self.subTest(section=section, key=key):
+                self.assert_invalid_bundle(doc)
+        for key in ('segments', 'anchors', 'waypoints'):
+            doc = self.bundle_document()
+            doc[key] = []
+            with self.subTest(key=key):
+                self.assert_invalid_bundle(doc)
+        for key, field in (('segments', 'road_dl'), ('anchors', 'x'), ('waypoints', 'plane_a')):
+            doc = self.bundle_document()
+            records = doc[key]['records'] if key == 'waypoints' else doc[key]
+            records[0]['decoded'][field] = None
+            with self.subTest(decoded=key):
+                self.assert_invalid_bundle(doc)
+
+    def assert_invalid_bundle(self, doc):
+        with self.assertRaises(tl.TrackLabError):
+            tl.validate_document(doc)
+        path = self.directory / 'invalid-bundle.json'
+        tl.write_document(path, doc)
+        self.assertNotEqual(tl.main(['validate', str(path)]), 0)
+
+    def test_bundle_baseline_must_match_visibility_evidence(self):
+        doc = self.bundle_document()
+        doc['track_source']['blocks'][0]['before_hex'] = 'ffff' * 30
+        with self.assertRaisesRegex(tl.TrackLabError, 'baseline'):
+            tl.validate_document(doc)
+        with self.assertRaisesRegex(tl.TrackLabError, 'baseline'):
+            tl.compile_document(doc)
 
 
 class TestCompile(TrackLabFixture):

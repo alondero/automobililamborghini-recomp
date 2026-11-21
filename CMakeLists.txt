@@ -16,7 +16,7 @@ cmake_minimum_required(VERSION 3.20)
 # The ROM path in lamborghini.us.toml is cwd-relative. The patch matrix is in
 # patches/README.md. RecompiledFuncs/ is regenerated from the supplied ROM.
 
-project(lamborghini_modern VERSION 0.11.0 LANGUAGES C CXX)
+project(lamborghini_modern VERSION 0.11.1 LANGUAGES C CXX)
 
 # Python applies the dependency patches and generates mod and test inputs.
 find_program(LAMBO_PYTHON_EXECUTABLE NAMES python python3 REQUIRED)
@@ -58,6 +58,20 @@ if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/CMakeLists.txt)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(lambo_engine_audio_tests tests/test_engine_audio.cpp src/lambo_engine_audio.cpp)
+    target_include_directories(lambo_engine_audio_tests PRIVATE src)
+    target_link_libraries(lambo_engine_audio_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_engine_audio COMMAND lambo_engine_audio_tests)
+    add_executable(lambo_engine_audio_runtime_tests tests/test_engine_audio_runtime.cpp
+        src/lambo_engine_audio.cpp src/lambo_engine_audio_runtime.cpp src/lambo_log.cpp)
+    target_include_directories(lambo_engine_audio_runtime_tests PRIVATE src
+        ${N64MR}/N64Recomp/include ${N64MR}/librecomp/include)
+    target_link_libraries(lambo_engine_audio_runtime_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_engine_audio_bridge COMMAND lambo_engine_audio_runtime_tests)
+    add_test(NAME lambo_engine_audio_original COMMAND lambo_engine_audio_runtime_tests)
+    set_tests_properties(lambo_engine_audio_original PROPERTIES ENVIRONMENT "LAMBO_ENGINE_AUDIO=0")
+
+
     add_executable(lambo_rain_tests tests/test_rain.cpp src/lambo_rain.cpp)
     target_include_directories(lambo_rain_tests PRIVATE src tests lib/rt64/include)
     add_test(NAME lambo_rain_geometry COMMAND lambo_rain_tests)
@@ -288,6 +302,11 @@ if(BUILD_TESTING)
     target_link_libraries(lambo_log_tests PRIVATE Threads::Threads)
     add_test(NAME lambo_logging_policy COMMAND lambo_log_tests)
 
+    add_executable(lambo_launch_options_tests
+        tests/test_launch_options.cpp src/lambo_launch_options.cpp src/lambo_pak_io.c)
+    target_include_directories(lambo_launch_options_tests PRIVATE src)
+    add_test(NAME lambo_launch_options COMMAND lambo_launch_options_tests)
+
     add_executable(lambo_portable_paths_tests
         tests/test_portable_paths.cpp
     )
@@ -487,6 +506,19 @@ if(BUILD_TESTING)
     )
     add_test(NAME lambo_window_resize COMMAND lambo_window_resize_tests)
 
+    add_executable(lambo_slip_rumble_tests tests/test_slip_rumble.cpp src/lambo_slip_rumble.cpp)
+    target_include_directories(lambo_slip_rumble_tests PRIVATE src)
+    target_link_libraries(lambo_slip_rumble_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_slip_rumble COMMAND lambo_slip_rumble_tests)
+
+    add_executable(lambo_slip_rumble_runtime_tests tests/test_slip_rumble_runtime.cpp
+        src/lambo_slip_rumble.cpp src/lambo_slip_rumble_runtime.cpp
+        src/lambo_driving_assists.cpp src/lambo_input_gate.cpp)
+    target_include_directories(lambo_slip_rumble_runtime_tests PRIVATE src
+        ${N64MR}/N64Recomp/include ${N64MR}/ultramodern/include ${N64MR}/thirdparty)
+    target_link_libraries(lambo_slip_rumble_runtime_tests PRIVATE Threads::Threads)
+    add_test(NAME lambo_slip_rumble_runtime COMMAND lambo_slip_rumble_runtime_tests)
+
     add_executable(lambo_driving_assists_tests tests/test_driving_assists.cpp src/lambo_driving_assists.cpp)
     target_include_directories(lambo_driving_assists_tests PRIVATE src)
     add_test(NAME lambo_input_driving_assists COMMAND lambo_driving_assists_tests)
@@ -585,6 +617,7 @@ if(BUILD_TESTING)
         tests/test_lambo_replay_runtime.cpp
         src/lambo_driving_assists.cpp
         src/lambo_driving_assists_runtime.cpp
+        src/lambo_slip_rumble.cpp
         src/lambo_replay_runtime.cpp
         src/lambo_replay.cpp
         src/lambo_file.cpp
@@ -664,7 +697,7 @@ if(BUILD_TESTING)
         COMMAND ${LAMBO_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_reset_rom.py)
     add_test(NAME lambo_track_lab_codec
         COMMAND ${LAMBO_PYTHON_EXECUTABLE}
-            -m unittest tests.test_track_lab
+            -m unittest tests.test_track_lab tests.test_track_bundle
     )
     add_test(NAME lambo_track_patch_python_interop
         COMMAND ${LAMBO_PYTHON_EXECUTABLE}
@@ -807,6 +840,7 @@ if(BUILD_TESTING)
         add_executable(${target}
             tests/test_audio_${stem}.cpp
             src/lambo_audio.cpp
+            src/lambo_engine_audio.cpp
             src/lambo_log.cpp
         )
         target_include_directories(${target} PRIVATE
@@ -896,10 +930,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/register_overlays.cpp
         src/stub_renderer.cpp
         src/lambo_audio.cpp    # SDL2 push-audio sink for the AI buffer
+        src/lambo_engine_audio.cpp
+        src/lambo_engine_audio_runtime.cpp
         src/lambo_audio_override.cpp # audio status getter override
         src/lambo_config.cpp   # persistent graphics.json -> GraphicsConfig
         src/lambo_player_name.cpp # remember player one's confirmed name for later name-entry screens
         src/lambo_startup.cpp  # runtime-ready -> Play startup state machine
+        src/lambo_launch_options.cpp
         src/lambo_mods.cpp
         src/lambo_mod_api.cpp
         src/lambo_mod_game.cpp
@@ -912,6 +949,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_replay.cpp
         src/lambo_replay_runtime.cpp
         src/lambo_driving_assists_runtime.cpp
+        src/lambo_slip_rumble.cpp
+        src/lambo_slip_rumble_runtime.cpp
         src/lambo_harness_report.cpp
         src/lambo_file.cpp
         src/lambo_race_field.cpp
@@ -949,7 +988,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         src/lambo_interpolation.cpp
         src/lambo_no_lod.cpp   # per-segment scenery policy; see docs/no_lod_audit.md
         src/lambo_no_lod_policy.cpp # measured exceptions for synthesized PVS extras
-        src/lambo_track_patch.cpp # Track Lab: guarded sparse PVS corrections applied after the stock track loader
+        src/lambo_track_patch.cpp # Track Lab: guarded visibility corrections and fixed-capacity track bundles
         src/lambo_camera.cpp   # sense of speed: chase-camera distance/height + FOV delta float-bit shims for the hooks
         src/lambo_gpu_advisory.cpp  # outdated-Intel-driver detection and user advisory
         src/lambo_warp.c       # developer warp menu (Ctrl+Shift+1-6 / LAMBO_WARP)
@@ -964,7 +1003,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
 
     # The shipped Windows application is a GUI-subsystem executable.  Its
     # WinMain wrapper still accepts normal command-line arguments; lambo_log
-    # allocates a console only when --console is requested.
+    # allocates a console only when --console is requested. CLI messages can
+    # also attach to the terminal that started the process.
     if(ANDROID)
         add_library(lamborghini_modern SHARED ${LAMBO_SOURCES})
         set_target_properties(lamborghini_modern PROPERTIES OUTPUT_NAME main)
@@ -1117,6 +1157,11 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
         target_link_libraries(lambo_frontend_debugger_tests PRIVATE RmlUi::Core RmlUi::Debugger)
         add_test(NAME lambo_frontend_debugger_default COMMAND lambo_frontend_debugger_tests)
         add_test(NAME lambo_frontend_debugger_enabled COMMAND lambo_frontend_debugger_tests enabled)
+
+        add_executable(lambo_launcher_layout_tests tests/test_launcher_layout.cpp)
+        target_link_libraries(lambo_launcher_layout_tests PRIVATE RmlUi::Core)
+        add_test(NAME lambo_launcher_layout COMMAND lambo_launcher_layout_tests
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/frontend/recomp.rcss")
 
         add_executable(lambo_frontend_asset_url_tests tests/test_frontend_asset_url.cpp)
         target_include_directories(lambo_frontend_asset_url_tests PRIVATE

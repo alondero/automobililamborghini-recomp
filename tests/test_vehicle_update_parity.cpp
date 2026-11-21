@@ -40,7 +40,14 @@ extern "C" int vehicle_reference_field_car(uint8_t* rdram, int index) {
 extern "C" void lambo_vehicle_input(uint8_t*, recomp_context* c) {
     c->r2 = (gpr)(int32_t)(c->r4 < 4 && c->r5 < 3 ? samples[c->r4][c->r5] : 0);
 }
-extern "C" void lambo_vehicle_observe(uint8_t*, recomp_context*) {}
+static unsigned slip_observations = 0;
+extern "C" void lambo_vehicle_observe(uint8_t*, recomp_context* c) {
+    if (c->r4 != 3) return;
+    if (calls.empty() || calls.back()[0] != 3) {
+        std::cerr << "slip observer must follow physics completion\n"; std::abort();
+    }
+    ++slip_observations;
+}
 extern "C" void switch_error(const char* name, uint32_t a, uint32_t v) {
     std::cerr << name << " invalid switch " << std::hex << a << ' ' << v << '\n'; std::abort();
 }
@@ -210,5 +217,6 @@ int main(int argc, char** argv) {
             ++count;
         }
     }
+    if (slip_observations == 0) { std::cerr << "slip observer not exercised\n"; return 1; }
     std::cout << "Vehicle update parity: " << count << " cases; guest ramp snapshot replay passed\n";
 }

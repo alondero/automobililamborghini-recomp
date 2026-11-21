@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 
 #include "ultramodern/config.hpp"
@@ -43,17 +44,17 @@ ultramodern::renderer::GraphicsConfig default_graphics_config();
 // users always have a complete, editable file on disk. Returns the applied config.
 // Call before starting game/render threads: this also captures their launch-time
 // environment overrides. Reloading while those threads run is unsupported.
-ultramodern::renderer::GraphicsConfig load_and_apply_graphics();
+ultramodern::renderer::GraphicsConfig load_and_apply_graphics(
+    std::optional<ultramodern::renderer::WindowMode> startup_window_mode = std::nullopt);
 
 // Snapshot/apply helpers for the settings overlay. apply_graphics() persists the
 // changed fields and, unless apply_live is false, updates RT64 through ultramodern's
 // config action queue. API selection is startup-only, so its callers pass false.
-// Thread contract: current_graphics(), apply_graphics(), update_saved_window_mode(),
-// developer_mode() and set_developer_mode() may each be called from any thread. The
-// snapshot is copied in and out under one lock, so a reader always gets one whole
-// config, never a mix of two. Read-modify-write sequences (current_graphics(), edit,
-// apply_graphics()) are not atomic as a whole; the callers serialise those under
-// lambo::ui::frontend_mutex(). apply_graphics() itself has one calling thread.
+// current_graphics() and developer_mode() can read the snapshot concurrently
+// with writes. Callers must serialize apply_graphics(), update_saved_window_mode(),
+// and set_developer_mode() with one another, including any preceding snapshot
+// read and edit. The frontend mutex provides this serialization in production
+// so renderer updates and persistence requests follow snapshot publication order.
 ultramodern::renderer::GraphicsConfig current_graphics();
 void apply_graphics(const ultramodern::renderer::GraphicsConfig& cfg, bool apply_live = true);
 
@@ -141,6 +142,10 @@ void set_automatic_pit_stops(bool enabled);
 // remove_blue_hud_bar in graphics.json; default false (original HUD).
 bool remove_blue_hud_bar();
 void set_remove_blue_hud_bar(bool enabled);
+
+// Experimental slide feedback; persistent as slip_rumble, default off.
+bool slip_rumble();
+void set_slip_rumble(bool enabled);
 
 // Show a car info card on the car-select screen. Applied live, persisted as
 // car_select_info in graphics.json; default false (original screen).
