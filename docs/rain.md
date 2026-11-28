@@ -15,6 +15,10 @@ glint, and trails when they run. Its puddles have soft edges and animated
 ripples. Modern is drawn at the output resolution, not the N64's. Both styles
 replace the sky with storm clouds and hide the sun flare. Choose Off to keep
 the weather mod's fog and AI without rain art.
+In either rain style, the player and opponents throw spray from both rear
+tyres above 25 km/h (16 mph). The plumes lengthen and rise with speed,
+and heavier rain makes them denser. Camera droplets can be turned off
+independently of tyre spray.
 Rain intensity and Camera droplets are independent settings. All three apply
 when the next race loads. Texture packs do not select the rain style.
 
@@ -70,6 +74,7 @@ display-list root; track assets and the native cursor remain unchanged.
 | 0x800CE794 | s16 circuit index; a change starts a new cache epoch, read once per task |
 | 0x8000CF2C | follows road pointer store at CF28; t2 is the segment record |
 | 0x8000D7C0 | follows road pointer store at D7BC; t8 is the segment record |
+| 0x8000E310 | translucent car overlay under its modelview; scene flags at 0x80098830, parent body index at 0x800986E8 |
 | 0x80005114 / 0x800053F4 | viewport completion / one-player pre-HUD seam |
 | Vehicle pool 0x80910000, stride 0x10C | read only; +0 s16 flag 8 marks a populated car, +0x0E s16 channel, +0x90 s32 speed in km/h, +0xB2 s16 steering demand |
 
