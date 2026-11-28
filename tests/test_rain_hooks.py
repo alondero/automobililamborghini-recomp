@@ -17,6 +17,16 @@ class RainHookTests(unittest.TestCase):
         if hashlib.sha256(cls.rom).hexdigest() != "cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c":
             raise AssertionError("USA cartridge identity mismatch")
 
+    def test_spray_uses_resolved_body_at_overlay_completion(self):
+        hooks = tomllib.loads((ROOT / "lamborghini.us.toml").read_text())["patches"]["hook"]
+        hook = next(h for h in hooks if "lambo_rain_spray" in h["text"])
+        self.assertEqual(hook["before_vram"], 0x8000E310)
+        self.assertIn("0x80098830) & 4", hook["text"])
+        self.assertIn("0x800986E8", hook["text"])
+        word = lambda pc: struct.unpack_from(">I", self.rom, pc - 0x7FFFF400)[0]
+        self.assertEqual(word(0x8000BF4C), 0xA42986E8)  # sh t1, parent index
+        self.assertEqual(word(0x8000E30C), 0xADAF0004)  # sw t7, DL target
+
     def test_road_insertions_follow_pointer_stores_and_keep_record_register(self):
         hooks = tomllib.loads((ROOT / "lamborghini.us.toml").read_text())["patches"]["hook"]
         for load, store, target, record, command in [

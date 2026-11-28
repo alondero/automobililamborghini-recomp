@@ -733,6 +733,12 @@ text = "{ extern void lambo_rt_probe_sun_art(uint8_t*); lambo_rt_probe_sun_art(r
 # the store of SegmentRecord+4's road display-list pointer, before the wall
 # list; t2/t8 still hold the segment record. Camera seams precede native HUD.
 # Source witnesses and failure behavior: docs/rain.md.
+# Emit with the translucent car overlay (flag 4). BF44-BF58 resolve its parent body.
+[[patches.hook]]
+func = "func_8000A6C0"
+before_vram = 0x8000E310
+text = "{ extern void lambo_rain_spray(uint8_t*, unsigned); if (MEM_H(0, (int32_t)0x80098830) & 4) lambo_rain_spray(rdram, (uint16_t)MEM_H(0, (int32_t)0x800986E8)); }"
+
 [[patches.hook]]
 func = "func_8000A6C0"
 before_vram = 0x8000CF2C

@@ -113,6 +113,7 @@ const Flow& view_flow(int player);
 extern "C" void lambo_rain_frame(uint8_t* ram);
 extern "C" void lambo_rain_publish(uint8_t* ram, uint32_t root, uint32_t bytes);
 extern "C" void lambo_rain_road(uint8_t* ram, uint32_t record);
+extern "C" void lambo_rain_spray(uint8_t* ram, unsigned body);
 extern "C" void lambo_rain_camera(uint8_t* ram);
 // Track load and save-state load: drop cached geometry before the next frame.
 extern "C" void lambo_rain_invalidate(void);

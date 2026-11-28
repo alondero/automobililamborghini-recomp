@@ -785,4 +785,35 @@ int main() {
     h(0x800CE794)=0;
     cache::run(rdram);
     camera::run(rdram);
+    // Both the controller and AI body pass through the same overlay draw seam.
+    uint32_t task=0x800BF240,root=task+0x1C0;
+    w(0x800A2BFC)=task; h(0x800CE6AC)=8; h(0x800CE6B4)=2;
+    for (unsigned style:{1u,2u}) {
+        w(0x80000100)=style|(70<<8);
+        lambo_rain_frame(rdram);
+        w(0x800A39CC)=root+16;
+        w(root+56)=int32_t(0xB8000000);
+        for (unsigned body:{1u,4u}) {
+            uint32_t v=LAMBO_VEHICLE_BASE+body*sizeof(LamboVehicleRecord);
+            h(v)=9; h(v+offsetof(LamboVehicleRecord,channel))=body==1 ? 1 : 6;
+            w(v+offsetof(LamboVehicleRecord,speed))=0;
+            lambo_rain_spray(rdram,body);
+            w(v+offsetof(LamboVehicleRecord,speed))=160;
+            lambo_rain_spray(rdram,body);
+        }
+        lambo_rain_publish(rdram,root,64);
+        uint32_t copy=w(root+20);
+        require(uint32_t(w(copy+32))==0x06000000 && uint32_t(w(copy+56))==0x06000000 &&
+            w(copy+36)!=w(copy+60) && w(copy+80)!=0x06000000,
+            "only moving cars emit spray, with distinct player and opponent lists");
+        for (unsigned offset:{36u,60u}) {
+            uint32_t dl=w(copy+offset);
+            for (unsigned cmd=0;cmd<16 && uint32_t(w(dl))>>24!=4;++cmd) dl+=8;
+            require(uint32_t(w(dl))>>24==4,"spray loads geometry");
+            uint32_t vertices=w(dl+4);
+            require(h(vertices)<0 && h(vertices+5*16)>0 && h(vertices+4)<-130 &&
+                h(vertices+5*16+4)<-130,"spray comes from both rear wheels");
+        }
+        heap::check_canaries();
+    }
 }

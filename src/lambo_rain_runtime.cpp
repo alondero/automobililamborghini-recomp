@@ -89,6 +89,7 @@ struct Task {
     // be drawing them, so they are freed from lambo_rain_frame, behind the fence.
     std::vector<Buffer> retired;
     std::array<Buffer,4> cameras;
+    std::array<Buffer,LAMBO_VEHICLE_CAPACITY> spray;
     Buffer root;
     std::vector<std::pair<uint32_t,uint32_t>> insertions;
     List copy,wrapper,camera; // command storage reused across frames
@@ -439,6 +440,67 @@ extern "C" void lambo_rain_publish(uint8_t* ram,uint32_t root,uint32_t bytes) {
     wrapper.cmd(0xB8000000);
     wrapper.write(ram,root);
     task.insertions.clear();
+}
+
+extern "C" void lambo_rain_spray(uint8_t* ram,unsigned body) {
+    unsigned s=settings(ram);
+    if (!s || body>=LAMBO_VEHICLE_CAPACITY) return;
+    int index=slot(ram);
+    uint32_t vehicle=LAMBO_VEHICLE_BASE+body*sizeof(LamboVehicleRecord);
+    float kmh=float(word(ram,vehicle+offsetof(LamboVehicleRecord,speed)));
+    if (index<0 || !(half(ram,vehicle)&8) || kmh<=25) return;
+
+    // Each wheel emits six overlapping, soft-edged puffs. Incline their faces
+    // along the wake so the plume has volume from behind and in side views.
+    constexpr unsigned puffs=12, vertices=puffs*5, list_at=vertices*16;
+    constexpr unsigned capacity=list_at+(24+puffs*2)*8;
+    auto& task=tasks[index];
+    Buffer& block=task.spray[body];
+    uint32_t address=allocate(ram,block,capacity);
+    if (!address) return;
+    if (block.generation!=task.frame) {
+        float speed=std::min((kmh-25)/175,1.0f);
+        float intensity=float((s>>8)&127)/100;
+        List& list=task.camera; // transient command scratch shared by the producers
+        list.words.clear();
+        list.save(true);
+        list.cmd(0xBA000020,0x000000F0);
+        list.cmd(0xB9000020,0x005049D8); // translucent surface, Z compare, no Z write
+        list.cmd(0xFCFFFFFF,0xFFFE793C); // shade RGB and alpha
+        list.cmd(0xB6000000,0xFFFFFFFF); list.cmd(0xB7000000,0x205);
+        list.cmd(0x04000000u|(32u<<17)|(vertices<<10)|(vertices*16-1),address);
+        for (unsigned i=0;i<puffs;++i) {
+            float side=i%2 ? 1.0f : -1.0f;
+            uint32_t seed=hash(body*31+i);
+            float age=std::fmod(seconds*2+(float(i/2)+float(seed&255)/512)/6,1.0f);
+            float scatter=float((seed>>8)&255)/255-0.5f;
+            float x=side*(86+age*32)+scatter*55*age;
+            float y=8+(35+150*speed)*age*(1.6f-age);
+            float z=-145-age*(165+850*speed);
+            float radius=(12+age*(42+55*speed))*(0.85f+0.3f*intensity);
+            unsigned alpha=unsigned(170*intensity*speed*(1-age)*std::min(age*18,1.0f));
+            auto vertex=[&](unsigned k,float dx,float dy,float dz,unsigned opacity) {
+                uint32_t v[4];
+                encode({{x+dx,y+dy,z+dz},0xCADCE500u|opacity},v);
+                store(ram,address+(i*5+k)*16,v,4);
+            };
+            vertex(0,0,0,0,alpha);
+            vertex(1,-radius,0,0,0);
+            vertex(2,0,radius,-radius*1.6f,0);
+            vertex(3,radius,0,0,0);
+            vertex(4,0,-radius,radius*1.6f,0);
+            unsigned base=32+i*5;
+            auto tri=[base](unsigned a,unsigned b) {
+                return (base<<17)|((base+a)<<9)|((base+b)<<1);
+            };
+            list.cmd(0xB1000000u|tri(1,2),tri(2,3));
+            list.cmd(0xB1000000u|tri(3,4),tri(4,1));
+        }
+        list.restore(true); list.cmd(0xB8000000);
+        list.write(ram,address+list_at);
+        block.generation=task.frame;
+    }
+    append(ram,address+list_at);
 }
 
 extern "C" void lambo_rain_road(uint8_t* ram,uint32_t record) {
